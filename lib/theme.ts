@@ -1,6 +1,6 @@
 // Typed theme — re-exports lib/tokens.js and adds RN-specific pieces
 // (text styles, spring presets). Import from here in all screens/components.
-import type { TextStyle } from 'react-native'
+import type { TextStyle, ViewStyle } from 'react-native'
 import { WithSpringConfig } from 'react-native-reanimated'
 
 const tokens = require('./tokens.js') as {
@@ -29,6 +29,18 @@ export const type = {
   subhead: { fontSize: 15, lineHeight: 20, fontWeight: '400', letterSpacing: -0.2, color: colors.label } satisfies TextStyle,
   footnote: { fontSize: 13, lineHeight: 18, fontWeight: '400', letterSpacing: 0, color: colors.secondaryLabel } satisfies TextStyle,
   caption: { fontSize: 12, lineHeight: 16, fontWeight: '500', letterSpacing: 0.3, color: colors.secondaryLabel } satisfies TextStyle,
+} as const
+
+// Shadows — hero/feature cards only; inset-list cards stay flat on grouped bg.
+// Don't combine with overflow:'hidden' on iOS (clipsToBounds kills the shadow).
+export const shadows = {
+  card: {
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+  } satisfies ViewStyle,
 } as const
 
 // Spring presets (Reanimated). Springs, never duration+easing — that's the Apple feel.

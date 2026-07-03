@@ -1,5 +1,8 @@
 import { Tabs } from 'expo-router'
+import { StyleSheet } from 'react-native'
+import { BlurView } from 'expo-blur'
 import { Ionicons } from '@expo/vector-icons'
+import { colors, sizes } from '../../lib/theme'
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name']
 
@@ -16,14 +19,24 @@ export default function AppLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Frosted glass bar — floats over content, screens scroll under it.
         tabBarStyle: {
-          backgroundColor: '#f9f9f9',
+          position: 'absolute',
+          backgroundColor: 'transparent',
           borderTopColor: 'rgba(60,60,67,0.2)',
           borderTopWidth: 0.5,
           paddingBottom: 4,
           paddingTop: 6,
-          height: 58,
+          height: sizes.tabBar,
+          elevation: 0,
         },
+        tabBarBackground: () => (
+          <BlurView
+            tint="systemChromeMaterialLight"
+            intensity={90}
+            style={[StyleSheet.absoluteFill, { backgroundColor: colors.chromeGlass }]}
+          />
+        ),
         tabBarActiveTintColor: '#000',
         tabBarInactiveTintColor: '#8e8e93',
         tabBarLabelStyle: {
