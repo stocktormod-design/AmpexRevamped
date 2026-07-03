@@ -1,7 +1,7 @@
 # CLAUDE.md — AmpexRevamp
 
 ## Prosjekt i én setning
-Ampex er en cross-platform elektriker-app (iOS, Android, web) bygget med Expo + Supabase. Offline-først via PowerSync.
+Ampex er en cross-platform elektriker-app (iOS, Android, web) bygget med Expo + Supabase. Offline-først via WatermelonDB (valgt over PowerSync 2026-07-03: null løpende kostnad — kun Supabase + R2 tillatt som utgifter).
 
 ## Stack
 | Lag | Teknologi |
@@ -10,7 +10,7 @@ Ampex er en cross-platform elektriker-app (iOS, Android, web) bygget med Expo + 
 | Styling | NativeWind v4 (Tailwind CSS v3) |
 | Backend | Supabase (Postgres, Auth, RLS per firma) |
 | Storage | Cloudflare R2 |
-| Offline | PowerSync (SQLite på enhet → Supabase) |
+| Offline | WatermelonDB (SQLite på enhet) + pull/push-synk mot Supabase RPC |
 | GPS | Teltonika webhook |
 
 ## Mappestruktur
@@ -46,9 +46,10 @@ Se `docs/NEW_APP_PLAN.md` for komplett domene-, stack- og datamodell-plan.
 
 ## Regler
 1. Minimal diff — løs oppgaven, ikke refaktorer bredt
-2. Offline-først — queries via PowerSync/SQLite, ikke direkte Supabase
-3. Mørk bakgrunn som standard (`bg-slate-950`)
+2. Offline-først — skjermer leser/skriver KUN lokal SQLite (WatermelonDB); aldri Supabase direkte fra UI. Synk er usynlig (ingen synk-knapp)
+3. Lys tema, iOS-minimal stil (hvit bakgrunn, HIG-verdier — se lib/theme.ts når den finnes)
 4. Roller styrer navigasjon — sjekk alltid `profiles.role`
 5. Soft delete på alt — aldri `DELETE`, bruk `deleted_at`
 6. Audit log på destruktive handlinger
 7. Commit/push kun når bruker ber om det
+8. Batteri/termikk — ingen polling-løkker (synk trigges av forgrunn/nettverksretur), animasjoner kun transform/opacity på UI-tråden (Reanimated), Realtime-abonnement kun i forgrunn, tunge jobber (splat-bake) viser progress og respekterer `thermalState`

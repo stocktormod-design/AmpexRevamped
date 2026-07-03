@@ -1,7 +1,10 @@
 import { useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, StatusBar } from 'react-native'
+import { View, Text, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, StatusBar } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import Animated, { FadeInDown } from 'react-native-reanimated'
 import { supabase } from '../../lib/supabase'
+import { Pressable } from '../../components/pressable'
+import { colors, spacing, radius, sizes, type as t } from '../../lib/theme'
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets()
@@ -18,74 +21,72 @@ export default function LoginScreen() {
     setLoading(false)
   }
 
+  const inputStyle = {
+    ...t.body,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.separator,
+    paddingBottom: spacing.md + 2,
+  } as const
+
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-slate-950"
+      style={{ flex: 1, backgroundColor: colors.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar barStyle="light-content" />
-      <View
-        className="flex-1 justify-between px-6"
-        style={{ paddingTop: insets.top + 48, paddingBottom: insets.bottom + 24 }}
-      >
-        {/* Logo */}
-        <View>
-          <Text className="text-white text-4xl font-bold tracking-tight">Ampex</Text>
-          <Text className="text-slate-500 text-base mt-2">Elektro · Prosjekt · Dokumentasjon</Text>
-        </View>
+      <StatusBar barStyle="dark-content" />
+      <View style={{ flex: 1, paddingHorizontal: spacing.screen + 4, paddingTop: insets.top + 72, paddingBottom: insets.bottom + spacing.screen }}>
 
-        {/* Form */}
-        <View>
-          <View className="mb-3">
-            <Text className="text-slate-400 text-xs font-medium tracking-widest uppercase mb-2">
-              E-post
-            </Text>
-            <TextInput
-              className="bg-slate-900 text-white rounded-xl px-4 py-4 text-base"
-              style={{ borderWidth: 0.5, borderColor: '#1e293b' }}
-              placeholder="navn@firma.no"
-              placeholderTextColor="#334155"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoCorrect={false}
-            />
-          </View>
+        <Animated.View entering={FadeInDown.springify()} style={{ flex: 1 }}>
+          <Text style={{ fontSize: 52, fontWeight: '800', color: colors.label, letterSpacing: -2, lineHeight: 54, marginBottom: spacing.sm }}>
+            Ampex
+          </Text>
+          <Text style={[t.body, { color: colors.secondaryLabel, marginBottom: 56 }]}>
+            Elektro · Prosjekt · Dokumentasjon
+          </Text>
 
-          <View className="mb-6">
-            <Text className="text-slate-400 text-xs font-medium tracking-widest uppercase mb-2">
-              Passord
-            </Text>
-            <TextInput
-              className="bg-slate-900 text-white rounded-xl px-4 py-4 text-base"
-              style={{ borderWidth: 0.5, borderColor: '#1e293b' }}
-              placeholder="••••••••"
-              placeholderTextColor="#334155"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
+          <Text style={[t.caption, { marginBottom: spacing.sm }]}>E-POST</Text>
+          <TextInput
+            style={[inputStyle, { marginBottom: spacing.screen + 4 }]}
+            placeholder="navn@firma.no"
+            placeholderTextColor={colors.tertiaryLabel}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            autoCorrect={false}
+          />
+
+          <Text style={[t.caption, { marginBottom: spacing.sm }]}>PASSORD</Text>
+          <TextInput
+            style={[inputStyle, { marginBottom: spacing.xxl + 8 }]}
+            placeholder="••••••••"
+            placeholderTextColor={colors.tertiaryLabel}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
 
           {error && (
-            <Text className="text-red-400 text-sm mb-4 text-center">{error}</Text>
+            <Text style={[t.footnote, { color: colors.danger, marginBottom: spacing.lg }]}>{error}</Text>
           )}
 
-          <TouchableOpacity
-            className="bg-sky-500 rounded-xl py-4 items-center"
+          <Pressable
             onPress={signIn}
             disabled={loading}
-            activeOpacity={0.8}
+            haptic="medium"
+            style={{
+              backgroundColor: colors.cta, borderRadius: radius.xl, height: sizes.ctaHeight,
+              alignItems: 'center', justifyContent: 'center',
+            }}
           >
             {loading
-              ? <ActivityIndicator color="white" />
-              : <Text className="text-white font-semibold text-base tracking-tight">Logg inn</Text>
+              ? <ActivityIndicator color={colors.ctaLabel} />
+              : <Text style={[t.headline, { color: colors.ctaLabel }]}>Logg inn</Text>
             }
-          </TouchableOpacity>
-        </View>
+          </Pressable>
+        </Animated.View>
 
-        <Text className="text-slate-700 text-xs text-center">
+        <Text style={[t.footnote, { color: colors.tertiaryLabel, textAlign: 'center' }]}>
           Kontakt din administrator for tilgang
         </Text>
       </View>

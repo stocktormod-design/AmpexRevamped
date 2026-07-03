@@ -1,122 +1,84 @@
-import { View, Text, TouchableOpacity, ScrollView, StatusBar } from 'react-native'
+import { View, Text, ScrollView, StatusBar } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Ionicons } from '@expo/vector-icons'
+import Animated, { FadeInDown } from 'react-native-reanimated'
 import { router } from 'expo-router'
+import {
+  CirclePlus, FolderOpen, Package, Clock,
+  ScanBarcode, TriangleAlert, ShieldCheck, ChevronRight,
+  type LucideIcon,
+} from 'lucide-react-native'
+import { Pressable } from '../../components/pressable'
+import { colors, spacing, radius, sizes, type as t } from '../../lib/theme'
 
-type IoniconName = React.ComponentProps<typeof Ionicons>['name']
+const actions: { label: string; sub: string; Icon: LucideIcon; onPress: () => void }[] = [
+  { label: 'Ny ordre',      sub: 'Service, installasjon, kontroll', Icon: CirclePlus, onPress: () => router.push('/(app)/ordre') },
+  { label: 'Nytt prosjekt', sub: 'Tegninger, rom, framdrift',       Icon: FolderOpen, onPress: () => router.push('/(app)/prosjekter') },
+  { label: 'Lager',         sub: 'Inn/ut, bil, bestilling',         Icon: Package,    onPress: () => router.push('/(app)/lager') },
+  { label: 'Timeføring',    sub: 'Dag, uke, godkjenn forslag',      Icon: Clock,      onPress: () => {} },
+]
 
-interface QuickAction {
-  label: string
-  sub: string
-  icon: IoniconName
-  color: string
-  onPress: () => void
-}
+const shortcuts: { label: string; Icon: LucideIcon }[] = [
+  { label: 'Skann', Icon: ScanBarcode },
+  { label: 'Avvik', Icon: TriangleAlert },
+  { label: 'HMS',   Icon: ShieldCheck },
+]
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets()
 
-  const actions: QuickAction[] = [
-    {
-      label: 'Ny ordre',
-      sub: 'Service, installasjon, kontroll',
-      icon: 'add-circle-outline',
-      color: '#38bdf8',
-      onPress: () => router.push('/(app)/ordre'),
-    },
-    {
-      label: 'Nytt prosjekt',
-      sub: 'Tegninger, rom, framdrift',
-      icon: 'folder-open-outline',
-      color: '#a78bfa',
-      onPress: () => router.push('/(app)/prosjekter'),
-    },
-    {
-      label: 'Lager',
-      sub: 'Inn/ut, bil, auto-bestilling',
-      icon: 'cube-outline',
-      color: '#34d399',
-      onPress: () => router.push('/(app)/lager'),
-    },
-    {
-      label: 'Timeføring',
-      sub: 'Dag, uke, godkjenn forslag',
-      icon: 'time-outline',
-      color: '#fb923c',
-      onPress: () => {},
-    },
-  ]
-
   return (
-    <View className="flex-1 bg-slate-950" style={{ paddingTop: insets.top }}>
-      <StatusBar barStyle="light-content" />
-
-      {/* Header */}
-      <View className="px-5 pt-6 pb-4">
-        <Text className="text-slate-500 text-sm font-medium tracking-widest uppercase">
-          Ampex
-        </Text>
-        <Text className="text-white text-2xl font-semibold mt-1 tracking-tight">
-          Hva vil du gjøre?
-        </Text>
-      </View>
-
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <StatusBar barStyle="dark-content" />
       <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32 }}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: spacing.xxxl }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Quick actions */}
-        <View className="gap-3 mt-2">
-          {actions.map((a) => (
-            <TouchableOpacity
-              key={a.label}
-              onPress={a.onPress}
-              activeOpacity={0.7}
-              className="bg-slate-900 rounded-2xl p-4 flex-row items-center"
-              style={{ borderWidth: 0.5, borderColor: '#1e293b' }}
-            >
-              <View
-                className="w-10 h-10 rounded-xl items-center justify-center mr-4"
-                style={{ backgroundColor: a.color + '18' }}
-              >
-                <Ionicons name={a.icon} size={20} color={a.color} />
-              </View>
-              <View className="flex-1">
-                <Text className="text-white font-semibold text-base tracking-tight">
-                  {a.label}
-                </Text>
-                <Text className="text-slate-500 text-sm mt-0.5">
-                  {a.sub}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#334155" />
-            </TouchableOpacity>
-          ))}
+        <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.xxl }}>
+          <Text style={[t.caption, { marginBottom: spacing.xs }]}>Ampex</Text>
+          <Text style={t.largeTitle}>Hva vil du gjøre?</Text>
         </View>
 
-        {/* Divider */}
-        <View className="h-px bg-slate-800 my-6" />
-
-        {/* Snarveier */}
-        <Text className="text-slate-500 text-xs font-medium tracking-widest uppercase mb-3">
-          Snarveier
-        </Text>
-        <View className="flex-row gap-3">
-          {([
-            { label: 'Skann', icon: 'barcode-outline' as IoniconName, color: '#38bdf8' },
-            { label: 'Avvik', icon: 'warning-outline' as IoniconName, color: '#fb923c' },
-            { label: 'HMS', icon: 'shield-checkmark-outline' as IoniconName, color: '#34d399' },
-          ]).map(s => (
-            <TouchableOpacity
-              key={s.label}
-              activeOpacity={0.7}
-              className="flex-1 bg-slate-900 rounded-2xl py-4 items-center"
-              style={{ borderWidth: 0.5, borderColor: '#1e293b' }}
+        {/* Actions */}
+        {actions.map((a, i) => (
+          <Animated.View key={a.label} entering={FadeInDown.springify().delay(i * 40)}>
+            <Pressable
+              onPress={a.onPress}
+              style={[
+                { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.screen, paddingVertical: spacing.lg },
+                i < actions.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+              ]}
             >
-              <Ionicons name={s.icon} size={22} color={s.color} />
-              <Text className="text-slate-400 text-xs font-medium mt-2">{s.label}</Text>
-            </TouchableOpacity>
+              <View style={{
+                width: sizes.iconChip, height: sizes.iconChip, borderRadius: radius.md,
+                backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center',
+                marginRight: spacing.lg,
+              }}>
+                <a.Icon size={sizes.icon} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={t.bodyMedium}>{a.label}</Text>
+                <Text style={[t.footnote, { marginTop: 2 }]}>{a.sub}</Text>
+              </View>
+              <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
+          </Animated.View>
+        ))}
+
+        <View style={{ height: 1, backgroundColor: colors.fill, marginTop: spacing.sm, marginBottom: spacing.xxl }} />
+
+        {/* Shortcuts */}
+        <Text style={[t.footnote, { marginHorizontal: spacing.screen, marginBottom: spacing.md }]}>Snarveier</Text>
+        <View style={{ flexDirection: 'row', gap: spacing.sm + 2, marginHorizontal: spacing.screen }}>
+          {shortcuts.map((s, i) => (
+            <Animated.View key={s.label} entering={FadeInDown.springify().delay(200 + i * 40)} style={{ flex: 1 }}>
+              <Pressable
+                pressScale={0.95}
+                style={{ backgroundColor: colors.fill, borderRadius: radius.lg, alignItems: 'center', paddingVertical: spacing.lg + 2 }}
+              >
+                <s.Icon size={sizes.iconLg} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+                <Text style={[t.footnote, { color: colors.iconMuted, marginTop: spacing.sm - 1 }]}>{s.label}</Text>
+              </Pressable>
+            </Animated.View>
           ))}
         </View>
       </ScrollView>
