@@ -4,6 +4,8 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
+    "@morrowdigital/watermelondb-expo-plugin": "^2.3.3",
+    "@nozbe/watermelondb": "^0.28.0",
     "@supabase/supabase-js": "^2.108.2",
     "expo": "~56.0.12",
     "expo-blur": "~56.0.3",
@@ -25,6 +27,7 @@
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
+    "@babel/plugin-proposal-decorators": "^8.0.2",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~56.0.15",
     "typescript": "~6.0.3"
