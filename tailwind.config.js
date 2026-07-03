@@ -1,19 +1,14 @@
+const { colors, spacing, radius } = require('./lib/tokens.js')
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./app/**/*.{js,jsx,ts,tsx}', './components/**/*.{js,jsx,ts,tsx}'],
   presets: [require('nativewind/preset')],
   theme: {
     extend: {
-      colors: {
-        brand: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          900: '#0c4a6e',
-        },
-      },
+      colors, // bg-bg, bg-groupedBg, text-label, text-secondaryLabel, border-separator, …
+      spacing, // p-screen, gap-md, …
+      borderRadius: radius, // rounded-md (10), rounded-xl (14), …
     },
   },
   plugins: [],

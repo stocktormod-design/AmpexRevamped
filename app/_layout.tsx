@@ -2,6 +2,7 @@ import '../global.css'
 import { useEffect } from 'react'
 import { Stack, router } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { supabase } from '../lib/supabase'
 
 export default function RootLayout() {
@@ -26,9 +27,9 @@ export default function RootLayout() {
   }, [])
 
   return (
-    <>
-      <StatusBar style="auto" />
+    <SafeAreaProvider>
+      <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }} />
-    </>
+    </SafeAreaProvider>
   )
 }

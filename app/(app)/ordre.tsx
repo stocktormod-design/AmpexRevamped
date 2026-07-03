@@ -1,9 +1,7 @@
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-export default function OrdreScreen() {
-  return (
-    <View className="flex-1 bg-slate-950 items-center justify-center">
-      <Text className="text-white text-xl font-semibold">Ordre</Text>
-    </View>
-  )
+export default function Screen() {
+  const insets = useSafeAreaInsets()
+  return <View style={{ flex: 1, backgroundColor: '#f2f2f7', paddingTop: insets.top }} />
 }
