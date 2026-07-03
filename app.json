@@ -14,7 +14,7 @@
     "android": {
       "package": "no.ampex.app",
       "adaptiveIcon": {
-        "backgroundColor": "#0F172A",
+        "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -28,7 +28,8 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "@morrowdigital/watermelondb-expo-plugin"
+      "@morrowdigital/watermelondb-expo-plugin",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

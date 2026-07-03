@@ -3,6 +3,9 @@ import { field, text, date, readonly } from '@nozbe/watermelondb/decorators'
 
 export type OrderStatus = 'mottatt' | 'planlagt' | 'pagaar' | 'fakturaklar' | 'fakturert'
 
+/** Naturlig rekkefølge i flyten: mottatt → planlagt → pågår → fakturaklar → fakturert */
+export const orderStatuses: OrderStatus[] = ['mottatt', 'planlagt', 'pagaar', 'fakturaklar', 'fakturert']
+
 export const orderStatusLabel: Record<OrderStatus, string> = {
   mottatt: 'Mottatt',
   planlagt: 'Planlagt',
