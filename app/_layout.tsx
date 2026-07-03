@@ -1,9 +1,11 @@
 import '../global.css'
 import { useEffect } from 'react'
+import { AppState } from 'react-native'
 import { Stack, router } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { supabase } from '../lib/supabase'
+import { syncQuietly } from '../lib/db/sync'
 
 export default function RootLayout() {
   useEffect(() => {
@@ -12,6 +14,7 @@ export default function RootLayout() {
         router.replace('/(auth)/login')
       } else {
         router.replace('/(app)')
+        syncQuietly()
       }
     })
 
@@ -20,15 +23,27 @@ export default function RootLayout() {
         router.replace('/(auth)/login')
       } else {
         router.replace('/(app)')
+        syncQuietly()
       }
     })
 
-    return () => subscription.unsubscribe()
+    // Usynlig synk når appen kommer til forgrunn (aldri polling — batterikrav #8)
+    const appState = AppState.addEventListener('change', state => {
+      if (state !== 'active') return
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) syncQuietly()
+      })
+    })
+
+    return () => {
+      subscription.unsubscribe()
+      appState.remove()
+    }
   }, [])
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false }} />
     </SafeAreaProvider>
   )
