@@ -3,7 +3,7 @@ import { View, Text, ScrollView } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { ChevronLeft, Plus, FileText, ChevronRight, UserPlus } from 'lucide-react-native'
+import { ChevronLeft, Plus, FileText, ChevronRight, UserPlus, DoorOpen } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { SectionHeader } from '../../../components/ui'
 import { database } from '../../../lib/db'
@@ -11,6 +11,7 @@ import { syncQuietly } from '../../../lib/db/sync'
 import { Project, projectStatusLabel } from '../../../lib/db/models/project'
 import { Drawing, disciplineLabel } from '../../../lib/db/models/drawing'
 import { ProjectMember } from '../../../lib/db/models/project-member'
+import { Room, overallProgress } from '../../../lib/db/models/room'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 function useMembers(projectId: string) {
@@ -23,6 +24,18 @@ function useMembers(projectId: string) {
     return () => sub.unsubscribe()
   }, [projectId])
   return members
+}
+
+function useRooms(projectId: string) {
+  const [rooms, setRooms] = useState<Room[]>([])
+  useEffect(() => {
+    if (!projectId) return
+    const sub = database.get<Room>('rooms')
+      .query(Q.where('project_id', projectId), Q.sortBy('created_at', Q.asc))
+      .observe().subscribe(setRooms)
+    return () => sub.unsubscribe()
+  }, [projectId])
+  return rooms
 }
 
 function initials(name: string): string {
@@ -47,6 +60,7 @@ export default function ProsjektDetailScreen() {
   const [project, setProject] = useState<Project | null>(null)
   const drawings = useDrawings(id ?? '')
   const members = useMembers(id ?? '')
+  const rooms = useRooms(id ?? '')
 
   useEffect(() => {
     if (!id) return
@@ -122,6 +136,52 @@ export default function ProsjektDetailScreen() {
               <Text style={[t.subhead, { color: colors.accent }]}>Legg til folk</Text>
             </Pressable>
           </View>
+        </View>
+
+        {/* Rom — framdrift per rom (× fagfelt), grunnlag for LiDAR-skann */}
+        <View style={{ marginBottom: spacing.screen }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: spacing.screen + spacing.lg, marginBottom: spacing.sm - 1 }}>
+            <Text style={[t.caption, { textTransform: 'uppercase' }]}>Rom</Text>
+            <Pressable onPress={() => router.push({ pathname: '/(app)/prosjekter/rom-ny', params: { projectId: project.id } })} hitSlop={8}>
+              <Text style={[t.caption, { color: colors.accent, textTransform: 'uppercase' }]}>Legg til</Text>
+            </Pressable>
+          </View>
+          {rooms.length === 0 ? (
+            <Text style={[t.footnote, { marginHorizontal: spacing.screen + spacing.lg }]}>
+              Legg til rom for å spore framdrift per fagfelt og LiDAR-skanne.
+            </Text>
+          ) : (
+            <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+              {rooms.map((r, i) => {
+                const pct = overallProgress(r.progressMap)
+                return (
+                  <Pressable
+                    key={r.id}
+                    onPress={() => router.push({ pathname: '/(app)/prosjekter/rom', params: { roomId: r.id } })}
+                    style={[
+                      { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
+                      i < rooms.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <View style={{ width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md }}>
+                        <DoorOpen size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={t.body} numberOfLines={1}>{r.name}</Text>
+                        <Text style={[t.footnote, { marginTop: 1 }]}>{r.plan}</Text>
+                      </View>
+                      <Text style={[t.bodyMedium, { color: colors.cta, fontVariant: ['tabular-nums'], marginRight: spacing.sm }]}>{pct}%</Text>
+                      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+                    </View>
+                    <View style={{ height: 4, borderRadius: radius.pill, backgroundColor: colors.fill, overflow: 'hidden', marginTop: spacing.sm, marginLeft: sizes.iconChip - 8 + spacing.md }}>
+                      <View style={{ width: `${pct}%`, height: '100%', backgroundColor: colors.cta, borderRadius: radius.pill }} />
+                    </View>
+                  </Pressable>
+                )
+              })}
+            </View>
+          )}
         </View>
 
         {drawings.length === 0 ? (

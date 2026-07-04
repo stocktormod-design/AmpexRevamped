@@ -4,6 +4,23 @@ import { schemaMigrations, createTable } from '@nozbe/watermelondb/Schema/migrat
 export const migrations = schemaMigrations({
   migrations: [
     {
+      toVersion: 7,
+      steps: [
+        createTable({
+          name: 'rooms',
+          columns: [
+            { name: 'project_id', type: 'string', isIndexed: true },
+            { name: 'plan', type: 'string' },
+            { name: 'name', type: 'string' },
+            { name: 'progress', type: 'string', isOptional: true },
+            { name: 'scan_path', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
       toVersion: 6,
       steps: [
         createTable({

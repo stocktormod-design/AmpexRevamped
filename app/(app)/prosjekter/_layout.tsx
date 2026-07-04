@@ -9,6 +9,8 @@ export default function ProsjekterLayout() {
       <Stack.Screen name="ny" options={{ presentation: 'modal' }} />
       <Stack.Screen name="tegning-ny" options={{ presentation: 'modal' }} />
       <Stack.Screen name="medlem" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="rom-ny" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="rom" />
       <Stack.Screen name="tegning" />
     </Stack>
   )
