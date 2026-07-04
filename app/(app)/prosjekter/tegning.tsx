@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView } from 'react-native'
+import { View, Text, ScrollView, ActivityIndicator, Dimensions } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BlurView } from 'expo-blur'
+import Pdf from 'react-native-pdf'
+import * as DocumentPicker from 'expo-document-picker'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { ChevronLeft, FileText } from 'lucide-react-native'
+import { ChevronLeft, FileText, Upload } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { database } from '../../../lib/db'
+import { syncQuietly } from '../../../lib/db/sync'
 import { Drawing, disciplineLabel } from '../../../lib/db/models/drawing'
+import { uploadDrawingPdf, getLocalPdf } from '../../../lib/drawings-storage'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 export default function TegningViewer() {
@@ -15,6 +19,8 @@ export default function TegningViewer() {
   const { drawingId } = useLocalSearchParams<{ drawingId: string }>()
   const [drawing, setDrawing] = useState<Drawing | null>(null)
   const [siblings, setSiblings] = useState<Drawing[]>([])
+  const [localUri, setLocalUri] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   // Aktiv tegning
   useEffect(() => {
@@ -35,7 +41,35 @@ export default function TegningViewer() {
     return () => sub.unsubscribe()
   }, [drawing?.projectId])
 
+  // Hent PDF lokalt (cache) når tegningen har en fil
+  const filePath = drawing?.filePath
+  useEffect(() => {
+    let mounted = true
+    if (!filePath) { setLocalUri(null); return }
+    setBusy(true)
+    getLocalPdf(filePath)
+      .then(uri => { if (mounted) setLocalUri(uri) })
+      .catch(() => { if (mounted) setLocalUri(null) })
+      .finally(() => { if (mounted) setBusy(false) })
+    return () => { mounted = false }
+  }, [filePath])
+
+  async function pickAndUpload() {
+    if (!drawing) return
+    const res = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true })
+    if (res.canceled || !res.assets?.[0]) return
+    setBusy(true)
+    try {
+      const key = await uploadDrawingPdf(drawing.id, res.assets[0].uri)
+      await database.write(async () => { await drawing.update(d => { d.filePath = key }) })
+      syncQuietly()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (!drawing) return <View style={{ flex: 1, backgroundColor: '#000' }} />
+  const win = Dimensions.get('window')
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0B0B0C' }}>
@@ -55,13 +89,37 @@ export default function TegningViewer() {
         </BlurView>
       </View>
 
-      {/* Lerret — placeholder til render-motoren plugges inn */}
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl }}>
-        <FileText size={48} color="rgba(255,255,255,0.25)" strokeWidth={1.4} />
-        <Text style={[t.body, { color: 'rgba(255,255,255,0.5)', marginTop: spacing.md, textAlign: 'center' }]}>
-          {drawing.filePath ? 'Tegnings-render kommer' : 'Ingen PDF lastet opp ennå'}
-        </Text>
-      </View>
+      {/* Lerret — native PDF-render (react-native-pdf) */}
+      {localUri ? (
+        <Pdf
+          source={{ uri: localUri }}
+          style={{ flex: 1, width: win.width, backgroundColor: '#0B0B0C' }}
+          trustAllCerts={false}
+          spacing={8}
+          maxScale={6}
+          renderActivityIndicator={() => <ActivityIndicator color="#fff" />}
+        />
+      ) : (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl }}>
+          {busy ? (
+            <ActivityIndicator color="rgba(255,255,255,0.7)" />
+          ) : (
+            <>
+              <FileText size={48} color="rgba(255,255,255,0.25)" strokeWidth={1.4} />
+              <Text style={[t.body, { color: 'rgba(255,255,255,0.5)', marginTop: spacing.md, textAlign: 'center' }]}>
+                Ingen PDF lastet opp ennå
+              </Text>
+              <Pressable
+                haptic="medium" onPress={pickAndUpload}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.pill, backgroundColor: '#fff' }}
+              >
+                <Upload size={sizes.icon - 2} color="#000" strokeWidth={sizes.lucideStroke} />
+                <Text style={[t.headline, { color: '#000' }]}>Legg til PDF</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      )}
 
       {/* Swap-navbar: bytt raskt mellom tegninger i prosjektet */}
       {siblings.length > 1 && (
