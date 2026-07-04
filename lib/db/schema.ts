@@ -4,8 +4,53 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 2,
+  version: 4,
   tables: [
+    tableSchema({
+      name: 'products',
+      columns: [
+        { name: 'elnummer', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'name', type: 'string' },
+        { name: 'unit', type: 'string' },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'locations',
+      columns: [
+        { name: 'type', type: 'string' }, // lager|bil
+        { name: 'name', type: 'string' },
+        { name: 'assigned_to', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'stock_movements',
+      columns: [
+        { name: 'product_id', type: 'string', isIndexed: true },
+        { name: 'location_id', type: 'string', isIndexed: true },
+        { name: 'quantity', type: 'number' }, // fortegn: + inn, - ut
+        { name: 'kind', type: 'string' }, // inn|ut|overfor|justering
+        { name: 'order_id', type: 'string', isOptional: true },
+        { name: 'note', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'order_materials',
+      columns: [
+        { name: 'order_id', type: 'string', isIndexed: true },
+        { name: 'elnummer', type: 'string', isOptional: true }, // universell bestillingsnøkkel
+        { name: 'description', type: 'string' },
+        { name: 'quantity', type: 'number' },
+        { name: 'unit', type: 'string' }, // stk|m|pk …
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
     tableSchema({
       name: 'order_documents',
       columns: [

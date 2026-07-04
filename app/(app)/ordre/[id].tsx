@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Linking, Platform } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { ChevronLeft, Phone, MapPin, FileText, CircleCheck, ChevronRight } from 'lucide-react-native'
+import { ChevronLeft, Phone, MapPin, FileText, CircleCheck, ChevronRight, Plus } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { GlassCard, SectionHeader, Chip } from '../../../components/ui'
 import { AddressMap } from '../../../components/address-map'
@@ -11,6 +11,7 @@ import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Order, orderStatuses, orderStatusLabel, type OrderStatus } from '../../../lib/db/models/order'
 import { OrderDocument } from '../../../lib/db/models/order-document'
+import { OrderMaterial } from '../../../lib/db/models/order-material'
 import { AMPEX_TEMPLATES } from '../../../lib/forms/templates'
 import { markOrderOpened } from '../../../lib/last-opened'
 import { formatDateTime } from '../../../lib/format'
@@ -51,6 +52,51 @@ function useOrderDocuments(orderId: string) {
     return () => sub.unsubscribe()
   }, [orderId])
   return docs
+}
+
+/** Materiell-linjer for én ordre — reaktivt */
+function useOrderMaterials(orderId: string) {
+  const [materials, setMaterials] = useState<OrderMaterial[]>([])
+  useEffect(() => {
+    const sub = database
+      .get<OrderMaterial>('order_materials')
+      .query(Q.where('order_id', orderId), Q.sortBy('created_at', Q.asc))
+      .observe()
+      .subscribe(setMaterials)
+    return () => sub.unsubscribe()
+  }, [orderId])
+  return materials
+}
+
+function formatQty(n: number) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',')
+}
+
+function MaterialRow({ material, last }: { material: OrderMaterial; last: boolean }) {
+  async function remove() {
+    await database.write(async () => { await material.markAsDeleted() })
+    syncQuietly()
+  }
+  return (
+    <Pressable
+      onLongPress={remove}
+      haptic="none"
+      style={[
+        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
+        !last && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+      ]}
+    >
+      <Text style={[t.body, { width: 56, color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>
+        {`${formatQty(material.quantity)} ${material.unit}`}
+      </Text>
+      <View style={{ flex: 1 }}>
+        <Text style={t.body} numberOfLines={1}>{material.description}</Text>
+        {!!material.elnummer && (
+          <Text style={[t.footnote, { marginTop: 1 }]}>{`EL ${material.elnummer}`}</Text>
+        )}
+      </View>
+    </Pressable>
+  )
 }
 
 function DocumentRow({ name, status, last, onPress }: {
@@ -102,6 +148,7 @@ export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const [order, setOrder] = useState<Order | null>(null)
   const docs = useOrderDocuments(id ?? '')
+  const materials = useOrderMaterials(id ?? '')
   const docByTemplate = new Map(docs.map(d => [d.templateId, d]))
   const doneCount = AMPEX_TEMPLATES.filter(tpl => docByTemplate.get(tpl.id)?.status === 'fullfort').length
 
@@ -200,6 +247,33 @@ export default function OrderDetailScreen() {
             </View>
           </View>
         )}
+
+        {/* Materiell — forbruksmotor: mater §36-dok + fakturagrunnlag */}
+        <View style={{ marginBottom: spacing.screen }}>
+          <SectionHeader>{materials.length > 0 ? `Materiell · ${materials.length}` : 'Materiell'}</SectionHeader>
+          <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+            {materials.map((m, i) => (
+              <MaterialRow key={m.id} material={m} last={false} />
+            ))}
+            <Pressable
+              onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
+              style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }}
+            >
+              <View style={{
+                width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm,
+                backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
+              }}>
+                <Plus size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              </View>
+              <Text style={[t.body, { color: colors.secondaryLabel }]}>Legg til materiell</Text>
+            </Pressable>
+          </View>
+          {materials.length > 0 && (
+            <Text style={[t.caption, { marginHorizontal: spacing.screen + spacing.lg, marginTop: spacing.sm }]}>
+              Hold inne en linje for å slette.
+            </Text>
+          )}
+        </View>
 
         {/* Dokumentasjon — de 5 sikre; rader er «foreslått» til de røres */}
         <View style={{ marginBottom: spacing.screen }}>

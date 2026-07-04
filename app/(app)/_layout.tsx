@@ -1,7 +1,8 @@
 import { Tabs } from 'expo-router'
-import { StyleSheet } from 'react-native'
+import { StyleSheet, View } from 'react-native'
 import { BlurView } from 'expo-blur'
 import { Ionicons } from '@expo/vector-icons'
+import { CartBar } from '../../components/cart-bar'
 import { colors, sizes } from '../../lib/theme'
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name']
@@ -16,6 +17,7 @@ const tabs: { name: string; label: string; icon: IoniconName; iconActive: Ionico
 
 export default function AppLayout() {
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -62,6 +64,10 @@ export default function AppLayout() {
           }}
         />
       ))}
+      {/* Skjult fra tab-baren, navigerbar via mini-baren */}
+      <Tabs.Screen name="handlekurv" options={{ href: null }} />
     </Tabs>
+    <CartBar />
+    </View>
   )
 }

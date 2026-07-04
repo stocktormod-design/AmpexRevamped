@@ -1,13 +1,14 @@
 import { Stack } from 'expo-router'
 import { colors } from '../../../lib/theme'
 
-export default function OrdreLayout() {
+export default function LagerLayout() {
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.groupedBg } }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="[id]" />
-      <Stack.Screen name="ny" options={{ presentation: 'modal' }} />
-      <Stack.Screen name="material" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="ny-lokasjon" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="bevegelse" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="uttak" options={{ presentation: 'modal' }} />
     </Stack>
   )
 }
