@@ -4,8 +4,20 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 6,
+  version: 7,
   tables: [
+    tableSchema({
+      name: 'rooms',
+      columns: [
+        { name: 'project_id', type: 'string', isIndexed: true },
+        { name: 'plan', type: 'string' },
+        { name: 'name', type: 'string' },
+        { name: 'progress', type: 'string', isOptional: true }, // JSON: per-fagfelt %
+        { name: 'scan_path', type: 'string', isOptional: true }, // R2-nøkkel til LiDAR-skann
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
     tableSchema({
       name: 'project_members',
       columns: [
