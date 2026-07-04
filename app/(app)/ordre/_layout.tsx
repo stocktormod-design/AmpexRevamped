@@ -7,6 +7,7 @@ export default function OrdreLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="[id]" />
       <Stack.Screen name="ny" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="material" options={{ presentation: 'modal' }} />
     </Stack>
   )
 }
