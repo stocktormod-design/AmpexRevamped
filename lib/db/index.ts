@@ -8,6 +8,9 @@ import { OrderMaterial } from './models/order-material'
 import { Product } from './models/product'
 import { Location } from './models/location'
 import { StockMovement } from './models/stock-movement'
+import { Project } from './models/project'
+import { Drawing } from './models/drawing'
+import { ProjectMember } from './models/project-member'
 
 const adapter = new SQLiteAdapter({
   schema,
@@ -21,5 +24,5 @@ const adapter = new SQLiteAdapter({
 
 export const database = new Database({
   adapter,
-  modelClasses: [Order, OrderDocument, OrderMaterial, Product, Location, StockMovement],
+  modelClasses: [Order, OrderDocument, OrderMaterial, Product, Location, StockMovement, Project, Drawing, ProjectMember],
 })

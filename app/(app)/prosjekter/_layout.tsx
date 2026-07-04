@@ -1,0 +1,15 @@
+import { Stack } from 'expo-router'
+import { colors } from '../../../lib/theme'
+
+export default function ProsjekterLayout() {
+  return (
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.groupedBg } }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="[id]" />
+      <Stack.Screen name="ny" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="tegning-ny" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="medlem" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="tegning" />
+    </Stack>
+  )
+}

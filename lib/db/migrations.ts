@@ -4,6 +4,51 @@ import { schemaMigrations, createTable } from '@nozbe/watermelondb/Schema/migrat
 export const migrations = schemaMigrations({
   migrations: [
     {
+      toVersion: 6,
+      steps: [
+        createTable({
+          name: 'project_members',
+          columns: [
+            { name: 'project_id', type: 'string', isIndexed: true },
+            { name: 'user_id', type: 'string' },
+            { name: 'user_name', type: 'string' },
+            { name: 'role', type: 'string' },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 5,
+      steps: [
+        createTable({
+          name: 'projects',
+          columns: [
+            { name: 'name', type: 'string' },
+            { name: 'customer_name', type: 'string', isOptional: true },
+            { name: 'address', type: 'string', isOptional: true },
+            { name: 'status', type: 'string' },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'drawings',
+          columns: [
+            { name: 'project_id', type: 'string', isIndexed: true },
+            { name: 'plan', type: 'string' },
+            { name: 'discipline', type: 'string' },
+            { name: 'name', type: 'string' },
+            { name: 'file_path', type: 'string', isOptional: true },
+            { name: 'page_count', type: 'number', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
       toVersion: 4,
       steps: [
         createTable({

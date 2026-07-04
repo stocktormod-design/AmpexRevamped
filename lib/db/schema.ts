@@ -4,8 +4,43 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 4,
+  version: 6,
   tables: [
+    tableSchema({
+      name: 'project_members',
+      columns: [
+        { name: 'project_id', type: 'string', isIndexed: true },
+        { name: 'user_id', type: 'string' },
+        { name: 'user_name', type: 'string' }, // navn-snapshot for offline-visning
+        { name: 'role', type: 'string' },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'projects',
+      columns: [
+        { name: 'name', type: 'string' },
+        { name: 'customer_name', type: 'string', isOptional: true },
+        { name: 'address', type: 'string', isOptional: true },
+        { name: 'status', type: 'string' }, // aktiv|ferdig|arkivert
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'drawings',
+      columns: [
+        { name: 'project_id', type: 'string', isIndexed: true },
+        { name: 'plan', type: 'string' }, // etasje/område
+        { name: 'discipline', type: 'string' }, // elkraft|svakstrom|automasjon|annet
+        { name: 'name', type: 'string' },
+        { name: 'file_path', type: 'string', isOptional: true }, // R2-nøkkel til PDF
+        { name: 'page_count', type: 'number', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
     tableSchema({
       name: 'products',
       columns: [
