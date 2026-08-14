@@ -1,43 +1,31 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView, Linking, Platform } from 'react-native'
+import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { ChevronLeft, Phone, MapPin, FileText, CircleCheck, ChevronRight, Plus } from 'lucide-react-native'
+import {
+  ChevronLeft, Phone, MapPin, FileText, Check, ChevronRight, Plus, Package, Navigation,
+  ScanLine, CalendarClock, ClipboardCheck,
+} from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { GlassCard, SectionHeader, Chip } from '../../../components/ui'
+import { CreamCard, ListCard, SectionHeader, Chip } from '../../../components/ui'
+import { MicButton } from '../../../components/mic-button'
+import { ScanCard } from '../../../components/scan-card'
+import { deleteScanFiles, clearRevisions } from '../../../lib/scan-revisions'
 import { AddressMap } from '../../../components/address-map'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Order, orderStatuses, orderStatusLabel, type OrderStatus } from '../../../lib/db/models/order'
 import { OrderDocument } from '../../../lib/db/models/order-document'
 import { OrderMaterial } from '../../../lib/db/models/order-material'
+import { OrderScan, scanKindLabel, type ScanKind } from '../../../lib/db/models/order-scan'
 import { AMPEX_TEMPLATES } from '../../../lib/forms/templates'
 import { markOrderOpened } from '../../../lib/last-opened'
 import { formatDateTime } from '../../../lib/format'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
-function ContactRow({ Icon, label, action, last }: {
-  Icon: typeof Phone; label: string; action?: () => void; last?: boolean
-}) {
-  return (
-    <Pressable
-      onPress={action}
-      haptic={action ? 'light' : 'none'}
-      style={[
-        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-        !last && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
-      ]}
-    >
-      <View style={{
-        width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm,
-        backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
-      }}>
-        <Icon size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-      </View>
-      <Text style={[t.body, { flex: 1 }]} numberOfLines={2}>{label}</Text>
-    </Pressable>
-  )
+function initials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('')
 }
 
 /** Dokumentstatus per mal for én ordre — reaktivt (rad finnes først ved første endring) */
@@ -68,11 +56,82 @@ function useOrderMaterials(orderId: string) {
   return materials
 }
 
+/** LiDAR-skann for én ordre — reaktivt */
+function useOrderScans(orderId: string) {
+  const [scans, setScans] = useState<OrderScan[]>([])
+  useEffect(() => {
+    const sub = database
+      .get<OrderScan>('order_scans')
+      .query(Q.where('order_id', orderId), Q.sortBy('created_at', Q.asc))
+      .observe()
+      .subscribe(setScans)
+    return () => sub.unsubscribe()
+  }, [orderId])
+  return scans
+}
+
+async function addScan(orderId: string, kind: ScanKind, index: number) {
+  await database.write(async () => {
+    await database.get<OrderScan>('order_scans').create(s => {
+      s.orderId = orderId
+      s.kind = kind
+      s.title = `${scanKindLabel[kind]} ${index}`
+    })
+  })
+  syncQuietly()
+}
+
+/** Én adskilt LiDAR-gruppe (planlegging ELLER dokumentasjon). */
+function ScanGroup({ orderId, kind, scans, Icon, hint }: {
+  orderId: string; kind: ScanKind; scans: OrderScan[]; Icon: typeof ScanLine; hint: string
+}) {
+  const mine = scans.filter(s => s.kind === kind)
+  async function removeScan(s: OrderScan) {
+    if (s.scanPath) await deleteScanFiles(s.scanPath)
+    await clearRevisions(s.id)
+    await database.write(async () => s.markAsDeleted())
+    syncQuietly()
+  }
+  return (
+    <View style={{ marginBottom: spacing.screen }}>
+      <SectionHeader>{`LiDAR · ${scanKindLabel[kind]}`}</SectionHeader>
+      <View style={{ marginHorizontal: spacing.screen, gap: spacing.sm }}>
+        {mine.map(s => (
+          <ScanCard
+            key={s.id}
+            title={s.title}
+            meta={`LiDAR · ${scanKindLabel[kind]}`}
+            scanPath={s.scanPath}
+            revisionKey={s.id}
+            onOpen={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[kind], title: s.title, ...(s.scanPath ? { viewPath: s.scanPath } : {}) } })}
+            onScan={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[kind], title: s.title, viewPath: '' } })}
+            onOpenRevision={rev => router.push({ pathname: '/(app)/skann', params: { viewPath: rev.path, title: `${s.title} · ${new Date(rev.ts).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` } })}
+            onDelete={() => removeScan(s)}
+          />
+        ))}
+        <Pressable
+          haptic="light"
+          onPress={() => addScan(orderId, kind, mine.length + 1)}
+          style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.fill, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }}
+        >
+          <View style={{ width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md }}>
+            <Plus size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+          </View>
+          <Text style={[t.body, { color: colors.secondaryLabel }]}>{`Legg til ${scanKindLabel[kind].toLowerCase()}-skann`}</Text>
+        </Pressable>
+      </View>
+      {mine.length === 0 && (
+        <Text style={[t.footnote, { marginHorizontal: spacing.screen + spacing.lg, marginTop: spacing.sm }]}>{hint}</Text>
+      )}
+    </View>
+  )
+}
+
 function formatQty(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',')
 }
 
-function MaterialRow({ material, last }: { material: OrderMaterial; last: boolean }) {
+function MaterialRow({ material }: { material: OrderMaterial }) {
   async function remove() {
     await database.write(async () => { await material.markAsDeleted() })
     syncQuietly()
@@ -81,12 +140,13 @@ function MaterialRow({ material, last }: { material: OrderMaterial; last: boolea
     <Pressable
       onLongPress={remove}
       haptic="none"
-      style={[
-        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-        !last && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
-      ]}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+        paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+        borderRadius: radius.xl, backgroundColor: colors.fill,
+      }}
     >
-      <Text style={[t.body, { width: 56, color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>
+      <Text style={[t.body, { width: 52, color: colors.brand, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
         {`${formatQty(material.quantity)} ${material.unit}`}
       </Text>
       <View style={{ flex: 1 }}>
@@ -99,34 +159,30 @@ function MaterialRow({ material, last }: { material: OrderMaterial; last: boolea
   )
 }
 
-function DocumentRow({ name, status, last, onPress }: {
-  name: string; status: 'fullfort' | 'utkast' | 'ingen'; last: boolean; onPress: () => void
-}) {
-  const statusLabel = status === 'fullfort' ? 'Fullført' : status === 'utkast' ? 'Utkast' : 'Ikke påbegynt'
+function DocumentRow({ name, status, onPress }: { name: string; status: 'fullfort' | 'utkast'; onPress: () => void }) {
+  const done = status === 'fullfort'
   return (
     <Pressable
       onPress={onPress}
-      style={[
-        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-        !last && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
-      ]}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+        paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+        borderRadius: radius.xl, backgroundColor: colors.fill,
+      }}
     >
       <View style={{
-        width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm,
-        backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
+        width: 28, height: 28, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: done ? colors.slateSoft : colors.bg,
       }}>
-        {status === 'fullfort'
-          ? <CircleCheck size={sizes.icon - 2} color={colors.label} strokeWidth={sizes.lucideStroke} />
-          : <FileText size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
+        {done
+          ? <Check size={14} color={colors.slate} strokeWidth={2.6} />
+          : <FileText size={14} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
       </View>
       <Text style={[t.body, { flex: 1 }]} numberOfLines={1}>{name}</Text>
-      <Text style={[t.caption, {
-        color: status === 'fullfort' ? colors.label : status === 'utkast' ? colors.secondaryLabel : colors.tertiaryLabel,
-        marginRight: spacing.sm,
-      }]}>
-        {statusLabel}
+      <Text style={[t.caption, { color: done ? colors.slate : colors.secondaryLabel, fontWeight: '600' }]}>
+        {done ? 'Fullført' : 'Utkast'}
       </Text>
-      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+      <ChevronRight size={15} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
     </Pressable>
   )
 }
@@ -149,6 +205,7 @@ export default function OrderDetailScreen() {
   const [order, setOrder] = useState<Order | null>(null)
   const docs = useOrderDocuments(id ?? '')
   const materials = useOrderMaterials(id ?? '')
+  const scans = useOrderScans(id ?? '')
   const docByTemplate = new Map(docs.map(d => [d.templateId, d]))
   const doneCount = AMPEX_TEMPLATES.filter(tpl => docByTemplate.get(tpl.id)?.status === 'fullfort').length
 
@@ -181,16 +238,33 @@ export default function OrderDetailScreen() {
     Linking.openURL(Platform.OS === 'android' ? `geo:0,0?q=${q}` : `https://maps.apple.com/?daddr=${q}&dirflg=d`)
   }
 
-  if (!order) return <View style={{ flex: 1, backgroundColor: colors.groupedBg }} />
+  const startedTemplates = AMPEX_TEMPLATES.filter(tpl => docByTemplate.has(tpl.id))
+  const remainingTemplates = AMPEX_TEMPLATES.filter(tpl => !docByTemplate.has(tpl.id))
 
-  const meta = [
-    order.orderNumber ? `#${order.orderNumber}` : null,
-    orderStatusLabel[order.status] ?? order.status,
-    formatDateTime(order.scheduledAt),
-  ].filter(Boolean).join(' · ')
+  // Dokumentasjon viser kun faktisk lagt-til skjema — «Legg til» velger blant de resterende.
+  function addDocumentation() {
+    if (!order || remainingTemplates.length === 0) return
+    if (Platform.OS !== 'ios') {
+      router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: remainingTemplates[0].id } })
+      return
+    }
+    const options = [...remainingTemplates.map(tpl => tpl.name), 'Avbryt']
+    ActionSheetIOS.showActionSheetWithOptions(
+      { title: 'Legg til dokumentasjon', options, cancelButtonIndex: options.length - 1 },
+      idx => {
+        if (idx < remainingTemplates.length) {
+          router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: remainingTemplates[idx].id } })
+        }
+      },
+    )
+  }
+
+  if (!order) return <View style={{ flex: 1, backgroundColor: colors.bg }} />
+
+  const when = formatDateTime(order.scheduledAt)
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.groupedBg }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.sm,
@@ -199,75 +273,125 @@ export default function OrderDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.lg }}>
-          <Pressable
-            onPress={() => router.back()}
-            pressScale={0.92}
-            style={{
-              width: 36, height: 36, borderRadius: radius.pill,
-              backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
-          </Pressable>
-        </View>
-
-        <View style={{ marginBottom: spacing.screen }}>
-          <GlassCard>
-            <Text style={[t.caption, { textTransform: 'uppercase' }]}>{meta}</Text>
-            <Text style={[t.title1, { marginTop: spacing.sm }]}>{order.title}</Text>
-            {!!order.description && (
-              <Text style={[t.subhead, { color: colors.secondaryLabel, marginTop: spacing.md }]}>
-                {order.description}
-              </Text>
-            )}
-          </GlassCard>
-        </View>
-
-        {(order.customerName || order.customerPhone) && (
-          <View style={{ marginBottom: spacing.screen }}>
-            <SectionHeader>Kunde</SectionHeader>
-            <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
-              <ContactRow
-                Icon={Phone}
-                label={[order.customerName, order.customerPhone].filter(Boolean).join(' · ')}
-                action={order.customerPhone ? ring : undefined}
-                last
-              />
-            </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Pressable
+              onPress={() => router.back()}
+              pressScale={0.92}
+              style={{
+                width: 36, height: 36, borderRadius: radius.pill,
+                backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+            </Pressable>
+            <MicButton />
           </View>
-        )}
 
-        {/* Adresse — kartpreview (iOS) + rad; alt åpner kjørerute i Kart */}
-        {!!order.address && (
-          <View style={{ marginBottom: spacing.screen }}>
-            <SectionHeader>Adresse</SectionHeader>
-            <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
-              <AddressMap address={order.address} onPress={naviger} />
-              <ContactRow Icon={MapPin} label={order.address} action={naviger} last />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2,
+              backgroundColor: colors.fill, borderRadius: radius.pill,
+              paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 1,
+            }}>
+              <View style={{ width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.brand }} />
+              <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.brand }]}>
+                {orderStatusLabel[order.status] ?? order.status}
+              </Text>
             </View>
+            {!!order.orderNumber && (
+              <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>{`#${order.orderNumber}`}</Text>
+            )}
+          </View>
+
+          <Text style={[t.title1, { marginTop: spacing.md }]}>{order.title}</Text>
+          {!!order.description && (
+            <Text style={[t.subhead, { color: colors.secondaryLabel, marginTop: spacing.md }]}>
+              {order.description}
+            </Text>
+          )}
+          {!!when && <Text style={[t.footnote, { marginTop: spacing.md }]}>{when}</Text>}
+        </View>
+
+        {/* Oppdrag — kontakt + kart + adresse samlet i ett kort */}
+        {(order.customerName || order.customerPhone || order.address) && (
+          <View style={{ marginBottom: spacing.screen }}>
+            <CreamCard>
+              {(order.customerName || order.customerPhone) && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, paddingBottom: spacing.md }}>
+                  <View style={{
+                    width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.label,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Text style={[t.headline, { color: colors.brandSoft }]}>{initials(order.customerName ?? order.customerPhone ?? '')}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    {!!order.customerName && <Text style={t.headline} numberOfLines={1}>{order.customerName}</Text>}
+                    {!!order.customerPhone && (
+                      <Text style={[t.subhead, { color: colors.secondaryLabel, marginTop: 1 }]}>{order.customerPhone}</Text>
+                    )}
+                  </View>
+                  {!!order.customerPhone && (
+                    <Pressable haptic="medium" onPress={ring} style={{
+                      width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.brand,
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Phone size={19} color="#fff" strokeWidth={2} />
+                    </Pressable>
+                  )}
+                </View>
+              )}
+              {!!order.address && (
+                <>
+                  <View style={{ marginHorizontal: spacing.md, borderRadius: radius.lg, overflow: 'hidden' }}>
+                    <AddressMap address={order.address} onPress={naviger} />
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg }}>
+                    <MapPin size={17} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
+                    <Text style={[t.subhead, { flex: 1 }]} numberOfLines={2}>{order.address}</Text>
+                    <Pressable haptic="medium" onPress={naviger} style={{
+                      flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2,
+                      backgroundColor: colors.label, borderRadius: radius.pill,
+                      paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+                    }}>
+                      <Navigation size={14} color="#fff" strokeWidth={2.2} />
+                      <Text style={[t.footnote, { color: '#fff', fontWeight: '700' }]}>Kjør</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </CreamCard>
           </View>
         )}
 
         {/* Materiell — forbruksmotor: mater §36-dok + fakturagrunnlag */}
         <View style={{ marginBottom: spacing.screen }}>
-          <SectionHeader>{materials.length > 0 ? `Materiell · ${materials.length}` : 'Materiell'}</SectionHeader>
-          <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
-            {materials.map((m, i) => (
-              <MaterialRow key={m.id} material={m} last={false} />
-            ))}
-            <Pressable
-              onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
-              style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }}
-            >
-              <View style={{
-                width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm,
-                backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
-              }}>
-                <Plus size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+          <ListCard>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Package size={20} color={colors.label} strokeWidth={sizes.lucideStroke} />
+                <Text style={t.headline}>Materiell</Text>
               </View>
-              <Text style={[t.body, { color: colors.secondaryLabel }]}>Legg til materiell</Text>
-            </Pressable>
-          </View>
+              {materials.length > 0 && (
+                <View style={{ backgroundColor: colors.brandWash, borderRadius: radius.pill, paddingHorizontal: spacing.sm + 2, paddingVertical: 3 }}>
+                  <Text style={[t.caption, { color: colors.brand, fontWeight: '700' }]}>{materials.length}</Text>
+                </View>
+              )}
+            </View>
+            <View style={{ paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, gap: spacing.xs }}>
+              {materials.map(m => <MaterialRow key={m.id} material={m} />)}
+              <Pressable
+                haptic="medium"
+                onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+                  paddingVertical: spacing.md + 1, borderRadius: radius.xl, backgroundColor: colors.brand,
+                }}
+              >
+                <Plus size={18} color="#fff" strokeWidth={2.4} />
+                <Text style={[t.subhead, { color: '#fff', fontWeight: '700' }]}>Legg til materiell</Text>
+              </Pressable>
+            </View>
+          </ListCard>
           {materials.length > 0 && (
             <Text style={[t.caption, { marginHorizontal: spacing.screen + spacing.lg, marginTop: spacing.sm }]}>
               Hold inne en linje for å slette.
@@ -275,27 +399,60 @@ export default function OrderDetailScreen() {
           )}
         </View>
 
-        {/* Dokumentasjon — de 5 sikre; rader er «foreslått» til de røres */}
+        {/* Dokumentasjon — viser kun faktisk påbegynt/fullført skjema, ikke alle malene */}
         <View style={{ marginBottom: spacing.screen }}>
-          <SectionHeader>{`Dokumentasjon · ${doneCount} av ${AMPEX_TEMPLATES.length} fullført`}</SectionHeader>
-          <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
-            {AMPEX_TEMPLATES.map((tpl, i) => {
-              const doc = docByTemplate.get(tpl.id)
-              return (
-                <DocumentRow
-                  key={tpl.id}
-                  name={tpl.name}
-                  status={doc?.status === 'fullfort' ? 'fullfort' : doc ? 'utkast' : 'ingen'}
-                  last={i === AMPEX_TEMPLATES.length - 1}
-                  onPress={() => router.push({
-                    pathname: '/(app)/ordre/skjema',
-                    params: { orderId: order.id, templateId: tpl.id },
-                  })}
-                />
-              )
-            })}
-          </View>
+          <ListCard>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <FileText size={20} color={colors.label} strokeWidth={sizes.lucideStroke} />
+                <Text style={t.headline}>Dokumentasjon</Text>
+              </View>
+              <Text style={[t.caption, { color: colors.secondaryLabel, fontWeight: '600' }]}>
+                {doneCount > 0 ? `${doneCount} fullført` : 'Ingen fullført'}
+              </Text>
+            </View>
+            <View style={{ paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, gap: spacing.xs }}>
+              {startedTemplates.map(tpl => {
+                const doc = docByTemplate.get(tpl.id)
+                return (
+                  <DocumentRow
+                    key={tpl.id}
+                    name={tpl.name}
+                    status={doc?.status === 'fullfort' ? 'fullfort' : 'utkast'}
+                    onPress={() => router.push({
+                      pathname: '/(app)/ordre/skjema',
+                      params: { orderId: order.id, templateId: tpl.id },
+                    })}
+                  />
+                )
+              })}
+              {remainingTemplates.length > 0 && (
+                <Pressable
+                  haptic="light"
+                  onPress={addDocumentation}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+                    paddingVertical: spacing.md, borderRadius: radius.xl,
+                    borderWidth: 1.5, borderColor: colors.border,
+                  }}
+                >
+                  <Plus size={18} color={colors.label} strokeWidth={2.4} />
+                  <Text style={[t.subhead, { color: colors.label, fontWeight: '700' }]}>Legg til dokumentasjon</Text>
+                </Pressable>
+              )}
+            </View>
+          </ListCard>
         </View>
+
+        {/* LiDAR — planlegging og dokumentasjon holdt adskilt */}
+        <ScanGroup
+          orderId={order.id} kind="planlegging" scans={scans} Icon={CalendarClock}
+          hint="Skann før jobben. Grunnlag for planlegging og mengder."
+        />
+        <ScanGroup
+          orderId={order.id} kind="dokumentasjon" scans={scans} Icon={ClipboardCheck}
+          hint="Skann as-built. Et ekstra lag dokumentasjon på det utførte."
+        />
 
         <View style={{ marginBottom: spacing.screen }}>
           <SectionHeader>Status</SectionHeader>
@@ -317,11 +474,11 @@ export default function OrderDetailScreen() {
         {/* Detaljer — metadata nederst, minst viktig */}
         <View>
           <SectionHeader>Detaljer</SectionHeader>
-          <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+          <ListCard>
             <MetaRow label="Ordrenummer" value={order.orderNumber ? `#${order.orderNumber}` : 'Tildeles ved synk'} />
             <MetaRow label="Opprettet" value={formatDateTime(order.createdAt) ?? '–'} />
             <MetaRow label="Sist endret" value={formatDateTime(order.updatedAt) ?? '–'} last />
-          </View>
+          </ListCard>
         </View>
       </ScrollView>
     </View>

@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Plus, Warehouse, Truck, ChevronRight } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { SectionHeader } from '../../../components/ui'
+import { SectionHeader, AmbientBackdrop } from '../../../components/ui'
 import { database } from '../../../lib/db'
 import { Location } from '../../../lib/db/models/location'
 import { useLocationCounts } from '../../../lib/stock'
@@ -43,7 +43,9 @@ function LocationRow({ location, count, first, last }: {
       <View style={{ flex: 1 }}>
         <Text style={t.bodyMedium} numberOfLines={1}>{location.name}</Text>
         <Text style={[t.footnote, { marginTop: 1 }]}>
-          {`${count} ${count === 1 ? 'vare' : 'varer'}`}
+          {location.regNr
+            ? `${location.regNr} · ${count} ${count === 1 ? 'vare' : 'varer'}`
+            : `${count} ${count === 1 ? 'vare' : 'varer'}`}
         </Text>
       </View>
       <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
@@ -104,13 +106,35 @@ export default function LagerScreen() {
 
         {locations.length === 0 ? (
           <View style={{
-            backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen,
-            alignItems: 'center', paddingVertical: spacing.xxl,
+            marginHorizontal: spacing.screen, borderRadius: radius.hero, overflow: 'hidden',
+            backgroundColor: colors.bg,
           }}>
-            <Text style={t.headline}>Ingen lokasjoner</Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center', paddingHorizontal: spacing.xl }]}>
-              Legg til sentrallager og biler for å begynne å spore beholdning.
-            </Text>
+            <AmbientBackdrop height={280} />
+            <View style={{ alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl }}>
+              <View style={{
+                width: sizes.iconChip + 8, height: sizes.iconChip + 8, borderRadius: radius.pill,
+                backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Warehouse size={sizes.iconLg} color={colors.brand} strokeWidth={sizes.lucideStroke} />
+              </View>
+              <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen lokasjoner</Text>
+              <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>
+                Legg til sentrallager og biler for å begynne å spore beholdning.
+              </Text>
+              <Pressable
+                haptic="medium"
+                pressScale={0.97}
+                onPress={() => router.push('/(app)/lager/ny-lokasjon')}
+                style={{
+                  marginTop: spacing.lg, height: sizes.ctaHeight - 6, paddingHorizontal: spacing.xl,
+                  borderRadius: radius.xl, backgroundColor: colors.cta,
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+                }}
+              >
+                <Plus size={sizes.icon - 2} color={colors.ctaLabel} strokeWidth={2.2} />
+                <Text style={[t.headline, { color: colors.ctaLabel }]}>Legg til lokasjon</Text>
+              </Pressable>
+            </View>
           </View>
         ) : (
           <>

@@ -1,8 +1,264 @@
-import { schemaMigrations, createTable } from '@nozbe/watermelondb/Schema/migrations'
+import { schemaMigrations, createTable, addColumns } from '@nozbe/watermelondb/Schema/migrations'
 
 // Holder eksisterende lokale databaser i live ved skjemabump — MÅ speile schema.ts.
 export const migrations = schemaMigrations({
   migrations: [
+    {
+      toVersion: 21,
+      steps: [
+        createTable({
+          name: 'assistant_notes',
+          columns: [
+            { name: 'user_id', type: 'string', isIndexed: true },
+            { name: 'content', type: 'string' },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 20,
+      steps: [
+        createTable({
+          name: 'reminders',
+          columns: [
+            { name: 'user_id', type: 'string', isIndexed: true },
+            { name: 'title', type: 'string' },
+            { name: 'due_at', type: 'number' },
+            { name: 'order_id', type: 'string', isOptional: true },
+            { name: 'note', type: 'string', isOptional: true },
+            { name: 'status', type: 'string' },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 19,
+      steps: [
+        createTable({
+          name: 'time_entries',
+          columns: [
+            { name: 'order_id', type: 'string', isIndexed: true },
+            { name: 'user_id', type: 'string' },
+            { name: 'user_name', type: 'string' },
+            { name: 'date', type: 'number' },
+            { name: 'hours', type: 'number' },
+            { name: 'note', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 18,
+      steps: [
+        createTable({
+          name: 'order_members',
+          columns: [
+            { name: 'order_id', type: 'string', isIndexed: true },
+            { name: 'user_id', type: 'string' },
+            { name: 'user_name', type: 'string' },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 17,
+      steps: [
+        addColumns({
+          table: 'order_documents',
+          columns: [
+            { name: 'ai_field_origin', type: 'string', isOptional: true },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 16,
+      steps: [
+        addColumns({
+          table: 'locations',
+          columns: [
+            { name: 'reg_nr', type: 'string', isOptional: true },
+            { name: 'tracker_imei', type: 'string', isOptional: true },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 15,
+      steps: [
+        createTable({
+          name: 'nfc_tags',
+          columns: [
+            { name: 'tag_uid', type: 'string', isIndexed: true },
+            { name: 'target_type', type: 'string' },
+            { name: 'target_id', type: 'string' },
+            { name: 'default_qty', type: 'number', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 14,
+      steps: [
+        createTable({
+          name: 'mesh_markers',
+          columns: [
+            { name: 'room_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'order_scan_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'scan_path', type: 'string', isIndexed: true },
+            { name: 'x', type: 'number' },
+            { name: 'y', type: 'number' },
+            { name: 'z', type: 'number' },
+            { name: 'symbol_id', type: 'string' },
+            { name: 'note', type: 'string', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 13,
+      steps: [
+        createTable({
+          name: 'order_scans',
+          columns: [
+            { name: 'order_id', type: 'string', isIndexed: true },
+            { name: 'kind', type: 'string' },
+            { name: 'title', type: 'string' },
+            { name: 'scan_path', type: 'string', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 12,
+      steps: [
+        createTable({
+          name: 'drawing_loops',
+          columns: [
+            { name: 'drawing_id', type: 'string', isIndexed: true },
+            { name: 'name', type: 'string' },
+            { name: 'number', type: 'number' },
+            { name: 'color', type: 'string' },
+            { name: 'nodes', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 11,
+      steps: [
+        createTable({
+          name: 'form_templates',
+          columns: [
+            { name: 'key', type: 'string', isOptional: true },
+            { name: 'title', type: 'string' },
+            { name: 'category', type: 'string' },
+            { name: 'current_version', type: 'number' },
+            { name: 'status', type: 'string' },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'form_template_revisions',
+          columns: [
+            { name: 'template_id', type: 'string', isIndexed: true },
+            { name: 'version', type: 'number' },
+            { name: 'schema', type: 'string', isOptional: true },
+            { name: 'change_note', type: 'string', isOptional: true },
+            { name: 'changed_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'form_comments',
+          columns: [
+            { name: 'template_id', type: 'string', isIndexed: true },
+            { name: 'field_id', type: 'string', isOptional: true },
+            { name: 'version', type: 'number', isOptional: true },
+            { name: 'body', type: 'string' },
+            { name: 'author_name', type: 'string', isOptional: true },
+            { name: 'resolved', type: 'boolean' },
+            { name: 'resolved_revision', type: 'number', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 10,
+      steps: [
+        addColumns({
+          table: 'rooms',
+          columns: [
+            { name: 'shape', type: 'string', isOptional: true },
+            { name: 'drawing_id', type: 'string', isOptional: true, isIndexed: true },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 9,
+      steps: [
+        createTable({
+          name: 'tasks',
+          columns: [
+            { name: 'project_id', type: 'string', isIndexed: true },
+            { name: 'room_id', type: 'string', isOptional: true },
+            { name: 'kind', type: 'string' },
+            { name: 'title', type: 'string' },
+            { name: 'status', type: 'string' },
+            { name: 'assigned_to', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'done_at', type: 'number', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        addColumns({
+          table: 'project_members',
+          columns: [
+            { name: 'is_scan_responsible', type: 'boolean', isOptional: true },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 8,
+      steps: [
+        createTable({
+          name: 'drawing_markup',
+          columns: [
+            { name: 'drawing_id', type: 'string', isIndexed: true },
+            { name: 'data', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
     {
       toVersion: 7,
       steps: [

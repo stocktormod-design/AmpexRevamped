@@ -1,7 +1,8 @@
 # DESIGN.md — Ampex designmanifest
 
-Kort og bindende. Målet er iOS-følelse («Apple-like») på begge plattformer:
-konsistens, fysikk og respons — ikke dekorasjon.
+Kort og bindende. Målet er et moderne, gjennomtenkt AI-produkt — iOS-disiplinen
+(konsistens, fysikk, respons, HIG-mål) står fast, men overflaten skal ikke lese
+som iOS Innstillinger. Se «Overflate» under for det som skiller de to.
 
 ## Kilde til sannhet
 
@@ -10,6 +11,8 @@ konsistens, fysikk og respons — ikke dekorasjon.
 - **`lib/theme.ts`** — typografi-skala (`type.*`) og spring-presets (`springs.*`).
 - Tailwind-klasser er koblet til samme tokens (`bg-bg`, `text-label`, `p-screen`,
   `rounded-xl`) — bruk klasser eller `theme.ts`-import, aldri rå hex/px.
+- `brandSoft` er det ENE tint-tokenet for ikon-chips/aksent-bakgrunner (kobber).
+  Ikke innfør en ny "soft"-farge per skjerm — det er nettopp «tilfeldig pastell».
 
 ## Idiomer (gjør alltid)
 
@@ -25,6 +28,35 @@ konsistens, fysikk og respons — ikke dekorasjon.
 7. **Safe areas** alltid via `useSafeAreaInsets` — aldri hardkodede toppmarger.
 8. **Skeleton/placeholder** ved lasting — aldri spinner alene på en tom skjerm.
 
+## Overflate: ambient + glass (ikke Settings)
+
+Samme innhold og flyt som før — kun materialene endrer seg.
+
+**Gjør:**
+- Ambient bakgrunn (`AmbientBackdrop`, `ambientCool`/`ambientWarm`): myke,
+  nøytrale/varme gradient-flekker bak innholdet på hver hovedskjerm — glass
+  trenger noe å bryte, en flat farge bak glass er usynlig.
+- Frostede glasskort (`GlassCard`, `radius.hero`) for hero-innhold og
+  fremhevet informasjon. `cardGlassStrong` for tettere lister/empty-states
+  som trenger mer kontrast enn hero-glasset.
+- Luft: mer whitespace mellom seksjoner enn tradisjonell iOS-tetthet.
+- Ikon-chips i `brandSoft` (kobber-tint) på primærhandlinger — flat `fill`-grå
+  er OK for sekundære/nøytrale ikoner, ikke for det brukeren skal legge merke til.
+
+**Eksplisitt anti-Settings:**
+- Aldri `groupedBg` (flat iOS-systemgrå) som eneste bakgrunn på en hovedskjerm.
+- Aldri kun hvite inset-grouped-lister som eneste virkemiddel for struktur.
+- Aldri sort systemknapp (`colors.cta`) som eneste CTA-stil — det leser som en
+  iOS-systemhandling, ikke et produkt.
+
+**Anti-slop (like viktig som anti-Settings):**
+- Ingen neon/regnbue-gradienter, ingen tilfeldig pastell-per-ikon.
+- Ingen generisk «AI-orb»/chat-bubble-avatar som hoved-UI-element.
+- Kobber (`brand`/`brandSoft`) er ÉN aksent per skjermområde — gjerrig.
+- Statusfarge (`success`/`warning`/`danger`) betyr KUN status — aldri dekor.
+- Glass er dybde, ikke pynt — bruk der det gir hierarki (hero-kort, chrome),
+  ikke på hver eneste rad.
+
 ## Bevegelse
 
 - Springs (`springs.*`), aldri duration+easing.
@@ -32,9 +64,19 @@ konsistens, fysikk og respons — ikke dekorasjon.
 - Haptikk: `light` på rader/knapper, `medium` på primær-CTA,
   `notificationAsync(Success)` når noe er lagret/fullført.
 
+## Synk-/nettverksfeil i UI
+
+Synk er usynlig (regel #2 i CLAUDE.md) — feilhåndtering skal være det også:
+
+- **Lokal data finnes:** aldri toast/alert/rødt. Ved vedvarende synk-feil,
+  dempet `warningSoft`-tekst i relevant seksjon — aldri blokkerende.
+- **Ingen lokal data + nettverksfeil:** eneste unntak — vis en rolig
+  `GlassCard`-melding («Kunne ikke hente data — sjekk nett»), ikke en teknisk
+  feilkode eller stack trace.
+
 ## Ikke gjør
 
+- Ingen systemblå (`#007AFF`/default iOS-tint) noe sted — primær er `brand`/kobber, sekundær er nøytral (`label`/`secondaryLabel`/`border`), aldri systemfargen.
 - Ingen rå hex-verdier eller ad-hoc fontSize i skjermer.
-- Ingen skygger/gradienter for «dybde» — iOS-følelsen er flat + fysikk.
 - Ingen blokkerende spinnere når data finnes lokalt (offline-først = alt åpner umiddelbart).
 - Ingen synk-indikatorer/knapper i UI.

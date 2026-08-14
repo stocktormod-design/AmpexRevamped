@@ -25,7 +25,7 @@ export function useCart(): CartLine[] {
   useEffect(() => {
     const movements$ = database.get<StockMovement>('stock_movements')
       .query(Q.where('kind', 'ut'), Q.where('order_id', null), Q.sortBy('created_at', Q.asc))
-      .observe()
+      .observeWithColumns(['quantity'])
     const products$ = database.get<Product>('products').query().observe()
     const sub = combineLatest([movements$, products$]).subscribe(([movements, products]) => {
       const pMap = new Map(products.map(p => [p.id, p]))

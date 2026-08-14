@@ -6,22 +6,24 @@ import Animated, {
   interpolate, Extrapolation, type SharedValue,
 } from 'react-native-reanimated'
 import { BlurView } from 'expo-blur'
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg'
 import { router } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import {
-  CirclePlus, FolderOpen, Package, Clock, MapPin, CircleCheck, ChevronRight,
-  ScanBarcode, TriangleAlert, ShieldCheck,
+  CirclePlus, FolderOpen, Package, Clock, MapPin, Phone, CircleCheck, ChevronRight,
+  ScanBarcode, TriangleAlert, ClipboardCheck, Circle, ScanSearch,
   type LucideIcon,
 } from 'lucide-react-native'
 import { Pressable } from '../../components/pressable'
 import { AmpexLogo } from '../../components/ampex-logo'
-import { GlassCard, SectionHeader } from '../../components/ui'
+import { CreamCard, ListCard, SectionHeader } from '../../components/ui'
 import { database } from '../../lib/db'
 import { Order, orderStatusLabel } from '../../lib/db/models/order'
+import { Task } from '../../lib/db/models/task'
+import { toggleTaskDone } from '../../lib/tasks'
+import { useUserId } from '../../lib/auth-user'
 import { useLastOpened } from '../../lib/last-opened'
 import { formatTime, formatSince } from '../../lib/format'
-import { colors, spacing, radius, sizes, type as t } from '../../lib/theme'
+import { colors, spacing, radius, sizes, shadows, type as t } from '../../lib/theme'
 
 const actions: { label: string; sub: string; Icon: LucideIcon; onPress: () => void }[] = [
   { label: 'Ny ordre',      sub: 'Service, installasjon', Icon: CirclePlus, onPress: () => router.push('/(app)/ordre/ny') },
@@ -30,10 +32,10 @@ const actions: { label: string; sub: string; Icon: LucideIcon; onPress: () => vo
   { label: 'Timeføring',    sub: 'Dag, uke, forslag',     Icon: Clock,      onPress: () => {} },
 ]
 
-const shortcuts: { label: string; Icon: LucideIcon }[] = [
-  { label: 'Skann', Icon: ScanBarcode },
-  { label: 'Avvik', Icon: TriangleAlert },
-  { label: 'HMS',   Icon: ShieldCheck },
+const shortcuts: { label: string; Icon: LucideIcon; route?: string }[] = [
+  { label: 'Skann',  Icon: ScanBarcode },
+  { label: 'Avvik',  Icon: TriangleAlert },
+  { label: 'Skjema', Icon: ClipboardCheck, route: '/(app)/skjema' },
 ]
 
 function useOpenOrders() {
@@ -49,31 +51,40 @@ function useOpenOrders() {
   return orders
 }
 
-/**
- * Knapt synlige nøytrale gradient-flekker bak innholdet — gir glass-materialene
- * noe å bryte (glass over flat farge er usynlig). Parallakse ved scroll.
- */
-function AmbientBackdrop({ scrollY }: { scrollY: SharedValue<number> }) {
-  const style = useAnimatedStyle(() => ({
-    transform: [{ translateY: -scrollY.value * 0.35 }],
-  }))
+/** Oppgaver tildelt meg og fortsatt åpne — inbox. */
+function useMyTasks(userId: string | null) {
+  const [tasks, setTasks] = useState<Task[]>([])
+  useEffect(() => {
+    if (!userId) { setTasks([]); return }
+    const sub = database
+      .get<Task>('tasks')
+      .query(Q.where('assigned_to', userId), Q.where('status', 'open'), Q.sortBy('created_at', Q.desc))
+      .observe()
+      .subscribe(setTasks)
+    return () => sub.unsubscribe()
+  }, [userId])
+  return tasks
+}
+
+/** Inbox-rad: hak av til venstre, trykk rad → åpne prosjektet. */
+function InboxRow({ task, last }: { task: Task; last: boolean }) {
   return (
-    <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: 460 }, style]}>
-      <Svg width="100%" height="100%">
-        <Defs>
-          <RadialGradient id="cool" cx="18%" cy="12%" r="65%">
-            <Stop offset="0" stopColor={colors.ambientCool} stopOpacity="0.9" />
-            <Stop offset="1" stopColor={colors.ambientCool} stopOpacity="0" />
-          </RadialGradient>
-          <RadialGradient id="warm" cx="88%" cy="34%" r="60%">
-            <Stop offset="0" stopColor={colors.ambientWarm} stopOpacity="0.75" />
-            <Stop offset="1" stopColor={colors.ambientWarm} stopOpacity="0" />
-          </RadialGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#cool)" />
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#warm)" />
-      </Svg>
-    </Animated.View>
+    <Pressable
+      onPress={() => router.push(`/(app)/prosjekter/${task.projectId}`)}
+      style={[
+        { flexDirection: 'row', alignItems: 'center', paddingRight: spacing.lg, paddingVertical: spacing.md + 2, paddingLeft: spacing.lg },
+        !last && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+      ]}
+    >
+      <Pressable haptic="light" hitSlop={10} onPress={() => toggleTaskDone(task)}>
+        <Circle size={sizes.icon} color={colors.tertiaryLabel} strokeWidth={2} />
+      </Pressable>
+      <View style={{ flex: 1, marginHorizontal: spacing.md }}>
+        <Text style={t.bodyMedium} numberOfLines={2}>{task.title}</Text>
+      </View>
+      {task.kind === 'lidar_scan' && <ScanSearch size={16} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
+      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} style={{ marginLeft: spacing.sm }} />
+    </Pressable>
   )
 }
 
@@ -102,96 +113,119 @@ function GlassHeader({ scrollY, topInset }: { scrollY: SharedValue<number>; topI
   )
 }
 
-/** Hero — neste ordre. Monokrom: status er tekst, ikke farge. */
+/** Hero — neste ordre. Kobber-prikken + «Åpne ordre»-CTA er skjermens ENE brand-aksent. */
 function NextOrderCard({ order }: { order: Order }) {
   const time = formatTime(order.scheduledAt)
   const status = orderStatusLabel[order.status] ?? order.status
   return (
-    <GlassCard onPress={() => router.push(`/(app)/ordre/${order.id}`)}>
-      <Text style={[t.caption, { textTransform: 'uppercase' }]}>
-        {[status, time].filter(Boolean).join(' · ')}
-      </Text>
-      <Text style={[t.title2, { marginTop: spacing.sm }]} numberOfLines={2}>{order.title}</Text>
-      {!!order.customerName && (
-        <Text style={[t.subhead, { color: colors.secondaryLabel, marginTop: spacing.xs }]} numberOfLines={1}>
-          {order.customerName}
-        </Text>
-      )}
-      {!!order.address && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, marginTop: spacing.md }}>
-          <MapPin size={sizes.icon - 4} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
-          <Text style={[t.subhead, { color: colors.secondaryLabel, flex: 1 }]} numberOfLines={1}>
-            {order.address}
-          </Text>
+    <CreamCard>
+      <View style={{ padding: spacing.xl, paddingBottom: spacing.lg }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2,
+            backgroundColor: colors.fill, borderRadius: radius.pill,
+            paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 1,
+          }}>
+            <View style={{ width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.brand }} />
+            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.brand }]}>
+              {[status, time].filter(Boolean).join(' · ')}
+            </Text>
+          </View>
+          <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
         </View>
-      )}
-    </GlassCard>
+        <Text style={[t.title2, { marginTop: spacing.md }]} numberOfLines={2}>{order.title}</Text>
+        {!!order.customerName && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
+            <Phone size={16} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
+            <Text style={[t.subhead, { flex: 1 }]} numberOfLines={1}>{order.customerName}</Text>
+          </View>
+        )}
+        {!!order.address && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs + 2 }}>
+            <MapPin size={16} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
+            <Text style={[t.subhead, { flex: 1 }]} numberOfLines={1}>{order.address}</Text>
+          </View>
+        )}
+      </View>
+      <Pressable
+        haptic="medium"
+        onPress={() => router.push(`/(app)/ordre/${order.id}`)}
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+          height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.brand,
+          marginHorizontal: spacing.md, marginBottom: spacing.md,
+        }}
+      >
+        <Text style={[t.headline, { color: '#fff' }]}>Åpne ordre</Text>
+      </Pressable>
+    </CreamCard>
   )
 }
 
-/** Kompakt rad for sist-innom: siden sist | tittel/kunde */
-function OrderRow({ order, since, last }: { order: Order; since: Date; last: boolean }) {
+/** «Sist innom» — hvert kort er selvstendig (kremhvitt + egen skygge), ikke én lang liste. */
+function RecentCard({ order, since }: { order: Order; since: Date }) {
   return (
     <Pressable
       onPress={() => router.push(`/(app)/ordre/${order.id}`)}
-      style={[
-        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-        !last && { borderBottomWidth: 0.5, borderBottomColor: colors.separator, marginLeft: spacing.lg, paddingLeft: 0 },
-      ]}
+      style={[{
+        flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+        paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 1,
+        borderRadius: radius.lg, backgroundColor: colors.brandSoft,
+      }, shadows.card]}
     >
-      <Text style={[t.subhead, { color: colors.secondaryLabel, width: 52, fontVariant: ['tabular-nums'] }]}>
-        {formatSince(since)}
-      </Text>
-      <View style={{ flex: 1, marginRight: spacing.md }}>
+      <View style={{ width: 8, height: 8, borderRadius: radius.pill, backgroundColor: colors.tertiaryLabel }} />
+      <View style={{ flex: 1 }}>
         <Text style={t.bodyMedium} numberOfLines={1}>{order.title}</Text>
-        <Text style={[t.footnote, { marginTop: 2 }]} numberOfLines={1}>
-          {[order.customerName, order.address].filter(Boolean).join(' · ')}
+        <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>
+          {[order.customerName, formatSince(since)].filter(Boolean).join(' · ')}
         </Text>
       </View>
-      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+      <ChevronRight size={15} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
     </Pressable>
   )
 }
 
-function ActionTile({ action }: { action: (typeof actions)[number] }) {
+function ActionTile({ action, primary }: { action: (typeof actions)[number]; primary?: boolean }) {
   return (
     <Pressable
       pressScale={0.96}
       onPress={action.onPress}
-      style={{ flex: 1, backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.lg }}
+      style={{
+        flex: 1, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm,
+        backgroundColor: primary ? colors.brand : colors.slateSoft,
+        borderWidth: primary ? 0 : 0.5, borderColor: colors.slateBorder,
+      }}
     >
-      <View style={{
-        width: sizes.iconChip, height: sizes.iconChip, borderRadius: radius.md,
-        backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center',
-      }}>
-        <action.Icon size={sizes.iconLg - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-      </View>
-      <Text style={[t.headline, { marginTop: spacing.md }]}>{action.label}</Text>
-      <Text style={[t.footnote, { marginTop: 2 }]} numberOfLines={1}>{action.sub}</Text>
+      <action.Icon size={sizes.iconLg - 2} color={primary ? '#fff' : colors.slate} strokeWidth={sizes.lucideStroke} />
+      <Text style={[t.headline, { color: primary ? '#fff' : colors.label, marginTop: spacing.xs }]} numberOfLines={1}>
+        {action.label}
+      </Text>
     </Pressable>
   )
 }
 
 function EmptyState() {
   return (
-    <GlassCard>
-      <View style={{ alignItems: 'center', paddingVertical: spacing.md }}>
+    <CreamCard>
+      <View style={{ alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.xl }}>
         <View style={{
           width: sizes.iconChip + 8, height: sizes.iconChip + 8, borderRadius: radius.pill,
-          backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center',
         }}>
-          <CircleCheck size={sizes.iconLg} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
+          <CircleCheck size={sizes.iconLg} color={colors.brand} strokeWidth={sizes.lucideStroke} />
         </View>
         <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen åpne ordre</Text>
         <Text style={[t.footnote, { marginTop: spacing.xs }]}>Nye ordre dukker opp her.</Text>
       </View>
-    </GlassCard>
+    </CreamCard>
   )
 }
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets()
   const orders = useOpenOrders()
+  const userId = useUserId()
+  const myTasks = useMyTasks(userId)
   const lastOpened = useLastOpened()
   const rawDate = new Date().toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })
   const today = rawDate.charAt(0).toUpperCase() + rawDate.slice(1)
@@ -212,9 +246,8 @@ export default function HomeScreen() {
   }))
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.groupedBg }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <StatusBar barStyle="dark-content" />
-      <AmbientBackdrop scrollY={scrollY} />
       <Animated.ScrollView
         onScroll={onScroll}
         scrollEventThrottle={16}
@@ -229,8 +262,8 @@ export default function HomeScreen() {
           paddingHorizontal: spacing.screen, marginBottom: spacing.xl,
         }}>
           <View>
-            <Text style={[t.caption, { marginBottom: spacing.xs }]}>{today}</Text>
-            <Animated.Text style={[t.largeTitle, titleStyle]}>I dag</Animated.Text>
+            <Text style={[t.eyebrow, { textTransform: 'uppercase', marginBottom: spacing.xs }]}>{today}</Text>
+            <Animated.Text style={[t.display, titleStyle]}>I dag</Animated.Text>
           </View>
           {/* Brand-mark — én plassering, App Store-avatar-posisjonen */}
           <View style={{ marginBottom: spacing.xs + 2 }}>
@@ -244,13 +277,25 @@ export default function HomeScreen() {
           {next ? <NextOrderCard order={next} /> : <EmptyState />}
         </Animated.View>
 
+        {/* Tildelt meg — inbox: åpne oppgaver tildelt deg (LiDAR-forespørsler m.m.) */}
+        {myTasks.length > 0 && (
+          <Animated.View entering={FadeInDown.springify().delay(30)} style={{ marginBottom: spacing.screen }}>
+            <SectionHeader>Tildelt meg</SectionHeader>
+            <ListCard>
+              {myTasks.map((task, i, arr) => (
+                <InboxRow key={task.id} task={task} last={i === arr.length - 1} />
+              ))}
+            </ListCard>
+          </Animated.View>
+        )}
+
         {/* Sist innom — åpne ordre du sist har jobbet med */}
         {recent.length > 0 && (
           <Animated.View entering={FadeInDown.springify().delay(60)} style={{ marginBottom: spacing.screen }}>
             <SectionHeader>Sist innom</SectionHeader>
-            <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
-              {recent.map((o, i, arr) => (
-                <OrderRow key={o.id} order={o} since={new Date(openedAt(o))} last={i === arr.length - 1} />
+            <View style={{ marginHorizontal: spacing.screen, gap: spacing.sm }}>
+              {recent.map(o => (
+                <RecentCard key={o.id} order={o} since={new Date(openedAt(o))} />
               ))}
             </View>
           </Animated.View>
@@ -262,7 +307,7 @@ export default function HomeScreen() {
           <View style={{ gap: spacing.md, marginHorizontal: spacing.screen }}>
             {[actions.slice(0, 2), actions.slice(2)].map((row, i) => (
               <View key={i} style={{ flexDirection: 'row', gap: spacing.md }}>
-                {row.map(a => <ActionTile key={a.label} action={a} />)}
+                {row.map(a => <ActionTile key={a.label} action={a} primary={a.label === 'Ny ordre'} />)}
               </View>
             ))}
           </View>
@@ -276,9 +321,10 @@ export default function HomeScreen() {
               <Pressable
                 key={s.label}
                 pressScale={0.95}
+                onPress={() => s.route && router.push(s.route as any)}
                 style={{
                   flex: 1, flexDirection: 'row', gap: spacing.sm,
-                  backgroundColor: colors.bg, borderRadius: radius.lg,
+                  backgroundColor: colors.fill, borderRadius: radius.lg,
                   alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md + 2,
                 }}
               >

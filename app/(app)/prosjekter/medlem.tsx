@@ -85,7 +85,7 @@ export default function MedlemScreen() {
                   </View>
                   {added
                     ? <Check size={18} color={colors.success} strokeWidth={2.4} />
-                    : <Plus size={18} color={colors.accent} strokeWidth={2.4} />}
+                    : <Plus size={18} color={colors.iconMuted} strokeWidth={2.4} />}
                 </Pressable>
               )
             })}

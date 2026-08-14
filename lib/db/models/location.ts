@@ -10,6 +10,8 @@ export class Location extends Model {
   @text('type') type: LocationType
   @text('name') name: string
   @text('assigned_to') assignedTo: string | null
+  @text('reg_nr') regNr: string | null
+  @text('tracker_imei') trackerImei: string | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 }

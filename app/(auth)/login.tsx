@@ -13,10 +13,10 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function signIn() {
+  async function signIn(e: string = email, p: string = password) {
     setLoading(true)
     setError(null)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email: e, password: p })
     if (error) setError('Feil e-post eller passord')
     setLoading(false)
   }
@@ -71,7 +71,7 @@ export default function LoginScreen() {
           )}
 
           <Pressable
-            onPress={signIn}
+            onPress={() => signIn()}
             disabled={loading}
             haptic="medium"
             style={{
@@ -83,6 +83,20 @@ export default function LoginScreen() {
               ? <ActivityIndicator color={colors.ctaLabel} />
               : <Text style={[t.headline, { color: colors.ctaLabel }]}>Logg inn</Text>
             }
+          </Pressable>
+
+          {/* Vises også i Release: intern testflåte. Fjern gaten når kundebygg blir en ting. */}
+          <Pressable
+            onPress={() => signIn('test@ampex.no', 'ampex-test-2026')}
+            disabled={loading}
+            style={{
+              marginTop: spacing.md, height: sizes.ctaHeight - 8, borderRadius: radius.xl,
+              borderWidth: 1, borderColor: colors.border,
+              alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: spacing.sm,
+            }}
+          >
+            <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>Test-innlogging</Text>
+            <Text style={[t.caption, { color: colors.tertiaryLabel }]}>dev</Text>
           </Pressable>
         </Animated.View>
 

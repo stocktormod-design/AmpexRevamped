@@ -1,0 +1,9 @@
+{
+  "name": "ampex-splat",
+  "version": "1.0.0",
+  "description": "On-device LiDAR mesh scanning + textured bake (MeshBakeV2) native module",
+  "main": "index.ts",
+  "expo": {
+    "platforms": ["ios"]
+  }
+}

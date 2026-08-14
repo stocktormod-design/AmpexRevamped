@@ -11,6 +11,8 @@ import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 export default function NyLokasjonScreen() {
   const [type, setType] = useState<LocationType>('bil')
   const [name, setName] = useState('')
+  const [regNr, setRegNr] = useState('')
+  const [trackerImei, setTrackerImei] = useState('')
   const [saving, setSaving] = useState(false)
   const canSave = name.trim().length > 0 && !saving
 
@@ -22,6 +24,8 @@ export default function NyLokasjonScreen() {
         l.type = type
         l.name = name.trim()
         l.assignedTo = null
+        l.regNr = type === 'bil' ? (regNr.trim() || null) : null
+        l.trackerImei = type === 'bil' ? (trackerImei.trim() || null) : null
       }),
     )
     syncQuietly()
@@ -48,8 +52,28 @@ export default function NyLokasjonScreen() {
           value={name} onChangeText={setName}
           placeholder={type === 'lager' ? 'Navn (f.eks. Hovedlager)' : 'Navn (f.eks. Bil – Per)'}
           placeholderTextColor={colors.tertiaryLabel} autoFocus
-          style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }]}
+          style={[
+            t.body as TextStyle,
+            { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
+            type === 'bil' && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+          ]}
         />
+        {type === 'bil' && (
+          <>
+            <TextInput
+              value={regNr} onChangeText={setRegNr}
+              placeholder="Reg.nr (f.eks. AB 12345)" placeholderTextColor={colors.tertiaryLabel}
+              autoCapitalize="characters"
+              style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, borderBottomWidth: 0.5, borderBottomColor: colors.separator }]}
+            />
+            <TextInput
+              value={trackerImei} onChangeText={setTrackerImei}
+              placeholder="Tracker-IMEI (valgfritt)" placeholderTextColor={colors.tertiaryLabel}
+              keyboardType="number-pad"
+              style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }]}
+            />
+          </>
+        )}
       </View>
 
       <Pressable

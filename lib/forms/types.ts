@@ -20,6 +20,10 @@ export type FormField = {
   columns?: { key: string; label: string }[]     // for table
   prefill?: FormPrefill
   placeholder?: string
+  /** Om AI-utfylling (gap-check) skal spørre etter dette feltet hvis det står tomt.
+   *  Dette er en compliance-avgjørelse (hvilke felt forskriften faktisk krever),
+   *  ikke en teknisk en — sett av faglig ansvarlig, ikke gjettet av utviklere. */
+  required?: boolean
 }
 
 export type FormSection = {

@@ -1,56 +1,53 @@
 # Session Handoff
 
 ## Status
-Expo-prosjekt satt opp og commitet. Venter på nytt Supabase-prosjekt.
+Expo-prosjekt er satt opp og i aktiv utvikling. Supabase-prosjekt er opprettet, `.env.local` er satt. Flere SQL-migrasjoner er kjørt (foundation, orders, security hygiene, watermelon sync RPC). WatermelonDB er lokal offline-lagring med usynlig pull/push mot Supabase RPC. Hoveddomener i app: auth, tabs, prosjekter, ordre, lager, skjema.
+
+## Stack
+- Expo SDK 56 + Expo Router + TypeScript
+- NativeWind v4 (Tailwind)
+- Supabase (Postgres, Auth, RLS per `company_id`)
+- Cloudflare R2 (filer; tegninger er R2-only)
+- **WatermelonDB** (lokal SQLite) — valgt over PowerSync 2026-07-03 (null løpende kostnad utover Supabase + R2)
 
 ## Hva som er gjort
-- Expo SDK 56 + Expo Router + TypeScript
-- NativeWind v4 (Tailwind v3)
-- Supabase JS SDK installert
-- Auth-routing (ikke innlogget → login, innlogget → tabs)
-- Tab-shell: Hjem, Prosjekter, Ordre, Lager, Meg
-- Innloggingsside (mørk design)
-- `lib/supabase.ts` klar, venter på env-variabler
-- Plan dokumentert i `docs/NEW_APP_PLAN.md`
-- Datamodell i `docs/NEW_APP_DATAMODEL.md`
 
-## Neste steg
-1. Bruker oppretter nytt Supabase-prosjekt (eu-central-1)
-2. Lim inn URL + anon key i `.env.local`
-3. Skrive alle 14 SQL-migrasjoner
-4. Sette opp RLS per tabell
-5. Sette opp Storage buckets
-6. Koble PowerSync
+### Infrastruktur
+- `lib/supabase.ts` + env
+- Offline: `lib/db/index.ts`, `schema.ts`, `migrations.ts`, modeller i `lib/db/models/`
+- Synk: `lib/db/sync.ts` — `watermelon_pull` / `watermelon_push`, trigges ved innlogging / forgrunn / nettverksretur (ikke timer)
+- `lib/drawings-storage.ts` — tegninger på R2
 
-## Migrasjoner som skal skrives
-```
-001_companies.sql
-002_profiles.sql          + trigger auto-opprett ved signup
-003_company_categories.sql
-004_customers.sql
-005_projects.sql
-006_drawings.sql
-007_orders.sql
-008_warehouses.sql
-009_timeforing.sql
-010_hr.sql
-011_hms.sql
-012_bygg_arkiv.sql
-013_kommunikasjon.sql
-014_fakturering.sql
-```
+### App-skall
+- Auth-routing: ikke innlogget → `/(auth)/login`, innlogget → `/(app)` tabs
+- Tabs: Hjem, Prosjekter, Ordre, Lager, Meg (+ handlekurv)
 
-## Viktige beslutninger tatt
-- **Stack:** Expo + Supabase + NativeWind + PowerSync (offline-først) + Cloudflare R2
-- **Ingen Capacitor** — Expo Modules for native plugins
-- **Offline-først** — PowerSync synker SQLite på enhet mot Supabase
-- **LiDAR:** iOS Pro only (iPhone 12 Pro+), rom-for-rom, ikke hele hus
-- **Bil-som-lager** — hver bil er et lager, assignes mellom montører
-- **Teltonika QR-onboarding** — plugg inn → skann QR → ferdig koblet
-- **Timeforslag** — aldri automatisk, alltid godkjenn/avslå ved slutten av dagen
-- **Soft delete** på alt — aldri DELETE, bruk deleted_at
-- **Immutable dokumenter** — ny versjon alltid, aldri overskriv
-- **RLS per company_id** — firma A ser aldri firma B sine data
+### Domener i `app/(app)/`
+- **Prosjekter:** liste, detalj, medlemmer, rom (progress per fag), tegninger (opprett/vis/markup)
+- **Ordre:** liste, detalj, ny, material, skjema, skann (`order-scan`)
+- **Lager:** liste, detalj, bevegelse, ny lokasjon, uttak, handlekurv
+- **Skjema:** maler/revisjoner/utfylling (`app/(app)/skjema/`, `lib/forms`, form-fields-editor)
+
+### Docs
+- `docs/DESIGN.md` — bindende UI-regler
+- `docs/NEW_APP_PLAN.md` / `docs/NEW_APP_DATAMODEL.md` (hvis til stede)
+- `CLAUDE.md` — agentregler
+
+## Neste steg (prioritert)
+1. Verifiser at alle WatermelonDB-tabeller (drawing-loop, drawing-markup, form-*, order-scan, tasks, …) har matching kolonner + RLS i Supabase — skriv migrasjon der noe mangler
+2. RLS for nyeste tabeller (skjema, skann, tasks) hvis ikke dekket av security-hygiene-migrasjonen
+3. Verifiser R2 / signerte URL-er for tegninger (`lib/drawings-storage.ts`)
+4. Kjør/migrasjoner mot staging/prod etter behov
+5. Senere domener (ikke startet): timeføring, HR, HMS, bygg-arkiv, kommunikasjon, fakturering
+
+## Viktige beslutninger
+- Offline-først: UI leser/skriver **kun** WatermelonDB; synk er usynlig
+- Soft delete overalt (`deleted_at`) — aldri hard `DELETE`
+- Immutable dokumenter — ny versjon, aldri overwrite
+- RLS per `company_id`
+- LiDAR / 3D as-built: iOS Pro only; retning er teksturert mesh + merking (k-rør), ikke kun RoomPlan
+- Bil-som-lager; Teltonika QR-onboarding (planlagt/delvis)
+- Ingen Capacitor — Expo Modules
 
 ## Prosjektlokasjon
-`/Users/tormodholand/Documents/AmpexRevamp`
+`/Users/tormodholand/Documents/AmpexRevamp` (lokal) · GitHub: `stocktormod-design/AmpexRevamped`

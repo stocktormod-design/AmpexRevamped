@@ -3,9 +3,10 @@ import { View, Text, FlatList, ScrollView } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { Plus, ChevronRight } from 'lucide-react-native'
+import { Plus, ChevronRight, Inbox } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { Chip } from '../../../components/ui'
+import { Chip, GlassCard, AmbientBackdrop } from '../../../components/ui'
+import { MicButton } from '../../../components/mic-button'
 import { database } from '../../../lib/db'
 import { Order, orderStatuses, orderStatusLabel, type OrderStatus } from '../../../lib/db/models/order'
 import { formatTime } from '../../../lib/format'
@@ -41,16 +42,16 @@ function OrderRow({ order, first, last }: { order: Order; first: boolean; last: 
     <Pressable
       onPress={() => router.push(`/(app)/ordre/${order.id}`)}
       style={{
-        backgroundColor: colors.bg,
+        backgroundColor: colors.cardGlassStrong,
         marginHorizontal: spacing.screen,
         paddingHorizontal: spacing.lg,
         paddingVertical: spacing.md + 2,
         flexDirection: 'row',
         alignItems: 'center',
-        borderTopLeftRadius: first ? radius.lg : 0,
-        borderTopRightRadius: first ? radius.lg : 0,
-        borderBottomLeftRadius: last ? radius.lg : 0,
-        borderBottomRightRadius: last ? radius.lg : 0,
+        borderTopLeftRadius: first ? radius.hero : 0,
+        borderTopRightRadius: first ? radius.hero : 0,
+        borderBottomLeftRadius: last ? radius.hero : 0,
+        borderBottomRightRadius: last ? radius.hero : 0,
       }}
     >
       <View style={{ flex: 1, marginRight: spacing.md }}>
@@ -78,7 +79,8 @@ export default function OrdreScreen() {
   const orders = useOrders(filter)
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.groupedBg }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <AmbientBackdrop height={340} />
       <FlatList
         data={orders}
         keyExtractor={o => o.id}
@@ -94,18 +96,20 @@ export default function OrdreScreen() {
               paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
             }}>
               <Text style={t.largeTitle}>Ordre</Text>
-              <Pressable
-                haptic="medium"
-                pressScale={0.92}
-                onPress={() => router.push('/(app)/ordre/ny')}
-                style={{
-                  width: 36, height: 36, borderRadius: radius.pill,
-                  backgroundColor: colors.cta, alignItems: 'center', justifyContent: 'center',
-                  marginBottom: spacing.xs,
-                }}
-              >
-                <Plus size={sizes.icon} color={colors.ctaLabel} strokeWidth={2.2} />
-              </Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
+                <MicButton />
+                <Pressable
+                  haptic="medium"
+                  pressScale={0.92}
+                  onPress={() => router.push('/(app)/ordre/ny')}
+                  style={{
+                    width: 36, height: 36, borderRadius: radius.pill,
+                    backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Plus size={sizes.icon} color={colors.brand} strokeWidth={2.2} />
+                </Pressable>
+              </View>
             </View>
             <ScrollView
               horizontal
@@ -120,7 +124,7 @@ export default function OrdreScreen() {
           </>
         }
         ItemSeparatorComponent={() => (
-          <View style={{ backgroundColor: colors.bg, marginHorizontal: spacing.screen }}>
+          <View style={{ backgroundColor: colors.cardGlassStrong, marginHorizontal: spacing.screen }}>
             <View style={{ height: 0.5, backgroundColor: colors.separator, marginLeft: spacing.lg }} />
           </View>
         )}
@@ -128,13 +132,18 @@ export default function OrdreScreen() {
           <OrderRow order={item} first={index === 0} last={index === orders.length - 1} />
         )}
         ListEmptyComponent={
-          <View style={{
-            backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen,
-            alignItems: 'center', paddingVertical: spacing.xxl,
-          }}>
-            <Text style={t.headline}>Ingen ordre her</Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs }]}>Prøv et annet filter, eller opprett en ny.</Text>
-          </View>
+          <GlassCard>
+            <View style={{ alignItems: 'center', paddingVertical: spacing.md }}>
+              <View style={{
+                width: sizes.iconChip + 8, height: sizes.iconChip + 8, borderRadius: radius.pill,
+                backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Inbox size={sizes.iconLg} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
+              </View>
+              <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen ordre her</Text>
+              <Text style={[t.footnote, { marginTop: spacing.xs }]}>Prøv et annet filter, eller opprett en ny.</Text>
+            </View>
+          </GlassCard>
         }
       />
     </View>
