@@ -1,5 +1,5 @@
 import { Model } from '@nozbe/watermelondb'
-import { text, date, readonly } from '@nozbe/watermelondb/decorators'
+import { text, field, date, readonly } from '@nozbe/watermelondb/decorators'
 
 /** Person på et prosjekt. user_name er snapshot så navn vises offline. */
 export class ProjectMember extends Model {
@@ -9,6 +9,7 @@ export class ProjectMember extends Model {
   @text('user_id') userId: string
   @text('user_name') userName: string
   @text('role') role: string
+  @field('is_scan_responsible') isScanResponsible: boolean | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 }

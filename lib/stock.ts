@@ -15,7 +15,7 @@ export function useLocationStock(locationId: string): StockLine[] {
   useEffect(() => {
     if (!locationId) return
     const movements$ = database.get<StockMovement>('stock_movements')
-      .query(Q.where('location_id', locationId)).observe()
+      .query(Q.where('location_id', locationId)).observeWithColumns(['quantity'])
     const products$ = database.get<Product>('products').query().observe()
     const sub = combineLatest([movements$, products$]).subscribe(([movements, products]) => {
       const byProduct = new Map<string, number>()
@@ -38,7 +38,7 @@ export function useLocationStock(locationId: string): StockLine[] {
 export function useLocationCounts(): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({})
   useEffect(() => {
-    const sub = database.get<StockMovement>('stock_movements').query().observe().subscribe(movements => {
+    const sub = database.get<StockMovement>('stock_movements').query().observeWithColumns(['quantity']).subscribe(movements => {
       // location -> product -> sum
       const perLoc = new Map<string, Map<string, number>>()
       for (const m of movements) {

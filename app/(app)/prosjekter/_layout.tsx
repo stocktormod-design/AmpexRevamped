@@ -12,6 +12,7 @@ export default function ProsjekterLayout() {
       <Stack.Screen name="rom-ny" options={{ presentation: 'modal' }} />
       <Stack.Screen name="rom" />
       <Stack.Screen name="tegning" />
+      <Stack.Screen name="tegning-edit" options={{ animation: 'fade' }} />
     </Stack>
   )
 }

@@ -18,6 +18,12 @@ export const sizes = tokens.sizes
 // iOS HIG type scale (size/lineHeight/weight/tracking).
 // Use these instead of ad-hoc fontSize — consistency IS the Apple feel.
 export const type = {
+  // Ampex display-signatur: skjermtitler og store tall. Tyngre og strammere enn
+  // HIG-largeTitle — det som skiller «verktøy laget med omhu» fra Innstillinger.
+  display: { fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -1.0, color: colors.label } satisfies TextStyle,
+  // Eyebrow: liten caps-linje over titler/hero-kort (dato, status·tid). Bred tracking
+  // gir teknisk «måleinstrument»-rytme. Brukes med textTransform: 'uppercase'.
+  eyebrow: { fontSize: 12, lineHeight: 16, fontWeight: '600', letterSpacing: 1.1, color: colors.secondaryLabel } satisfies TextStyle,
   largeTitle: { fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -0.5, color: colors.label } satisfies TextStyle,
   title1: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.4, color: colors.label } satisfies TextStyle,
   title2: { fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.3, color: colors.label } satisfies TextStyle,
@@ -40,6 +46,15 @@ export const shadows = {
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
+  } satisfies ViewStyle,
+  // Elements floating OVER a tab's content (not inline in a scroll view) — cart bar/sheet.
+  // Needs to read as clearly lifted off the page, not just gently inset.
+  floating: {
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
   } satisfies ViewStyle,
 } as const
 

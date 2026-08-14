@@ -3,8 +3,10 @@ import { text, date, readonly } from '@nozbe/watermelondb/decorators'
 import { disciplines, type Discipline } from './drawing'
 
 export type RoomProgress = Partial<Record<Discipline, number>>
+/** Firkant på tegningen i normaliserte side-koordinater (0..1). */
+export type RoomShape = { x: number; y: number; w: number; h: number }
 
-/** Rom i et prosjekt. Framdrift per fagfelt (progress JSON) + valgfri LiDAR-skann. */
+/** Rom i et prosjekt: en firkant tegnet over rommet på en tegning. Framdrift per fagfelt + valgfri LiDAR-skann. */
 export class Room extends Model {
   static table = 'rooms'
 
@@ -13,12 +15,19 @@ export class Room extends Model {
   @text('name') name: string
   @text('progress') progress: string | null
   @text('scan_path') scanPath: string | null
+  @text('shape') shape: string | null
+  @text('drawing_id') drawingId: string | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 
   get progressMap(): RoomProgress {
     if (!this.progress) return {}
     try { return JSON.parse(this.progress) as RoomProgress } catch { return {} }
+  }
+
+  get shapeRect(): RoomShape | null {
+    if (!this.shape) return null
+    try { return JSON.parse(this.shape) as RoomShape } catch { return null }
   }
 }
 

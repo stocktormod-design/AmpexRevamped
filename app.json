@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "no.ampex.app"
+      "bundleIdentifier": "no.ampex.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Ampex bruker kameraet og LiDAR til å skanne rom i 3D."
+      }
     },
     "android": {
       "package": "no.ampex.app",
@@ -19,17 +22,68 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/with-no-push-entitlement.js",
       "expo-router",
       "expo-status-bar",
-      "@morrowdigital/watermelondb-expo-plugin",
-      "@react-native-community/datetimepicker"
+      [
+        "@morrowdigital/watermelondb-expo-plugin",
+        {
+          "disableJsi": true
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Ampex bruker mikrofonen til stemmestyrt utfylling av skjema og talekommandoer.",
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Ampex bruker bevegelsessensoren til å oppdage når du rister telefonen for å starte AI-assistenten."
+        }
+      ],
+      [
+        "react-native-audio-api",
+        {
+          "iosBackgroundMode": false,
+          "androidForegroundService": false,
+          "androidPermissions": [],
+          "disableFFmpeg": true
+        }
+      ],
+      [
+        "expo-widgets",
+        {
+          "widgets": [
+            {
+              "name": "VoiceAssistantActivity",
+              "displayName": "Ampex AI-assistent",
+              "description": "Viser status for stemmestyrt skjemautfylling og talekommandoer.",
+              "supportedFamilies": [
+                "accessoryCircular",
+                "accessoryRectangular",
+                "accessoryInline"
+              ],
+              "contentMarginsDisabled": false
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

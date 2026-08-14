@@ -7,9 +7,13 @@ import { FormTemplate, JA_NEI_IA } from './types'
  * (public/ordre-docs/), men punktene må kvalitetssikres av faglig ansvarlig
  * før dette brukes som reell dokumentasjon. reviewNote vises i UI til
  * malen er godkjent — fjernes ved faglig QA.
+ *
+ * Ingen felt er markert `required` ennå — det er en egen compliance-gjennomgang
+ * (hvilke punkter forskriften faktisk krever), ikke noe som skal gjettes her.
+ * Til den er gjort spør AI-utfylling (gap-check) aldri om manglende felt.
  */
 
-const REVIEW = 'Ampex-mal (utkast) — faglig ansvarlig i firmaet må vurdere om malen passer arbeidet.'
+const REVIEW = 'Ampex-mal (utkast). Faglig ansvarlig i firmaet må vurdere om malen passer arbeidet.'
 
 export const risikovurdering: FormTemplate = {
   id: 'ampex.risikovurdering',
@@ -53,7 +57,7 @@ export const samsvarserklaering: FormTemplate = {
   id: 'ampex.samsvar',
   version: 1,
   name: 'Samsvarserklæring',
-  source: 'fel § 12 — erklæring om at anlegget er utført iht. forskrift',
+  source: 'fel § 12, erklæring om at anlegget er utført iht. forskrift',
   reviewNote: REVIEW,
   sections: [
     {
@@ -146,7 +150,7 @@ export const utstyrsdokumentasjon: FormTemplate = {
   id: 'ampex.utstyr_fel36',
   version: 1,
   name: 'Utstyrsdokumentasjon',
-  source: 'fel § 36 — dokumentasjon av installert utstyr (FDV)',
+  source: 'fel § 36, dokumentasjon av installert utstyr (FDV)',
   reviewNote: REVIEW,
   sections: [
     {
