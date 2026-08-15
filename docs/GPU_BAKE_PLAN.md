@@ -81,9 +81,8 @@ Tre nivåer, i stigende kostnad:
 1. **Opptaksdisiplin (gratis).** Dekk blindsoner i det *samme* draget i stedet for
    å gå tilbake. Nye pass koster keyframe-plasser; ett gjennomtenkt drag gjør det
    ikke.
-2. **Høyere budsjetter på enheten (billig).** `maxKF` opp på 8 GB-modeller, og
-   ikke-rigid warp i `MeshPoseRefineV2`. Hjelper hvert eneste skann, uavhengig av
-   pool.
+2. **Høyere budsjetter og skarpere porter på enheten (billig).** Se eget avsnitt
+   under — dette er der iPhone 13 Pro faktisk har å gå på.
 3. **Pool (den ekte fiksen).** Alle keyframes i stedet for ~100, stor atlas, full
    ikke-rigid refine, og — det eneste som mangler helt i dag — **global bundle
    adjustment med loop closure**. Det er den som gjør at et andre pass legger seg
@@ -102,6 +101,73 @@ regnekraft.
 FIXTURES, ikke knotter». Samme `framesDir` gjennom telefon-bake og worker-bake,
 sammenlign `filledFraction` og fotometrisk residual. Det er også
 akseptansetesten for fase 3.
+
+## På enheten alene (iPhone 13 Pro) — hva er faktisk mulig?
+
+Kort svar: **ja, det er reell headroom igjen**, og dataene finnes allerede. Fire
+konkrete grep, ingen av dem ny algoritme.
+
+### Utgangspunktet: gjenbesøk er slått av med vilje
+
+`doneCells` markerer en celle FERDIG ved **3 distinkte ståsteder**,
+okklusjonsbekreftet. Settet vokser monotont (`formUnion`), og
+`maybeCaptureKeyframe` nekter nye keyframes over ferdig flate — «one scan is
+best». Gjenbesøk gir altså ikke lappeteppe; det gir *ingenting*. Grå felt som
+står igjen er enten hull uten geometri, eller celler som ble stemplet ferdig på
+dårlig grunnlag.
+
+Det er den siste kategorien som er verdt å angripe.
+
+### 1. Porten teller ståsteder, men veier ikke kvalitet
+
+Tre streifende, fjerne eller uskarpe blikk tilfredsstiller porten like godt som
+tre gode. Baken bruker allerede et kvalitetsmål (`scoreOf`: cos × 1/d² ×
+skarphet, med okklusjons- og dybdekant-vakt) — **porten bør bruke det samme**. En
+celle er ferdig først når den har tre blikk som faktisk ville *vunnet* i baken.
+
+Dette er trolig den viktigste enkeltendringen: den fjerner «grønt, men grått».
+
+### 2. Celler låst før AE/AWB-låsen bør kunne åpnes igjen
+
+Eksponering låses først etter 1,5 s innmåling, og frames før det merkes
+`preLock` og vektes ned til **0,6** i baken. En celle som ble stemplet ferdig i
+det vinduet er låst på frames baken selv mistror. Forslag: celler som ble ferdige
+før `aeLockTime` nullstilles når låsen slår inn — det er sekunder ut i skannet,
+så kostnaden er nær null.
+
+### 3. Bake-budsjettet er statisk, og 13 Pro havner på feil side
+
+```swift
+let atlasSize = physicalMemory >= 6_000_000_000 ? 8192 : 4096
+let maxKF     = atlasSize >= 8192 ? 96 : 120
+```
+
+iPhone 13 Pro har 6 GB og lander *så vidt* på den aggressive grenen: største
+atlas, **færrest keyframes** (96). Det er den svakeste enheten på den tyngste
+stien.
+
+For dekningsproblemer slår keyframes atlasoppløsning. Et 6144-atlas med 140–160
+keyframes vil nesten sikkert gi bedre resultat på 13 Pro enn 8192 med 96 — særlig
+i store rom, som er nettopp der taket merkes.
+
+Bedre enn en ny konstant: modulen importerer allerede `os_proc_available_memory`
+og viser live RAM-headroom i UI-et. **Gjør `maxKF` adaptiv mot faktisk headroom**
+i stedet for en statisk `physicalMemory`-terskel. Da slipper 13 Pro å arve en
+grense satt for en annen enhet.
+
+### 4. Dataene ligger der allerede
+
+Capture lagrer opptil **600** keyframes; baken beskjærer til ~96. Å heve
+bake-taket er altså ren konfigurasjon mot data som *allerede er på disk* — og
+`rebakeMeshScan(framesDir)` lar deg A/B-teste det på et eksisterende skann uten
+å skanne på nytt. Billigste mulige eksperiment.
+
+### Hva som fortsatt ikke går på telefon
+
+Loop closure og global bundle adjustment. Går du tilbake til et område etter å ha
+gått rundt, har posene drevet, og ingen av grepene over lukker den løkken. Det er
+grensen mellom «tydelig bedre på 13 Pro» og «så godt som det kan bli» — og det er
+den grensen poolen faktisk flytter.
 
 ## Arkitektur
 
