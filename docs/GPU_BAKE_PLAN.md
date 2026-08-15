@@ -108,9 +108,39 @@ UI leser og skriver **kun** WatermelonDB. Etter skann:
 2. Skriv `ScanJob`-rad lokalt → eksisterende `watermelon_push` tar den videre.
 3. Statuslinje leser lokal rad; `watermelon_pull` bringer status tilbake. Ingen
    polling-løkke og ingen synk-knapp (regel 2 + 8).
-4. **Fallback:** ingen node online og policy tillater det → bruk dagens
-   `rebakeMeshScan(framesDir)` på enheten. Skanning skal aldri blokkere på at en
-   PC er våken.
+4. **Bakested velges av brukeren** — se under. Skanning skal aldri blokkere på at
+   en PC er våken.
+
+## Valg av bakested: på enheten eller i pool
+
+Dette er et brukervalg, ikke bare en automatisk fallback.
+
+|  | På enheten | Pool |
+|--|-----------|------|
+| Resultat | med en gang | i kø, avhenger av ledig node |
+| Nett | virker offline | krever upload (flere hundre MB) |
+| Batteri/termikk | tungt på telefonen | ingenting |
+| Kvalitet ved nye synsvinkler | grå felt, flekkvis | global bake, hele poenget |
+
+**Valget er ikke enten/eller.** Siden `framesDir` uansett lastes opp, kan et skann
+som ble baket på enheten sendes til pool *etterpå* — fra skann-detaljvisningen —
+og komme tilbake som en ny revisjon. Det gjør valget til «nå kontra også senere»
+i stedet for et veiskille, og fjerner det meste av presset fra beslutningen.
+
+Tre nivåer:
+
+1. **Firmapolicy** (`companies.bake_pool_policy`) bestemmer hva som er *tillatt*.
+2. **Firmastandard** — hva som er forhåndsvalgt.
+3. **Per skann** — montøren kan overstyre.
+
+Foreslått standard, som følger av selve problemet: **første skann bakes på
+enheten** (rask tilbakemelding, montøren står i rommet og vil se om dekningen er
+god nok), **re-skann og påfylling av synsvinkler går til pool** — det er nettopp
+der on-device-baken ryker. Ikke spør på hvert eneste skann; det blir mas.
+
+Pool-valget må gråes ut, med begrunnelse, når det ikke er mulig: ingen dekning,
+ingen node online, eller policy `firm_only` uten innmeldte PC-er. Offline-først
+(regel 2) betyr at en montør i en kjeller alltid har en vei videre.
 
 **Android er view-only.** Skanning forblir iOS Pro; Android-porten er vieweren.
 Det betyr at R2-upload ikke bare er en forutsetning for GPU-bake — det er
@@ -182,10 +212,15 @@ lander, ikke før.
 
 1. **Rutingstandard** — antatt `firm_then_ampex`. Alternativer: nivåbasert
    (gratis = egne PC-er, betalt = vår pool) eller rent preferansestyrt.
-2. **Frame-oppbevaring** — antatt: slett frames etter vellykket og bekreftet bake,
-   behold GLB. Det gjør en senere re-bake avhengig av nytt skann. R2 har null
-   egress, men lagrede bytes koster fortsatt, og et tett skann er lett flere
-   hundre MB.
+2. **Frame-oppbevaring** — henger sammen med bakestedvalget over, og den
+   opprinnelige antakelsen holder ikke. «Slett frames etter vellykket bake»
+   ville drept muligheten til å sende et on-device-baket skann til pool i
+   etterkant — altså nettopp oppgraderingsveien som gjør valget ufarlig.
+
+   Revidert forslag: **behold frames til en pool-bake har skjedd**, deretter
+   slett dem (GLB-en beholdes alltid). Skann som aldri sendes til pool trenger en
+   tidsgrense uansett — 30 eller 90 dager er kandidater. R2 har null egress, men
+   lagrede bytes koster fortsatt, og et tett skann er lett flere hundre MB.
 
 ## Faser
 
