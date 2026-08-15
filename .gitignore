@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Worker (GPU-bake)
+worker/.venv/
+worker/**/__pycache__/
+worker/fixture/
+*.glb
