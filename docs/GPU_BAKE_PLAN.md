@@ -60,6 +60,49 @@ og ikke-rigid warp), men taket er RAM og varme. En PC har ingen av delene.
 nerfstudio-datasett ved siden av GLB-en. `framesDir` er altså allerede en
 standard, verktøy-vennlig pakke — worker-en trenger ingen nytt eksportformat.
 
+## Kan vi få virkelig gode skann med mange synsvinkler?
+
+Ja — og arkitekturen er allerede bygget for det, uten at det var planlagt som
+dette.
+
+**Capture er en ren opptaker.** V2 lagrer RGB + dybde + poser, og *hele*
+rekonstruksjonen er en repeterbar batch over `framesDir`: pose-refine → TSDF-
+geometri → forenkling → xatlas → vinnervalg → ICM → søm-nivellering → GLB.
+`rebakeMeshScan` beviser det allerede i dag.
+
+Konsekvensen er avgjørende: **geometrien ligger inne i batchen.** Når poser
+korrigeres, re-fuseres TSDF-en med de nye posene. Worker-en re-teksturerer altså
+ikke bare — den bygger geometrien på nytt. Drift-fortykket geometri blir *rettet*,
+ikke malt over. Hadde geometrien vært låst ved capture, ville taket stått fast
+uansett hvor mye GPU vi kastet på teksturen.
+
+Tre nivåer, i stigende kostnad:
+
+1. **Opptaksdisiplin (gratis).** Dekk blindsoner i det *samme* draget i stedet for
+   å gå tilbake. Nye pass koster keyframe-plasser; ett gjennomtenkt drag gjør det
+   ikke.
+2. **Høyere budsjetter på enheten (billig).** `maxKF` opp på 8 GB-modeller, og
+   ikke-rigid warp i `MeshPoseRefineV2`. Hjelper hvert eneste skann, uavhengig av
+   pool.
+3. **Pool (den ekte fiksen).** Alle keyframes i stedet for ~100, stor atlas, full
+   ikke-rigid refine, og — det eneste som mangler helt i dag — **global bundle
+   adjustment med loop closure**. Det er den som gjør at et andre pass legger seg
+   *oppå* det første i stedet for ved siden av.
+
+Loop closure er verdt å merke seg som det reelle hullet: `MeshPoseRefineV2`
+justerer hver pose mot en proxy, men lukker ikke løkker. Uten det driver pass to
+fra pass én uansett hvor mange keyframes vi har råd til.
+
+**Ærlig tak.** Med LiDAR-dybde (~5 m rekkevidde, cm-presisjon), iPhone-RGB og
+global optimalisering havner vi i samme klasse som Scaniverse/Polycam. Det som
+fortsatt setter grensen er fysikk: rekkevidde, bevegelsesuskarphet og lys — ikke
+regnekraft.
+
+**Mål det på fixtures.** Koden har allerede metodikken: «kvalitet itereres på
+FIXTURES, ikke knotter». Samme `framesDir` gjennom telefon-bake og worker-bake,
+sammenlign `filledFraction` og fotometrisk residual. Det er også
+akseptansetesten for fase 3.
+
 ## Arkitektur
 
 Supabase = kø og koordinering. R2 = blob-lager. All GPU-regning skjer på maskiner
