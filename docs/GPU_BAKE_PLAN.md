@@ -24,20 +24,37 @@ saksbehandlere og montører — en PC i poolen får egen tabell og egen auth-vei
 Dagens pipeline (`modules/ampex-splat/ios/`) baker på telefonen: `TSDFFusion.swift`
 → `MeshPoseRefineV2.swift` → `XatlasUnwrap.swift` → `MeshBakeV2.swift`.
 
-Ett jevnt drag over rommet ser bra ut. Går du tilbake for å dekke en blindsone
-kollapser det, av tre grunner:
+**Algoritmene er ikke problemet.** V2-baken er allerede nær state of the art:
 
-1. **Posedrift** — andre pass treffer ikke samme TSDF-voksler, så geometrien blir
-   tykk i stedet for skarp.
-2. **Kjempende bilder** — to keyframes vil eie samme texel med ulik eksponering og
-   hvitbalanse. Grådig best-view velger én, og du får flekkvis tekstur.
-3. **Grå felt** — texels der ingen view vinner sikkert. Dette *måles allerede*:
-   `filledFraction` i `MeshScanResult` er nettopp den andelen.
+- Eksponering og hvitbalanse **låses** ved skannstart
+  (`MeshScanPresenter.swift:226-227`), og frames tatt før låsen vektes ned (`preLock`).
+- Vinnervalget er en **MRF løst med ICM**, ikke grådig best-view — med
+  okklusjonstest, dybdekant-avvisning, utbrent-hvitt-deteksjon og
+  skarphet/bevegelse-vekting.
+- **Multiband blending** over topp-3 kandidater per face utjevner sheen, skygge
+  og eksponering, med per-frame gains.
+- Per-plan fotovalg etter et forenklet **TwinTex**-kriterium.
+- `MeshPoseRefineV2` er en **port av Zhou-Koltun (SIGGRAPH 2014)** —
+  Gauss-Newton-justering av hver keyframes 6-DoF-pose mot en proxy, samme metode
+  som Open3D `pipelines::color_map`. Den kjører *før* vinnervalg, altså mot
+  årsaken til uskarphet.
 
-Fiksen er global, ikke en parameterjustering: bundle-adjust alle keyframes under
-ett, og løs teksturen som et labeling-problem over alle views (MRF view-selection
-+ fargeharmonisering + seam-leveling). Begge deler er minne- og regnetunge på en
-måte `thermalState` (regel 8) aldri vil tillate på telefon.
+**Taket er budsjettene, ikke metoden.** Det som ryker når du legger til
+synsvinkler:
+
+| Budsjett | I dag | Hvorfor det svir |
+|----------|-------|------------------|
+| Keyframes i baken | `maxKF` = **96–120** | Nye synsvinkler får ikke plass — de *konkurrerer* om de samme ~100 plassene. `selectCoverageAware` må kaste frames, så flere pass gir ikke mer data, bare fortynning |
+| Atlas | 8192 (≥6 GB RAM), ellers 4096 | Mer dekning trenger flere texels; oppløsningen står stille |
+| Pose-refine | rigid, 8 iterasjoner, 50k verteks-subsett | Ikke-rigid warp er **bevisst utelatt** i V1 — det er den som tar residual forvrengning |
+| Termikk | `thermalState` (regel 8) | Alt over må holdes lavt nettopp fordi det er en telefon |
+
+Derfor er `filledFraction` fortsatt målet, men diagnosen er en annen: grå felt og
+flekker kommer i hovedsak av at **keyframe-budsjettet er brukt opp**, ikke av at
+vinnervalget er dumt.
+
+Det er verdt å presse budsjettene noe på enheten (særlig `maxKF` på 8 GB-modeller,
+og ikke-rigid warp), men taket er RAM og varme. En PC har ingen av delene.
 
 **Vi har allerede riktig input-format.** `presentMeshScan` eksporterer et
 nerfstudio-datasett ved siden av GLB-en. `framesDir` er altså allerede en
@@ -167,10 +184,21 @@ hvem som baket dem.
 Porting fra Swift:
 
 - `xatlas.cpp` / `xatlas_wrap.cpp` er allerede vendret portabel C++ → flyttes rett over.
-- `TSDFFusion`, `MeshPoseRefineV2`, `MeshBakeV2`, `MeshSimplify` → reimplementeres (CUDA/compute).
+- `TSDFFusion`, `MeshPoseRefineV2`, `MeshBakeV2`, `MeshSimplify` → **port, ikke
+  redesign**. Samme algoritmer, oversatt fra Swift/Metal til C++/CUDA.
 - `CoverageMesh.metal` → HLSL/CUDA-ekvivalent.
 - `ARMeshGlbExporter` → GLB-kontrakten må være **identisk**, slik at
   `AmpexMeshViewerView` viser server-baket og telefon-baket resultat uten å vite forskjell.
+
+Budsjettene er hele poenget med å flytte jobben. Foreslåtte startverdier for
+worker, mot telefonens i parentes:
+
+- Keyframes: **alle** (96–120)
+- Atlas: 16384 eller 32768 (8192)
+- Pose-refine: flere iterasjoner, fullt verteks-sett, **ikke-rigid** warp (8 iter,
+  50k subsett, rigid)
+- Global bundle adjustment med loop closure (finnes ikke)
+- Ingen termisk brems (`thermalState` styrer alt på telefon)
 
 Behold `geometryPath`-verdiene (`fusion-v2` / `anchor-v2` / `anchor-fallback`) og
 `filledFraction` i output — de er allerede regresjonsmålet vårt, og gjør det mulig
@@ -178,27 +206,30 @@ Behold `geometryPath`-verdiene (`fusion-v2` / `anchor-v2` / `anchor-fallback`) o
 
 ## Ikke bygg fra bunnen — dette er løst arbeid
 
-Problemet vårt (kjempende bilder, grå felt, posedrift ved nye synsvinkler) er
-et velkjent forskningsproblem med moden, fritt tilgjengelig kode. Fase 3 bør
-derfor være «orkestrer bevist kode», ikke «reimplementer TSDF + MVS i CUDA».
-Den egne CUDA-jobben krymper til det som faktisk ikke dekkes.
+**Referanseimplementasjonen er vår egen Swift-kode.** V2-pipelinen har allerede
+MRF/ICM-vinnervalg, multiband blending, TwinTex-plan­valg og en Zhou-Koltun-port.
+Worker-en skal derfor ikke være en ny algoritme, men *samme pipeline med
+budsjettene skrudd opp*: alle keyframes i stedet for 96, større atlas, flere
+iterasjoner, ingen termisk brems.
 
-| Prosjekt | Lisens | Hva det løser for oss |
-|----------|--------|----------------------|
-| **mvs-texturing** (nmoehrle) | BSD 3-Clause | *Selve* fiksen: MRF view-selection + global fargejustering + Poisson seam-leveling. Waechter et al., ECCV 2014, «Let There Be Color!» |
-| **Open3D `color_map_optimization`** | MIT | Zhou & Koltun, SIGGRAPH 2014 — laget for *consumer depth cameras*, altså nøyaktig vårt tilfelle. Retter uskarp/ghostet tekstur når farge- og dybdebilder ikke er perfekt justert, og optimerer kameraposene sammen med teksturen |
-| **COLMAP** | BSD | Global bundle adjustment hvis `MeshPoseRefineV2` ikke er nok |
+Det gjør porten enklere enn den ser ut — logikken er skrevet og verifisert, det
+er språket og budsjettene som endres.
+
+Eksterne prosjekter er bare aktuelle for **hullene**:
+
+| Prosjekt | Lisens | Hullet det fyller |
+|----------|--------|-------------------|
+| **COLMAP** | BSD | Global bundle adjustment med loop closure på tvers av pass. `MeshPoseRefineV2` justerer poser mot en proxy, men lukker ikke løkker — det er nettopp det som mangler når du går tilbake til et område |
+| **Open3D `pipelines::color_map`** | MIT | Den **ikke-rigide** varianten, som er bevisst utelatt i Swift-porten |
+| **mvs-texturing** (nmoehrle) | BSD 3-Clause | Stort sett overlappende med det vi har. Mest verdt som referanse og fasit å måle mot |
 | **nerfstudio** | Apache 2.0 | Kjører rett på `framesDir` — vi eksporterer allerede formatet |
 | **xatlas** | MIT | Allerede vendret i repoet |
 
-⚠️ **OpenMVS er AGPL-3.0-only.** `TextureMesh` gjør omtrent samme jobb som
-mvs-texturing, men AGPL er en felle når vi distribuerer en EXE til kunder — det
-utløser krav om kildekode. Hold den unna, og sjekk transitive avhengigheter for
-GPL/AGPL i samme slengen.
-
-Det virkelige arbeidet blir da Windows-bygg og CUDA-oppsett for disse
-komponentene, ikke algoritmene. Lisensene bør bekreftes en siste gang mot
-prosjektenes egne `LICENSE`-filer før vi låser valget.
+⚠️ **OpenMVS er AGPL-3.0-only.** `TextureMesh` gjør omtrent samme jobb, men AGPL
+er en felle når vi distribuerer en EXE til kunder — det utløser krav om
+kildekode. Hold den unna, og sjekk transitive avhengigheter for GPL/AGPL i samme
+slengen. (mvs-texturing BSD-3 og OpenMVS AGPL er verifisert; øvrige lisenser bør
+bekreftes mot prosjektenes egne `LICENSE`-filer før valget låses.)
 
 ## Ruting, rettferdighet og måling
 
