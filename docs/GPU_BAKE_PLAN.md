@@ -176,6 +176,30 @@ Behold `geometryPath`-verdiene (`fusion-v2` / `anchor-v2` / `anchor-fallback`) o
 `filledFraction` i output — de er allerede regresjonsmålet vårt, og gjør det mulig
 å sammenligne server-bake mot `rebakeMeshScan` på samme `framesDir`.
 
+## Ikke bygg fra bunnen — dette er løst arbeid
+
+Problemet vårt (kjempende bilder, grå felt, posedrift ved nye synsvinkler) er
+et velkjent forskningsproblem med moden, fritt tilgjengelig kode. Fase 3 bør
+derfor være «orkestrer bevist kode», ikke «reimplementer TSDF + MVS i CUDA».
+Den egne CUDA-jobben krymper til det som faktisk ikke dekkes.
+
+| Prosjekt | Lisens | Hva det løser for oss |
+|----------|--------|----------------------|
+| **mvs-texturing** (nmoehrle) | BSD 3-Clause | *Selve* fiksen: MRF view-selection + global fargejustering + Poisson seam-leveling. Waechter et al., ECCV 2014, «Let There Be Color!» |
+| **Open3D `color_map_optimization`** | MIT | Zhou & Koltun, SIGGRAPH 2014 — laget for *consumer depth cameras*, altså nøyaktig vårt tilfelle. Retter uskarp/ghostet tekstur når farge- og dybdebilder ikke er perfekt justert, og optimerer kameraposene sammen med teksturen |
+| **COLMAP** | BSD | Global bundle adjustment hvis `MeshPoseRefineV2` ikke er nok |
+| **nerfstudio** | Apache 2.0 | Kjører rett på `framesDir` — vi eksporterer allerede formatet |
+| **xatlas** | MIT | Allerede vendret i repoet |
+
+⚠️ **OpenMVS er AGPL-3.0-only.** `TextureMesh` gjør omtrent samme jobb som
+mvs-texturing, men AGPL er en felle når vi distribuerer en EXE til kunder — det
+utløser krav om kildekode. Hold den unna, og sjekk transitive avhengigheter for
+GPL/AGPL i samme slengen.
+
+Det virkelige arbeidet blir da Windows-bygg og CUDA-oppsett for disse
+komponentene, ikke algoritmene. Lisensene bør bekreftes en siste gang mot
+prosjektenes egne `LICENSE`-filer før vi låser valget.
+
 ## Ruting, rettferdighet og måling
 
 - **Ruting:** firma-pool først, Ampex som overflow (foreslått standard, se under).
