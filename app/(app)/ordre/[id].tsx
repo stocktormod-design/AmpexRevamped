@@ -3,9 +3,9 @@ import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable'
 import {
-  ChevronLeft, Phone, MapPin, FileText, Check, ChevronRight, Plus, Package, Navigation,
-  ScanLine, CalendarClock, ClipboardCheck,
+  ChevronLeft, Phone, MapPin, FileText, Check, ChevronRight, Plus, Package, Navigation, Trash2,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { CreamCard, ListCard, SectionHeader, Chip } from '../../../components/ui'
@@ -81,10 +81,22 @@ async function addScan(orderId: string, kind: ScanKind, index: number) {
   syncQuietly()
 }
 
-/** Én adskilt LiDAR-gruppe (planlegging ELLER dokumentasjon). */
-function ScanGroup({ orderId, kind, scans, Icon, hint }: {
-  orderId: string; kind: ScanKind; scans: OrderScan[]; Icon: typeof ScanLine; hint: string
-}) {
+const scanKinds: ScanKind[] = ['planlegging', 'dokumentasjon']
+
+const scanHints: Record<ScanKind, string> = {
+  planlegging: 'Skann før jobben. Grunnlag for planlegging og mengder.',
+  dokumentasjon: 'Skann as-built. Et ekstra lag dokumentasjon på det utførte.',
+}
+
+/**
+ * LiDAR — ÉN seksjon med segmentvalg, ikke to parallelle.
+ * To fulle grupper (hver med egen overskrift, legg-til-knapp og hint) sto alltid
+ * synlige, også på serviceordrer der ingen av dem brukes — det var den største
+ * enkeltposten av tom skjerm på siden. Antallet står på det uvalgte segmentet, så
+ * innhold på den andre typen aldri blir usynlig.
+ */
+function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }) {
+  const [kind, setKind] = useState<ScanKind>('planlegging')
   const mine = scans.filter(s => s.kind === kind)
   async function removeScan(s: OrderScan) {
     if (s.scanPath) await deleteScanFiles(s.scanPath)
@@ -94,7 +106,20 @@ function ScanGroup({ orderId, kind, scans, Icon, hint }: {
   }
   return (
     <View style={{ marginBottom: spacing.screen }}>
-      <SectionHeader>{`LiDAR · ${scanKindLabel[kind]}`}</SectionHeader>
+      <SectionHeader>LiDAR</SectionHeader>
+      <View style={{ flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.screen, marginBottom: spacing.sm + 2 }}>
+        {scanKinds.map(k => {
+          const n = scans.filter(s => s.kind === k).length
+          return (
+            <Chip
+              key={k}
+              label={n > 0 ? `${scanKindLabel[k]} · ${n}` : scanKindLabel[k]}
+              selected={kind === k}
+              onPress={() => setKind(k)}
+            />
+          )
+        })}
+      </View>
       <View style={{ marginHorizontal: spacing.screen, gap: spacing.sm }}>
         {mine.map(s => (
           <ScanCard
@@ -121,7 +146,9 @@ function ScanGroup({ orderId, kind, scans, Icon, hint }: {
         </Pressable>
       </View>
       {mine.length === 0 && (
-        <Text style={[t.footnote, { marginHorizontal: spacing.screen + spacing.lg, marginTop: spacing.sm }]}>{hint}</Text>
+        <Text style={[t.footnote, { marginHorizontal: spacing.screen + spacing.lg, marginTop: spacing.sm }]}>
+          {scanHints[kind]}
+        </Text>
       )}
     </View>
   )
@@ -131,31 +158,58 @@ function formatQty(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',')
 }
 
+/**
+ * Sveip til venstre avdekker Slett — iOS-standard, trenger ingen bruksanvisning
+ * (den gamle «hold inne»-hinten under lista er derfor borte). Sveipet avdekker
+ * bare knappen; slettingen krever et trykk. To bevisste ledd, fordi hansker og
+ * bevegelse i felt gir utilsiktede sveip — og materiell mater fakturagrunnlaget.
+ * Langtrykk beholdt som fallback for den som ikke får sveipet til å ta.
+ */
 function MaterialRow({ material }: { material: OrderMaterial }) {
   async function remove() {
     await database.write(async () => { await material.markAsDeleted() })
     syncQuietly()
   }
   return (
-    <Pressable
-      onLongPress={remove}
-      haptic="none"
-      style={{
-        flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-        paddingHorizontal: spacing.md, paddingVertical: spacing.md,
-        borderRadius: radius.xl, backgroundColor: colors.fill,
-      }}
+    <ReanimatedSwipeable
+      friction={1.6}
+      rightThreshold={36}
+      overshootRight={false}
+      containerStyle={{ borderRadius: radius.xl, overflow: 'hidden' }}
+      renderRightActions={() => (
+        <Pressable
+          haptic="medium"
+          onPress={remove}
+          style={{
+            width: 84, backgroundColor: colors.danger,
+            alignItems: 'center', justifyContent: 'center', gap: 2,
+          }}
+        >
+          <Trash2 size={18} color="#fff" strokeWidth={2.2} />
+          <Text style={[t.caption, { color: '#fff', fontWeight: '700' }]}>Slett</Text>
+        </Pressable>
+      )}
     >
-      <Text style={[t.body, { width: 52, color: colors.brand, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
-        {`${formatQty(material.quantity)} ${material.unit}`}
-      </Text>
-      <View style={{ flex: 1 }}>
-        <Text style={t.body} numberOfLines={1}>{material.description}</Text>
-        {!!material.elnummer && (
-          <Text style={[t.footnote, { marginTop: 1 }]}>{`EL ${material.elnummer}`}</Text>
-        )}
-      </View>
-    </Pressable>
+      <Pressable
+        onLongPress={remove}
+        haptic="none"
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+          paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+          borderRadius: radius.xl, backgroundColor: colors.fill,
+        }}
+      >
+        <Text style={[t.body, { width: 52, color: colors.brand, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
+          {`${formatQty(material.quantity)} ${material.unit}`}
+        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={t.body} numberOfLines={1}>{material.description}</Text>
+          {!!material.elnummer && (
+            <Text style={[t.footnote, { marginTop: 1 }]}>{`EL ${material.elnummer}`}</Text>
+          )}
+        </View>
+      </Pressable>
+    </ReanimatedSwipeable>
   )
 }
 
@@ -203,11 +257,13 @@ export default function OrderDetailScreen() {
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [order, setOrder] = useState<Order | null>(null)
+  const [statusOpen, setStatusOpen] = useState(false)
   const docs = useOrderDocuments(id ?? '')
   const materials = useOrderMaterials(id ?? '')
   const scans = useOrderScans(id ?? '')
   const docByTemplate = new Map(docs.map(d => [d.templateId, d]))
   const doneCount = AMPEX_TEMPLATES.filter(tpl => docByTemplate.get(tpl.id)?.status === 'fullfort').length
+  const allDocsDone = doneCount === AMPEX_TEMPLATES.length
 
   useEffect(() => {
     if (!id) return
@@ -262,6 +318,11 @@ export default function OrderDetailScreen() {
   if (!order) return <View style={{ flex: 1, backgroundColor: colors.bg }} />
 
   const when = formatDateTime(order.scheduledAt)
+  // Neste steg i den lineære flyten — null når ordren står på siste status.
+  const statusIdx = orderStatuses.indexOf(order.status)
+  const nextStatus = statusIdx >= 0 && statusIdx < orderStatuses.length - 1
+    ? orderStatuses[statusIdx + 1]
+    : null
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -392,11 +453,6 @@ export default function OrderDetailScreen() {
               </Pressable>
             </View>
           </ListCard>
-          {materials.length > 0 && (
-            <Text style={[t.caption, { marginHorizontal: spacing.screen + spacing.lg, marginTop: spacing.sm }]}>
-              Hold inne en linje for å slette.
-            </Text>
-          )}
         </View>
 
         {/* Dokumentasjon — viser kun faktisk påbegynt/fullført skjema, ikke alle malene */}
@@ -407,8 +463,12 @@ export default function OrderDetailScreen() {
                 <FileText size={20} color={colors.label} strokeWidth={sizes.lucideStroke} />
                 <Text style={t.headline}>Dokumentasjon</Text>
               </View>
-              <Text style={[t.caption, { color: colors.secondaryLabel, fontWeight: '600' }]}>
-                {doneCount > 0 ? `${doneCount} fullført` : 'Ingen fullført'}
+              {/* Nevner = alle maler. «2/5» svarer på om jobben kan lukkes; «2 fullført» gjør ikke. */}
+              <Text style={[
+                t.caption,
+                { fontWeight: '700', fontVariant: ['tabular-nums'], color: allDocsDone ? colors.slate : colors.secondaryLabel },
+              ]}>
+                {`${doneCount}/${AMPEX_TEMPLATES.length}`}
               </Text>
             </View>
             <View style={{ paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, gap: spacing.xs }}>
@@ -444,30 +504,54 @@ export default function OrderDetailScreen() {
           </ListCard>
         </View>
 
-        {/* LiDAR — planlegging og dokumentasjon holdt adskilt */}
-        <ScanGroup
-          orderId={order.id} kind="planlegging" scans={scans} Icon={CalendarClock}
-          hint="Skann før jobben. Grunnlag for planlegging og mengder."
-        />
-        <ScanGroup
-          orderId={order.id} kind="dokumentasjon" scans={scans} Icon={ClipboardCheck}
-          hint="Skann as-built. Et ekstra lag dokumentasjon på det utførte."
-        />
+        {/* LiDAR — én seksjon, segmentvalg mellom planlegging og dokumentasjon */}
+        <ScanSection orderId={order.id} scans={scans} />
 
+        {/*
+          Status var seks likeverdige chips — en editor, ikke en handling. Flyten er
+          lineær (mottatt → planlagt → pågår → fakturaklar → fakturert), så neste steg
+          kan utledes og løftes til én tydelig knapp. Resten ligger bak «Endre status»
+          for korrigering; ingen funksjonalitet er fjernet, bare rangert.
+        */}
         <View style={{ marginBottom: spacing.screen }}>
           <SectionHeader>Status</SectionHeader>
-          <View style={{
-            flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
-            marginHorizontal: spacing.screen,
-          }}>
-            {orderStatuses.map(s => (
-              <Chip
-                key={s}
-                label={orderStatusLabel[s]}
-                selected={order.status === s}
-                onPress={() => setStatus(s)}
-              />
-            ))}
+          <View style={{ marginHorizontal: spacing.screen, gap: spacing.sm }}>
+            {nextStatus && (
+              <Pressable
+                haptic="medium"
+                onPress={() => setStatus(nextStatus)}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+                  height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.label,
+                }}
+              >
+                <Check size={18} color="#fff" strokeWidth={2.4} />
+                <Text style={[t.headline, { color: '#fff' }]}>
+                  {`Marker som ${orderStatusLabel[nextStatus].toLowerCase()}`}
+                </Text>
+              </Pressable>
+            )}
+            <Pressable
+              haptic="light"
+              onPress={() => setStatusOpen(o => !o)}
+              style={{ alignItems: 'center', paddingVertical: spacing.sm }}
+            >
+              <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>
+                {statusOpen ? 'Skjul statusvalg' : 'Endre status'}
+              </Text>
+            </Pressable>
+            {statusOpen && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                {orderStatuses.map(s => (
+                  <Chip
+                    key={s}
+                    label={orderStatusLabel[s]}
+                    selected={order.status === s}
+                    onPress={() => setStatus(s)}
+                  />
+                ))}
+              </View>
+            )}
           </View>
         </View>
 

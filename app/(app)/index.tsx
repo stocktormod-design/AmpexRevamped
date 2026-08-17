@@ -25,16 +25,18 @@ import { useLastOpened } from '../../lib/last-opened'
 import { formatTime, formatSince } from '../../lib/format'
 import { colors, spacing, radius, sizes, shadows, type as t } from '../../lib/theme'
 
-const actions: { label: string; sub: string; Icon: LucideIcon; onPress: () => void }[] = [
+// `soon` = funksjonen finnes ikke ennå. Flisa vises dempet og merket «Kommer»
+// i stedet for å se trykkbar ut og ikke svare — en død knapp koster tillit i felt.
+const actions: { label: string; sub: string; Icon: LucideIcon; onPress?: () => void; soon?: true }[] = [
   { label: 'Ny ordre',      sub: 'Service, installasjon', Icon: CirclePlus, onPress: () => router.push('/(app)/ordre/ny') },
   { label: 'Nytt prosjekt', sub: 'Tegninger, rom',        Icon: FolderOpen, onPress: () => router.push('/(app)/prosjekter') },
   { label: 'Lager',         sub: 'Inn/ut, bestilling',    Icon: Package,    onPress: () => router.push('/(app)/lager') },
-  { label: 'Timeføring',    sub: 'Dag, uke, forslag',     Icon: Clock,      onPress: () => {} },
+  { label: 'Timeføring',    sub: 'Dag, uke, forslag',     Icon: Clock,      soon: true },
 ]
 
-const shortcuts: { label: string; Icon: LucideIcon; route?: string }[] = [
-  { label: 'Skann',  Icon: ScanBarcode },
-  { label: 'Avvik',  Icon: TriangleAlert },
+const shortcuts: { label: string; Icon: LucideIcon; route?: string; soon?: true }[] = [
+  { label: 'Skann',  Icon: ScanBarcode,   soon: true },
+  { label: 'Avvik',  Icon: TriangleAlert, soon: true },
   { label: 'Skjema', Icon: ClipboardCheck, route: '/(app)/skjema' },
 ]
 
@@ -186,20 +188,40 @@ function RecentCard({ order, since }: { order: Order; since: Date }) {
 }
 
 function ActionTile({ action, primary }: { action: (typeof actions)[number]; primary?: boolean }) {
+  const soon = action.soon === true
+  const inner = (
+    <>
+      <action.Icon
+        size={sizes.iconLg - 2}
+        color={soon ? colors.tertiaryLabel : primary ? '#fff' : colors.slate}
+        strokeWidth={sizes.lucideStroke}
+      />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs }}>
+        <Text
+          style={[t.headline, { color: soon ? colors.secondaryLabel : primary ? '#fff' : colors.label }]}
+          numberOfLines={1}
+        >
+          {action.label}
+        </Text>
+        {soon && (
+          <View style={{ backgroundColor: colors.fill, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
+            <Text style={[t.caption, { color: colors.tertiaryLabel, fontWeight: '600' }]}>Kommer</Text>
+          </View>
+        )}
+      </View>
+    </>
+  )
+  const style = {
+    flex: 1, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm,
+    backgroundColor: soon ? colors.fill : primary ? colors.brand : colors.slateSoft,
+    borderWidth: primary && !soon ? 0 : 0.5,
+    borderColor: soon ? colors.separator : colors.slateBorder,
+  }
+  // Ingen Pressable når funksjonen ikke finnes — ingen trykkrespons å love.
+  if (soon) return <View style={style}>{inner}</View>
   return (
-    <Pressable
-      pressScale={0.96}
-      onPress={action.onPress}
-      style={{
-        flex: 1, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm,
-        backgroundColor: primary ? colors.brand : colors.slateSoft,
-        borderWidth: primary ? 0 : 0.5, borderColor: colors.slateBorder,
-      }}
-    >
-      <action.Icon size={sizes.iconLg - 2} color={primary ? '#fff' : colors.slate} strokeWidth={sizes.lucideStroke} />
-      <Text style={[t.headline, { color: primary ? '#fff' : colors.label, marginTop: spacing.xs }]} numberOfLines={1}>
-        {action.label}
-      </Text>
+    <Pressable pressScale={0.96} onPress={action.onPress} style={style}>
+      {inner}
     </Pressable>
   )
 }
@@ -317,21 +339,29 @@ export default function HomeScreen() {
         <Animated.View entering={FadeInDown.springify().delay(180)}>
           <SectionHeader>Snarveier</SectionHeader>
           <View style={{ flexDirection: 'row', gap: spacing.sm + 2, marginHorizontal: spacing.screen }}>
-            {shortcuts.map(s => (
-              <Pressable
-                key={s.label}
-                pressScale={0.95}
-                onPress={() => s.route && router.push(s.route as any)}
-                style={{
-                  flex: 1, flexDirection: 'row', gap: spacing.sm,
-                  backgroundColor: colors.fill, borderRadius: radius.lg,
-                  alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md + 2,
-                }}
-              >
-                <s.Icon size={sizes.icon} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-                <Text style={[t.subhead, { fontWeight: '500' }]}>{s.label}</Text>
-              </Pressable>
-            ))}
+            {shortcuts.map(s => {
+              const style = {
+                flex: 1, flexDirection: 'row' as const, gap: spacing.sm,
+                backgroundColor: colors.fill, borderRadius: radius.lg,
+                alignItems: 'center' as const, justifyContent: 'center' as const, paddingVertical: spacing.md + 2,
+                opacity: s.soon ? 0.5 : 1,
+              }
+              const inner = (
+                <>
+                  <s.Icon size={sizes.icon} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+                  <Text style={[t.subhead, { fontWeight: '500', color: s.soon ? colors.secondaryLabel : colors.label }]}>
+                    {s.label}
+                  </Text>
+                </>
+              )
+              // Uten rute er kapselen ren informasjon — ikke en knapp som tier.
+              if (s.soon || !s.route) return <View key={s.label} style={style}>{inner}</View>
+              return (
+                <Pressable key={s.label} pressScale={0.95} onPress={() => router.push(s.route as any)} style={style}>
+                  {inner}
+                </Pressable>
+              )
+            })}
           </View>
         </Animated.View>
       </Animated.ScrollView>
