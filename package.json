@@ -60,7 +60,9 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "verify:pricefile": "tsc tools/verify-pricefile.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/pricefile --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/pricefile/tools/verify-pricefile.js"
   },
   "private": true
 }
