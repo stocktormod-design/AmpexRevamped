@@ -45,3 +45,6 @@ worker/.venv/
 worker/**/__pycache__/
 worker/fixture/
 *.glb
+
+# Kompilert output fra tools/-skript
+.tmp/
