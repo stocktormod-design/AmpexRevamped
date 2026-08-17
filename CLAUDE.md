@@ -21,8 +21,17 @@ app/
   (app)/               Autentiserte ruter (tab-navigasjon)
 lib/
   supabase.ts          Supabase-klient
+  pricefile/           EFO/NELFO 4.0-parser (grossistenes vare-/prisfiler)
 components/            Gjenbrukbare UI-komponenter
 types/                 TypeScript-typer
+tools/                 Node-skript (utenfor tsconfig — ingen @types/node i appen)
+worker/                GPU-bake-worker (Python, kjører på PC-pool)
+```
+
+## Kommandoer
+```
+npm run typecheck         tsc --noEmit
+npm run verify:pricefile  selvtest av EFO/NELFO-parseren mot fixture
 ```
 
 ## Ruting
@@ -42,7 +51,9 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=
 ```
 
 ## Plan
-Se `docs/NEW_APP_PLAN.md` for komplett domene-, stack- og datamodell-plan.
+- `docs/NEW_APP_PLAN.md` — komplett domene-, stack- og datamodell-plan
+- `docs/ROADMAP_2026-08.md` — gjeldende roadmap, åpne beslutninger og hva som er blokkert (les denne først)
+- `docs/GROSSIST_INTEGRASJON.md` — prisfiler, prissammenligning, autobestilling
 
 ## Regler
 1. Minimal diff — løs oppgaven, ikke refaktorer bredt
