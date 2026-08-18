@@ -1,6 +1,6 @@
 # Status — les denne først
 
-Sist oppdatert: 2026-08-18. Holdes oppdatert; ikke lag daterte kopier.
+Sist oppdatert: 2026-08-18 (kveld). Holdes oppdatert; ikke lag daterte kopier.
 
 ## Hvor vi står nå
 
@@ -9,6 +9,13 @@ PR kan opprettes på:
 https://github.com/stocktormod-design/AmpexRevamped/pull/new/grossist-og-pool
 
 ```
+a9a78bd feat(ai): Ampex-merket blir inngangen til assistenten
+8d09b01 feat(theme): tonet sidegrunn og hvite kort — synlige trinn i lyshetsstigen
+d96d397 docs: regnskapsintegrasjon — Fiken/Tripletex/PowerOffice
+819b849 docs: Ampex Desktop-stack besluttet — Tauri v2 + React + TypeScript
+f9b164f docs: Ampex Desktop og SpeedyCraft-import
+410a892 docs: pool-arkitekturen forklart, pluss sikkert/usikkert-inventar
+022cc79 docs: STATUS.md som inngangspunkt for nye økter
 028386c docs: grossistarkitektur, roadmap og hva som er blokkert
 861a8ea feat(db): Ampex public pool, rettferdig kø, versjonssperre, køposisjon
 587290a feat(pricefile): EFO/NELFO 4.0-parser med fixture og selvtest
@@ -31,6 +38,54 @@ først** så diffen fanges av reviewen.
 
 ---
 
+
+## Bygget i kveld — se på device før du bygger videre
+
+To visuelle endringer som ikke er verifisert på ekte skjerm. Begge er isolerte og
+lette å rulle tilbake.
+
+### Tonet sidegrunn, hvite kort
+
+Modellen var omvendt — hvit grunn med kremkort, altså kort *mørkere* enn
+bakgrunnen. Problemet var ikke at temaet var for lyst, men at spennet var for
+lite: bakgrunn, kort, chip og hårlinje lå alle mellom L*89 og L*100.
+
+```
+canvas    #EFEAE1  L*~92   sidegrunn (NY — kun skjermrot)
+bg        #FFFFFF  L*100   kortflate (uendret betydning)
+fill      #E5DDCE  L*~88   chips, innfelte felt
+separator #DED6C7  L*~85
+border    #CDC4B1  L*~79
+```
+
+`bg` beholdt betydningen «kortflate», så ingen av de ~50 kortene er rørt — kun de
+31 skjermrøttene. `groupedBg` er nå ubrukt (kald grå hørte ikke hjemme i en varm
+palett).
+
+**Sjekk på device:** `AmbientBackdrop` på Ordre-lista og Lager er stemt for hvit
+grunn og kan bli grumsete mot sand. Snarveiene på Hjem ligger på canvas med
+`fill`-bakgrunn — bare fire lyshetspoeng, kan bli for subtilt. Blur-elementene
+(CartBar, GlassHeader) er låst til `systemChromeMaterialLight` og kan se kalde ut.
+
+### Merket er assistenten
+
+`MicButton` er slettet. `components/ampex-mark-button.tsx` erstatter den på alle
+fire skjermer, og på Hjem er logoen ikke lenger død dekorasjon.
+
+Ett trykk starter økten — ikke to. Et armert mellomtrinn er samme form som
+lyttelaget som ble bygget og slettet 12. august, og merket sitter øverst til
+høyre der utilsiktede trykk uansett ikke er en reell risiko.
+
+Ringene er **overgangen**, ikke en sperre: to stiplede lyn-ringer slår utover og
+blir til orben som `voice-assistant-overlay` tegner. Hvile er helt stille (regel
+8) — overlayet har den reaktive animasjonen som puster med mikrofonnivået, men
+det lever kun mens økten varer.
+
+**Sjekk på device:** ringene tegnes utenfor knappens grenser — har headeren
+`overflow: hidden` et sted, klippes de. Føles ringene som noe annet enn orben,
+skal `duration` (520 ms) ned, ikke opp. `RING` er 2,6× knappen og er ett tall å
+justere om det dominerer.
+
 ## Hva som trengs fra deg
 
 **Én ekte EFO/NELFO-prisfil.** Dette blokkerer hele grossist-sporet — prisimport,
@@ -47,10 +102,12 @@ npm run verify:pricefile
 
 Avvikslisten forteller umiddelbart hva som er tolket feil.
 
-**En OAuth2-klient hos Fiken** når regnskapsintegrasjonen skal bygges — den er
-inngangsbilletten for å erstatte SpeedyCraft, ikke en utvidelse. Fikens
-spesifikasjon er fritt tilgjengelig og uten portvokter, så den kan startes når
-som helst. Se `docs/REGNSKAPSINTEGRASJON.md`.
+**Søk om Tripletex-produksjonstilgang — helst i dag.** To grunner til at det
+haster mer enn det ser ut: normal godkjenning tar 2–3 uker, og **§2.2.13 i
+utviklervilkårene krever i tillegg skriftlig forhåndssamtykke fordi Ampex er en
+«AI Integration»**. Det er skjønnsmessig og kommer oppå. Beskriv AI-bruken i
+søknaden fra start. Testmiljøet er derimot umiddelbart, så byggingen kan starte
+med en gang. Se `docs/REGNSKAPSINTEGRASJON.md`.
 
 **Én telefon til grossisten** når du vil ha ordretransport: «hvordan sender jeg
 ordre elektronisk?» Svaret avhenger av kundeforholdet og kan ikke googles.
@@ -97,12 +154,22 @@ ordre elektronisk?» Svaret avhenger av kundeforholdet og kan ikke googles.
   kunden ingenting, og har kundens egne priser. Standardavtalen tillater dessuten
   ikke videreformidling til tredjepart.
 - **Ampex public pool skal finnes**, med egen node først og Ampex som fallback.
-- **Aktivering av AI-en er avklart:** to-finger-dobbelttrykk beholdes, `MicButton`
-  beholdes. Rist, back tap, dobbeltbank, løft-til-øret, vekkeord, App Intents og
-  Flic er alle vurdert og forkastet. **Ikke foreslå en tolvte gest.**
+- **Aktivering av AI-en er LUKKET.** To-finger-dobbelttrykk beholdes, og
+  Ampex-merket (`ampex-mark-button.tsx`) er den synlige inngangen på alle
+  skjermer. Rist, back tap, dobbeltbank, løft-til-øret, vekkeord, App Intents,
+  Flic, volumknapp og nærhetssensor er alle vurdert og forkastet med begrunnelse.
+  **Ikke foreslå en tolvte gest.**
 - **AR er den vanskeligste anvendelsen av LiDAR, ikke den viktigste.** De store
   gevinstene — tegning fra skann, måling uten målebånd — krever mindre presisjon
   og treffer større marked.
+- **Ampex Desktop: Tauri v2 + React + TypeScript.** Kontor-PC-en gjør tre jobber
+  i én installer. Ikke Electron (300–500 MB RAM på maskinen som også baker), ikke
+  React Native for Windows (ingen MSSQL-vei).
+- **Regnskap: Tripletex primært, Fiken nummer to.** Tripletex mapper 1:1 mot vårt
+  domene; Fiken mangler order, timesheet og inventory helt.
+- **Fargevalg: tonet grunn med hvite kort, ikke mørkt tema.** Kobber beholdes som
+  eneste identitetsfarge. Flerfargede ikonchips (Dribbble-stil) er avvist —
+  farge skal bety status, ikke pynt.
 - **Rist-lytteren bør slettes** (`useShakeListener()` i `app/_layout.tsx:69`).
   50 Hz akselerometer i forgrunnen for ti aktiveringer om dagen. Ikke gjort ennå;
   kommentaren i `app/assistant.tsx` sier dessuten feilaktig at rist er borte.
@@ -209,9 +276,11 @@ Og den hører sannsynligvis i **Ampex Desktop**, ikke i montørappen — se
 | EFO/NELFO 4.0-parser | 33 påstander i `npm run verify:pricefile`, alle grønne |
 | Fixture i ekte CP1252 | `file` bekrefter ISO-8859, æøå testes |
 | Public pool-migrasjon | Kun lest gjennom — **ikke kjørt** |
-| Fire dokumenter | — |
+| Tonet sidegrunn + hvite kort | `tsc` grønn, **ikke sett på device** |
+| Ampex-merket som AI-inngang | `tsc` grønn, **ikke sett på device** |
+| Seks dokumenter | — |
 
-Fem commits på `grossist-og-pool`, pushet.
+Elleve commits på `grossist-og-pool`, pushet.
 
 ### Sikkert (verifisert mot kilde eller kode)
 
@@ -277,6 +346,12 @@ Fem commits på `grossist-og-pool`, pushet.
 - **Om `ARWorldMap` er nøyaktig nok** til relokalisering i et rom som endrer seg.
   Utestet — en dags eksperiment.
 - **EFObasens faktiske pris.** `XX 000` er redigert bort i standardavtalen.
+- **Tripletex' AI-samtykke (§2.2.13).** Skjønnsmessig, og vi vet ikke hva de
+  faktisk krever eller hvor lang tid det tar. Kan i verste fall bli avslått.
+- **Om §2.2.10 forbyr å sende Tripletex-data til Gemini.** Min lesning er at det
+  gjør det, og at data derfor må holdes ute av modellkonteksten. Ikke bekreftet.
+- **De to visuelle endringene er ikke sett på ekte skjerm.** L*-verdier er regnet,
+  ikke målt, og ringene rundt merket kan bli klippet av `overflow: hidden`.
 - **Ekvivalensmatching på tvers av produsent** (Nexans vs Draka 3G2,5) via ETIM.
   Jeg tror en LLM løser det godt, men det er en hypotese.
 
