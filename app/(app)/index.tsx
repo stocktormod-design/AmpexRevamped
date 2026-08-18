@@ -268,7 +268,7 @@ export default function HomeScreen() {
   }))
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <StatusBar barStyle="dark-content" />
       <Animated.ScrollView
         onScroll={onScroll}

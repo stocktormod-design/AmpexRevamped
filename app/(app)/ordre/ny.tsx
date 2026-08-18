@@ -92,7 +92,7 @@ export default function NyOrdreScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1, backgroundColor: colors.groupedBg }}
+      style={{ flex: 1, backgroundColor: colors.canvas }}
     >
       {/* Modal-header: Avbryt | tittel */}
       <View style={{

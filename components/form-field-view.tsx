@@ -43,7 +43,7 @@ export function FormFieldView({ field, value, onChange, readOnly }: {
       <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
         {rows.map((row, i) => (
           <View key={i} style={{
-            backgroundColor: colors.groupedBg, borderRadius: radius.md,
+            backgroundColor: colors.fill, borderRadius: radius.md,
             padding: spacing.md, marginBottom: spacing.sm,
           }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs }}>

@@ -79,7 +79,7 @@ export default function OrdreScreen() {
   const orders = useOrders(filter)
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <AmbientBackdrop height={340} />
       <FlatList
         data={orders}

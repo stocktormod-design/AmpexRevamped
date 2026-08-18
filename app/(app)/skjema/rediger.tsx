@@ -50,7 +50,7 @@ export default function RedigerSkjema() {
   const canSave = !!note.trim() && !busy
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.groupedBg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.canvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing.lg, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm }}>
         <Pressable hitSlop={8} onPress={() => router.back()}><Text style={[t.body, { color: colors.secondaryLabel }]}>Avbryt</Text></Pressable>
         <View style={{ alignItems: 'center' }}>

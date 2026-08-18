@@ -74,12 +74,12 @@ export default function SkjemaDetail() {
     await addComment(template, body)
   }
 
-  if (!template) return <View style={{ flex: 1, backgroundColor: colors.groupedBg }} />
+  if (!template) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.groupedBg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.canvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Header */}
-      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm, backgroundColor: colors.groupedBg }}>
+      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm, backgroundColor: colors.canvas }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
             style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>

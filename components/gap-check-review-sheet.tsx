@@ -88,7 +88,7 @@ export function GapCheckReviewSheet({ template, baseValues, extraction, onConfir
           {template.sections.map(section => (
             <View key={section.title} style={{ marginBottom: spacing.screen }}>
               <SectionHeader>{section.title}</SectionHeader>
-              <View style={{ backgroundColor: colors.groupedBg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+              <View style={{ backgroundColor: colors.fill, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
                 {section.fields.map((f, i) => (
                   <View key={f.key} style={i < section.fields.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator }}>
                     {origin[f.key]?.origin === 'ai' && <AiSuggestedBadge />}
