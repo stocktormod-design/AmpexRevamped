@@ -55,6 +55,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=
 - `docs/STATUS.md` — hvor vi står nå og hva som er neste steg (LES DENNE FØRST)
 - `docs/ROADMAP_2026-08.md` — full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering
 - `docs/GROSSIST_INTEGRASJON.md` — prisfiler, prissammenligning, autobestilling
+- `docs/DESKTOP_OG_IMPORT.md` — Ampex Desktop, SpeedyCraft-import og merge
 
 ## Regler
 1. Minimal diff — løs oppgaven, ikke refaktorer bredt
