@@ -6,7 +6,7 @@ import { Q } from '@nozbe/watermelondb'
 import { Plus, ChevronRight, Inbox } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { Chip, GlassCard, AmbientBackdrop } from '../../../components/ui'
-import { MicButton } from '../../../components/mic-button'
+import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { database } from '../../../lib/db'
 import { Order, orderStatuses, orderStatusLabel, type OrderStatus } from '../../../lib/db/models/order'
 import { formatTime } from '../../../lib/format'
@@ -97,7 +97,7 @@ export default function OrdreScreen() {
             }}>
               <Text style={t.largeTitle}>Ordre</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
-                <MicButton />
+                <AmpexMarkButton />
                 <Pressable
                   haptic="medium"
                   pressScale={0.92}

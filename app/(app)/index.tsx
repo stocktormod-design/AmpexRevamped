@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native'
 import { Pressable } from '../../components/pressable'
-import { AmpexLogo } from '../../components/ampex-logo'
+import { AmpexMarkButton } from '../../components/ampex-mark-button'
 import { CreamCard, ListCard, SectionHeader } from '../../components/ui'
 import { database } from '../../lib/db'
 import { Order, orderStatusLabel } from '../../lib/db/models/order'
@@ -287,9 +287,10 @@ export default function HomeScreen() {
             <Text style={[t.eyebrow, { textTransform: 'uppercase', marginBottom: spacing.xs }]}>{today}</Text>
             <Animated.Text style={[t.display, titleStyle]}>I dag</Animated.Text>
           </View>
-          {/* Brand-mark — én plassering, App Store-avatar-posisjonen */}
+          {/* Merket ER assistenten — samme knapp som på de andre skjermene.
+              Sto tidligere som ren dekorasjon her. */}
           <View style={{ marginBottom: spacing.xs + 2 }}>
-            <AmpexLogo size={30} />
+            <AmpexMarkButton />
           </View>
         </View>
 
