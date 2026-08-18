@@ -75,7 +75,12 @@ ordre elektronisk?» Svaret avhenger av kundeforholdet og kan ikke googles.
    markeringer som rader med `created_by`/`visibility`/`status` (låser opp mest),
    så pins med koordinat, så revisjoner med overlegg.
 
-5. **CUDA-porten av `bake.py`** når du vil at GPU-en skal bety noe. Tekstur er
+5. **Velg stack for Ampex Desktop** før noe desktop-kode skrives. Kontor-PC-en
+   skal gjøre tre jobber — ordresystem/admin, poolnode og SpeedyCraft-import — og
+   valget bestemmer hvordan de pakkes i én installer. Se
+   `docs/DESKTOP_OG_IMPORT.md`.
+
+6. **CUDA-porten av `bake.py`** når du vil at GPU-en skal bety noe. Tekstur er
    nesten gratis, fusjon er moderat, **refine (Zhou-Koltun) er den vonde** — den
    finnes kun som legacy uten CUDA-vei.
 
@@ -181,8 +186,13 @@ Sammenlignes som `int[]`, fordi «0.9.0» < «0.10.0» må være sant.
 | Fakturering på `pool`-kolonnen | Ingen inntekt fra fallback-poolen |
 | Opplasting av frames til R2 fra telefonen | Jobben har `input_prefix`, men ingen laster opp dit fra appen |
 
-Rekkefølgen som gir mest: **app-siden først** (innmelding + køing + køposisjon),
-for uten den er hele poolen utilgjengelig fra produktet.
+Dette er ikke etterslep — poolen er så vidt begynt på Windows-PC-en, og resten
+er fortsatt planlegging. Men rekkefølgen som gir mest er **klientsiden først**
+(innmelding, køing, køposisjon), for uten den er poolen utilgjengelig fra
+produktet.
+
+Og den hører sannsynligvis i **Ampex Desktop**, ikke i montørappen — se
+`docs/DESKTOP_OG_IMPORT.md`.
 
 ---
 
@@ -225,7 +235,12 @@ Fem commits på `grossist-og-pool`, pushet.
   mot vegger. Fra deres egen HelpCenter-artikkel.
 - **NSDK 4.0 eksponerer VPS2 for Swift**, ikke bare Unity. lightship.dev ble lagt
   ned 28. februar 2026.
-- **SpeedyCraft er MSSQL** (Devinco AS, instans `SPEEDYSQL`). Fra deres support-doc.
+- **SpeedyCraft er MSSQL** (Devinco AS, databasenavn `speedycraft`, instans
+  `SPEEDYSQL`). Fra deres support-doc. Basen står på kundens egen kontor-PC, så
+  importen kan kjøre mot `localhost` — og med Windows integrated auth muligens
+  uten passord i det hele tatt.
+- **`SCImpExpCOM` finnes** — COM-basert integrasjonsobjekt hos Devinco, brukt av
+  bl.a. Visma Contracting. Overfører ordre med materiell, timer og dokumentasjon.
 - **Onninen kjøpte Elektroskandia Norge** fra Rexel, slått sammen fra mars 2023.
 
 ### Usikkert (anslag eller uprøvd)
@@ -246,8 +261,12 @@ Fem commits på `grossist-og-pool`, pushet.
 - **VRAM-anslaget (4–8 GB)** er regnet, ikke målt.
 - **Elektroskandias webservice** for saldo og kundenetto er dokumentert på svensk
   side. Hva som gjelder i Norge etter Onninen-fusjonen vet jeg ikke.
-- **Om SpeedyCraft har en brukbar eksportflate.** De integrerer mot Uni Micro og
-  Dynamics, så noe finnes — men jeg har ikke sett den.
+- **Om `SCImpExpCOM` er brukbar for historisk masseuttrekk.** Den er laget for
+  løpende ERP-synk, og dokumentasjonen ligger bak Devincos partnerportal (403
+  utenfra). Antakelsen er at direkte MSSQL-lesing blir den realistiske veien.
+- **SpeedyCraft-skjemaet er ukjent.** Varierer mellom versjoner, og egendefinerte
+  felt ligger i en XML-struktur (`ObjectDataDefinition`), ikke som kolonner.
+  Krever et oppdagelsessteg mot en ekte base.
 - **Om grossistene tillater prisfila i tredjepartssystem.** Det er formatets
   uttalte formål, og Cordel gjør det åpent, men jeg har ikke lest vilkårene.
 - **Om `ARWorldMap` er nøyaktig nok** til relokalisering i et rom som endrer seg.
@@ -263,5 +282,6 @@ Fem commits på `grossist-og-pool`, pushet.
 | `docs/STATUS.md` | Denne — hvor vi står, hva som er neste |
 | `docs/ROADMAP_2026-08.md` | Full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering |
 | `docs/GROSSIST_INTEGRASJON.md` | Prisfiler, prissammenligning, autobestilling, admin-konsoll |
+| `docs/DESKTOP_OG_IMPORT.md` | Ampex Desktop, SpeedyCraft-import og merge-semantikk |
 | `docs/ON_DEVICE_SCAN_PLAN.md` | Skann-planen (utracket) |
 | `docs/NEW_APP_PLAN.md` | Opprinnelig domene- og datamodell-plan |
