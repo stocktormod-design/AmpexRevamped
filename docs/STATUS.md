@@ -99,6 +99,163 @@ ordre elektronisk?» Svaret avhenger av kundeforholdet og kan ikke googles.
 
 ---
 
+---
+
+## Bake-poolen — Ampex public pool og pool per firma
+
+### Én programvare, to slags noder
+
+`worker/` **er** Pool Exe-en. Det er ikke to produkter. En Ampex-node og en
+kundenode kjører identisk kode; forskjellen er én boolean i databasen.
+
+```
+worker_nodes.is_public = false   →  privat node (kundens egen PC)
+worker_nodes.is_public = true    →  offentlig node (Ampex driver den)
+```
+
+Ampex setter `is_public` på sine egne noder. Kunden kan ikke sette den selv —
+den ligger bak `service_role`, ikke i innmeldingen.
+
+### Hvordan en node kommer inn i poolen
+
+1. Admin i firmaet ber om en innmeldingskode i appen → `create_worker_enrollment()`
+   lager en engangskode med TTL (30 min som standard)
+2. Firmaet laster ned Pool Exe, kjører den på kontor-PC-en, taster koden
+3. `enroll_worker_node()` bytter koden i et **node-token**. Tokenet lagres bare
+   som sha256-hash i basen; klartekst vises én gang
+4. Noden hører nå til det firmaet. Tokenet **er** autentiseringen — exe-en kjører
+   med anon-nøkkel og trenger ingen brukerinnlogging
+
+### Hvordan jobber fordeles
+
+`claim_scan_job()` avgjør alt, og prioriteringen er **emergent** — det finnes
+ingen scheduler, ingen broker, ingen leader election. Bare en `where`-klausul:
+
+| Nodetype | Ser hvilke jobber | Ventetid |
+|----------|-------------------|----------|
+| Privat | Kun `company_id = node.company_id` | Ingen |
+| Offentlig | Alle firmaer med `allow_ampex_pool = true` | Kun jobber eldre enn `public_pool_grace_seconds` (90 s) |
+
+Nådetiden er hele mekanismen: **er firmaets egen node oppe, rekker den alltid
+først.** Er den nede eller opptatt, plukker Ampex-poolen opp jobben etter 90
+sekunder. Ingen av nodene vet om hverandre.
+
+`for update skip locked` gjør at to noder aldri tar samme jobb, så «plugg inn en
+maskin til» virker uten kodeendring.
+
+### Hvorfor det er trygt
+
+**Isolasjonen ligger i SQL, ikke i klienten.** En kunde som dekompilerer eller
+modifiserer exe-en kan ikke claime et annet firmas jobber — tokenet mapper til
+ett `company_id`, og `claim_scan_job` er `security definer`.
+
+**Kunder som ikke vil ha data utenfor huset** setter `allow_ampex_pool = false`.
+Da forlater skannet aldri firmaets egne maskiner. Det er et salgsargument, ikke
+en begrensning.
+
+**Versjonsskjevhet stoppes i claim.** Med kunder som kjører egen exe blir gamle
+versjoner uunngåelig, og gammel bake gir *stille forskjellig resultat* i stedet
+for en feilmelding. `pool_settings.min_worker_version` avviser for gamle noder.
+Sammenlignes som `int[]`, fordi «0.9.0» < «0.10.0» må være sant.
+
+### Hva modellen gir forretningsmessig
+
+- **Kapasitet skalerer med kundemassen.** Hvert firma som plugger inn en PC tar
+  sin egen last. Da forsvinner både kø, båndbredde over internett og strømregning
+  for de kundene.
+- **Ampex-poolen er fallback — og den betalte planen.** Firmaer uten egen maskin
+  får bakingen levert. `scan_jobs.pool` (`'firm'` / `'ampex'`) registrerer hvem
+  som faktisk gjorde jobben, og er dermed faktureringsgrunnlaget.
+- **~10–12 firmaer per node** i burst ved dagens slutt. Fire firmaer er én node
+  med god margin. (Anslag — se usikkerheter.)
+- **Grunnen til node nummer to er redundans, ikke kapasitet.** Dør maskinen,
+  stopper alle kundenes skann samtidig.
+
+### Ikke bygget ennå
+
+| Mangler | Konsekvens |
+|---------|-----------|
+| **All app-side kode** — ingen treff på `worker_node`/`scan_job` i `app/` eller `lib/` | Appen kan ikke lage innmeldingskoder, ikke køe jobber, ikke vise køposisjon. Poolen finnes kun som SQL + Python |
+| Ampex driver ingen offentlig node | `is_public`-veien er uprøvd i praksis |
+| Auto-oppdatering av Pool Exe | Kunder havner på gamle versjoner og blir avvist av versjonssperren uten å forstå hvorfor |
+| Fakturering på `pool`-kolonnen | Ingen inntekt fra fallback-poolen |
+| Opplasting av frames til R2 fra telefonen | Jobben har `input_prefix`, men ingen laster opp dit fra appen |
+
+Rekkefølgen som gir mest: **app-siden først** (innmelding + køing + køposisjon),
+for uten den er hele poolen utilgjengelig fra produktet.
+
+---
+
+## Oppsummering — hva som ble gjort
+
+| Levert | Verifisert hvordan |
+|--------|--------------------|
+| UX-buntene på Hjem og ordredetalj | `tsc --noEmit` grønn |
+| EFO/NELFO 4.0-parser | 33 påstander i `npm run verify:pricefile`, alle grønne |
+| Fixture i ekte CP1252 | `file` bekrefter ISO-8859, æøå testes |
+| Public pool-migrasjon | Kun lest gjennom — **ikke kjørt** |
+| Fire dokumenter | — |
+
+Fem commits på `grossist-og-pool`, pushet.
+
+### Sikkert (verifisert mot kilde eller kode)
+
+- **Formatspesifikasjonen.** Hentet den offisielle PDF-en (E-NVare4.0r4,
+  rev. 2010-11-25) fra NHO Elektro. Semikolonseparert, CP1252/ISO-8859-1, CR+LF,
+  posttyper VH/VL/VX/VA, `V4*`/`P4*`-filnavn. Feltrekkefølge og de implisitte
+  desimalene (`Pris` 2, `Mengde` og `SalgsPakning` 4) er lest rett fra tabellen.
+- **EFObasen-vilkårene.** Trakk ut teksten fra brukeravtalen. Punkt 2 forbyr
+  videreformidling til tredjepart uten særskilt avtale; punkt 3 har prisen
+  redigert til `kr XX 000,-`; punkt 5 krever full sletting ved oppsigelse.
+- **`bake.py` kjører helt på CPU i dag.** `ScalableTSDFVolume` og
+  `run_*_optimizer` er legacy-API uten CUDA-vei. `torch` brukes bare til å
+  rapportere GPU-navn. Din egen kodekommentar sier det samme.
+- **`_texture` er allerede på tensor-API-et** (`project_images_to_albedo`), så den
+  delen av CUDA-porten er nesten gratis.
+- **`claim_scan_job` scoper på `company_id`.** Lest i migrasjonen.
+- **AI-en har ingen materiell- eller lagerverktøy.** Grep over
+  `live-session.ts` — 29 verktøy, ingen av dem rører materiell.
+- **`drawing_markup` er én blob per tegning.** Én `data`-kolonne, ingen forfatter.
+- **`task` har `room_id`, ikke koordinat.**
+- **Web-target bygger ikke.** `app.json` deklarerer den, men `react-native-web`
+  og `react-dom` mangler i `package.json`.
+- **Kun `orders` synker.** `watermelon_pull` i migrasjonen fra 3. juli rører bare
+  den tabellen.
+- **Dalux justerer AR manuelt** — gulvdeteksjon, så flytt modellen med fingrene
+  mot vegger. Fra deres egen HelpCenter-artikkel.
+- **NSDK 4.0 eksponerer VPS2 for Swift**, ikke bare Unity. lightship.dev ble lagt
+  ned 28. februar 2026.
+- **SpeedyCraft er MSSQL** (Devinco AS, instans `SPEEDYSQL`). Fra deres support-doc.
+- **Onninen kjøpte Elektroskandia Norge** fra Rexel, slått sammen fra mars 2023.
+
+### Usikkert (anslag eller uprøvd)
+
+- **Parseren er ikke møtt med en ekte fil.** Fixturen er min egen, skrevet mot
+  spec. Grossister avviker fra spec i praksis — særlig på desimaltegn, feltlengder
+  og hvor mange tomme felt de faktisk skriver. **Dette er den viktigste
+  usikkerheten i alt jeg leverte.**
+- **Baketiden er gjettet.** «5–20 min på CPU» og «1–3 min etter CUDA-port» er
+  anslag, ikke målinger. Kjør `worker/tools/make_fixture.py` +
+  `run_bake.py` og ta tiden.
+- **«10–12 firmaer per node» arver den usikkerheten**, og bygger i tillegg på to
+  antakelser jeg fant på: to timers burst ved dagens slutt, og tre skann per firma
+  per dag. Endre du de tallene, endres konklusjonen.
+- **Migrasjonen er ikke kjørt.** Syntaks og logikk er kun lest. `version_as_ints`,
+  `row_number()`-rettferdigheten og `scan_job_queue_position` kan ha feil jeg ikke
+  ser uten en database.
+- **VRAM-anslaget (4–8 GB)** er regnet, ikke målt.
+- **Elektroskandias webservice** for saldo og kundenetto er dokumentert på svensk
+  side. Hva som gjelder i Norge etter Onninen-fusjonen vet jeg ikke.
+- **Om SpeedyCraft har en brukbar eksportflate.** De integrerer mot Uni Micro og
+  Dynamics, så noe finnes — men jeg har ikke sett den.
+- **Om grossistene tillater prisfila i tredjepartssystem.** Det er formatets
+  uttalte formål, og Cordel gjør det åpent, men jeg har ikke lest vilkårene.
+- **Om `ARWorldMap` er nøyaktig nok** til relokalisering i et rom som endrer seg.
+  Utestet — en dags eksperiment.
+- **EFObasens faktiske pris.** `XX 000` er redigert bort i standardavtalen.
+- **Ekvivalensmatching på tvers av produsent** (Nexans vs Draka 3G2,5) via ETIM.
+  Jeg tror en LLM løser det godt, men det er en hypotese.
+
 ## Dokumentkart
 
 | Fil | Innhold |
