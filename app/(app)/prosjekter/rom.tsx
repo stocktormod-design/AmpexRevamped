@@ -54,12 +54,12 @@ export default function RomDetailScreen() {
     syncQuietly()
   }
 
-  if (!room) return <View style={{ flex: 1, backgroundColor: colors.groupedBg }} />
+  if (!room) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
   const prog = room.progressMap
   const overall = overallProgress(prog)
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.groupedBg }}>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <ScrollView
         contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
         showsVerticalScrollIndicator={false}

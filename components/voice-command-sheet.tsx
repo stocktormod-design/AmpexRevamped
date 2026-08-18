@@ -83,7 +83,7 @@ export function VoiceCommandSheet({ outcome, onConfirm, onClose, onManualLookup 
                 placeholderTextColor={colors.tertiaryLabel}
                 autoFocus
                 style={[t.body, {
-                  flex: 1, backgroundColor: colors.groupedBg, borderRadius: radius.lg,
+                  flex: 1, backgroundColor: colors.canvas, borderRadius: radius.lg,
                   paddingHorizontal: spacing.lg, height: sizes.ctaHeight,
                 }]}
               />

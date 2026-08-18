@@ -55,7 +55,7 @@ export default function MedlemScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.groupedBg }}>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screen, paddingVertical: spacing.lg }}>
         <Pressable onPress={() => router.dismiss()} hitSlop={12}>
           <Text style={[t.body, { color: colors.secondaryLabel }]}>Ferdig</Text>

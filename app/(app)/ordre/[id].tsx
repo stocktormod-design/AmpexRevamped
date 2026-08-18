@@ -315,7 +315,7 @@ export default function OrderDetailScreen() {
     )
   }
 
-  if (!order) return <View style={{ flex: 1, backgroundColor: colors.bg }} />
+  if (!order) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
 
   const when = formatDateTime(order.scheduledAt)
   // Neste steg i den lineære flyten — null når ordren står på siste status.
@@ -325,7 +325,7 @@ export default function OrderDetailScreen() {
     : null
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.sm,

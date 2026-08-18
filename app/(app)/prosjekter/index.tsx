@@ -25,7 +25,7 @@ export default function ProsjekterScreen() {
   const projects = useProjects()
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.groupedBg }}>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <FlatList
         data={projects}
         keyExtractor={p => p.id}

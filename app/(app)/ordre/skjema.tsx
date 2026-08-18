@@ -234,11 +234,11 @@ export default function SkjemaScreen() {
     syncQuietly()
   }
 
-  if (!template) return <View style={{ flex: 1, backgroundColor: colors.groupedBg }} />
+  if (!template) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
   const readOnly = status === 'fullfort'
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.groupedBg }}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.canvas }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.sm,

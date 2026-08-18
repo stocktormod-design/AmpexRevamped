@@ -188,7 +188,7 @@ export default function ProsjektDetailScreen() {
     return () => { mounted = false }
   }, [lastCompletedSessionId, id, clearLastCompleted])
 
-  if (!project) return <View style={{ flex: 1, backgroundColor: colors.bg }} />
+  if (!project) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
 
   // Grupper tegninger på plan (rekkefølge etter første forekomst)
   const plans: string[] = []
@@ -200,7 +200,7 @@ export default function ProsjektDetailScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <AmbientBackdrop height={360} />
       <ScrollView
         contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}

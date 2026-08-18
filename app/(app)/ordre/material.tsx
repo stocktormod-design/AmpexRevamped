@@ -41,7 +41,7 @@ export default function MaterialScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1, backgroundColor: colors.groupedBg }}
+      style={{ flex: 1, backgroundColor: colors.canvas }}
     >
       <View style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

@@ -30,7 +30,7 @@ export default function Screen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: colors.groupedBg }}
+      style={{ flex: 1, backgroundColor: colors.canvas }}
       contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.screen, paddingBottom: spacing.xxl }}
     >
       <Text style={[t.largeTitle, { marginBottom: spacing.xl }]}>Meg</Text>
