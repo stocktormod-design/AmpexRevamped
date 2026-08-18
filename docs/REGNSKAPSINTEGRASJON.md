@@ -1,6 +1,10 @@
 # Regnskapsintegrasjon — Fiken, Tripletex, PowerOffice Go
 
-Status 2026-08-18: undersøkt, ikke bygget. **Fiken først.**
+Status 2026-08-18: undersøkt, ikke bygget. **Tripletex primært, Fiken nummer to.**
+
+> Rekkefølgen ble snudd etter at ressursmodellen ble inspisert. Første vurdering
+> vektet registreringsporten; den er en ventetid som kan løpe parallelt.
+> Domenetilpasningen er den varige forskjellen.
 
 ## Hvorfor dette ikke er valgfritt
 
@@ -13,7 +17,7 @@ Dette er inngangsbilletten, ikke en utvidelse.
 
 ## Sammenligning
 
-### Fiken — anbefalt først
+### Tripletex — anbefalt primært
 
 | | |
 |---|---|
@@ -38,7 +42,7 @@ løsningen til den enkleste.
 Bonus: `offers` treffer befaring-til-tilbud-flyten, og `attachments` på faktura
 lar §36-dokumentasjonen følge fakturaen ut til kunden.
 
-### Tripletex — nummer to
+### Fiken — nummer to
 
 | | |
 |---|---|
@@ -59,6 +63,93 @@ først.
 Ikke undersøkt. Kjent for å slippe integrasjonspartnere gjennom mer restriktivt
 enn de to andre, men det er annenhåndskunnskap — må verifiseres før den
 prioriteres.
+
+
+## Hvorfor Tripletex, tross porten
+
+Ressursmodellen mapper **1:1** mot Ampex' domene:
+
+| Ressurs | Endepunkter | Hva det er hos oss |
+|---|---|---|
+| `/order` | 21 | Ordresystemet |
+| `/project` | 40 | Prosjekter |
+| `/timesheet` | 37 | `foer_timer`, `mine_timer` |
+| `/product` | 30 | Varer |
+| `/purchaseOrder` | 27 | Bestilling til grossist |
+| `/inventory` | 11 | Beholdning, stocktaking |
+
+Fiken har **ingen** av `order`, `timesheet` eller `inventory`. Der måtte en
+Ampex-ordre mappes rett til en faktura, og ordrebegrepet gikk tapt underveis.
+
+To detaljer viser at modellene tenker likt: `/order/{id}/:invoice` gjør ordre til
+faktura som en **eksplisitt handling**, og `/order/orderline/{id}/:pickLine` er
+plukking av ordrelinjer — altså kurven vår.
+
+Kundeprofilen peker samme vei. Fiken skjærer mot ENK og små AS og **har ingen
+timeføring i det hele tatt**. Et elektrofirma med fem til femten montører trenger
+timer inn i lønn og prosjektregnskap.
+
+### Porten er en parallell ventetid, ikke en blokkering
+
+- **Testmiljøet er umiddelbart.** Registrer deg på `api-test.tripletex.tech` og
+  få begge tokens pluss aktiverings-e-post. Ingen godkjenning.
+- **Produksjon tar 2–3 uker** via søknadsskjema. Tokens fra test virker ikke i
+  produksjon.
+
+Søk tidlig, bygg mot test imens.
+
+---
+
+## KRITISK: Tripletex' AI-vilkår treffer oss direkte
+
+Utviklervilkårene (versjon 06.2026, `tripletex.no/Tripletex_Developer_Terms.pdf`)
+har et eget AI-kapittel. Ampex er utvetydig omfattet.
+
+**§2.2.13** — enhver utvikler hvis app inneholder en «AI Integration» må ha
+**Tripletex' skriftlige forhåndssamtykke før produksjonstilgang**. «AI
+Integration» er definert som enhver app som inneholder, styres av, eller *gir
+data- eller API-tilgang til* et AI-system eller en språkmodell.
+
+Det kommer altså **oppå** den vanlige 2–3-ukers godkjenningen, og er skjønnsmessig.
+Deres egen dokumentasjon sier «should initiate the process as early as possible».
+**Skriv AI-bruken inn i søknaden fra start** i stedet for å oppdage dette ved lansering.
+
+**§2.2.10** — AI-agenten skal operere utelukkende innenfor kundens
+autorisasjonsomfang, og ingen komponent må gi tilgang til Data eller API-et
+videre til en **downstream agent, applikasjon eller tjeneste**.
+
+> **Arkitektonisk følge: hold Tripletex-data ute av modellkonteksten.**
+> Sender vi Tripletex-data inn i Gemini, er Google en downstream tjeneste. AI-en
+> skal jobbe på Ampex' egne lokale data — som er hele poenget med offline-først —
+> og `Regnskapsadapter` pusher til Tripletex som vanlig, deterministisk kode.
+> Da er det ikke modellen som rører Tripletex.
+>
+> Dette er en lesning, ikke juridisk råd. Still spørsmålet direkte i søknaden.
+
+Øvrige plikter verdt å kjenne:
+
+- **§2.2.11** — oppdager de agentiske mønstre, kan de kreve skriftlig forklaring
+  innen fem virkedager
+- **§2.2.6** — på forespørsel må vi skriftlig egenerklære at Data ikke brukes til
+  AI-trening (det gjør vi ikke, men vi må kunne svare)
+- **§2.2.12** — eksponeres Tripletex noen gang via MCP: **read-only som standard**,
+  skriv krever eget samtykke og transaksjonsnivå-autorisasjon fra kunden
+
+### Pris og garantier
+
+**Ingen utviklerpris nevnt.** Ingen minimum antall kunder, ingen inntektsdeling,
+ingen sertifisering.
+
+Men **§2.2.9** lar Tripletex etter eget skjønn pålegge tilleggsvilkår «including
+**prices**, call-volumes, restrictions of certain endpoints» basert på bruken din.
+Gratis å starte, men de kan prise deg senere gjennom et tillegg.
+
+Det er en reell grunn til å ikke gjøre Tripletex til eneste vei ut — og det gjør
+Fiken mer verdifull som nummer to enn ren redundans skulle tilsi: den er en vei
+som ikke avhenger av skjønnsmessig AI-godkjenning fra en aktør som også kan
+prise deg.
+
+---
 
 ## Arkitektur: adapter, ikke integrasjon
 
@@ -88,8 +179,11 @@ adapter nummer to blir en omskriving i stedet for en fil.
 
 ## Neste steg
 
-1. Registrer en OAuth2-klient hos Fiken og få et testselskap
-2. Bygg `Regnskapsadapter` med Fiken som første implementasjon —
-   kunde-synk og fakturautkast fra en ordre er nok til demo
-3. Start Tripletex' API 2.0-registrering parallelt, siden ventetiden er dødtid
+1. **Søk om Tripletex-produksjonstilgang i dag** — 2–3 uker venting, pluss
+   skjønnsmessig AI-samtykke etter §2.2.13. Beskriv AI-bruken i søknaden.
+2. Registrer deg på `api-test.tripletex.tech` og bygg `Regnskapsadapter` mot test
+   — kunde-synk og fakturautkast fra en ordre er nok til demo
+3. Fiken som adapter nummer to. To implementasjoner tidlig er den beste måten å
+   bevise at grensesnittet holder — ellers oppdager vi først ved nummer to at
+   abstraksjonen var formet etter den første
 4. Verifiser PowerOffice Go-vilkårene før den vurderes
