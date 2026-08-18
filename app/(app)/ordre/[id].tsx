@@ -9,7 +9,7 @@ import {
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { CreamCard, ListCard, SectionHeader, Chip } from '../../../components/ui'
-import { MicButton } from '../../../components/mic-button'
+import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { ScanCard } from '../../../components/scan-card'
 import { deleteScanFiles, clearRevisions } from '../../../lib/scan-revisions'
 import { AddressMap } from '../../../components/address-map'
@@ -345,7 +345,7 @@ export default function OrderDetailScreen() {
             >
               <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
             </Pressable>
-            <MicButton />
+            <AmpexMarkButton />
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg }}>

@@ -28,7 +28,7 @@ const METERING_POLL_MS = 400
 
 type VoiceSessionValue = {
   stage: VoiceAssistantStage
-  /** Starter en økt (rist eller mic-button trykk) — no-op hvis en økt allerede pågår. */
+  /** Starter en økt (rist eller trykk på Ampex-merket) — no-op hvis en økt allerede pågår. */
   beginSession: () => Promise<void>
   /** Avslutter gjeldende økt. discard=true forkaster opptaket (brukt ved rist-avbrytelse). */
   endSession: (opts?: { discard?: boolean }) => Promise<void>
@@ -48,7 +48,7 @@ const VoiceSessionContext = createContext<VoiceSessionValue | null>(null)
 
 /**
  * Eneste kilde til AI-assistentens økt-tilstand — mountes én gang i app/_layout.tsx.
- * Både rist-deteksjon (lib/ai/shake-listener.ts) og manuell knapp (components/mic-button.tsx)
+ * Både rist-deteksjon (lib/ai/shake-listener.ts) og manuell knapp (components/ampex-mark-button.tsx)
  * driver samme økt gjennom denne, slik at det aldri finnes to samtidige opptak.
  */
 export function VoiceSessionProvider({ children }: { children: ReactNode }) {

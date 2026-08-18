@@ -6,7 +6,7 @@ import { Q } from '@nozbe/watermelondb'
 import { ChevronLeft, Plus, Layers, ChevronRight, UserPlus, DoorOpen, ScanLine, Circle, CircleCheckBig, ScanSearch } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { SectionHeader, AmbientBackdrop } from '../../../components/ui'
-import { MicButton } from '../../../components/mic-button'
+import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Project, projectStatusLabel } from '../../../lib/db/models/project'
@@ -165,7 +165,7 @@ export default function ProsjektDetailScreen() {
     return () => sub.unsubscribe()
   }, [id])
 
-  // Egen rist-/mic-button-økt for prosjektstatus ble nettopp avsluttet — spør Gemini
+  // Egen assistent-økt for prosjektstatus ble nettopp avsluttet — spør Gemini
   // (aggregeringen er allerede lokal, se lib/ai/project-status.ts) og les svaret høyt.
   useEffect(() => {
     if (!lastCompletedSessionId || !id) return
@@ -215,7 +215,7 @@ export default function ProsjektDetailScreen() {
               }}>
               <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
             </Pressable>
-            {canAskStatus && <MicButton />}
+            {canAskStatus && <AmpexMarkButton />}
           </View>
 
           {statusProcessing && (
