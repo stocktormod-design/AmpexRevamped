@@ -56,6 +56,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=
 - `docs/ROADMAP_2026-08.md` — full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering
 - `docs/GROSSIST_INTEGRASJON.md` — prisfiler, prissammenligning, autobestilling
 - `docs/DESKTOP_OG_IMPORT.md` — Ampex Desktop, SpeedyCraft-import og merge
+- `docs/REGNSKAPSINTEGRASJON.md` — Fiken, Tripletex, PowerOffice Go
 
 ## Regler
 1. Minimal diff — løs oppgaven, ikke refaktorer bredt

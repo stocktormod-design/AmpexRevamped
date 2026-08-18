@@ -47,6 +47,11 @@ npm run verify:pricefile
 
 Avvikslisten forteller umiddelbart hva som er tolket feil.
 
+**En OAuth2-klient hos Fiken** når regnskapsintegrasjonen skal bygges — den er
+inngangsbilletten for å erstatte SpeedyCraft, ikke en utvidelse. Fikens
+spesifikasjon er fritt tilgjengelig og uten portvokter, så den kan startes når
+som helst. Se `docs/REGNSKAPSINTEGRASJON.md`.
+
 **Én telefon til grossisten** når du vil ha ordretransport: «hvordan sender jeg
 ordre elektronisk?» Svaret avhenger av kundeforholdet og kan ikke googles.
 
@@ -283,5 +288,6 @@ Fem commits på `grossist-og-pool`, pushet.
 | `docs/ROADMAP_2026-08.md` | Full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering |
 | `docs/GROSSIST_INTEGRASJON.md` | Prisfiler, prissammenligning, autobestilling, admin-konsoll |
 | `docs/DESKTOP_OG_IMPORT.md` | Ampex Desktop, SpeedyCraft-import og merge-semantikk |
+| `docs/REGNSKAPSINTEGRASJON.md` | Fiken/Tripletex/PowerOffice — inngangsbilletten for å erstatte SpeedyCraft |
 | `docs/ON_DEVICE_SCAN_PLAN.md` | Skann-planen (utracket) |
 | `docs/NEW_APP_PLAN.md` | Opprinnelig domene- og datamodell-plan |
