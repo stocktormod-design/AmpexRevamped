@@ -158,17 +158,64 @@ kontorutsikt, ikke bedriften.
 | `SCImpExpCOM`-vurdering | Dokumentasjonen ligger bak Devincos partnerportal (403 utenfra) |
 | Valg av desktop-stack | Ikke bestemt. Pool Exe er Python i dag; Ampex Desktop trenger UI |
 
-### Åpen beslutning: hvilken stack for Ampex Desktop
+### Stack: Tauri v2 + React + TypeScript — BESLUTTET 2026-08-18
 
-Ikke tatt. Momenter:
+Krav: React, «native og responsivt», og appen deler maskin med GPU-baken.
 
-- **Pool Exe er Python** med Open3D. Skal desktop-appen bære den, må Python med
-  — eller de skilles som to prosesser i samme installer
-- **MSSQL og COM** peker mot .NET, som er det naturlige på Windows
-- **React/Electron** ville gjenbrukt UI-kompetanse og komponenter fra appen, men
-  må da snakke med Python og MSSQL gjennom en sidevogn
-- **Tauri** er lettere enn Electron og kan kalle .NET/native, men er et nytt
-  økosystem å lære
+**Tauri v2 vinner på tre ting som alle er verifisert:**
 
-Anbefaling ved neste økt: avgjør dette **før** noe desktop-kode skrives, fordi
-det bestemmer hvordan de tre modulene pakkes.
+1. **MSSQL uten passord.** Rust-kjernen bruker `tiberius`, som autentiserer med
+   **SSPI via `secur32.dll`** — innebygd i alle Windows-installasjoner, ingen
+   ekstra pakker. Den kobler som den innloggede brukeren, altså nøyaktig
+   scenarioet der importen bare virker på kontor-PC-en. Navngitt instans
+   (`SPEEDYSQL`) løses via SQL Browser-featuren (`sql-browser-tokio`).
+2. **Pool Exe som sidecar.** `bundle.externalBin` i `tauri.conf.json` bunter en
+   ekstern binær; Python pakkes med pyinstaller. Dette er et førsteklasses,
+   dokumentert Tauri-mønster, ikke et hack.
+3. **Minneavtrykket.** Bruker WebView2, som alt ligger på Windows 10/11.
+   Installer på titalls MB i stedet for 150+, og lav RAM i ro.
+
+Punkt 3 er ikke kosmetikk her: **kontor-PC-en er også bake-noden.** Open3D vil ha
+alt minnet den kan få — 8192-atlaset alene er ~800 MB, med topper på 4–8 GB. En
+shell som spiser en halv gigabyte i ro stjeler fra baken på en beskjeden
+kontormaskin.
+
+### Hvorfor ikke Electron
+
+Tryggeste og best dokumenterte valget, samme React. Men den bunter Chromium:
+~150 MB installer og 300–500 MB RAM i ro, på en maskin som samtidig skal bake.
+
+Og MSSQL fra Node er dårligere stilt: trusted connections krever `msnodesqlv8`,
+en native modul med byggetrøbbel, mot Tauris `secur32.dll` som bare er der.
+
+### Hvorfor ikke React Native for Windows
+
+Mest bokstavelig «native» — ekte WinUI/XAML-kontroller. Men ingen god MSSQL-vei,
+tungvint sidecar-håndtering, lite økosystem, og du ville skrevet native moduler i
+både C++ og C#.
+
+**Og argumentet om å dele kode med mobilappen er svakere enn det ser ut.** Et
+kontor-ordresystem er tette tabeller, tastatur og flere ruter samtidig;
+montørappen er én hånd og berøring. Delt *UI* er en fatamorgana.
+
+Delt **logikk** er derimot ekte, og den får du uansett med TypeScript:
+`lib/pricefile/` (parseren er allerede skrevet), `lib/elektro.ts` (beregningene),
+typer og domenemodeller. Det er den gjenbruken som faktisk betyr noe, og Tauri +
+React + TS gir den gratis.
+
+### Rust-kostnaden, og hvordan den holdes liten
+
+Tauri betyr litt Rust. Hold flaten minimal: `#[tauri::command]` for å koble til
+MSSQL, kjøre spørringer, og starte/stoppe sidecaren. Alt annet i React.
+
+Fristelsen blir å flytte MSSQL til Python-sidecaren i stedet for å lære Rust —
+men da mister du poenget: `pyodbc` krever at ODBC-driveren er installert, mens
+`tiberius` bruker Windows' egen `secur32.dll`. Passordfri tilkobling er verdt de
+femti linjene Rust.
+
+### Responsivt i praksis
+
+Tette datamengder trenger virtualiserte tabeller (TanStack Virtual),
+tastaturnavigasjon og flerrutelayout. WebView2 håndterer det fint — «native
+følelse» på desktop handler mer om tastatur, fokus og tetthet enn om
+widget-teknologi.

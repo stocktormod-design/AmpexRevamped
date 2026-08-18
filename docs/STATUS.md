@@ -75,10 +75,10 @@ ordre elektronisk?» Svaret avhenger av kundeforholdet og kan ikke googles.
    markeringer som rader med `created_by`/`visibility`/`status` (låser opp mest),
    så pins med koordinat, så revisjoner med overlegg.
 
-5. **Velg stack for Ampex Desktop** før noe desktop-kode skrives. Kontor-PC-en
-   skal gjøre tre jobber — ordresystem/admin, poolnode og SpeedyCraft-import — og
-   valget bestemmer hvordan de pakkes i én installer. Se
-   `docs/DESKTOP_OG_IMPORT.md`.
+5. **Ampex Desktop** — stack besluttet: **Tauri v2 + React + TypeScript**.
+   Kontor-PC-en gjør tre jobber i én installer: ordresystem/admin, poolnode
+   (Python som sidecar) og SpeedyCraft-import (Rust + `tiberius`, kobler med
+   Windows integrated auth uten passord). Se `docs/DESKTOP_OG_IMPORT.md`.
 
 6. **CUDA-porten av `bake.py`** når du vil at GPU-en skal bety noe. Tekstur er
    nesten gratis, fusjon er moderat, **refine (Zhou-Koltun) er den vonde** — den
