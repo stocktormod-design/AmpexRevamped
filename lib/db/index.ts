@@ -18,6 +18,9 @@ import { Order } from './models/order'
 import { OrderDocument } from './models/order-document'
 import { OrderMaterial } from './models/order-material'
 import { Product } from './models/product'
+import { Customer } from './models/customer'
+import { Activity } from './models/activity'
+import { OrderExtra } from './models/order-extra'
 import { Location } from './models/location'
 import { StockMovement } from './models/stock-movement'
 import { Project } from './models/project'
@@ -50,5 +53,5 @@ const adapter = new SQLiteAdapter({
 
 export const database = new Database({
   adapter,
-  modelClasses: [Order, OrderDocument, OrderMaterial, Product, Location, StockMovement, Project, Drawing, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, NfcTag],
+  modelClasses: [Order, OrderDocument, OrderMaterial, OrderExtra, Product, Customer, Activity, Location, StockMovement, Project, Drawing, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, NfcTag],
 })

@@ -14,7 +14,14 @@ export class TimeEntry extends Model {
   @text('user_name') userName: string
   @date('date') date: Date
   @field('hours') hours: number
+  /** Synlig på faktura (Fiken `description`, Tripletex `comment`). */
   @text('note') note: string | null
+  /** Aldri med på faktura (Fiken `internalNote`). «Kunden var sur» hører hit. */
+  @text('internal_note') internalNote: string | null
+  @text('activity_id') activityId: string | null
+  /** null = arv fra aktiviteten. Eksplisitt false overstyrer. */
+  @field('billable') billable: boolean | null
+  @date('invoiced_at') invoicedAt: Date | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 }
