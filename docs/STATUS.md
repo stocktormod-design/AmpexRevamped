@@ -4,8 +4,14 @@ Sist oppdatert: 2026-08-19. Holdes oppdatert; ikke lag daterte kopier.
 
 ## Hvor vi står
 
-Branch **`grossist-og-pool`**, siste commit `9ee75e0`.
-**53 filer er endret eller nye og ikke committet** — hele ordresystemet under.
+Branch **`grossist-og-pool`** — committet, ikke pushet.
+
+```
+65298b4 docs: konkurrentanalyse, databasedrift og STATUS skrevet om
+d24ef83 feat(lager): varesøk og prisfil-import
+1c72951 feat(ordre): fra ordre til penger — fakturagrunnlag, timer, tilleggsarbeid
+6c77d2e feat(db): kunde, aktivitet og tillegg — synk som leser kolonner fra katalogen
+```
 
 Grønt: `npm run typecheck`, `npm run verify:pricefile`, `npm run verify:invoicing`.
 
