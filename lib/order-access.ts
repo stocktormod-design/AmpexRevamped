@@ -10,8 +10,8 @@ import { supabase } from './supabase'
  * ordrer er kun «visittkortet» lov å dele — nummer, tittel, hvem som er med,
  * ansvarlig — aldri innhold/dokumentasjon. Håndheves i AI-verktøyene
  * (lib/ai/live-session.ts) nå; skjermene kan gjenbruke samme helpers senere.
- * NB: order_members er foreløpig lokal (kun orders-tabellen synker) — hånd-
- * hevingen er per enhet til medlemskap får egen synk + RLS.
+ * order_members synker fra 2026-08-19 (se docs/DB_DRIFT.md), så medlemskap er
+ * nå delt mellom enheter — ikke lenger per enhet slik det var.
  */
 
 export type CurrentUser = { id: string; name: string; role: string }
@@ -82,6 +82,35 @@ export async function findColleagueByName(spoken: string): Promise<ColleagueMatc
   if (partial.length === 1) return { kind: 'one', colleague: partial[0] }
   if (partial.length > 1) return { kind: 'ambiguous', candidates: partial.slice(0, 5).map(c => c.name) }
   return { kind: 'none' }
+}
+
+/**
+ * Alle kollegaer i firmaet. `profiles` finnes KUN på serveren (RLS tillater
+ * select innen eget firma), så dette krever nett. Returnerer tom liste offline
+ * i stedet for å kaste — deltakerlista skal vise «krever nett», ikke krasje.
+ */
+export async function listColleagues(): Promise<Colleague[]> {
+  if (colleagueCache) return colleagueCache
+  try {
+    const { data, error } = await supabase.from('profiles').select('id, full_name').is('deleted_at', null)
+    if (error || !data) return []
+    colleagueCache = data.map(p => ({ id: p.id as string, name: (p.full_name as string) ?? '' }))
+    return colleagueCache
+  } catch {
+    return []
+  }
+}
+
+/** Fjern person fra ordre. Soft delete (regel #5) via markAsDeleted. */
+export async function removeOrderMember(orderId: string, userId: string): Promise<void> {
+  const rader = await database
+    .get<OrderMember>('order_members')
+    .query(Q.where('order_id', orderId), Q.where('user_id', userId))
+    .fetch()
+  if (rader.length === 0) return
+  await database.write(async () => {
+    for (const r of rader) await r.markAsDeleted()
+  })
 }
 
 /** Legg til person på ordre — idempotent. */

@@ -24,6 +24,8 @@ import {
 } from '../order-access'
 import { syncQuietly } from '../db/sync'
 import { TimeEntry } from '../db/models/time-entry'
+import { finnAktivitet } from '../activities'
+import { OrderExtra, type TilleggPrising } from '../db/models/order-extra'
 import { resolveTemplate, listAllTemplates, type TemplateCatalogEntry } from '../forms/resolve'
 import { startVoiceFill, applyVoiceFill, type VoiceFillEntry } from '../forms/voice-fill'
 import { emitVoiceLevel } from './voice-level'
@@ -108,7 +110,7 @@ risikovurdering for denne ordren, jeg har gjort X og Y». Flyten er ALLTID:
 Du kan ALDRI fullføre/signere et skjema — det gjør mennesket i appen. Du kan heller ikke lage nye maler.
 Mallisten (inkl. firmaets egne skjemaer) står nederst i instruksene — velg alltid derfra.
 
-TIMEFØRING: foer_timer fører timer på en ordre brukeren er med på (bekreft antall timer høyt først). mine_timer
+TILLEGGSARBEID: nevner brukeren noe kunden ikke bestilte opprinnelig, bruk foresla_tillegg med en gang. Det registreres som foreslått — si at kunden må godkjenne før det kan faktureres. TIMEFØRING: foer_timer fører timer på en ordre brukeren er med på (bekreft antall timer høyt først). Oppgi aktivitet når den nevnes — den avgjør timeprisen. Notatet er synlig på fakturaen. mine_timer
 oppsummerer brukerens førte timer.
 
 VÆR EN GUIDE, IKKE ET INTERVJU: Åpne ting på skjermen (vis_ordre, vis_skjema) i stedet for å bare snakke om dem.
@@ -471,10 +473,33 @@ const TOOL_DECLARATIONS = [
           properties: {
             ordrenummer: { type: 'INTEGER' },
             timer: { type: 'NUMBER', description: 'Antall timer, f.eks. 7.5.' },
-            notat: { type: 'STRING' },
+            notat: { type: 'STRING', description: 'Hva som ble gjort. SYNLIG på fakturaen til kunden.' },
+            aktivitet: { type: 'STRING', description: 'F.eks. Montasje, Feilsøking, Service, Kjøring. Avgjør timeprisen.' },
             dato: { type: 'STRING', description: 'ÅÅÅÅ-MM-DD hvis ikke i dag.' },
           },
           required: ['ordrenummer', 'timer'],
+        },
+      },
+      {
+        name: 'foresla_tillegg',
+        description:
+          'Registrerer tilleggsarbeid — arbeid kunden IKKE bestilte opprinnelig. '
+          + 'Bruk når brukeren nevner noe ekstra som må gjøres eller som kunden har bedt om underveis. '
+          + 'Registreres alltid som FORESLÅTT; godkjenning skjer på skjermen med navnet på den som sa ja. '
+          + 'Si tilbake at det må godkjennes før det kan faktureres.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            ordrenummer: { type: 'INTEGER' },
+            tittel: { type: 'STRING', description: 'Kort: «To ekstra stikk på soverommet».' },
+            beskrivelse: { type: 'STRING' },
+            prising: {
+              type: 'STRING',
+              description: '«fastpris» når en pris er avtalt, «medgatt» når det faktureres etter timer og materiell. Standard medgatt.',
+            },
+            pris: { type: 'NUMBER', description: 'Kroner eks. mva. Kun ved fastpris.' },
+          },
+          required: ['ordrenummer', 'tittel'],
         },
       },
       {
@@ -1450,6 +1475,12 @@ export class LiveSession {
         if (!Number.isFinite(hours) || hours <= 0 || hours > 24) return { feil: 'Antall timer må være mellom 0 og 24.' }
         const day = typeof args.dato === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.dato) ? new Date(args.dato) : new Date()
         day.setHours(0, 0, 0, 0)
+        // Uten aktivitet har timene ingen pris, og linja faller ut av
+        // fakturagrunnlaget som «mangler pris». Standardaktiviteten er montasje,
+        // fordi det er det en elektriker gjør mesteparten av dagen.
+        const aktivitet = typeof args.aktivitet === 'string' && args.aktivitet.trim()
+          ? await finnAktivitet(args.aktivitet)
+          : await finnAktivitet('Montasje')
         await database.write(async () => {
           await database.get<TimeEntry>('time_entries').create(e => {
             e.orderId = resolved.order.id
@@ -1458,9 +1489,45 @@ export class LiveSession {
             e.date = day
             e.hours = hours
             e.note = typeof args.notat === 'string' && args.notat.trim() ? args.notat.trim() : null
+            e.activityId = aktivitet?.id ?? null
           })
         })
-        return { ok: true, beskjed: `Førte ${hours} timer på ordre ${resolved.n}.` }
+        return {
+          ok: true,
+          beskjed: `Førte ${hours} timer på ordre ${resolved.n}${aktivitet ? ` som ${aktivitet.name.toLowerCase()}` : ''}.`,
+          ...(aktivitet ? {} : { advarsel: 'Fant ingen aktivitet — timene får ingen pris før aktivitet er satt.' }),
+        }
+      }
+      if (name === 'foresla_tillegg') {
+        const resolved = await this.resolveOrder(args)
+        if ('feil' in resolved) return resolved
+        if (!resolved.member) return { feil: 'Brukeren er ikke med på ordren — tillegg registreres kun på egne ordrer.' }
+        const tittel = typeof args.tittel === 'string' ? args.tittel.trim() : ''
+        if (!tittel) return { feil: 'Tillegget må ha en kort tittel.' }
+        const prising: TilleggPrising = args.prising === 'fastpris' ? 'fastpris' : 'medgatt'
+        const pris = typeof args.pris === 'number' && args.pris > 0 ? args.pris : null
+        if (prising === 'fastpris' && pris == null) {
+          return { feil: 'Fastpris krever et beløp. Spør om prisen, eller registrer som etter medgått.' }
+        }
+        await database.write(async () => {
+          await database.get<OrderExtra>('order_extras').create(x => {
+            x.orderId = resolved.order.id
+            x.title = tittel
+            x.description = typeof args.beskrivelse === 'string' && args.beskrivelse.trim() ? args.beskrivelse.trim() : null
+            x.pricing = prising
+            x.price = prising === 'fastpris' ? pris : null
+            x.vatType = 'hoy'
+            // ALLTID foreslått. AI-en kan ikke godkjenne på kundens vegne —
+            // det er nettopp godkjenningen som er verdien i denne raden.
+            x.status = 'foreslatt'
+          })
+        })
+        return {
+          ok: true,
+          beskjed: `Registrerte «${tittel}» som tilleggsarbeid på ordre ${resolved.n}, foreslått.`,
+          maa_godkjennes: 'Si til brukeren at tillegget må godkjennes av kunden før det kan faktureres, '
+            + 'og at navnet på den som sier ja må registreres på skjermen.',
+        }
       }
       if (name === 'mine_timer') {
         const user = await getCurrentUser()

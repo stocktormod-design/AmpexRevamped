@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { supabase } from '../lib/supabase'
 import { syncQuietly } from '../lib/db/sync'
 import { enforceCompanyBoundary } from '../lib/db/company-guard'
+import { seedAktiviteter } from '../lib/activities'
 import { retryPendingAiEnrichment, registerDraftHandler } from '../lib/ai/retry'
 import { useVoiceSession, VoiceSessionProvider } from '../lib/ai/voice-session'
 import { useShakeListener } from '../lib/ai/shake-listener'
@@ -141,6 +142,9 @@ export default function RootLayout() {
       enforceCompanyBoundary().then(() => {
         syncQuietly()
         retryPendingAiEnrichment()
+        // Timeføring uten aktivitet får ingen pris. Seedingen er idempotent og
+        // kjører bare når tabellen er tom, så den kan stå her uten kostnad.
+        seedAktiviteter()
       })
     }
 

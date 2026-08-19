@@ -8,6 +8,10 @@ export default function OrdreLayout() {
       <Stack.Screen name="[id]" />
       <Stack.Screen name="ny" options={{ presentation: 'modal' }} />
       <Stack.Screen name="material" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="faktura" />
+      <Stack.Screen name="timer" />
+      <Stack.Screen name="deltakere" />
+      <Stack.Screen name="tillegg" />
     </Stack>
   )
 }
