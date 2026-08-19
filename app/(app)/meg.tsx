@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { View, Text, ScrollView } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Check, Mic } from 'lucide-react-native'
+import { Check, Mic, Users, Timer, ChevronRight } from 'lucide-react-native'
+import { router } from 'expo-router'
 import { Pressable } from '../../components/pressable'
 import { getPreferredVoice, setPreferredVoice, VOICE_OPTIONS } from '../../lib/ai/voice-prefs'
 import { colors, spacing, radius, type as t } from '../../lib/theme'
@@ -34,6 +35,44 @@ export default function Screen() {
       contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.screen, paddingBottom: spacing.xxl }}
     >
       <Text style={[t.largeTitle, { marginBottom: spacing.xl }]}>Meg</Text>
+
+      {/* Registrene. Ligger her fordi de settes opp sjelden og brukes via ordren. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, marginBottom: spacing.sm }}>
+        <Users size={15} color={colors.secondaryLabel} strokeWidth={2.2} />
+        <Text style={[t.footnote, { color: colors.secondaryLabel, fontWeight: '600', textTransform: 'uppercase' }]}>
+          Register
+        </Text>
+      </View>
+      <View style={{ backgroundColor: '#fff', borderRadius: radius.xl, overflow: 'hidden', marginBottom: spacing.xl }}>
+        <Pressable
+          haptic="light"
+          onPress={() => router.push('/(app)/kunder')}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+            paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
+          }}
+        >
+          <Users size={18} color={colors.iconMuted} strokeWidth={2.2} />
+          <Text style={[t.body, { flex: 1 }]}>Kunder</Text>
+          <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={2.2} />
+        </Pressable>
+        <Pressable
+          haptic="light"
+          onPress={() => router.push('/(app)/aktiviteter')}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+            paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
+            borderTopWidth: 1, borderTopColor: colors.border,
+          }}
+        >
+          <Timer size={18} color={colors.iconMuted} strokeWidth={2.2} />
+          <View style={{ flex: 1 }}>
+            <Text style={t.body}>Aktiviteter og timepriser</Text>
+            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Avgjør hva en time koster på fakturaen</Text>
+          </View>
+          <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={2.2} />
+        </Pressable>
+      </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, marginBottom: spacing.sm }}>
         <Mic size={15} color={colors.secondaryLabel} strokeWidth={2.2} />

@@ -66,6 +66,10 @@ export default function AppLayout() {
       ))}
       {/* Skjult fra tab-baren, navigerbar via snarveier (handlekurv er nå overlay, se CartBar) */}
       <Tabs.Screen name="skjema" options={{ href: null }} />
+      {/* Registrene nås fra Meg og fra ordredetalj — de hører ikke til i tab-baren,
+          som er for det montøren gjør hver dag, ikke det som settes opp én gang. */}
+      <Tabs.Screen name="kunder" options={{ href: null }} />
+      <Tabs.Screen name="aktiviteter" options={{ href: null }} />
       {/* Fullskjerm skanner/viewer — skjul tab-baren mens den er fokusert */}
       <Tabs.Screen name="skann" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>

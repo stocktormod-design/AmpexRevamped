@@ -68,6 +68,13 @@ export async function assignCartToOrder(lines: CartLine[], orderId: string) {
         om.description = product.name
         om.quantity = takenQty(movement)
         om.unit = product.unit
+        // Pris-snapshot fra varen. Uten dette får linja ingen pris, og
+        // fakturagrunnlaget lister den som «mangler pris» i stedet for å
+        // stilltiende fakturere den til null.
+        om.productId = product.id
+        om.unitPrice = product.unitPrice
+        om.costPrice = product.costPrice
+        om.vatType = product.vatType ?? 'hoy'
       })
     }
   })

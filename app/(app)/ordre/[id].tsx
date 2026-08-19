@@ -6,6 +6,7 @@ import { Q } from '@nozbe/watermelondb'
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable'
 import {
   ChevronLeft, Phone, MapPin, FileText, Check, ChevronRight, Plus, Package, Navigation, Trash2,
+  Receipt, UserPlus, Clock, Users, FilePlus2,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { CreamCard, ListCard, SectionHeader, Chip } from '../../../components/ui'
@@ -22,6 +23,11 @@ import { OrderScan, scanKindLabel, type ScanKind } from '../../../lib/db/models/
 import { AMPEX_TEMPLATES } from '../../../lib/forms/templates'
 import { markOrderOpened } from '../../../lib/last-opened'
 import { formatDateTime } from '../../../lib/format'
+import { TimeEntry } from '../../../lib/db/models/time-entry'
+import { OrderMember } from '../../../lib/db/models/order-member'
+import { OrderExtra } from '../../../lib/db/models/order-extra'
+import { useFakturagrunnlag } from '../../../lib/order-billing'
+import { formatKr } from '../../../lib/invoicing'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 function initials(name: string): string {
@@ -54,6 +60,54 @@ function useOrderMaterials(orderId: string) {
     return () => sub.unsubscribe()
   }, [orderId])
   return materials
+}
+
+/** Sum timer på ordren — reaktivt. Mater både denne raden og fakturagrunnlaget. */
+function useOrderTimer(orderId: string) {
+  const [sum, setSum] = useState(0)
+  useEffect(() => {
+    if (!orderId) return
+    const sub = database
+      .get<TimeEntry>('time_entries')
+      .query(Q.where('order_id', orderId))
+      .observeWithColumns(['hours'])
+      .subscribe(rader => setSum(rader.reduce((a, e) => a + e.hours, 0)))
+    return () => sub.unsubscribe()
+  }, [orderId])
+  return sum
+}
+
+/** Tilleggsarbeid — reaktivt. Ventende tillegg er penger som ikke kan faktureres. */
+function useOrderExtras(orderId: string) {
+  const [rader, setRader] = useState<{ ventende: number; total: number }>({ ventende: 0, total: 0 })
+  useEffect(() => {
+    if (!orderId) return
+    const sub = database
+      .get<OrderExtra>('order_extras')
+      .query(Q.where('order_id', orderId))
+      .observeWithColumns(['status'])
+      .subscribe(x => setRader({
+        ventende: x.filter(e => e.status === 'foreslatt').length,
+        total: x.length,
+      }))
+    return () => sub.unsubscribe()
+  }, [orderId])
+  return rader
+}
+
+/** Antall deltakere — reaktivt */
+function useOrderMemberCount(orderId: string) {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    if (!orderId) return
+    const sub = database
+      .get<OrderMember>('order_members')
+      .query(Q.where('order_id', orderId))
+      .observe()
+      .subscribe(rader => setN(rader.length))
+    return () => sub.unsubscribe()
+  }, [orderId])
+  return n
 }
 
 /** LiDAR-skann for én ordre — reaktivt */
@@ -263,6 +317,10 @@ export default function OrderDetailScreen() {
   const scans = useOrderScans(id ?? '')
   const docByTemplate = new Map(docs.map(d => [d.templateId, d]))
   const doneCount = AMPEX_TEMPLATES.filter(tpl => docByTemplate.get(tpl.id)?.status === 'fullfort').length
+  const grunnlag = useFakturagrunnlag(id ?? '')
+  const timer = useOrderTimer(id ?? '')
+  const antallMedlemmer = useOrderMemberCount(id ?? '')
+  const tillegg = useOrderExtras(id ?? '')
   const allDocsDone = doneCount === AMPEX_TEMPLATES.length
 
   useEffect(() => {
@@ -423,6 +481,112 @@ export default function OrderDetailScreen() {
             </CreamCard>
           </View>
         )}
+
+        {/* Timer og bemanning. Ligger rett over fakturagrunnlaget fordi timene
+            er halve beløpet der. */}
+        <View style={{ marginBottom: spacing.screen }}>
+          <ListCard>
+            <Pressable
+              onPress={() => router.push({ pathname: '/(app)/ordre/timer', params: { id } })}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+              }}
+            >
+              <Clock size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              <Text style={[t.headline, { flex: 1 }]}>Timer</Text>
+              <Text style={[t.bodyMedium, { fontVariant: ['tabular-nums'] }]}>
+                {timer > 0 ? `${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t` : '—'}
+              </Text>
+              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
+            <Pressable
+              onPress={() => router.push({ pathname: '/(app)/ordre/deltakere', params: { id } })}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+                borderTopWidth: 0.5, borderTopColor: colors.separator,
+              }}
+            >
+              <Users size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              <Text style={[t.headline, { flex: 1 }]}>Deltakere</Text>
+              <Text style={[t.bodyMedium, { color: colors.secondaryLabel }]}>
+                {antallMedlemmer > 0 ? String(antallMedlemmer) : '—'}
+              </Text>
+              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
+            <Pressable
+              onPress={() => router.push({ pathname: '/(app)/ordre/tillegg', params: { id } })}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+                borderTopWidth: 0.5, borderTopColor: colors.separator,
+              }}
+            >
+              <FilePlus2 size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              <View style={{ flex: 1 }}>
+                <Text style={t.headline}>Tilleggsarbeid</Text>
+                {tillegg.ventende > 0 && (
+                  <Text style={[t.footnote, { marginTop: 1, color: colors.warning }]}>
+                    {tillegg.ventende} venter på godkjenning
+                  </Text>
+                )}
+              </View>
+              <Text style={[t.bodyMedium, { color: colors.secondaryLabel }]}>
+                {tillegg.total > 0 ? String(tillegg.total) : '—'}
+              </Text>
+              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
+          </ListCard>
+        </View>
+
+        {/*
+          Fakturagrunnlag. Ligger over Materiell fordi det er svaret montøren
+          faktisk vil ha — «hva blir dette?» — og fordi mangler (vare uten pris,
+          ordre uten kunde) må oppdages før ordren regnes som ferdig.
+        */}
+        <View style={{ marginBottom: spacing.screen }}>
+          <ListCard>
+            <Pressable
+              onPress={() => router.push({ pathname: '/(app)/ordre/faktura', params: { id } })}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+              }}
+            >
+              <Receipt size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              <View style={{ flex: 1 }}>
+                <Text style={t.headline}>Fakturagrunnlag</Text>
+                <Text style={[t.footnote, { marginTop: 1 }]}>
+                  {!grunnlag ? 'Regner ut …'
+                    : grunnlag.linjer.length === 0 ? 'Ingenting å fakturere ennå'
+                    : `${grunnlag.linjer.length} linjer${grunnlag.utelatt.length ? ` · ${grunnlag.utelatt.length} utelatt` : ''}`}
+                </Text>
+              </View>
+              {!!grunnlag && grunnlag.linjer.length > 0 && (
+                <Text style={[t.bodyMedium, { fontVariant: ['tabular-nums'] }]}>{formatKr(grunnlag.bruttoOre)}</Text>
+              )}
+              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
+            {/* Kunde uten ID stopper fakturaen i regnskapet. Si det her, ikke først til slutt. */}
+            {!order.customerId && (
+              <Pressable
+                onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                  paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+                  borderTopWidth: 0.5, borderTopColor: colors.separator,
+                }}
+              >
+                <UserPlus size={18} color={colors.warning} strokeWidth={sizes.lucideStroke} />
+                <Text style={[t.subhead, { flex: 1, color: colors.secondaryLabel }]}>
+                  Ordren mangler kunde i registeret
+                </Text>
+                <Text style={[t.subhead, { color: colors.brand, fontWeight: '600' }]}>Velg</Text>
+              </Pressable>
+            )}
+          </ListCard>
+        </View>
 
         {/* Materiell — forbruksmotor: mater §36-dok + fakturagrunnlag */}
         <View style={{ marginBottom: spacing.screen }}>
