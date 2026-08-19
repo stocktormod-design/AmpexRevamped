@@ -17,7 +17,7 @@ Dette er inngangsbilletten, ikke en utvidelse.
 
 ## Sammenligning
 
-### Tripletex — anbefalt primært
+### Fiken — enklest å komme i gang med
 
 | | |
 |---|---|
@@ -42,7 +42,7 @@ løsningen til den enkleste.
 Bonus: `offers` treffer befaring-til-tilbud-flyten, og `attachments` på faktura
 lar §36-dokumentasjonen følge fakturaen ut til kunden.
 
-### Fiken — nummer to
+### Tripletex — anbefalt primært
 
 | | |
 |---|---|
@@ -78,15 +78,23 @@ Ressursmodellen mapper **1:1** mot Ampex' domene:
 | `/purchaseOrder` | 27 | Bestilling til grossist |
 | `/inventory` | 11 | Beholdning, stocktaking |
 
-Fiken har **ingen** av `order`, `timesheet` eller `inventory`. Der måtte en
-Ampex-ordre mappes rett til en faktura, og ordrebegrepet gikk tapt underveis.
+Fiken har **ingen** av `order` eller `inventory`. Der må en Ampex-ordre mappes
+rett til en faktura, og ordrebegrepet går tapt underveis.
 
 To detaljer viser at modellene tenker likt: `/order/{id}/:invoice` gjør ordre til
 faktura som en **eksplisitt handling**, og `/order/orderline/{id}/:pickLine` er
 plukking av ordrelinjer — altså kurven vår.
 
-Kundeprofilen peker samme vei. Fiken skjærer mot ENK og små AS og **har ingen
-timeføring i det hele tatt**. Et elektrofirma med fem til femten montører trenger
+> **Rettelse 2026-08-18:** påstanden om at Fiken «ikke har timeføring i det hele
+> tatt» var feil. Swagger-en har `/timeEntries`, `/activities`, `/timeUsers`,
+> `/projects` **og** `/timeEntries/createInvoiceDraft` med gruppering per
+> aktivitet, aktivitet+person eller ingen. Timeføringen er en betalt tilleggs-
+> modul (~60 kr/bruker/mnd, prosjektmodul ~60 kr til), men API-et finnes.
+>
+> Det som fortsatt skiller er `order` og `inventory` — dem har Fiken ikke.
+
+Kundeprofilen peker samme vei. Fiken skjærer mot ENK og små AS. Et elektrofirma
+med fem til femten montører trenger ordrebegrepet og beholdningen, ikke bare
 timer inn i lønn og prosjektregnskap.
 
 ### Porten er en parallell ventetid, ikke en blokkering
@@ -187,3 +195,112 @@ adapter nummer to blir en omskriving i stedet for en fil.
    bevise at grensesnittet holder — ellers oppdager vi først ved nummer to at
    abstraksjonen var formet etter den første
 4. Verifiser PowerOffice Go-vilkårene før den vurderes
+
+---
+
+## Kompatibilitetssjekk mot vår datamodell (2026-08-18)
+
+Begge spesifikasjonene ble lastet ned og sammenlignet felt for felt mot
+`lib/db/schema.ts`. Dette er ikke en vurdering — det er en diff.
+
+| | Fiken v2 | Tripletex v2 |
+|---|---|---|
+| Endepunkter | 111 | 490 |
+| Autentisering | OAuth2 authorization code (`fiken.no/oauth/authorize`) — eller personlig token uten utløp | `consumerToken` + `employeeToken` → `sessionToken`, deretter Basic |
+| Samtidighet | **Én samtidig forespørsel.** Brudd kan gi utestengelse | Ikke undersøkt |
+| Har timeføring | Ja — `/timeEntries`, `/activities`, `/timeUsers` | Ja — `/timesheet` (37) |
+| Har ordre | Nei (kun `orderConfirmations`) | Ja — `/order` (21) + `/orderline/{id}/:pickLine` |
+| Har beholdning | Nei | Ja — `/inventory` (11), `/inventory/stocktaking` (5) |
+| Har innkjøp til grossist | `/purchases` (14) | `/purchaseOrder` (27), `/goodsReceipt` |
+
+### Fire konkrete hull i vår modell
+
+Disse må lukkes uansett hvilken adapter som bygges først. Alle er billige nå og
+dyre senere.
+
+**1. Vi har ingen kunde-entitet.** `orders` har `customer_name`, `customer_phone`
+og `address` som løse felt. Begge API-ene krever en `contact`/`customer` med
+**ID** for å henge en faktura på. Uten en `customers`-tabell blir hver
+fakturasynk et navneoppslag som lager duplikater i regnskapet.
+→ **Dette er det største hullet.**
+
+**2. Ingen `external_id` / `source_system`.** Prinsipp 3 lenger opp i dette
+dokumentet krever det, men ingen tabell har feltene. Uten dem kan en ordre ikke
+spores til fakturaen sin, og andre synk lager duplikat av alt.
+
+**3. `time_entries` mangler aktivitet.** Vi har
+`order_id, user_id, user_name, date, hours, note`.
+Fiken krever `date, hours, activityId, timeUserId`; Tripletex krever også
+aktivitet. **Begge** systemene modellerer timer som *aktivitet* × *person* ×
+*dato*, ikke som timer på en ordre.
+
+Dessuten deler begge notatet i to: `description` (synlig på faktura) og
+`internalNote` (ikke synlig). Vår ene `note` må splittes — ellers havner
+«kunden var sur» på fakturaen.
+
+**4. `products` mangler pris og MVA.** Vi har `elnummer, name, unit`. Fiken
+`product` krever `name, unitPrice, incomeAccount, vatType`. Vi kan altså lese
+prisfila, men ikke skyve en vare inn i regnskapet uten å finne på tre felt.
+
+### Ordrebegrepet: den ene reelle forskjellen
+
+Fiken har `/timeEntries/createInvoiceDraft`, som lager fakturautkast direkte fra
+timer med gruppering per aktivitet, aktivitet+person, eller én linje per føring.
+Det dekker time-til-faktura helt.
+
+Men **materiell** har ingen tilsvarende vei i Fiken. Der må Ampex selv bygge
+fakturalinjene fra `order_materials` og legge dem i utkastet. Det er ikke
+vanskelig — det er bare kode vi eier i stedet for et endepunkt som gjør det.
+
+Tripletex' `/order/{id}/:invoice` gjør ordre til faktura som én eksplisitt
+handling, og `pickLine` er kurven vår. Der er mappingen gratis.
+
+**Konsekvens for adapteren:** grensesnittet må ta imot en *ordre* og selv avgjøre
+hvordan den blir en faktura. Signaturen `opprettFakturautkast(ordre)` er riktig
+allerede — den skjuler nøyaktig denne forskjellen.
+
+---
+
+## Minst friksjon for en nystartet enmannsbedrift
+
+Spørsmålet er ikke hvilket API som er best å bygge mot. Det er hva som gir minst
+motstand den dagen firmaet starter.
+
+| | Fiken | Tripletex | Tripletex Elektro/VVS |
+|---|---|---|---|
+| Pris | 229 kr/mnd ENK, 349 kr/mnd AS | fra 249 kr, reelt 450–650 kr | **fra 699 kr/mnd** |
+| Ekstra bruker | 0 kr ENK, 49 kr AS | Per modul | Per modul |
+| Timeføring | ~60 kr/bruker/mnd | Tilleggsmodul | Inkludert |
+| Prosjekt | ~60 kr/mnd | Fra Komplett (649 kr) | Inkludert |
+| Grossistintegrasjon | Nei | Nei | **Ja, inkludert** |
+| Ampex-tilgang | OAuth, ingen port | 2–3 uker + AI-samtykke | Samme port |
+
+**Anbefaling: start faren din på Fiken.**
+
+Begrunnelsen er ikke API-et — det er at Fiken er den eneste veien der Ampex kan
+være koblet **fra dag én**. OAuth-autorisasjon tar to minutter i nettleseren.
+Tripletex krever 2–3 ukers godkjenning pluss et skjønnsmessig AI-samtykke etter
+§2.2.13, og det samtykket kan avslås. Å be en nystartet bedrift vente på at
+leverandøren vår blir godkjent er den motsatte av lav friksjon.
+
+229 kr/mnd med alt inkludert mot 699 kr/mnd er også riktig vei å ta feil: er
+Fiken for lite om to år, er flytting til Tripletex en kjent og støttet vei. Er
+Tripletex for mye det første året, er pengene brukt.
+
+### Men vær ærlig om hva det koster oss
+
+**Tripletex Elektro/VVS til 699 kr/mnd er Ampex' direkte konkurrent**, ikke en
+regnskapsintegrasjon. Den markedsføres som «alt-i-ett for elektro» med ordre,
+prosjekt, timeføring, regnskap, faktura, lønn **og grossistintegrasjon,
+kontrollskjemaer og sjekklister** — og den er en **medlemsfordel hos NELFO/NHO
+Elektro**, altså det faren din blir tilbudt idet han melder seg inn.
+
+Velger han Fiken, velger han samtidig bort den pakken. Det er riktig for oss,
+men det må være et bevisst valg og ikke noe som skjer ved et uhell.
+
+Ampex må derfor dekke det Fiken ikke har — ordre, beholdning, grossist — for at
+Fiken skal være nok. **Det er ikke en nisje, det er hele ordresystemet.** Så
+lenge det er planen uansett, er Fiken riktig partner: den gjør regnskapet, vi
+gjør driften, og de to overlapper minst mulig.
+
+Tripletex er motsatt: den gjør begge deler, og da konkurrerer vi mot verten vår.

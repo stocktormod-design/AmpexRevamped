@@ -1,180 +1,202 @@
 # Status — les denne først
 
-Sist oppdatert: 2026-08-18 (kveld). Holdes oppdatert; ikke lag daterte kopier.
+Sist oppdatert: 2026-08-19. Holdes oppdatert; ikke lag daterte kopier.
 
-## Hvor vi står nå
+## Hvor vi står
 
-Branch **`grossist-og-pool`** — 4 commits, pushet, ikke merget til `main`.
-PR kan opprettes på:
-https://github.com/stocktormod-design/AmpexRevamped/pull/new/grossist-og-pool
+Branch **`grossist-og-pool`**, siste commit `9ee75e0`.
+**53 filer er endret eller nye og ikke committet** — hele ordresystemet under.
 
-```
-a9a78bd feat(ai): Ampex-merket blir inngangen til assistenten
-8d09b01 feat(theme): tonet sidegrunn og hvite kort — synlige trinn i lyshetsstigen
-d96d397 docs: regnskapsintegrasjon — Fiken/Tripletex/PowerOffice
-819b849 docs: Ampex Desktop-stack besluttet — Tauri v2 + React + TypeScript
-f9b164f docs: Ampex Desktop og SpeedyCraft-import
-410a892 docs: pool-arkitekturen forklart, pluss sikkert/usikkert-inventar
-022cc79 docs: STATUS.md som inngangspunkt for nye økter
-028386c docs: grossistarkitektur, roadmap og hva som er blokkert
-861a8ea feat(db): Ampex public pool, rettferdig kø, versjonssperre, køposisjon
-587290a feat(pricefile): EFO/NELFO 4.0-parser med fixture og selvtest
-fd3e4bb fix(ui): døde knapper, dokumentasjonsprogress, sveip-slett, LiDAR i én seksjon
-```
+Grønt: `npm run typecheck`, `npm run verify:pricefile`, `npm run verify:invoicing`.
 
-`npm run typecheck` og `npm run verify:pricefile` er grønne.
+> **Ingenting er kjørt på en enhet.** Ikke iOS, ikke Android. Alt er verifisert
+> med typecheck, selvtester og SQL mot databasen. Første installasjon på en
+> telefon som allerede har data er den ekte prøven — skjemaet gikk fra v21 til
+> **v23**, så migrasjonen kjører.
 
-### Uncommittet i arbeidstreet — bevisst ikke rørt
+### Uncommittet som IKKE er mitt
 
-| Fil | Hva |
-|-----|-----|
-| `modules/ampex-splat/ios/MeshBakeV2.swift` | Din WIP, 252 linjer endret |
-| `modules/ampex-splat/ios/MeshScanPresenter.swift` | Din WIP, 159 linjer endret |
-| `docs/ON_DEVICE_SCAN_PLAN.md` | Utracket plan-dokument |
-
-Swift-filene er ditt arbeid — jeg lot dem være fordi jeg ikke vet om de er i en
-tilstand du vil feste. **Vil du kjøre `/code-review ultra` på dem, commit dem
-først** så diffen fanges av reviewen.
+`modules/ampex-splat/ios/MeshBakeV2.swift` og `MeshScanPresenter.swift` er din
+WIP fra før. Urørt.
 
 ---
 
+## Hva som ble bygget
 
-## Bygget i kveld — se på device før du bygger videre
+Ordresystemet går nå hele veien: **kunde → ordre → timer og materiell →
+tilleggsarbeid → fakturagrunnlag → regnskap**, og alt synker.
 
-To visuelle endringer som ikke er verifisert på ekte skjerm. Begge er isolerte og
-lette å rulle tilbake.
+### Datamodellen (skjema v22 og v23)
 
-### Tonet sidegrunn, hvite kort
+| Nytt | Hvorfor |
+|------|---------|
+| `customers` | Både Fiken og Tripletex krever en kunde med **ID** for å motta en faktura. Ordren hadde bare løse navnefelt, og hver synk ville laget duplikater i regnskapet |
+| `activities` | Begge systemene modellerer timer som aktivitet × person × dato. Uten aktivitet har en time ingen pris |
+| `order_extras` | Tilleggsarbeid med dokumentert godkjenning |
+| `external_id` + `source_system` | På ordre, kunder, varer, aktiviteter. Uten dem kan en ordre ikke spores til fakturaen sin |
+| Pris og MVA på `products` / `order_materials` | Prisen lagres som **snapshot** på linja, så en gammel ordre ikke endrer beløp når varen prises om |
+| `time_entries`: `activity_id`, `internal_note`, `billable`, `invoiced_at` | `internal_note` er aldri synlig på faktura — «kunden var sur» skal ikke ut til kunden |
 
-Modellen var omvendt — hvit grunn med kremkort, altså kort *mørkere* enn
-bakgrunnen. Problemet var ikke at temaet var for lyst, men at spennet var for
-lite: bakgrunn, kort, chip og hårlinje lå alle mellom L*89 og L*100.
+### Moduler
 
-```
-canvas    #EFEAE1  L*~92   sidegrunn (NY — kun skjermrot)
-bg        #FFFFFF  L*100   kortflate (uendret betydning)
-fill      #E5DDCE  L*~88   chips, innfelte felt
-separator #DED6C7  L*~85
-border    #CDC4B1  L*~79
-```
+| Fil | Ansvar |
+|-----|--------|
+| `lib/invoicing.ts` | Fakturagrunnlaget. **Rene funksjoner, ingen database** — derfor selvtestbart. Penger regnes i **øre som heltall** |
+| `lib/order-billing.ts` | Kobler ordredataene til regnestykket. `markerFakturert` / `angreFakturert` |
+| `lib/customers.ts`, `lib/activities.ts`, `lib/products.ts` | Registrene og varesøket |
+| `lib/accounting/adapter.ts` + `fiken.ts` | `Regnskapsadapter`-grensesnittet og adapter nummer én |
+| `lib/pricefile/import.ts` | Prisfil → varekartotek |
 
-`bg` beholdt betydningen «kortflate», så ingen av de ~50 kortene er rørt — kun de
-31 skjermrøttene. `groupedBg` er nå ubrukt (kald grå hørte ikke hjemme i en varm
-palett).
+### Skjermer
 
-**Sjekk på device:** `AmbientBackdrop` på Ordre-lista og Lager er stemt for hvit
-grunn og kan bli grumsete mot sand. Snarveiene på Hjem ligger på canvas med
-`fill`-bakgrunn — bare fire lyshetspoeng, kan bli for subtilt. Blur-elementene
-(CartBar, GlassHeader) er låst til `systemChromeMaterialLight` og kan se kalde ut.
+`ordre/faktura.tsx` · `ordre/timer.tsx` · `ordre/tillegg.tsx` ·
+`ordre/deltakere.tsx` · `kunder/` (liste, detalj, ny, velger) ·
+`aktiviteter.tsx` · `lager/prisfil.tsx` ·
+`components/product-picker.tsx` · `components/sheet.tsx`
 
-### Merket er assistenten
+Registrene er skjult fra tab-baren (`href: null`) — de settes opp sjelden.
 
-`MicButton` er slettet. `components/ampex-mark-button.tsx` erstatter den på alle
-fire skjermer, og på Hjem er logoen ikke lenger død dekorasjon.
+---
 
-Ett trykk starter økten — ikke to. Et armert mellomtrinn er samme form som
-lyttelaget som ble bygget og slettet 12. august, og merket sitter øverst til
-høyre der utilsiktede trykk uansett ikke er en reell risiko.
+## De fem tingene som er lette å ødelegge ved uhell
 
-Ringene er **overgangen**, ikke en sperre: to stiplede lyn-ringer slår utover og
-blir til orben som `voice-assistant-overlay` tegner. Hvile er helt stille (regel
-8) — overlayet har den reaktive animasjonen som puster med mikrofonnivået, men
-det lever kun mens økten varer.
+1. **Beløp er øre som heltall.** Fiken vil ha `net: 25000` for 250,00 kr.
+   Sendes kroner blir fakturaen 100× for lav.
+2. **MVA-koden er engelsk hos Fiken** (`HIGH`/`MEDIUM`/`LOW`/`EXEMPT`), ikke
+   norsk. Ampex' egne typer er nøytrale og oversettes i adapteren.
+3. **Prisfila er CP1252, ikke UTF-8.** Den må leses som bytes gjennom
+   `base64TilBytes` → `dekodAnsi`. Leses den som tekst blir æøå ødelagt i hvert
+   eneste varenavn, og det oppdages først når noen leter etter «Vernebryter».
+4. **Tusenskilleren er U+00A0**, skrevet som escape. Et vanlig mellomrom lar
+   «1 234 567» brekke over to linjer i en fakturatabell.
+5. **`Alert.prompt` finnes ikke på Android** og gjør ingenting — stille.
+   `Alert.alert` viser maks tre knapper der. Bruk `components/sheet.tsx`.
 
-**Sjekk på device:** ringene tegnes utenfor knappens grenser — har headeren
-`overflow: hidden` et sted, klippes de. Føles ringene som noe annet enn orben,
-skal `duration` (520 ms) ned, ikke opp. `RING` er 2,6× knappen og er ett tall å
-justere om det dominerer.
+---
+
+## Databasen
+
+**`supabase/migrations/` er IKKE sannheten.** Repoet lå 18 migrasjoner bak
+databasen. Skjemaet er sikret i `supabase/baseline/schema_2026-08-19.sql`
+(2873 linjer, 28 funksjoner). **Spør databasen via Supabase-MCP, ikke mappa.**
+Full redegjørelse i `docs/DB_DRIFT.md`.
+
+### Synken er bygget om
+
+Fire migrasjoner kjørt mot `ampex-revamped` (`vymgogzcicbaizjlaurr`):
+
+| Migrasjon | Hva |
+|-----------|-----|
+| `order_system_tables_and_columns` | `customers`, `activities`, **`time_entries`**, `order_members`. Timene lå kun på én telefon og forsvant med telefonen |
+| `generic_watermelon_sync` | Synken er **registerdrevet**. `sync_tables` har én rad per tabell; kolonnene leses fra katalogen |
+| `generic_sync_push_update_first` | Rettelse av en ekte feil en testrunde fant |
+| `order_extras` | Tilleggsarbeid — koblet på synken med **én rad i `sync_tables`** |
+
+Den gamle håndskrevne synken (`_watermelon_pull_core`, `_watermelon_push_core`,
+`watermelon_push_*`) står **ubrukt som tilbakevei**. Rulle tilbake = `create or
+replace` de to inngangspunktene til å kalle `_core`-funksjonene igjen.
+
+Verifisert med full rundtur mot `time_entries` i en transaksjon som ble rullet
+tilbake: insert → delvis update → pull → soft delete. 22 tabeller i pull.
+
+---
 
 ## Hva som trengs fra deg
 
-**Én ekte EFO/NELFO-prisfil.** Dette blokkerer hele grossist-sporet — prisimport,
-terskler, autobestilling, prissammenligning. Parseren er skrevet mot spec
-E-NVare4.0r4, men fixturen er håndskrevet, så den er ikke bevist mot
-virkeligheten.
+**1. Én ekte EFO/NELFO-prisfil.** Dette er fortsatt hovedblokkeringen, og nå
+blokkerer det mer enn før: varesøket virker, men **varelista er tom** til en fil
+er importert. Skaff en `V4*`- eller `P4*`-fil fra Onninen, Solar eller Ahlsell.
 
-Skaff en `V4*`- eller `P4*`-fil fra Onninen/Elektroskandia, Solar eller Ahlsell,
-legg den i `lib/pricefile/fixture/`, og kjør:
+Ny mulighet: **spør om FTP-tilgang i samme telefonsamtale.** Prisfilene ligger i
+kundens egen katalog på grossistens FTP — tilgangen er din, ikke en
+systemleverandørs. Spør om tre ting: FTP-vert og brukernavn, om `F*`-fakturafiler
+ligger i samme katalog, og om de tar imot bestilling på samme server. Se
+`docs/GROSSIST_INTEGRASJON.md`.
 
-```
-npm run verify:pricefile
-```
+**2. Fire e-postmaler mangler.** `supabase/config.toml` peker på
+`supabase/templates/invite.html`, `recovery.html`, `confirmation.html` og
+`magic_link.html`. Ingen finnes, og det **blokkerer hele `supabase`-CLI-en**
+(`db reset`, `db push`, `db pull`).
 
-Avvikslisten forteller umiddelbart hva som er tolket feil.
+**3. Regnskap: start på Fiken.** 229 kr/mnd ENK, 349 kr AS. Ikke på grunn av
+API-et, men fordi Fiken er den eneste veien der Ampex kan være koblet **fra dag
+én** — OAuth tar to minutter. Tripletex krever 2–3 ukers godkjenning pluss et
+skjønnsmessig AI-samtykke etter §2.2.13 som kan avslås.
 
-**Søk om Tripletex-produksjonstilgang — helst i dag.** To grunner til at det
-haster mer enn det ser ut: normal godkjenning tar 2–3 uker, og **§2.2.13 i
-utviklervilkårene krever i tillegg skriftlig forhåndssamtykke fordi Ampex er en
-«AI Integration»**. Det er skjønnsmessig og kommer oppå. Beskriv AI-bruken i
-søknaden fra start. Testmiljøet er derimot umiddelbart, så byggingen kan starte
-med en gang. Se `docs/REGNSKAPSINTEGRASJON.md`.
-
-**Én telefon til grossisten** når du vil ha ordretransport: «hvordan sender jeg
-ordre elektronisk?» Svaret avhenger av kundeforholdet og kan ikke googles.
+> Vær klar over hva det koster: **Tripletex Elektro/VVS til 699 kr/mnd er Ampex'
+> direkte konkurrent**, ikke en integrasjon. Ordre, prosjekt, timer, regnskap,
+> faktura, lønn, grossistintegrasjon og sjekklister — og den er medlemsfordel
+> hos NELFO. Velger han Fiken, velger han bort den pakken, og da må Ampex dekke
+> ordre, beholdning og grossist. Det er planen uansett, men det skal være et
+> bevisst valg.
 
 ---
 
 ## Neste steg, i rekkefølge
 
-1. **Merge eller review branchen.** Migrasjonen `20260817200000_ampex_public_pool.sql`
-   er **ikke kjørt mot database** — verifiser med `supabase db reset` mot et
-   branch-prosjekt før den går i produksjon.
+1. **Kjør appen på en enhet.** Ingenting er sett. Skjemamigrasjonen v21→v23 bør
+   prøves på en telefon som allerede har data, ikke bare frisk installasjon.
+2. **Tilbud.** Største gjenstående hull i livsløpet — vi kan fakturere arbeid,
+   men ikke vinne det. Modellen: tilbud med linjer, status
+   utkast/sendt/akseptert/avslått, «akseptert» oppretter ordren med linjene
+   kopiert over. Fiken har `/offers` klart.
+3. **Foto og kundesignatur på ordren.** Foto finnes bare inne i skjemaer,
+   signatur ikke i det hele tatt. Begge er bevis når noe bestrides.
+4. **Mine timer på tvers av ordre.** Ukesvisning for lønn. I dag ser du timer per
+   ordre, ikke per person per uke.
+5. **Fiken-adapteren må kobles til noe.** Den er skrevet uten
+   React Native-avhengigheter og skal kjøre i en Edge Function eller Ampex
+   Desktop — et Fiken-token hører ikke hjemme på en montørtelefon. «Marker som
+   fakturert» skriver i dag kun lokalt.
+6. **Bestilling til grossist som objekt.** Designet ligger i
+   `GROSSIST_INTEGRASJON.md`, ingenting er bygget. Bygg e-post ut + FTP inn, ikke
+   EDI — Minuba har 80+ grossister på nettopp det.
+7. **Ordre ↔ prosjekt.** To øyer i dag.
+8. **Poolen må avklares.** `20260815120000_gpu_bake_worker_pool.sql` og
+   `20260817200000_ampex_public_pool.sql` er **aldri kjørt og kan ikke kjøres
+   slik de står** — `scan_jobs` finnes med et annet skjema, `worker_nodes`
+   overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
+   så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
 
-2. **AI-materiellverktøy** — største hullet i «alt administrativt». Timeføring,
-   dokumentasjon og ordre finnes; materiell og lager har **ingen** verktøy.
-   - `legg_til_materiell` først: fritekst på ordren, ingen katalogmatching, ingen
-     beholdning som kan bli feil. Lav risiko.
-   - `ta_ut_materiell` etterpå: mot `products`, og skal fylle **kurven**
-     (`cart.ts`) — ikke commite uttaket. AI-en fyller, mennesket gjennomfører.
-   - Lesetilbakemelding uten pronomen: «Tre stykk Nelko infelt stikk 1,5 — ut fra
-     Bil 2, ført på Storgata 4. Stemmer det?»
+### Fortsatt ikke synket
 
-3. **Slå sammen `mine_*`-verktøyene** til ett spørreverktøy før flere legges til.
-   Fire verktøy som er ett spørsmål. Jo flere verktøy, jo dårligere velger
-   modellen.
+`reminders`, `assistant_notes`, `nfc_tags`, `mesh_markers`. De to første er
+**bruker**skopet, ikke firmaskopet, og trenger en annen RLS-form enn resten.
 
-4. **Tegningssamhandling** — spec ligger i `ROADMAP_2026-08.md`. Rekkefølge:
-   markeringer som rader med `created_by`/`visibility`/`status` (låser opp mest),
-   så pins med koordinat, så revisjoner med overlegg.
+### Android
 
-5. **Ampex Desktop** — stack besluttet: **Tauri v2 + React + TypeScript**.
-   Kontor-PC-en gjør tre jobber i én installer: ordresystem/admin, poolnode
-   (Python som sidecar) og SpeedyCraft-import (Rust + `tiberius`, kobler med
-   Windows integrated auth uten passord). Se `docs/DESKTOP_OG_IMPORT.md`.
-
-6. **CUDA-porten av `bake.py`** når du vil at GPU-en skal bety noe. Tekstur er
-   nesten gratis, fusjon er moderat, **refine (Zhou-Koltun) er den vonde** — den
-   finnes kun som legacy uten CUDA-vei.
+Fungerer, men **LiDAR-skanning gjør ikke** — `ampex-splat` er
+`platforms: ["apple"]`. Lastes i try/catch, så appen starter og degraderer.
+Ordre, timer, materiell, faktura og varesøk virker fullt ut.
 
 ---
 
 ## Beslutninger som er tatt (ikke ta dem opp igjen)
 
-- **EFObasen droppes for v1.** Prisfila fra grossisten dekker behovet, koster
-  kunden ingenting, og har kundens egne priser. Standardavtalen tillater dessuten
-  ikke videreformidling til tredjepart.
+- **EFObasen droppes for v1.** API-tilgang koster **29 412 kr/år eks. mva**
+  (offentlig prisliste hos EFO), pluss etablering 6 000 kr. Prisfila fra
+  grossisten dekker behovet, koster null, og har kundens egne priser.
 - **Ampex public pool skal finnes**, med egen node først og Ampex som fallback.
 - **Aktivering av AI-en er LUKKET.** To-finger-dobbelttrykk beholdes, og
-  Ampex-merket (`ampex-mark-button.tsx`) er den synlige inngangen på alle
-  skjermer. Rist, back tap, dobbeltbank, løft-til-øret, vekkeord, App Intents,
-  Flic, volumknapp og nærhetssensor er alle vurdert og forkastet med begrunnelse.
-  **Ikke foreslå en tolvte gest.**
-- **AR er den vanskeligste anvendelsen av LiDAR, ikke den viktigste.** De store
-  gevinstene — tegning fra skann, måling uten målebånd — krever mindre presisjon
-  og treffer større marked.
-- **Ampex Desktop: Tauri v2 + React + TypeScript.** Kontor-PC-en gjør tre jobber
-  i én installer. Ikke Electron (300–500 MB RAM på maskinen som også baker), ikke
-  React Native for Windows (ingen MSSQL-vei).
-- **Regnskap: Tripletex primært, Fiken nummer to.** Tripletex mapper 1:1 mot vårt
-  domene; Fiken mangler order, timesheet og inventory helt.
-- **Fargevalg: tonet grunn med hvite kort, ikke mørkt tema.** Kobber beholdes som
-  eneste identitetsfarge. Flerfargede ikonchips (Dribbble-stil) er avvist —
-  farge skal bety status, ikke pynt.
-- **Rist-lytteren bør slettes** (`useShakeListener()` i `app/_layout.tsx:69`).
-  50 Hz akselerometer i forgrunnen for ti aktiveringer om dagen. Ikke gjort ennå;
-  kommentaren i `app/assistant.tsx` sier dessuten feilaktig at rist er borte.
-
----
+  Ampex-merket er den synlige inngangen. Rist, back tap, dobbeltbank,
+  løft-til-øret, vekkeord, App Intents, Flic, volumknapp og nærhetssensor er
+  vurdert og forkastet. **Ikke foreslå en tolvte gest.**
+- **AR er den vanskeligste anvendelsen av LiDAR, ikke den viktigste.** Tegning
+  fra skann og måling uten målebånd krever mindre presisjon og treffer større
+  marked. **Selg LiDAR på rehab** — SmartCraft Spark eier nybygg fra i år, med
+  plantegning → visuell oppmerking → automatisk tilbud, gratis.
+- **Ampex Desktop: Tauri v2 + React + TypeScript.** Ikke Electron, ikke RN for
+  Windows.
+- **Regnskap: Fiken først** (snudd 19. august — se begrunnelsen over).
+  Tripletex som adapter nummer to.
+- **Fargevalg: tonet grunn med hvite kort, ikke mørkt tema.** Kobber som eneste
+  identitetsfarge.
+- **Bygg ikke EDI mot grossist.** Minuba har 80+ grossister på e-postmal ut og
+  FTP inn, med inntil 20 minutters forsinkelse. Det holder.
+- **AI-en kan foreslå tilleggsarbeid, aldri godkjenne det.** Et tillegg som
+  fødes godkjent er et tillegg ingen spurte kunden om.
+- **Rist-lytteren bør slettes** (`useShakeListener()` i `app/_layout.tsx`).
+  50 Hz akselerometer i forgrunnen for ti aktiveringer om dagen. Ikke gjort.
 
 ---
 
@@ -268,101 +290,63 @@ Og den hører sannsynligvis i **Ampex Desktop**, ikke i montørappen — se
 
 ---
 
-## Oppsummering — hva som ble gjort
+---
 
-| Levert | Verifisert hvordan |
-|--------|--------------------|
-| UX-buntene på Hjem og ordredetalj | `tsc --noEmit` grønn |
-| EFO/NELFO 4.0-parser | 33 påstander i `npm run verify:pricefile`, alle grønne |
-| Fixture i ekte CP1252 | `file` bekrefter ISO-8859, æøå testes |
-| Public pool-migrasjon | Kun lest gjennom — **ikke kjørt** |
-| Tonet sidegrunn + hvite kort | `tsc` grønn, **ikke sett på device** |
-| Ampex-merket som AI-inngang | `tsc` grønn, **ikke sett på device** |
-| Seks dokumenter | — |
+## Sikkert / usikkert
 
-Elleve commits på `grossist-og-pool`, pushet.
+### Sikkert (verifisert mot kode, kilde eller database)
 
-### Sikkert (verifisert mot kilde eller kode)
-
-- **Formatspesifikasjonen.** Hentet den offisielle PDF-en (E-NVare4.0r4,
-  rev. 2010-11-25) fra NHO Elektro. Semikolonseparert, CP1252/ISO-8859-1, CR+LF,
-  posttyper VH/VL/VX/VA, `V4*`/`P4*`-filnavn. Feltrekkefølge og de implisitte
-  desimalene (`Pris` 2, `Mengde` og `SalgsPakning` 4) er lest rett fra tabellen.
-- **EFObasen-vilkårene.** Trakk ut teksten fra brukeravtalen. Punkt 2 forbyr
-  videreformidling til tredjepart uten særskilt avtale; punkt 3 har prisen
-  redigert til `kr XX 000,-`; punkt 5 krever full sletting ved oppsigelse.
-- **`bake.py` kjører helt på CPU i dag.** `ScalableTSDFVolume` og
-  `run_*_optimizer` er legacy-API uten CUDA-vei. `torch` brukes bare til å
-  rapportere GPU-navn. Din egen kodekommentar sier det samme.
-- **`_texture` er allerede på tensor-API-et** (`project_images_to_albedo`), så den
-  delen av CUDA-porten er nesten gratis.
-- **`claim_scan_job` scoper på `company_id`.** Lest i migrasjonen.
-- **AI-en har ingen materiell- eller lagerverktøy.** Grep over
-  `live-session.ts` — 29 verktøy, ingen av dem rører materiell.
-- **`drawing_markup` er én blob per tegning.** Én `data`-kolonne, ingen forfatter.
-- **`task` har `room_id`, ikke koordinat.**
-- **Web-target bygger ikke.** `app.json` deklarerer den, men `react-native-web`
-  og `react-dom` mangler i `package.json`.
-- **Kun `orders` synker.** `watermelon_pull` i migrasjonen fra 3. juli rører bare
-  den tabellen.
-- **Dalux justerer AR manuelt** — gulvdeteksjon, så flytt modellen med fingrene
-  mot vegger. Fra deres egen HelpCenter-artikkel.
-- **NSDK 4.0 eksponerer VPS2 for Swift**, ikke bare Unity. lightship.dev ble lagt
-  ned 28. februar 2026.
-- **SpeedyCraft er MSSQL** (Devinco AS, databasenavn `speedycraft`, instans
-  `SPEEDYSQL`). Fra deres support-doc. Basen står på kundens egen kontor-PC, så
-  importen kan kjøre mot `localhost` — og med Windows integrated auth muligens
-  uten passord i det hele tatt.
-- **`SCImpExpCOM` finnes** — COM-basert integrasjonsobjekt hos Devinco, brukt av
-  bl.a. Visma Contracting. Overfører ordre med materiell, timer og dokumentasjon.
-- **Onninen kjøpte Elektroskandia Norge** fra Rexel, slått sammen fra mars 2023.
+- **Databasen synker 22 tabeller** etter ombyggingen, registerdrevet. Verifisert
+  med `watermelon_pull(0)`.
+- **Fiken vil ha øre som heltall** og engelsk MVA-enum. Lest rett fra
+  `api.fiken.no/api/v2/docs/swagger.yaml` (111 endepunkter).
+- **Fiken HAR timeføring i API-et** — `/timeEntries`, `/activities`, `/timeUsers`
+  og `/timeEntries/createInvoiceDraft`. Tidligere påstand om det motsatte var feil.
+- **Tripletex har 490 endepunkter**, `/order` 21, `/project` 40, `/timesheet` 37.
+- **EFObasen API: 29 412 kr/år eks. mva.** Fra EFOs egen prisliste.
+- **Cordel har lagerstatus mot åtte grossister**, FTP-prisfiler fra fire, og
+  elektronisk bestilling. Vår antakelse om at grossistene var lukket var feil.
+- **Minuba aktiveres med e-postmal + FTP-polling**, inntil 20 min forsinkelse.
+- **Ahlsell Partner har allerede bil-som-lager med strekkodeuttak og automatisk
+  påfylling.** Autobestilling er ikke ny — men den er ny som *nøytral*.
+- **simPRO lanserte JobScribe 13. mai 2026** (tale → jobbdokumentasjon).
+  Stemme → tekst er ikke lenger en differensiator. Stemme → *transaksjon* er.
+- **WatermelonDB dropper ukjente kolonner fra serveren** — `sanitizedRaw` bygger
+  raden fra det lokale skjemaet. Lest i `node_modules`. Superset-pull er trygt.
+- **`ampex-splat` er `platforms: ["apple"]`** og lastes i try/catch.
+- **Formatspesifikasjonen E-NVare4.0r4** — semikolon, CP1252, CR+LF, `V4*`/`P4*`,
+  implisitte desimaler.
 
 ### Usikkert (anslag eller uprøvd)
 
-- **Parseren er ikke møtt med en ekte fil.** Fixturen er min egen, skrevet mot
-  spec. Grossister avviker fra spec i praksis — særlig på desimaltegn, feltlengder
-  og hvor mange tomme felt de faktisk skriver. **Dette er den viktigste
-  usikkerheten i alt jeg leverte.**
-- **Baketiden er gjettet.** «5–20 min på CPU» og «1–3 min etter CUDA-port» er
-  anslag, ikke målinger. Kjør `worker/tools/make_fixture.py` +
-  `run_bake.py` og ta tiden.
-- **«10–12 firmaer per node» arver den usikkerheten**, og bygger i tillegg på to
-  antakelser jeg fant på: to timers burst ved dagens slutt, og tre skann per firma
-  per dag. Endre du de tallene, endres konklusjonen.
-- **Migrasjonen er ikke kjørt.** Syntaks og logikk er kun lest. `version_as_ints`,
-  `row_number()`-rettferdigheten og `scan_job_queue_position` kan ha feil jeg ikke
-  ser uten en database.
+- **Parseren er ikke møtt med en ekte fil.** Fixturen er håndskrevet mot spec.
+  **Fortsatt den viktigste usikkerheten i alt som er levert.**
+- **Ingenting er kjørt på en enhet.** Verken skjermene, migrasjonen v21→v23,
+  eller en ekte synk fra appen.
+- **Fiken-adapteren er ikke testet mot ekte API** — kun mot spesifikasjonen.
+- **Om FTP-veien er åpen for tredjeparter** eller kun for systemleverandører med
+  avtale. Viktigste enkeltspørsmål i grossistsporet.
+- **Om Onninen har API/EDI i det hele tatt.** E-handelssiden nevner det ikke.
+- **Tripletex' AI-samtykke (§2.2.13)** er skjønnsmessig og kan avslås.
+- **Om §2.2.10 forbyr å sende Tripletex-data til Gemini.** Min lesning er ja,
+  og at data derfor må holdes ute av modellkonteksten. Ikke bekreftet.
+- **Baketiden er gjettet**, og «10–12 firmaer per node» arver den usikkerheten.
 - **VRAM-anslaget (4–8 GB)** er regnet, ikke målt.
-- **Elektroskandias webservice** for saldo og kundenetto er dokumentert på svensk
-  side. Hva som gjelder i Norge etter Onninen-fusjonen vet jeg ikke.
-- **Om `SCImpExpCOM` er brukbar for historisk masseuttrekk.** Den er laget for
-  løpende ERP-synk, og dokumentasjonen ligger bak Devincos partnerportal (403
-  utenfra). Antakelsen er at direkte MSSQL-lesing blir den realistiske veien.
-- **SpeedyCraft-skjemaet er ukjent.** Varierer mellom versjoner, og egendefinerte
-  felt ligger i en XML-struktur (`ObjectDataDefinition`), ikke som kolonner.
-  Krever et oppdagelsessteg mot en ekte base.
-- **Om grossistene tillater prisfila i tredjepartssystem.** Det er formatets
-  uttalte formål, og Cordel gjør det åpent, men jeg har ikke lest vilkårene.
-- **Om `ARWorldMap` er nøyaktig nok** til relokalisering i et rom som endrer seg.
-  Utestet — en dags eksperiment.
-- **EFObasens faktiske pris.** `XX 000` er redigert bort i standardavtalen.
-- **Tripletex' AI-samtykke (§2.2.13).** Skjønnsmessig, og vi vet ikke hva de
-  faktisk krever eller hvor lang tid det tar. Kan i verste fall bli avslått.
-- **Om §2.2.10 forbyr å sende Tripletex-data til Gemini.** Min lesning er at det
-  gjør det, og at data derfor må holdes ute av modellkonteksten. Ikke bekreftet.
-- **De to visuelle endringene er ikke sett på ekte skjerm.** L*-verdier er regnet,
-  ikke målt, og ringene rundt merket kan bli klippet av `overflow: hidden`.
-- **Ekvivalensmatching på tvers av produsent** (Nexans vs Draka 3G2,5) via ETIM.
-  Jeg tror en LLM løser det godt, men det er en hypotese.
+- **Om `ARWorldMap` er nøyaktig nok** til relokalisering. Utestet.
+- **Ekvivalensmatching på tvers av produsent** via ETIM er en hypotese.
+
+---
 
 ## Dokumentkart
 
 | Fil | Innhold |
 |-----|---------|
 | `docs/STATUS.md` | Denne — hvor vi står, hva som er neste |
+| `docs/DB_DRIFT.md` | **Les før du rører databasen.** Repoet er 18 migrasjoner bak |
+| `docs/KONKURRENTANALYSE.md` | Hva Cordel, Handyman, Minuba, simPRO og Ahlsell faktisk har |
+| `docs/GROSSIST_INTEGRASJON.md` | Prisfiler, FTP-kanalen, prissammenligning, autobestilling |
+| `docs/REGNSKAPSINTEGRASJON.md` | Fiken/Tripletex — API-diff, kompatibilitet, friksjon |
 | `docs/ROADMAP_2026-08.md` | Full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering |
-| `docs/GROSSIST_INTEGRASJON.md` | Prisfiler, prissammenligning, autobestilling, admin-konsoll |
-| `docs/DESKTOP_OG_IMPORT.md` | Ampex Desktop, SpeedyCraft-import og merge-semantikk |
-| `docs/REGNSKAPSINTEGRASJON.md` | Fiken/Tripletex/PowerOffice — inngangsbilletten for å erstatte SpeedyCraft |
+| `docs/DESKTOP_OG_IMPORT.md` | Ampex Desktop, SpeedyCraft-import |
 | `docs/ON_DEVICE_SCAN_PLAN.md` | Skann-planen (utracket) |
 | `docs/NEW_APP_PLAN.md` | Opprinnelig domene- og datamodell-plan |

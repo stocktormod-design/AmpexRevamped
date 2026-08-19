@@ -137,7 +137,13 @@ bilen?».
   for å endre.» Gjør han ingenting, går den. En bestilling koster penger, så det
   skal finnes et vindu å stoppe den i — men vinduet krever ingen handling.
 
-### Ordretransport — ikke løst
+### Ordretransport — RETTELSE 2026-08-18
+
+> Påstanden nedenfor om at «ingen av grossistene har åpne endepunkter» er feil.
+> Se `KONKURRENTANALYSE.md` og FTP-seksjonen nederst i dette dokumentet.
+> Cordel har elektronisk bestilling og sanntids lagerstatus mot åtte grossister.
+> Avsnittet står igjen fordi konklusjonen — bygg bestilling som internt objekt
+> med utskiftbar sending — fortsatt er riktig, og nå bekreftet av Minuba.
 
 Ingen av grossistene har åpne endepunkter. Kanalene er EDI (EDIFACT via
 operatør), punch-out, eller e-post til ordrekontoret. Solar Norge markedsfører
@@ -181,3 +187,90 @@ og `admin` ser konsollen, `montør` gjør ikke.
 Prisfil-opplasting er øyeblikket produktet beviser seg. Legg den først og la
 belønningen komme med en gang. En onboarding som *gir* noe fremfor å kreve noe er
 forskjellen på 40 % og 90 % gjennomføring.
+
+---
+
+# FTP-kanalen — undersøkt 2026-08-18
+
+Dette er den viktigste korreksjonen til dokumentet. Vi planla e-post fordi vi
+trodde filene måtte komme den veien. **Bransjen bruker FTP, og tilgangen er
+kundens egen.**
+
+## Hvem eier kontoen
+
+Dette var det avgjørende spørsmålet, og svaret er godt for oss:
+**prisfilene legges i kundens egen katalog på grossistens FTP-server.** Det er
+ikke en systemleverandørtilgang. Det er en tilgang faren din får fordi han er
+kunde, og som han kan gi til hvilket som helst system.
+
+Elinn sier det rett ut i sin dokumentasjon: all prisoppdatering skjer ved import
+av prisfiler og rabattavtaler **som du får fra grossist/leverandør**.
+
+Det betyr at Ampex ikke trenger en avtale med Onninen for å lese prisene. Vi
+trenger at kunden gir oss brukernavnet sitt.
+
+## Feltene som kreves — identiske på tvers av alle systemene
+
+Fire systemer, samme fem felt. Det er en de facto standard:
+
+| Felt | Merknad |
+|------|---------|
+| Vert | FTP / FTPS / SFTP |
+| Port | Kun nødvendig ved FTPS/SFTP |
+| Brukernavn | Per kunde. **Ahlsell bruker felles brukernavn/passord for eksport** |
+| Passord | Brødrene Dahl sender via **SMS** etter e-postbekreftelse |
+| **Filmaske** | Ikke filnavn — et mønster. `V4*` vare, `P4*` pristilbud, **`F*` faktura (autofakt)** |
+
+Contracting Works har i tillegg en **«Test tilkobling»-knapp** og en av/på for
+automatisk import. Begge deler bør vi kopiere rett av — en FTP-konfigurasjon
+uten testknapp er en supportsak i forkledning.
+
+## `F*` er funnet vi ikke lette etter
+
+Filmasken `F*` er **autofakt** — grossistens faktura i EFO/NELFO-format.
+
+Det er den siste brikken i Minubas modell: innkjøpsfakturaen registreres
+automatisk på riktig sak, «så ingen materialer glemmes og alt blir fakturert».
+Samme kanal, samme parser, samme innlogging som prisfila.
+
+**Parseren vår bør derfor utvides til `F*` når prisfila er bevist mot
+virkeligheten.** Det er posttypene vi allerede kjenner, og gevinsten er stor:
+avvik mellom bestilt og fakturert blir synlig av seg selv.
+
+## Hvem bruker hvilken transport
+
+| Grossist | Transport | Kilde |
+|----------|-----------|-------|
+| Brødrene Dahl | **SFTP via Logiq** — pakkseddel, autofakt, bestilling og prisoppdatering i én kanal | Cordel |
+| Ahlsell | FTP, felles brukernavn/passord for eksport | Cordel, Tripletex |
+| Onninen | FTP (prisfil bekreftet via Visma-forum) | Visma Community |
+| Heidenreich | FTP | Cordel |
+| Solar | EDI + OCI/punch-out | Solar |
+
+Merk **Logiq** hos Brødrene Dahl: det er en EDI-operatør, men her betaler
+*grossisten*. Kunden får bare et brukernavn. Vår regel om ingen løpende
+tredjepartsavgifter brytes altså ikke av å lese fra Logiqs SFTP.
+
+## Tripletex' modell er verdt å stjele
+
+Tripletex Elektro/VVS oppretter grossisten automatisk som leverandør, og
+grossisten sender rabattfila til **en server Tripletex kan hente fra og sende
+data tilbake til**. Systemet ser etter ny fil **én gang i døgnet, om kvelden**.
+
+To ting å ta med:
+
+1. **Samme server begge veier.** Prisfil inn og bestilling ut over én kanal.
+   Det er billigere enn to integrasjoner, og det er slik ordretransporten løses
+   uten EDI-avtale.
+2. **Én gang i døgnet, om kvelden.** Ingen polling-løkke. Det er nøyaktig regel 8
+   i CLAUDE.md, og det er godt nok — prisfiler endres ikke oftere.
+
+## Hva dette endrer i planen
+
+- **Cloudflare Email Routing er fortsatt riktig som fallback**, men FTP-pull er
+  primærveien. Grossistene *har* allerede en katalog til faren din.
+- **Spør om tre ting i én telefon:** FTP-vert og brukernavn, om `F*`-fakturafiler
+  legges i samme katalog, og om de tar imot bestilling på samme server.
+- **Bygg «Test tilkobling» før automatisk import.** Uten den er første oppsett
+  et gjettespill.
+- **Filmaske, ikke filnavn.** Grossistene daterer filnavnene sine.
