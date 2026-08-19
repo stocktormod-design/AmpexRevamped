@@ -209,6 +209,31 @@ export function dekodAnsi(bytes: Uint8Array): string {
  *
  * Er kildeteksten lest fra bytes, bruk `dekodAnsi` først — ikke `toString('utf8')`.
  */
+/**
+ * Base64 → bytes, uten Buffer og uten å stole på at `atob` finnes i runtime.
+ *
+ * Telefonen leser fila som base64 (expo-file-system). Fila er CP1252, ikke
+ * UTF-8, så den MÅ igjennom `dekodAnsi` som bytes. Leses den som tekst blir
+ * æ, ø og å ødelagt i hvert eneste varenavn — og det oppdages først når noen
+ * leter etter «Vernebryter».
+ */
+export function base64TilBytes(b64: string): Uint8Array {
+  const tegn = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+  const rent = b64.replace(/[^A-Za-z0-9+/]/g, '')
+  const ut = new Uint8Array(Math.floor((rent.length * 3) / 4))
+  let p = 0
+  for (let i = 0; i < rent.length; i += 4) {
+    const n = (tegn.indexOf(rent[i]) << 18)
+      | (tegn.indexOf(rent[i + 1]) << 12)
+      | ((tegn.indexOf(rent[i + 2]) & 63) << 6)
+      | (tegn.indexOf(rent[i + 3]) & 63)
+    ut[p++] = (n >> 16) & 255
+    if (i + 2 < rent.length) ut[p++] = (n >> 8) & 255
+    if (i + 3 < rent.length) ut[p++] = n & 255
+  }
+  return ut.subarray(0, p)
+}
+
 export function parseEfoNelfo(innhold: string): ParseResultat {
   // Godtar både CRLF (spec) og LF, siden filer ofte har vært innom et Unix-ledd.
   const linjer = innhold.split(/\r\n|\n|\r/)

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { View, Text, ScrollView } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { Plus, Warehouse, Truck, ChevronRight } from 'lucide-react-native'
+import { Plus, Warehouse, Truck, ChevronRight, FileUp } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { SectionHeader, AmbientBackdrop } from '../../../components/ui'
 import { database } from '../../../lib/db'
@@ -92,6 +92,19 @@ export default function LagerScreen() {
           paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
         }}>
           <Text style={t.largeTitle}>Lager</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          {/* Prisfila er inngangen til hele vareregisteret — uten den er lageret
+              en liste over ting noen har skrevet inn for hånd. */}
+          <Pressable
+            haptic="light" pressScale={0.92}
+            onPress={() => router.push('/(app)/lager/prisfil')}
+            style={{
+              width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.fill,
+              alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs,
+            }}
+          >
+            <FileUp size={sizes.icon - 2} color={colors.secondaryLabel} strokeWidth={2.2} />
+          </Pressable>
           <Pressable
             haptic="medium" pressScale={0.92}
             onPress={() => router.push('/(app)/lager/ny-lokasjon')}
@@ -102,6 +115,7 @@ export default function LagerScreen() {
           >
             <Plus size={sizes.icon} color={colors.ctaLabel} strokeWidth={2.2} />
           </Pressable>
+          </View>
         </View>
 
         {locations.length === 0 ? (

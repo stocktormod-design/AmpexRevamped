@@ -14,7 +14,7 @@
  */
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { parseEfoNelfo, rundTilPakning, elnummer } from '../lib/pricefile/efo-nelfo'
+import { parseEfoNelfo, rundTilPakning, elnummer, dekodAnsi, base64TilBytes } from '../lib/pricefile/efo-nelfo'
 
 let feil = 0
 
@@ -93,6 +93,24 @@ sjekk('vare uten pakning holdes uendret', rundTilPakning(7, { salgspakning: null
 
 // ── Æøå overlever ANSI-dekoding ─────────────────────────────────────────────
 sjekk('norske tegn i avvikstekst', res.avvik[0].grunn.includes('SØPPEL'), true)
+
+// ── base64 → bytes ────────────────────────────────────────────────────────────
+// Telefonen leser fila som base64 (expo-file-system), og dekoderen er
+// håndskrevet fordi atob ikke er garantert i runtime. Feiler den, blir HELE
+// prisfila søppel — så den testes mot de ekte fixture-bytene.
+{
+  const raa = readFileSync(join(process.cwd(), 'lib', 'pricefile', 'fixture', 'V4_eksempel.txt'))
+  const rundtur = base64TilBytes(raa.toString('base64'))
+  sjekk('base64: samme lengde', rundtur.length, raa.length)
+  sjekk('base64: identiske bytes', Buffer.from(rundtur).equals(raa), true)
+  // Den avgjørende påstanden: base64 → bytes → dekodAnsi skal gi NØYAKTIG samme
+  // streng som å lese fila direkte som latin1. Det er hele veien telefonen tar.
+  sjekk('base64 → dekodAnsi === direkte latin1-lesing', dekodAnsi(rundtur), tekst)
+  // Padding er den klassiske feilen: '=' må ignoreres, ikke tolkes som data.
+  sjekk('base64: padding gir ikke ekstra byte', base64TilBytes('QQ==').length, 1)
+  sjekk('base64: to padding-tegn', Array.from(base64TilBytes('QUI=')), [65, 66])
+  sjekk('base64: uten padding', Array.from(base64TilBytes('QUJD')), [65, 66, 67])
+}
 
 console.log(feil === 0 ? '\nAlle sjekker passerte.' : `\n${feil} sjekk(er) feilet.`)
 process.exit(feil === 0 ? 0 : 1)

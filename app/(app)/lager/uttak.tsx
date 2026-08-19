@@ -5,6 +5,8 @@ import { Q } from '@nozbe/watermelondb'
 import * as Haptics from 'expo-haptics'
 import { Pressable } from '../../../components/pressable'
 import { Chip } from '../../../components/ui'
+import { ProductPicker } from '../../../components/product-picker'
+import { finnEllerOpprettVare } from '../../../lib/products'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Product } from '../../../lib/db/models/product'
@@ -24,28 +26,29 @@ export default function UttakScreen() {
   const [unit, setUnit] = useState('stk')
   const [quantity, setQuantity] = useState('1')
   const [busy, setBusy] = useState(false)
+  const [soker, setSoker] = useState(true)
 
   const qty = parseFloat(quantity.replace(',', '.'))
   const canAdd = name.trim().length > 0 && qty > 0 && !busy
 
-  async function findOrCreateProduct(): Promise<Product> {
-    const el = elnummer.trim()
-    const collection = database.get<Product>('products')
-    if (el) {
-      const [byEl] = await collection.query(Q.where('elnummer', el)).fetch()
-      if (byEl) return byEl
-    }
-    const [byName] = await collection.query(Q.where('name', name.trim())).fetch()
-    if (byName) return byName
-    return collection.create(p => { p.name = name.trim(); p.elnummer = el || null; p.unit = unit })
+  function velgVare(p: Product) {
+    setName(p.name)
+    setElnummer(p.elnummer ?? '')
+    setUnit(p.unit)
+    setSoker(false)
+  }
+
+  function nyVare(sok: string) {
+    setName(sok)
+    setSoker(false)
   }
 
   /** Legg til i kurv; hold modalen åpen for neste uttak (flere om gangen). */
   async function addAnother() {
     if (!canAdd || !locationId) return
     setBusy(true)
+    const product = await finnEllerOpprettVare({ navn: name, elnummer, enhet: unit })
     await database.write(async () => {
-      const product = await findOrCreateProduct()
       await database.get<StockMovement>('stock_movements').create(m => {
         m.productId = product.id
         m.locationId = locationId
@@ -57,7 +60,7 @@ export default function UttakScreen() {
     })
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
     syncQuietly()
-    setName(''); setElnummer(''); setQuantity('1')
+    setName(''); setElnummer(''); setQuantity('1'); setSoker(true)
     setBusy(false)
   }
 
@@ -76,6 +79,12 @@ export default function UttakScreen() {
           Legg til flere om gangen — de samles i handlekurven, som du plasserer på en ordre etterpå.
         </Text>
 
+        {soker ? (
+          <View style={{ marginHorizontal: spacing.screen }}>
+            <ProductPicker onVelg={velgVare} onNy={nyVare} autoFocus />
+          </View>
+        ) : (
+          <>
         <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
           <TextInput
             value={name} onChangeText={setName}
@@ -88,6 +97,12 @@ export default function UttakScreen() {
             style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }]}
           />
         </View>
+          <Pressable
+            onPress={() => setSoker(true)}
+            style={{ paddingHorizontal: spacing.screen + spacing.lg, paddingTop: spacing.md }}
+          >
+            <Text style={[t.subhead, { color: colors.brand }]}>Søk i varer i stedet</Text>
+          </Pressable>
 
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -119,6 +134,8 @@ export default function UttakScreen() {
         >
           <Text style={[t.headline, { color: colors.ctaLabel }]}>Legg i handlekurv</Text>
         </Pressable>
+          </>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   )
