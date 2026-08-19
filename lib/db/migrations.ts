@@ -4,6 +4,109 @@ import { schemaMigrations, createTable, addColumns } from '@nozbe/watermelondb/S
 export const migrations = schemaMigrations({
   migrations: [
     {
+      toVersion: 23,
+      steps: [
+        createTable({
+          name: 'order_extras',
+          columns: [
+            { name: 'order_id', type: 'string', isIndexed: true },
+            { name: 'title', type: 'string' },
+            { name: 'description', type: 'string', isOptional: true },
+            { name: 'pricing', type: 'string' },
+            { name: 'price', type: 'number', isOptional: true },
+            { name: 'vat_type', type: 'string', isOptional: true },
+            { name: 'status', type: 'string' },
+            { name: 'approved_by', type: 'string', isOptional: true },
+            { name: 'approved_at', type: 'number', isOptional: true },
+            { name: 'approval_method', type: 'string', isOptional: true },
+            { name: 'invoiced_at', type: 'number', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 22,
+      steps: [
+        createTable({
+          name: 'customers',
+          columns: [
+            { name: 'name', type: 'string' },
+            { name: 'org_nr', type: 'string', isOptional: true },
+            { name: 'is_company', type: 'boolean' },
+            { name: 'email', type: 'string', isOptional: true },
+            { name: 'phone', type: 'string', isOptional: true },
+            { name: 'address', type: 'string', isOptional: true },
+            { name: 'postal_code', type: 'string', isOptional: true },
+            { name: 'city', type: 'string', isOptional: true },
+            { name: 'note', type: 'string', isOptional: true },
+            { name: 'source_system', type: 'string', isOptional: true },
+            { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'activities',
+          columns: [
+            { name: 'name', type: 'string' },
+            { name: 'hourly_rate', type: 'number', isOptional: true },
+            { name: 'billable', type: 'boolean' },
+            { name: 'vat_type', type: 'string', isOptional: true },
+            { name: 'archived', type: 'boolean' },
+            { name: 'source_system', type: 'string', isOptional: true },
+            { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        addColumns({
+          table: 'orders',
+          columns: [
+            { name: 'customer_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'source_system', type: 'string', isOptional: true },
+            { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'invoice_external_id', type: 'string', isOptional: true },
+            { name: 'invoiced_at', type: 'number', isOptional: true },
+          ],
+        }),
+        addColumns({
+          table: 'time_entries',
+          columns: [
+            { name: 'internal_note', type: 'string', isOptional: true },
+            { name: 'activity_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'billable', type: 'boolean', isOptional: true },
+            { name: 'invoiced_at', type: 'number', isOptional: true },
+          ],
+        }),
+        addColumns({
+          table: 'products',
+          columns: [
+            { name: 'unit_price', type: 'number', isOptional: true },
+            { name: 'cost_price', type: 'number', isOptional: true },
+            { name: 'vat_type', type: 'string', isOptional: true },
+            { name: 'income_account', type: 'string', isOptional: true },
+            { name: 'supplier', type: 'string', isOptional: true },
+            { name: 'price_updated_at', type: 'number', isOptional: true },
+            { name: 'source_system', type: 'string', isOptional: true },
+            { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
+          ],
+        }),
+        addColumns({
+          table: 'order_materials',
+          columns: [
+            { name: 'product_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'unit_price', type: 'number', isOptional: true },
+            { name: 'cost_price', type: 'number', isOptional: true },
+            { name: 'vat_type', type: 'string', isOptional: true },
+            { name: 'billable', type: 'boolean', isOptional: true },
+            { name: 'invoiced_at', type: 'number', isOptional: true },
+          ],
+        }),
+      ],
+    },
+    {
       toVersion: 21,
       steps: [
         createTable({

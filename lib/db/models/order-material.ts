@@ -14,6 +14,17 @@ export class OrderMaterial extends Model {
   @text('description') description: string
   @field('quantity') quantity: number
   @text('unit') unit: string
+  @text('product_id') productId: string | null
+  /**
+   * Pris-snapshot fra registreringstidspunktet. Varen kan prises om i morgen —
+   * en ordre som allerede er utført skal ikke endre beløp av seg selv.
+   */
+  @field('unit_price') unitPrice: number | null
+  @field('cost_price') costPrice: number | null
+  @text('vat_type') vatType: string | null
+  /** null = ja. Eksplisitt false for garanti/omlevering. */
+  @field('billable') billable: boolean | null
+  @date('invoiced_at') invoicedAt: Date | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 }

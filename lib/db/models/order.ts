@@ -26,6 +26,16 @@ export class Order extends Model {
   @text('status') status: OrderStatus
   @text('assigned_to') assignedTo: string | null
   @date('scheduled_at') scheduledAt: Date | null
+  /**
+   * Kunderegisteret eier kunden; customer_name/-phone/address på ordren er et
+   * snapshot fra da ordren ble laget. Rettes kunden i ettertid, skal en gammel
+   * ordre fortsatt vise adressen jobben faktisk ble utført på.
+   */
+  @text('customer_id') customerId: string | null
+  @text('source_system') sourceSystem: string | null
+  @text('external_id') externalId: string | null
+  @text('invoice_external_id') invoiceExternalId: string | null
+  @date('invoiced_at') invoicedAt: Date | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 }

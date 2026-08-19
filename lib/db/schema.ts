@@ -4,8 +4,67 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 21,
+  version: 23,
   tables: [
+    tableSchema({
+      name: 'order_extras',
+      columns: [
+        // Tilleggsarbeid. Håndverkertjenesteloven §9 krever at forbrukeren
+        // kontaktes før tillegg utføres; blir det bestridt i ettertid, er det
+        // HVEM som sa ja, NÅR og HVORDAN som avgjør. Derfor er godkjenningen
+        // egne felter, ikke en setning i et notat.
+        { name: 'order_id', type: 'string', isIndexed: true },
+        { name: 'title', type: 'string' },
+        { name: 'description', type: 'string', isOptional: true },
+        // fastpris → egen fakturalinje. medgatt → dekkes av timer og materiell
+        // som allerede føres på ordren; raden er da ren dokumentasjon.
+        { name: 'pricing', type: 'string' }, // fastpris|medgatt
+        { name: 'price', type: 'number', isOptional: true }, // kr eks. mva, kun fastpris
+        { name: 'vat_type', type: 'string', isOptional: true },
+        { name: 'status', type: 'string' }, // foreslatt|godkjent|avvist
+        { name: 'approved_by', type: 'string', isOptional: true }, // hvem hos kunden
+        { name: 'approved_at', type: 'number', isOptional: true },
+        { name: 'approval_method', type: 'string', isOptional: true }, // muntlig|sms|epost|signert
+        { name: 'invoiced_at', type: 'number', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'customers',
+      columns: [
+        { name: 'name', type: 'string' },
+        { name: 'org_nr', type: 'string', isOptional: true }, // 9 siffer, kun bedrift
+        { name: 'is_company', type: 'boolean' },
+        { name: 'email', type: 'string', isOptional: true },
+        { name: 'phone', type: 'string', isOptional: true },
+        { name: 'address', type: 'string', isOptional: true },
+        { name: 'postal_code', type: 'string', isOptional: true },
+        { name: 'city', type: 'string', isOptional: true },
+        { name: 'note', type: 'string', isOptional: true },
+        // Regnskapssystemet eier kunderegisteret når det er koblet — vi speiler.
+        { name: 'source_system', type: 'string', isOptional: true }, // fiken|tripletex|speedycraft|null
+        { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'activities',
+      columns: [
+        // Begge regnskaps-API-ene modellerer timer som aktivitet × person × dato.
+        // Uten aktivitet kan en time ikke bli en fakturalinje.
+        { name: 'name', type: 'string' },
+        { name: 'hourly_rate', type: 'number', isOptional: true }, // kr eks. mva
+        { name: 'billable', type: 'boolean' },
+        { name: 'vat_type', type: 'string', isOptional: true }, // MvaType i lib/invoicing.ts — nøytral, mappes per adapter
+        { name: 'archived', type: 'boolean' },
+        { name: 'source_system', type: 'string', isOptional: true },
+        { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
     tableSchema({
       name: 'nfc_tags',
       columns: [
@@ -165,7 +224,11 @@ export const schema = appSchema({
         { name: 'user_name', type: 'string' }, // navn-snapshot for offline-visning
         { name: 'date', type: 'number' }, // dagen timene gjelder (epoch ms, midnatt lokal)
         { name: 'hours', type: 'number' },
-        { name: 'note', type: 'string', isOptional: true },
+        { name: 'note', type: 'string', isOptional: true }, // SYNLIG på faktura (Fiken description)
+        { name: 'internal_note', type: 'string', isOptional: true }, // IKKE synlig på faktura
+        { name: 'activity_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'billable', type: 'boolean', isOptional: true }, // null = arv fra aktivitet
+        { name: 'invoiced_at', type: 'number', isOptional: true }, // satt når linja er med i et fakturautkast
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
@@ -222,6 +285,16 @@ export const schema = appSchema({
         { name: 'elnummer', type: 'string', isOptional: true, isIndexed: true },
         { name: 'name', type: 'string' },
         { name: 'unit', type: 'string' },
+        // Fiken product krever name + unitPrice + vatType + incomeAccount.
+        // Uten disse kan en vare leses fra prisfila, men ikke bli en fakturalinje.
+        { name: 'unit_price', type: 'number', isOptional: true }, // utsalg eks. mva
+        { name: 'cost_price', type: 'number', isOptional: true }, // nettopris fra grossist
+        { name: 'vat_type', type: 'string', isOptional: true },
+        { name: 'income_account', type: 'string', isOptional: true },
+        { name: 'supplier', type: 'string', isOptional: true }, // hvilken grossist prisen kom fra
+        { name: 'price_updated_at', type: 'number', isOptional: true }, // ferskhet per vare
+        { name: 'source_system', type: 'string', isOptional: true },
+        { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
@@ -259,6 +332,12 @@ export const schema = appSchema({
         { name: 'description', type: 'string' },
         { name: 'quantity', type: 'number' },
         { name: 'unit', type: 'string' }, // stk|m|pk …
+        { name: 'product_id', type: 'string', isOptional: true, isIndexed: true }, // null når fritekst
+        { name: 'unit_price', type: 'number', isOptional: true }, // snapshot ved registrering — prisen kan endres senere
+        { name: 'cost_price', type: 'number', isOptional: true },
+        { name: 'vat_type', type: 'string', isOptional: true },
+        { name: 'billable', type: 'boolean', isOptional: true }, // null = ja
+        { name: 'invoiced_at', type: 'number', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
@@ -290,6 +369,13 @@ export const schema = appSchema({
         { name: 'status', type: 'string' }, // mottatt|planlagt|pagaar|fakturaklar|fakturert
         { name: 'assigned_to', type: 'string', isOptional: true },
         { name: 'scheduled_at', type: 'number', isOptional: true }, // epoch ms
+        // customer_name/-phone/address beholdes som snapshot: ordren skal kunne
+        // leses uendret selv om kunden rettes eller slettes senere.
+        { name: 'customer_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'source_system', type: 'string', isOptional: true },
+        { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'invoice_external_id', type: 'string', isOptional: true }, // utkast-/faktura-ID i regnskapet
+        { name: 'invoiced_at', type: 'number', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
