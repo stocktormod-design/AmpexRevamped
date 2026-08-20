@@ -41,14 +41,49 @@ const GEMINI_TIMEOUT_MS = 20_000
 // ALDRI se den ekte API-nøkkelen. Tokenet er engangs (uses: 1) og kortlevd —
 // verdiene under er bevisst stramme: en økt må STARTES innen 2 min (mer enn nok,
 // klienten kobler til umiddelbart etter svaret), og kan vare i inntil 30 min.
-// TODO(hardening): lås model/config med liveConnectConstraints når flyten er
-// verifisert på enhet — semantikken rundt lockAdditionalFields er udokumentert
-// nok til at vi ikke gambler førstegangs-testen på den.
 const LIVE_TOKEN_SESSION_START_WINDOW_MS = 2 * 60_000
 const LIVE_TOKEN_MAX_SESSION_MS = 30 * 60_000
 
-async function createLiveToken(apiKey: string): Promise<{ token: string; model: string }> {
+// Nødbryter: sett `supabase secrets set GEMINI_LIVE_UNLOCK=1` hvis låsingen under
+// skulle avvise ekte økter i felt. Da er stemmen tilbake i drift uten utrulling,
+// og problemet kan feilsøkes i ro. Skal normalt være av.
+const LIVE_CONSTRAINTS_OFF = Deno.env.get('GEMINI_LIVE_UNLOCK') === '1'
+
+/**
+ * Hva tokenet låses til, og hvorfor akkurat dette.
+ *
+ * Uten `liveConnectConstraints` er tokenet bare kortlevd og engangs — men det
+ * sier ingenting om HVA det kan brukes til. Fanger noen det opp i
+ * tominuttersvinduet, kan de åpne en økt mot hvilken som helst modell, med
+ * hvilken som helst systeminstruks, på FIRMAETS kvote.
+ *
+ * Låst:
+ *  - `model` — den faktiske trusselen. En dyr modell på andres regning.
+ *  - `responseModalities: ['AUDIO']` — hindrer at tokenet gjenbrukes som en
+ *    gratis tekst-LLM.
+ *
+ * IKKE låst, med vilje:
+ *  - `sessionResumption` — Googles eget eksempel setter den til `{}`, men
+ *    klienten sender et `handle` for å gjenoppta forrige samtale (10 min).
+ *    Å låse den til tom ville drept gjenopptagelsen.
+ *  - `speechConfig` — stemmen er et personlig valg i Meg-fanen, og skal kunne
+ *    variere per bruker.
+ *  - `systemInstruction` og `tools` — instruksen bygges på klienten fordi den
+ *    inneholder brukerens navn, notater, påminnelser og firmaets skjemakatalog.
+ *    Google anbefaler å flytte den serverside; det krever at all den konteksten
+ *    sendes hit først, og er en egen jobb. Notert som gjenstående herding.
+ */
+function liveConnectConstraints(): Record<string, unknown> | undefined {
+  if (LIVE_CONSTRAINTS_OFF) return undefined
+  return {
+    model: `models/${GEMINI_LIVE_MODEL}`,
+    config: { responseModalities: ['AUDIO'] },
+  }
+}
+
+async function createLiveToken(apiKey: string): Promise<{ token: string; model: string; voice: string }> {
   const now = Date.now()
+  const constraints = liveConnectConstraints()
   const res = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
@@ -56,6 +91,7 @@ async function createLiveToken(apiKey: string): Promise<{ token: string; model: 
       uses: 1,
       newSessionExpireTime: new Date(now + LIVE_TOKEN_SESSION_START_WINDOW_MS).toISOString(),
       expireTime: new Date(now + LIVE_TOKEN_MAX_SESSION_MS).toISOString(),
+      ...(constraints ? { liveConnectConstraints: constraints } : {}),
     }),
   })
   if (!res.ok) {
@@ -280,7 +316,11 @@ export default {
     if (body.mode === 'live_token') {
       try {
         const { token, model, voice } = await createLiveToken(apiKey)
-        return Response.json({ ok: true, token, model, voice })
+        // `laast` sier om tokenet har liveConnectConstraints. Klienten bruker det
+        // KUN til å stille en bedre diagnose når Google avviser oppsettet — uten
+        // det er «avvist ved setup» umulig å skille fra en kvote- eller
+        // modellfeil, og nødbryteren blir gjetting.
+        return Response.json({ ok: true, token, model, voice, laast: !LIVE_CONSTRAINTS_OFF })
       } catch (err) {
         console.error('[ai-voice] live_token feilet:', err)
         return Response.json({ ok: false, error: err instanceof Error ? err.message : 'ukjent feil' })
