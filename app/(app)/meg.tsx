@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
 import { View, Text, ScrollView } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Check, Mic, Users, Timer, ChevronRight, CalendarClock, ShieldCheck, Archive } from 'lucide-react-native'
+import { Check, Mic, Users, Timer, ChevronRight, CalendarClock, ShieldCheck, Archive, CloudOff } from 'lucide-react-native'
 import { router } from 'expo-router'
 import { Pressable } from '../../components/pressable'
 import { AmpexMarkButton } from '../../components/ampex-mark-button'
 import { useTilGodkjenning, useKanGodkjenne } from '../../lib/approvals'
+import { useSynkStatus } from '../../lib/db/sync'
 import { getPreferredVoice, setPreferredVoice, VOICE_OPTIONS } from '../../lib/ai/voice-prefs'
 import { colors, spacing, radius, type as t } from '../../lib/theme'
 
 export default function Screen() {
   const tilGodkjenning = useTilGodkjenning()
+  const synk = useSynkStatus()
   const kanGodkjenne = useKanGodkjenne()
   const insets = useSafeAreaInsets()
   const [voice, setVoice] = useState<string | null>(null)
@@ -183,8 +185,32 @@ export default function Screen() {
           })}
       </View>
       <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>
-        Gjelder fra neste samtale (rist for å starte en ny).
+        Gjelder fra neste samtale — trykk på Ampex-merket for å starte en.
       </Text>
+
+      {/* Synken er usynlig (regel 2) og skal forbli det. Men blir vi AVVIST av
+          serveren tre ganger på rad, er det en defekt, ikke en kjeller — og da
+          må noen få vite at arbeidet står på telefonen og ikke kommer videre.
+          Uten nett teller ikke: det er normaltilstanden appen er bygget for. */}
+      {synk?.nivaa === 'blokkert' && (
+        <View style={{ backgroundColor: '#fff', borderRadius: radius.xl, padding: spacing.lg, marginTop: spacing.xl, flexDirection: 'row', gap: spacing.md }}>
+          <CloudOff size={20} color={colors.danger} strokeWidth={2.2} style={{ marginTop: 2 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={[t.body, { fontWeight: '600' }]}>{synk.tekst}</Text>
+            <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 2 }]}>
+              Ingenting er tapt — alt ligger lagret på telefonen. Men det kommer ikke fram før dette er rettet.
+            </Text>
+            {synk.detalj && (
+              <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>{synk.detalj}</Text>
+            )}
+          </View>
+        </View>
+      )}
+      {synk && synk.nivaa !== 'blokkert' && (
+        <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: spacing.xl, textAlign: 'center' }]}>
+          {synk.tekst}
+        </Text>
+      )}
     </ScrollView>
   )
 }

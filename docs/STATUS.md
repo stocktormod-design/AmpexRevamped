@@ -1,23 +1,27 @@
 # Status — les denne først
 
-Sist oppdatert: 2026-08-19. Holdes oppdatert; ikke lag daterte kopier.
+Sist oppdatert: 2026-08-20. Holdes oppdatert; ikke lag daterte kopier.
 
 ## Hvor vi står
 
-Branch **`grossist-og-pool`** — fem commits, ikke pushet, pluss en stor
-uncommittet runde (tilbud, skjemaformat v2, signatur, ukeliste).
+Branch **`grossist-og-pool`**, pushet til `origin`. Runden 19.–20. august ligger
+i åtte commits over `7633048`:
 
 ```
-7633048 docs: STATUS peker på de fire commitene
-65298b4 docs: konkurrentanalyse, databasedrift og STATUS skrevet om
-d24ef83 feat(lager): varesøk og prisfil-import
-1c72951 feat(ordre): fra ordre til penger — fakturagrunnlag, timer, tilleggsarbeid
-6c77d2e feat(db): kunde, aktivitet og tillegg — synk som leser kolonner fra katalogen
+49e5902 docs: hvem eier kunden, og hva som faktisk er testet
+c6c73bc style(ui): titler som puster, tab-linje som ikke er standard-iOS
+012e597 chore(db): skjema v22–v29, delte hjelpere og widget-versjon
+5ac6e07 feat(produksjon): revisjonsspor, faglig godkjenning og frosset arkiv
+13a006f feat(ai): stemme → transaksjon, og tokenet låses til modellen
+e807b34 feat(lager): varekartotek med pris fra flere grossister
+a20855e feat(ordre): kundesignatur og ukeliste
+8ad6563 feat(tilbud): ordren kan endelig oppstå av noe
+746fcd3 feat(skjema): format v2 — klikklister, tabeller og betinget visning
 ```
 
-Grønt: `npm run typecheck` og seks selvtester — `verify:pricefile`,
+Grønt: `npm run typecheck` og ni selvtester — `verify:pricefile`,
 `verify:invoicing`, `verify:forms`, `verify:quoting`, `verify:timesheet`,
-`verify:varesok`.
+`verify:varesok`, `verify:approvals`, `verify:arkiv`, `verify:id-repair`.
 
 > **iOS-bygget går gjennom.** 19. august ble appen kompilert for første gang:
 > `npx expo run:ios` → *Build Succeeded, 0 errors*, installert på simulator.
@@ -29,8 +33,10 @@ Grønt: `npm run typecheck` og seks selvtester — `verify:pricefile`,
 > og varesøket ble ført gjennom hele veien — el-nummer, de fire siste sifrene,
 > flerordssøk, varekort med to grossistpriser og BILLIGST-merke.
 >
-> Det som fortsatt IKKE er sett: en ekte telefon, Android, og en vellykket synk
-> mot Supabase — se UUID-feilen under.
+> **20. august: synken går.** UUID-feilen under er rettet, appen bygget på nytt
+> (*Build Succeeded, 0 errors*), migrert v26 → v30, og **pushen kom fram** — se
+> «Synken går» lenger nede. Det som fortsatt IKKE er sett: en ekte telefon og
+> Android.
 
 ### Uncommittet som IKKE er mitt
 
@@ -184,10 +190,76 @@ tabeller** — permanent, og stille, fordi `syncQuietly` bare logger til konsoll
 På testdatabasen var det 8 slike rader (`drawing_markup`, `orders`,
 `drawing_loops`, `order_scans`), alle `_status='created'`, altså aldri synket.
 
-**Ikke fikset.** Riktig løsning er å skrive id-ene om til UUID med alle
-referanser, ikke å hoppe over dem: hopper man over en rad, markerer
-WatermelonDB den likevel som synket, og da er den tapt. Dette må gjøres før
-noen installerer over en eldre Ampex.
+**Rettet 20. august** — skjema v30, `lib/db/id-repair.ts`.
+
+Id-ene skrives om til ekte UUID, med alle referanser. Å HOPPE OVER radene ville
+vært feil: WatermelonDB markerer en hoppet rad som synket likevel, og da er den
+tapt for godt. At omskriving er trygt følger av selve feilen — en base62-id kan
+per definisjon aldri ha vært på serveren, så ingen andre har sett den.
+
+Kjøres som et **migrasjonssteg**, ikke ved oppstart. Migrasjoner går i
+`adapter.setUp()` før databasen serverer et eneste spørsmål; skrev vi om id-ene
+senere, ville modeller som allerede lå i WatermelonDBs cache pekt på rader som
+ikke fantes lenger.
+
+Tre ting SQL-en gjør som ikke er åpenbare:
+
+- **Lokalt slettede rader med gammel id slettes helt.** De sto og ventet på å
+  bli slettet på serveren, men kom aldri dit — det finnes ingenting å slette.
+- **Kartet er globalt, ikke per tabell.** Id-ene er tilfeldige og unike på
+  tvers, så en referansekolonne trenger ikke vite hvilken tabell den peker på.
+  Det er også forsvaret mot å skrive om noe man ikke skal: kartet inneholder
+  bare id-er som faktisk finnes som primærnøkkel her, så en Fiken-kunde-id i
+  `external_id` eller en Supabase-uid i `user_id` kan aldri treffe.
+- **Rader nevnt inne i en arkivpakke fredes.** Pakken er hashet, og hashen er
+  hele poenget: skriver vi om en id inni den, stemmer ikke SHA-256 lenger.
+
+Selvtesten (`npm run verify:id-repair`) kjører den EKTE SQL-en mot en ekte
+SQLite — ikke mot en beskrivelse av den. Feilen fantes fordi ingen hadde kjørt
+noe; en test som bare sammenligner strenger ville hatt samme problem.
+
+### Synken går — verifisert på ekte data 20. august
+
+Appen bygget (`0 errors`), installert, migrert **v26 → v30**, og så:
+
+| Sjekk | Resultat |
+|-------|----------|
+| `user_version` i SQLite | **30** |
+| Gamle base62-id-er igjen | **0** |
+| Hjelpetabellen `_id_reparasjon` | ryddet bort |
+| Rader med `_status = 'created'` | **0** — alt står `synced` |
+| `synk_helse` i local_storage | `feilPaaRad: 0`, vellykket |
+
+Og på serversiden, i **én** transaksjon (samme mikrosekund): ordren som var
+blokkert (`yF2dd…` → `ac0f7145-…`) satt inn for første gang, åtte aktiviteter,
+to lagerbevegelser, én materiell-linje og én statusendring til `fakturaklar`.
+Etterslepet som hadde stått fast kom fram i sin helhet.
+
+Samme spørring bekreftet at **revisjonssporet virker i appen**, ikke bare mot
+databasen: `actor_name` fanges opp, og en oppdatering lagres som KUN det som
+endret seg — `{"status": {"fra": "mottatt", "til": "fakturaklar"}}`.
+
+**Ett hull det avdekket:** `company_settings` har `company_id` som
+primærnøkkel, ikke `id`, så `audit_row()` skrev hendelsen med `rad_id = null` —
+et spor som ikke kan si hvilken rad det beskriver. Rettelsen ligger klar i
+`supabase/migrations/20260820210000_audit_rad_id_uten_id_kolonne.sql`, men er
+**ikke anvendt** — verktøyet mitt fikk ikke lov å kjøre den mot databasen.
+
+### En stum synk er ikke det samme som en usynlig synk
+
+Grunnen til at åtte rader kunne blokkere alt i ukevis var ikke bare feilen — det
+var at ingen kunne se den. `syncQuietly` skrev til `console.log`, som ingen leser
+fra en telefon i en kjeller.
+
+`lib/db/sync-helse.ts` skiller nå mellom å være **uten nett** og å bli **avvist**.
+Uten nett er normaltilstanden appen er bygget for, og teller ikke. Tre
+avvisninger på rad er en defekt — den fjerde går like dårlig — og da sier «Meg»
+fra: *«Synken står. Ingenting er tapt — alt ligger lagret på telefonen. Men det
+kommer ikke fram før dette er rettet.»* Kjenner vi ikke igjen feilmeldingen,
+regnes den som en avvisning: å overse en ekte defekt er dyrere enn å telle en
+nettverksfeil.
+
+Regel 2 står ved lag — ingen synk-knapp, ingen spinner, ingen framdrift.
 
 ### Verifisert mot databasen
 
