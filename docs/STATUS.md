@@ -4,26 +4,202 @@ Sist oppdatert: 2026-08-19. Holdes oppdatert; ikke lag daterte kopier.
 
 ## Hvor vi står
 
-Branch **`grossist-og-pool`** — committet, ikke pushet.
+Branch **`grossist-og-pool`** — fem commits, ikke pushet, pluss en stor
+uncommittet runde (tilbud, skjemaformat v2, signatur, ukeliste).
 
 ```
+7633048 docs: STATUS peker på de fire commitene
 65298b4 docs: konkurrentanalyse, databasedrift og STATUS skrevet om
 d24ef83 feat(lager): varesøk og prisfil-import
 1c72951 feat(ordre): fra ordre til penger — fakturagrunnlag, timer, tilleggsarbeid
 6c77d2e feat(db): kunde, aktivitet og tillegg — synk som leser kolonner fra katalogen
 ```
 
-Grønt: `npm run typecheck`, `npm run verify:pricefile`, `npm run verify:invoicing`.
+Grønt: `npm run typecheck` og seks selvtester — `verify:pricefile`,
+`verify:invoicing`, `verify:forms`, `verify:quoting`, `verify:timesheet`,
+`verify:varesok`.
 
-> **Ingenting er kjørt på en enhet.** Ikke iOS, ikke Android. Alt er verifisert
-> med typecheck, selvtester og SQL mot databasen. Første installasjon på en
-> telefon som allerede har data er den ekte prøven — skjemaet gikk fra v21 til
-> **v23**, så migrasjonen kjører.
+> **iOS-bygget går gjennom.** 19. august ble appen kompilert for første gang:
+> `npx expo run:ios` → *Build Succeeded, 0 errors*, installert på simulator.
+> Hele appen bundler også rent (9,8 MB Hermes), så ingen brutte importer.
+>
+> **Og den er kjørt.** Samme kveld: appen startet i simulator, logget inn,
+> **migrerte en eksisterende database fra skjema v15 til v26** («Migration
+> successful»), importerte demokatalogen gjennom den ekte parseren og importen,
+> og varesøket ble ført gjennom hele veien — el-nummer, de fire siste sifrene,
+> flerordssøk, varekort med to grossistpriser og BILLIGST-merke.
+>
+> Det som fortsatt IKKE er sett: en ekte telefon, Android, og en vellykket synk
+> mot Supabase — se UUID-feilen under.
 
 ### Uncommittet som IKKE er mitt
 
 `modules/ampex-splat/ios/MeshBakeV2.swift` og `MeshScanPresenter.swift` er din
 WIP fra før. Urørt.
+
+---
+
+## Runden 19. august: tilbud, skjemaformat v2, signatur, ukeliste, varekort
+
+Målet var uttalt: **ordresystemet skal være minst like bra som konkurrentene**,
+og skjemaer fra SpeedyCraft/Cordel skal kunne importeres. Fem hull ble lukket.
+
+### 1. Skjemaformat v2 — det som blokkerte all skjemaimport
+
+Firmaskjemaene hadde fire felttyper i en flat liste (`check`/`text`/`number`/
+`photo`). Det var for tynt til å ta imot et ekte skjema, og verst: **klikklister
+kunne ikke uttrykkes.** `check` var hardkodet til Ja/Nei/Ikke aktuelt, så en
+Cordel-sluttkontroll med «OK / Avvik / Utbedret» ville blitt importert *feil* —
+ikke stygt, feil, på et dokument DSB leser.
+
+Vokabularet er nå det samme som Ampex-malene alltid har kunnet rendre, pluss det
+import trenger:
+
+| Nytt | Hvorfor |
+|------|---------|
+| **Seksjoner** | Et 80-punkts skjema var én uendelig rulle |
+| **`choice` med egne alternativer** | Klikklista. Selve blokkeringen |
+| **`table`** | Kursfortegnelse og måleprotokoll — det tyngste i en sluttkontroll |
+| **`multiline`, `info`** | Fritekst og erklæringer som ikke lagres |
+| **Hjelpetekst per punkt** | Der importerte skjema har «se pkt. 6.3» |
+| **Enhet på tall** | A, V, Ω, mm² |
+| **Betinget visning** | «Beskriv avviket» vises kun når svaret ER avvik |
+
+- Formatet ligger i `lib/forms/schema.ts` — **uten WatermelonDB**, så både
+  selvtesten og en fremtidig importør kan lese og validere en mal uten database.
+- **Gamle v1-revisjoner leses fortsatt.** En revisjon er uforanderlig og skrives
+  aldri om; `toSections()` løfter flat `items` til én navnløs seksjon. Testet.
+- `lib/forms/visibility.ts` er ny og brukes overalt: rendering, gap-check,
+  Live-assistenten og gjennomgangsarket. **Et skjult felt kan ikke være
+  «manglende påkrevd»**, og AI-en får verken se eller fylle det.
+- **`pruneHidden` er den viktigste linja.** Svarer du «Nei» på avvik, forsvinner
+  avviksbeskrivelsen fra dokumentet. Uten den ville «ingen avvik» blitt levert
+  sammen med en avviksbeskrivelse ingen kunne se i appen.
+- `validateFirmSections()` blokkerer lagring av en mal som er ubrukelig i felt
+  (klikkliste uten alternativer, betingelse som peker nedover, duplikat-id).
+
+**Ingen databasemigrasjon.** Revisjonens `schema` er en JSON-streng.
+
+### 2. Tilbud — ordren kan endelig oppstå av noe
+
+Skjema **v24**, migrasjon `quotes_and_quote_lines` kjørt.
+
+- `lib/quoting.ts` — **rene funksjoner, ingen database**, øre som heltall.
+  Rabatt per linje, fritekstlinjer uten beløp, dekningsbidrag.
+- Avrunding skjer **én gang, etter rabatten**. To avrundinger på samme linje gir
+  et øre som ikke stemmer med det kunden kan regne ut selv av arket.
+- **«Utløpt» lagres aldri.** Det er en funksjon av `valid_until` og regnes ut i
+  visningen — en rad som må skrives om ved midnatt trenger en jobb ingen har
+  skrevet.
+- **Akseptert → ordre.** Materiell-linjene kopieres inn som planlagt materiell
+  med tilbudsprisen. Arbeidslinjene kopieres **ikke**: de er prisen, ikke
+  arbeidet, og å opprette åtte timer fordi noen priset åtte timer er å finne opp
+  lønn. `orders.quote_id` binder dem sammen, og ordredetaljen viser **Avtalt
+  pris** over fakturagrunnlaget.
+- **Dekningsbidraget vises FØR tilbudet sendes.** Det er det eneste tidspunktet
+  tallet kan endre noe.
+- Skjermer: `tilbud/` (liste, detalj, ny, linje). Nås fra ordrelista.
+
+### 3. Kundesignatur
+
+Skjema **v25**, migrasjon `order_signatures` kjørt.
+
+- Lagres som **vektorstrøk i JSON, ikke som bilde i R2.** Signaturen tas i en
+  kjeller uten dekning; en opplasting som feiler er et bevis som forsvinner.
+  JSON går gjennom den samme synken som alt annet, og rendres skarpt i alle
+  størrelser.
+- Signaturflaten er Skia + gesture-handler — **ingen ny avhengighet**.
+- **Navn er påkrevd.** En signatur uten navn er en strek.
+- «Godkjent: signert» på tilleggsarbeid sender nå til signaturflaten, som
+  skriver godkjenningen selv. Før var det bare et ord.
+
+### 4. Mine timer — ukeliste
+
+- `lib/timesheet-calc.ts` er ren og selvtestet; `lib/timesheet.ts` har hooken.
+- Uken er **mandag–søndag**. En søndag-til-lørdag-uke flytter søndagstimer inn i
+  neste lønnsperiode.
+- Fakturerbarhet **arves fra aktiviteten** når linja ikke sier noe — samme regel
+  som fakturagrunnlaget. To svar på «er denne timen fakturerbar» ville vært
+  umulig å forklare.
+- Skjerm: `mine-timer.tsx`, nås fra Meg.
+
+### 5. Varekortet og prisen per grossist — «EFObasen-følelsen»
+
+Skjema **v26**, migrasjon `product_prices_and_varekort` kjørt.
+
+**Innsikten:** prisfila inneholder allerede nesten alt som gjør EFObasen til
+EFObasen. `VX`- og `VA`-postene har fabrikat, typebetegnelse, EAN, NRF, bilde,
+FDV, HMS, erstatningsvare, pakningsstørrelse og lagerstatus. **Importen kastet
+alt sammen.** Varesøket føltes tomt ved siden av EFObasen ikke fordi dataene
+manglet, men fordi vi ikke tok vare på dem.
+
+| Var | Er |
+|-----|-----|
+| Én pris per el-nummer. Solar-fila overskrev Onninen-fila | **`product_prices`: én rad per (vare, grossist).** Prissammenligning er mulig |
+| `cost_price` = siste import | `cost_price` = **billigste kjente** pris. Det er den dekningsbidraget skal regne med |
+| Raden viste navn + el-nummer | Bilde, produsent, el-nummer, beholdning, og «Solar er 2,50 billigere» |
+| Ingen varekatalog | `lager/varer` med søk og filtre, `lager/vare` med fullt varekort |
+| Ingen dokumenter | FDV og HMS åpnes fra varekortet |
+
+**Søket er skrevet om** (`lib/product-search.ts`, rent og selvtestet). To ting
+virket ikke før:
+
+- **El-nummer traff bare fra starten.** De fire siste sifrene på en etikett er
+  ofte det eneste som er lesbart etter et år i en kjeller. Nå treffer de.
+- **Flerordssøk feilet.** «nexans pfsp» krevde at hele strengen sto
+  sammenhengende i navnet. Nå må hvert ord finnes, ikke rekkefølgen.
+
+I tillegg: EAN og NRF treffer eksakt (det en strekkodeskanner gir), og et
+tallsøk på ett–to sifre gir bevisst **ingen** treff — to sifre finnes inne i
+nesten hvert el-nummer, så et slikt søk ville returnert halve kartoteket i
+tilfeldig rekkefølge.
+
+**Ytelse:** søket LIKE-filtrerer i SQLite på en `search_text`-kolonne før noe
+havner i JS, og slår opp beholdning kun for radene som ble treff. Før leste hvert
+tastetrykk hele `products` OG hele `stock_movements` inn i minnet — usynlig med
+en håndskrevet fixture, umulig med en ekte EFO-fil.
+
+> Dette lukker `docs/KONKURRENTANALYSE.md` punkt 4, som krevde datamodellen
+> **(el-nummer, grossist, dato)** «fra første migrasjon, fordi den er dyr å legge
+> til etterpå». Den var ikke fulgt. Nå er den det, og den ble lagt til før den
+> første ekte prisfila er importert — altså mens den fortsatt var billig.
+
+**Hva EFObasen fortsatt har som dette ikke gir:** ETIM-attributter (strukturerte
+tekniske data), og varer ingen grossist du har fil fra fører. Resten er dekket,
+til null kroner i året.
+
+### Feilen som bare det å kjøre appen kunne finne
+
+```
+[sync] utsatt: invalid input syntax for type uuid: "yF2ddjHEXJOu1WdK"
+```
+
+WatermelonDB genererte 16-tegns base62-id-er før `setGenerator` ble lagt inn
+(commit `eef17dd`). Postgres-tabellene har `uuid` som primærnøkkel. Rader som ble
+laget FØR den commiten kan derfor aldri pushes.
+
+Det ville vært til å leve med hvis de bare feilet selv. Men `watermelon_push`
+kjører alt i **én transaksjon**, så én slik rad **stopper hele synken for alle
+tabeller** — permanent, og stille, fordi `syncQuietly` bare logger til konsollet.
+På testdatabasen var det 8 slike rader (`drawing_markup`, `orders`,
+`drawing_loops`, `order_scans`), alle `_status='created'`, altså aldri synket.
+
+**Ikke fikset.** Riktig løsning er å skrive id-ene om til UUID med alle
+referanser, ikke å hoppe over dem: hopper man over en rad, markerer
+WatermelonDB den likevel som synket, og da er den tapt. Dette må gjøres før
+noen installerer over en eldre Ampex.
+
+### Verifisert mot databasen
+
+Alle tre migrasjonene er kjørt mot `ampex-revamped`, og **full synk-rundtur er
+kjørt i transaksjoner som ble rullet tilbake**: insert → delvis update → pull →
+soft delete. Bekreftet at `quote_number` overlever en delvis update (`no_update`),
+at `company_id` fylles av `sync_payload_in`, at `orders.quote_id` og de tretten
+nye `products`-kolonnene dukket opp i pull uten kodeendring (registerdrevet
+synk), at signaturstrøkene bevares ordrett, og at **to grossistpriser på samme
+el-nummer lever side om side** — og at en ny import fra samme grossist oppdaterer
+raden i stedet for å legge på en til. Databasen står uendret etterpå.
+Synken er nå **26 tabeller**.
 
 ---
 
@@ -52,19 +228,35 @@ tilleggsarbeid → fakturagrunnlag → regnskap**, og alt synker.
 | `lib/customers.ts`, `lib/activities.ts`, `lib/products.ts` | Registrene og varesøket |
 | `lib/accounting/adapter.ts` + `fiken.ts` | `Regnskapsadapter`-grensesnittet og adapter nummer én |
 | `lib/pricefile/import.ts` | Prisfil → varekartotek |
+| `lib/quoting.ts` + `lib/quotes.ts` | Tilbud: ren regning / database. Samme deling som invoicing |
+| `lib/timesheet-calc.ts` + `lib/timesheet.ts` | Ukeliste: ren regning / hook |
+| `lib/forms/schema.ts` | Skjemaformatet — uten WatermelonDB, så det kan testes og importeres mot |
+| `lib/forms/visibility.ts` | Betinget visning. `pruneHidden` er den viktigste funksjonen |
+| `lib/forms/firm-schema.ts` | Firmamal → rendermodell + `validateFirmSections` |
+| `lib/signatures.ts` | Kundesignatur, og godkjenning av tilleggsarbeid via signatur |
+| `lib/ai/materiell-tools.ts` | Stemmeverktøy: varesøk, uttak, materiell på ordre |
+| `lib/ai/tilbud-tools.ts` | Stemmeverktøy: tilbud, linjer, sum og dekningsbidrag |
+| `lib/product-search.ts` | Varesøkets rangering, synonymer og «mente du …» — ren, selvtestet |
+| `lib/product-category.ts` | Varegruppe utledet av varenavnet, med frekvens over hele katalogen |
+| `lib/pricefile/varekort.ts` | `VX`/`VA`-postene → varekort. Det importen kastet før |
+| `lib/pricing.ts` | Listepris kontra nettopris. Hindrer at en `V4` blir lest som firmaets pris |
+| `lib/pricefile/demo-katalog.ts` | To oppdiktede P4-filer i ekte format, for å kunne bla før en ekte fil finnes |
 
 ### Skjermer
 
 `ordre/faktura.tsx` · `ordre/timer.tsx` · `ordre/tillegg.tsx` ·
 `ordre/deltakere.tsx` · `kunder/` (liste, detalj, ny, velger) ·
 `aktiviteter.tsx` · `lager/prisfil.tsx` ·
-`components/product-picker.tsx` · `components/sheet.tsx`
+`components/product-picker.tsx` · `components/sheet.tsx` ·
+`tilbud/` (liste, detalj, ny, linje) · `ordre/signatur.tsx` · `mine-timer.tsx` ·
+`components/signature-pad.tsx` · `components/avtalt-pris-kort.tsx` ·
+`components/form-problems.tsx` · `lager/varer.tsx` (katalog) · `lager/vare.tsx` (varekort)
 
 Registrene er skjult fra tab-baren (`href: null`) — de settes opp sjelden.
 
 ---
 
-## De fem tingene som er lette å ødelegge ved uhell
+## De tingene som er lette å ødelegge ved uhell
 
 1. **Beløp er øre som heltall.** Fiken vil ha `net: 25000` for 250,00 kr.
    Sendes kroner blir fakturaen 100× for lav.
@@ -77,6 +269,34 @@ Registrene er skjult fra tab-baren (`href: null`) — de settes opp sjelden.
    «1 234 567» brekke over to linjer i en fakturatabell.
 5. **`Alert.prompt` finnes ikke på Android** og gjør ingenting — stille.
    `Alert.alert` viser maks tre knapper der. Bruk `components/sheet.tsx`.
+6. **`pruneHidden` må kalles hver gang et skjemasvar endres.** Fjernes den,
+   blir svaret på et punkt som ble skjult liggende igjen i dokumentet uten å
+   vises noe sted i appen — «ingen avvik» levert sammen med en avviksbeskrivelse.
+   Kalles i dag tre steder: skjema-skjermen, gjennomgangsarket og `applyVoiceFill`.
+7. **En skjemarevisjon skrives ALDRI om.** v1-formatet (flat `items`) må derfor
+   kunne leses for alltid — `toSections()` er den ene leseveien, og selvtesten
+   passer på den.
+8. **Tilbudslinjens pris er et snapshot i kroner**, ikke en peker til varen.
+   Gjøres den om til et oppslag, endrer et sendt og bindende tilbud beløp fordi
+   grossisten sendte ny prisfil.
+9. **Rabatt rundes én gang, etter rabatten** (`linjeNettoOre`). Rundes
+   linjebeløpet først og rabatten etterpå, stemmer ikke summen med det kunden
+   regner ut av tallene på arket.
+10. **`products.cost_price` er den BILLIGSTE kjente prisen, ikke den sist
+    importerte.** Settes den til siste import igjen, blir dekningsbidraget feil
+    på hver linje der en annen grossist er billigere. Alle prisene ligger i
+    `product_prices`; `cost_price` er kun det raske oppslaget.
+11. **`search_text` må skrives hver gang en vare lagres.** Uten den faller varen
+    ut av SQLite-forfiltreringen og blir usynlig i søket. `useVaresok` bygger den
+    på farten som reserve, men det virker bare for rader som allerede er hentet.
+12. **Listepris og nettopris er ikke samme størrelse.** `lib/pricing.ts` lar
+    ALDRI en listepris (brutto uten rabatt, altså en `V4`) slå en ekte nettopris,
+    og påstår aldri en «besparelse» mellom to listepriser. Fjernes den regelen,
+    anbefaler systemet en grossist på et tall ingen har avtalt — og
+    dekningsbidraget blir for lavt, så en lønnsom jobb ser ulønnsom ut.
+13. **Prisfil-import fyller kun varekortfelt fila FAKTISK har.** En grossist uten
+    bilde skal ikke tømme et bilde en annen grossist ga oss — derfor `if (kort.x)`
+    og ikke rett tilordning.
 
 ---
 
@@ -109,15 +329,84 @@ tilbake: insert → delvis update → pull → soft delete. 22 tabeller i pull.
 
 ## Hva som trengs fra deg
 
-**1. Én ekte EFO/NELFO-prisfil.** Dette er fortsatt hovedblokkeringen, og nå
-blokkerer det mer enn før: varesøket virker, men **varelista er tom** til en fil
-er importert. Skaff en `V4*`- eller `P4*`-fil fra Onninen, Solar eller Ahlsell.
+**1. Én ekte EFO/NELFO-prisfil.** Fortsatt hovedblokkeringen, og den blokkerer
+mer enn før: varesøk, varekort og prissammenligning er ferdig bygget, men
+**varelista er tom** til en fil er importert.
 
-Ny mulighet: **spør om FTP-tilgang i samme telefonsamtale.** Prisfilene ligger i
-kundens egen katalog på grossistens FTP — tilgangen er din, ikke en
-systemleverandørs. Spør om tre ting: FTP-vert og brukernavn, om `F*`-fakturafiler
-ligger i samme katalog, og om de tar imot bestilling på samme server. Se
+> **Ampex er systemleverandør, ikke elektrofirma.** Vi har ingen kundeforhold hos
+> Onninen eller Solar, og får derfor ingen prisfil ved å ringe og be om vår egen.
+> Fila tilhører alltid et *kundefirma*. Det er ikke en begrensning å beklage —
+> det er hele grunnen til at prisfil-veien er lovlig og gratis der EFObasen ikke
+> er (se punkt 3 nedenfor).
+
+Tre realistiske veier til en testfil, i den rekkefølgen de er sannsynlige:
+
+| Vei | Hva den krever |
+|-----|----------------|
+| **Grossisten som integrasjonspartner** | Ring/skriv som systemleverandør og be om en *testfil*. Alle grossister har en, fordi alle systemleverandører spør. Dette er veien Cordel, Minuba og Handyman gikk |
+| **Første kundefirma** | Firmaet henter sin egen `P4`-fil i grossistens kundeportal og sender den. Krever en pilotkunde |
+| **Eget elektrofirma** | Når installatørprøven er bestått og firmaet har kundenummer, er fila deres egen |
+
+**Be om begge, men i denne rekkefølgen:**
+
+- **`V4` først** — grossistens fulle sortiment til listepris. Den er *lett* å få:
+  det står ingenting konfidensielt i den, så en systemleverandør kan be om den
+  til integrasjonsarbeid uten å gå veien om en kunde. Den fyller hele
+  varekartoteket: navn, produsent, EAN, bilder, FDV, HMS, varegrupper.
+- **`P4` deretter, per kunde** — firmaets *avtalte* priser etter rabatt.
+  Listeprisene er nokså like hos alle; det er rabatten som skiller, og det er
+  den prissammenligningen handler om. Uten P4 er dekningsbidraget for lavt og
+  «BILLIGST» meningsløst — appen sier begge deler høyt (`lib/pricing.ts`).
+
+Full begrunnelse og de andre kildene (produsentenes BMEcat/ETIM-kataloger) i
 `docs/GROSSIST_INTEGRASJON.md`.
+
+### Ekte el-numre finnes ikke uten en ekte fil
+
+Spørsmålet kommer igjen, og svaret er det samme hver gang: **et oppslag fra
+el-nummer til vare ER en database, og alle utgavene av den tilhører noen.**
+
+| Kilde | Har ekte el-numre | Kan vi bruke den |
+|-------|-------------------|------------------|
+| **EFObasen** | Ja, den autoritative | Nei. 29 412 kr/år, og punkt 2 i avtalen forbyr en systemleverandør å vise dataene videre til mange firmaer |
+| **Grossistens nettbutikk** | Ja | Nei. Å høste den og sende den ut i et produkt er samme videreformidling, uten å ha betalt |
+| **`V4` fra grossisten** | **Ja** | **Ja.** Gratis, lovlig, og lett å be om — se over |
+
+Demokatalogen kan derfor aldri ha ekte el-numre. Den har oppdiktede, og de er
+merket som det.
+
+**Men et ekte el-nummer skal ikke møtes med «ingen treff».** Taster du 6–8
+siffer som ikke finnes i kartoteket, tilbyr `lager/varer` å legge inn varen med
+det nummeret. Nummeret er join-nøkkelen, så når prisfila kommer, kobler den seg
+på varen du alt har laget i stedet for å lage en duplikat.
+
+**I mellomtiden finnes en demokatalog.** `lib/pricefile/demo-katalog.ts` bygger tre
+P4-filer i ekte EFO/NELFO-format — **328 varer i 33 varegrupper fra tre
+grossister** med ulik rabatt per rabattgruppe, EAN, NRF, pakningsstørrelser,
+lagerstatus og utgåtte varer. Filene ligger ikke som tekst i appbunten: en
+kompakt beskrivelse av serier og variantakser bygger dem deterministisk ved
+behov (~55 kB per fil, ~13 kB kode). Lastes inn fra `Lager → Prisfil`, går
+gjennom den **ekte** parseren og den **ekte** importen (ingen snarvei rundt
+systemet), og merkes `source_system = 'demo'` med DEMO-merke i katalogen og på
+varekortet.
+Fjernes med ett trykk — men varer som har fått lagerbevegelser eller ligger på
+en ordre blir stående, fordi en ordrelinje som peker på en slettet vare er verre
+enn en demovare til overs.
+
+> Demoen beviser at **UI-et og regnestykket virker**. Den beviser **ikke** at
+> parseren leser en ekte fil riktig: filene er generert mot spesifikasjonen av
+> samme hode som skrev parseren, så en feiltolkning ville stått begge steder.
+> Bare en fil fra en grossist svarer på det.
+
+**Til sammenligningen trengs to filer fra to forskjellige grossister.** Med én
+virker varekortet, søket, bildene og FDV, men «BILLIGST»-merket kan aldri dukke
+opp.
+
+Og i samme samtale, uansett hvilken vei: **spør om FTP.** Prisfilene ligger i
+*kundefirmaets egen* katalog på grossistens FTP, og den tilgangen går gjennom
+kundens kundenummer — ikke gjennom en godkjenning av oss som leverandør. Spør om
+FTP-vert og brukernavn, om `F*`-fakturafiler ligger i samme katalog, og om de tar
+imot bestilling på samme server. Se `docs/GROSSIST_INTEGRASJON.md`.
 
 **2. Fire e-postmaler mangler.** `supabase/config.toml` peker på
 `supabase/templates/invite.html`, `recovery.html`, `confirmation.html` og
@@ -129,40 +418,313 @@ API-et, men fordi Fiken er den eneste veien der Ampex kan være koblet **fra dag
 én** — OAuth tar to minutter. Tripletex krever 2–3 ukers godkjenning pluss et
 skjønnsmessig AI-samtykke etter §2.2.13 som kan avslås.
 
-> Vær klar over hva det koster: **Tripletex Elektro/VVS til 699 kr/mnd er Ampex'
-> direkte konkurrent**, ikke en integrasjon. Ordre, prosjekt, timer, regnskap,
-> faktura, lønn, grossistintegrasjon og sjekklister — og den er medlemsfordel
-> hos NELFO. Velger han Fiken, velger han bort den pakken, og da må Ampex dekke
-> ordre, beholdning og grossist. Det er planen uansett, men det skal være et
-> bevisst valg.
+> **Skill de to Tripletex-ene.** Tripletex som *regnskap* er et
+> integrasjonsmål på linje med Fiken — hovedbok, faktura, lønn, og en adapter
+> mot det. Det er **Tripletex Elektro/VVS til 699 kr/mnd** som er konkurrenten:
+> fagpakken med ordre, prosjekt, timeføring, grossistintegrasjon,
+> kontrollskjemaer og sjekklister, og medlemsfordel hos NELFO/NHO Elektro.
+>
+> Konsekvensen er at valget ikke er «Fiken eller Tripletex», men **hvilken
+> hovedbok** — og separat: om firmaet også kjøper fagpakken. Gjør de det, kjøper
+> de noe Ampex skal være. Gjør de det ikke, er Tripletex-regnskapet en helt
+> vanlig integrasjon, og en vi skal ha.
 
 ---
 
+## Veien til produksjon
+
+Tre ting henger sammen og må bygges i denne rekkefølgen, fordi hver hviler på
+den forrige.
+
+### 1. Revisjonsspor — GJORT 20. august
+
+`audit_events` + triggere på elleve tabeller. To valg avgjør om sporet er verdt
+noe:
+
+- **Serversiden skriver, ikke klienten.** Appen er offline-først og ligger på en
+  telefon. En klient som kan skrive revisjonsrader, kan la være — eller lyve.
+  Triggerne ser endringen når den pushes, med `auth.uid()` fra sesjonen.
+- **Append-only.** `audit_events` har ÉN policy, og den er SELECT. Ingen
+  update/delete finnes, så det er ikke et løfte — det er fravær av mulighet.
+
+Bare feltene som faktisk endret seg lagres, med `fra` og `til`. En skriving som
+kun rører `updated_at` gir ingen rad; ellers ville hver synk fylt sporet med
+støy. `products`/`product_prices` er bevisst utenfor: en prisfil-import endrer
+titusenvis av rader i én operasjon, og logges som ÉN hendelse via
+`log_audit_event()`.
+
+Utførerens navn lagres som **tekst**, ikke bare en fremmednøkkel: slutter en
+montør og profilen ryddes, skal sporet fortsatt si hvem som førte timene i 2026.
+
+> **Sporet synkes ikke til telefonen.** Det er et forensisk register man åpner
+> når noe bestrides, ikke daglig arbeid — det leses på forespørsel og krever
+> nett. Godkjenningsflyten under synkes derimot, fordi den er drift.
+
+### 2. Faglig godkjenning — GJORT 20. august
+
+Skjema **v28**, migrasjon `order_approvals` kjørt. Skjerm: `app/(app)/godkjenning.tsx`.
+
+- **Godkjenning er ikke en status.** `orders.status` sier hvor arbeidet er;
+  godkjenning er en beslutning med et menneske bak. Blandes de, mister man hvem
+  som bestemte og hvorfor.
+- **Sperren ligger i databasen.** Triggeren `krev_faglig_godkjenning` avviser
+  overgangen til `fakturert` uten en godkjenning. Verifisert: fakturering ble
+  stoppet, gikk gjennom etter godkjenning. `markerFakturert` sjekker også
+  lokalt og kaster `ManglerGodkjenning` — ellers ville ordren sett fakturert ut
+  på telefonen og så stille nektet å synke.
+- **Hvem kan godkjenne:** `company_settings.faglig_ansvarlig` — en navngitt
+  person, ikke en tilgangsgruppe, fordi forskriften peker på et menneske. Er den
+  ikke satt, faller det tilbake på eier/admin så et nytt firma ikke står fast.
+  Håndhevet i RLS, ikke i UI.
+- **Avslag krever begrunnelse** (`check`-constraint) og setter ordren tilbake
+  til `pagaar` — montøren skal se den blant sine aktive jobber, ikke måtte lete
+  i en avvist-liste.
+- **Snapshot av det som ble godkjent.** Føres to timer etterpå, sier
+  ordredetaljen «Endret etter godkjenningen — Timene er endret fra 6 til 8».
+  Vi blokkerer ikke; det er en samtale mellom mennesker. Men usynlig er det
+  ikke. `npm run verify:approvals` dekker den logikken.
+- Skjermen viser sum i display-vekt, timer, materiell, dokumenter
+  (fullførte/totalt), signaturer — og advarer om det som mangler uten å sperre.
+  Det er fagpersonens vurdering om en jobb kan faktureres uten signatur, ikke
+  systemets.
+
+### 3. Arkiv og frysing i R2 — GJORT 20. august
+
+Skjema **v29**, migrasjon `order_archives` kjørt. Skjerm: `app/(app)/arkiv.tsx`
+(«Gamle jobber»), kort på ordredetaljen, `lib/archive/`.
+
+- **Man søker aldri i R2 for å finne noe.** `order_archives` ER registeret;
+  objektlageret er oppbevaring. Filtrering på kunde og år er en spørring mot
+  lokal SQLite. Kundenavnet dupliseres inn i raden, så «alt vi har gjort for
+  Hansen» er ett oppslag og ikke en join gjennom en ordre som kan ha byttet
+  kunde.
+- **`oppbevares_til` stemples ved frysing**, ikke regnes ut ved oppslag. Skrus
+  `retention_years` ned fra 10 til 5 neste år, forkorter det ikke det som
+  allerede er lovet — en slettejobb som leser en *levende* innstilling ville
+  slettet dokumenter noen trodde de hadde i ti år.
+- **Pakken er deterministisk.** Nøkler sorteres, datoer skrives som ISO i UTC,
+  og det finnes INGEN «generert klokken»-felt inne i pakken — et tidsstempel i
+  innholdet ville gitt ny hash hver gang, og da beviser hashen ingenting.
+- **SHA-256 er skrevet for hånd** (`lib/archive/sha256.ts`). Appen har ingen
+  krypto-primitiv, og hashen må gi samme svar på en telefon i dag, på en
+  kontor-PC neste år og i et verifiseringsskript om syv år. Testet mot FIPS
+  180-4s egne testvektorer, inkludert millionen a-er — en håndskrevet hash uten
+  testvektorer er ikke verdt tilliten.
+- **Opplasting FØR registeroppføring.** Feiler opplastingen, finnes det ingen
+  rad som lover et arkiv som ikke er der.
+- **«Kontroller» henter pakken ned og sammenligner hashen.** Uten en måte å
+  sjekke på er «uforanderlig arkiv» en påstand.
+- Omfrysing soft-sletter den forrige raden; filen blir liggende i R2, og
+  nøkkelen inneholder hashen så to versjoner kan eksistere side om side.
+- Vedlegg (skann, tegninger) refereres som R2-nøkler, ikke kopieres inn — de
+  ligger der fra før.
+- `internal_note` på timer er ALDRI med i pakken: den er intern per definisjon,
+  og et arkiv kan bli lest ut i en tvist.
+
+**Kjører foreløpig fra appen**, fordi R2-kanalen (`r2-sign`) finnes der og én
+knapp er bedre enn en Edge Function som ikke er skrevet. `byggPakke` er ren, så
+den flyttes uendret til Ampex Desktop når den finnes.
+
+> **Oppbevaringstiden.** `company_settings.retention_years` er 5 som standard
+> med `check (between 5 and 50)` — gulvet ligger i databasen, ikke i UI-et.
+> Bokføringsloven krever 5 år for primærdokumentasjon; elektrodokumentasjon som
+> samsvarserklæring følger anlegget og har egen logikk. **Det er ikke skrevet
+> noen slettejobb**, og det er med vilje: å slette for tidlig er ikke
+> reparerbart. `oppbevares_til` er datoen en slik jobb skal lese når den skrives.
+
 ## Neste steg, i rekkefølge
 
-1. **Kjør appen på en enhet.** Ingenting er sett. Skjemamigrasjonen v21→v23 bør
-   prøves på en telefon som allerede har data, ikke bare frisk installasjon.
-2. **Tilbud.** Største gjenstående hull i livsløpet — vi kan fakturere arbeid,
-   men ikke vinne det. Modellen: tilbud med linjer, status
-   utkast/sendt/akseptert/avslått, «akseptert» oppretter ordren med linjene
-   kopiert over. Fiken har `/offers` klart.
-3. **Foto og kundesignatur på ordren.** Foto finnes bare inne i skjemaer,
-   signatur ikke i det hele tatt. Begge er bevis når noe bestrides.
-4. **Mine timer på tvers av ordre.** Ukesvisning for lønn. I dag ser du timer per
-   ordre, ikke per person per uke.
-5. **Fiken-adapteren må kobles til noe.** Den er skrevet uten
+1. **Kjør appen på en enhet.** Bygget går gjennom, men ingenting er *sett*.
+   Rekkefølgen som gir mest på fem minutter:
+   1. `npx expo run:ios --device` på telefonen, logg inn.
+   2. `Lager → Prisfil → Last inn demokatalog` — 36 varer fra to grossister.
+   3. `Lager → Søk i varer`: prøv `1451025`, så `5025` (de fire siste sifrene),
+      så `nexans`, så `nexans kabel`. Åpne en vare og se prisene side om side.
+   4. Så resten: tilbud, signatur, skjema, timer.
+
+   Skjemamigrasjonen v21→v26 må prøves på en telefon som allerede har en eldre
+   Ampex-installasjon — en frisk installasjon tester den ikke.
+2. **Foto på ordre og i skjema.** Det eneste som gjenstår av «bevis når noe
+   bestrides» etter at signaturen kom. **Krever ny avhengighet**
+   (`expo-image-picker` eller `expo-camera`) og dermed et nytt dev-build — derfor
+   ikke gjort. `photo` finnes allerede som felttype i skjemaformatet og rendres i
+   dag som et info-punkt som sier at bildet gjenstår.
+3. **Én ekte prisfil.** Nå enda mer verdt enn før: varekartoteket, varekortet,
+   prissammenligningen og hele søkerangeringen er bygget, men har aldri møtt
+   ekte data. To filer fra to grossister — sammenligningen kan ikke prøves med
+   én. Se «Hva som trengs» over for hvordan vi som *leverandør* får tak i dem.
+4. **Skjemaimport: PDF/bilde → mal.** Målet er nå klart, og formatet tar imot
+   det. Veien som slår alle konkurrentene er ikke å lese SpeedyCraft-basen først,
+   men å la kunden laste opp sitt eget skjema — da virker den også mot Cordel,
+   Handyman og Word-dokumentet fra 2009, som er der de fleste småfirma faktisk
+   har skjemaene sine. `validateFirmSections()` er ferdig og er kvalitetsporten.
+5. **Planlegging: hvem, hvor, når.** `orders.scheduled_at` og `assigned_to`
+   finnes, men det finnes ingen ukevisning for hvem som gjør hva. Cordel og
+   Handyman har ressursplanlegging, og det er det basen faktisk kjøper systemet
+   for. Ukelista i `lib/timesheet-calc.ts` kan gjenbrukes nesten som den er.
+6. **Fiken-adapteren må kobles til noe.** Den er skrevet uten
    React Native-avhengigheter og skal kjøre i en Edge Function eller Ampex
    Desktop — et Fiken-token hører ikke hjemme på en montørtelefon. «Marker som
-   fakturert» skriver i dag kun lokalt.
-6. **Bestilling til grossist som objekt.** Designet ligger i
+   fakturert» skriver i dag kun lokalt. Fiken har `/offers`, så tilbudet kan
+   sendes den veien når adapteren lever.
+7. **Serviceavtaler / gjentakende ordre.** Årskontroll, brannvarsling,
+   el-kontroll. Minuba, simPRO og ServiceTitan har det; vi har ingen modell.
+8. **Bestilling til grossist som objekt.** Designet ligger i
    `GROSSIST_INTEGRASJON.md`, ingenting er bygget. Bygg e-post ut + FTP inn, ikke
    EDI — Minuba har 80+ grossister på nettopp det.
-7. **Ordre ↔ prosjekt.** To øyer i dag.
-8. **Poolen må avklares.** `20260815120000_gpu_bake_worker_pool.sql` og
-   `20260817200000_ampex_public_pool.sql` er **aldri kjørt og kan ikke kjøres
-   slik de står** — `scan_jobs` finnes med et annet skjema, `worker_nodes`
-   overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
-   så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
+9. **Prisbok per kunde.** Avtalt rabatt/påslag ut mot kunden. Merk at
+   **grossistsiden nå er løst** — `product_prices` er Cordels «prissett 1–4»-form.
+   Dette som gjenstår er den andre retningen: hva VI tar av en bestemt kunde.
+10. **Ordre ↔ prosjekt.** To øyer i dag.
+11. **Prosjekttegning.** Grunnlaget finnes allerede — `drawings`,
+    `drawing_markup`, `drawing_loops`, `rooms.shape` og tre skjermer under
+    `prosjekter/`. Mindre urørt enn resten, og derfor riktig å ta etter
+    ordresystemet.
+12. **Poolen må avklares.** `20260815120000_gpu_bake_worker_pool.sql` og
+    `20260817200000_ampex_public_pool.sql` er **aldri kjørt og kan ikke kjøres
+    slik de står** — `scan_jobs` finnes med et annet skjema, `worker_nodes`
+    overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
+    så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
+
+### Stemme → transaksjon: assistenten kan nå gjøre jobben, ikke bare beskrive den
+
+Live-assistenten (`lib/ai/live-session.ts`, verifisert på enhet 12.–13. august)
+hadde 31 verktøy, men **null** for materiell, lager, varesøk og tilbud — altså
+alt som er bygget denne runden. Nå har den **37**:
+
+| Verktøy | Hva som skjer |
+|---------|---------------|
+| `sok_vare` | El-nummer, EAN, produsent eller navn → pris per grossist, hvem som er billigst, hva vi har på lager |
+| `ta_ut_materiell` | «Jeg tok ti downlights fra bilen» → ekte `stock_movements`, lander i kurven |
+| `legg_til_materiell` | «Sett tre meter PFXP på ordre 42» → materiellinje med prissnapshot |
+| `nytt_tilbud` | «Nytt tilbud til Hansen på Storgata 4» |
+| `legg_til_tilbudslinje` | «Tolv downlights og åtte timer montasje» → ekte beløp fra kartoteket |
+| `tilbudssum` | Leser opp sum og **dekningsbidrag** — det eneste tidspunktet tallet kan endre noe |
+| `vis_tilbud` | Åpner det på skjermen |
+
+**Dette er skillet mot simPRO.** JobScribe (13. mai 2026) gjør tale →
+dokumentasjon. Stemme til TEKST er tatt. Ingen har stemme til **transaksjon**:
+at uttaket faktisk skriver en lagerbevegelse, at tilbudslinja faktisk får en
+pris fra varekartoteket.
+
+**Tilgang:** assistenten har brukerens tilgang, verken mer eller mindre.
+`legg_til_materiell` krever medlemskap på ordren, som resten. Sperren ligger i
+verktøyet, ikke i prompten — modellen kan ikke snakkes rundt den.
+
+**Tre ting den fortsatt ikke får gjøre**, og det er ikke mangler:
+sende et tilbud, fullføre/signere et skjema, godkjenne et tilleggsarbeid. Alle
+tre er bindende handlinger ut mot en kunde. Den forbereder alt; mennesket
+trykker.
+
+**To ærlighetsregler er skrevet inn i instruksen**, begge om penger: er prisen
+en listepris, skal den si at det er grossistens katalogpris og ikke firmaets.
+Gir et uttak negativ beholdning, skal den si det høyt.
+
+### Stemme på simulator — feilen som skjulte fallbacken
+
+`isEchoCancelledMicAvailable` sjekket om det native mikrofonmodulet var
+**kompilert inn**, ikke om det virket der appen kjører. På simulatoren er det
+kompilert inn, så appen tok primærveien og kalte
+`setVoiceProcessingEnabled(true)` — som kaster, fordi VoiceProcessingIO ikke
+finnes på simulator. Økten døde med «Fikk ikke startet mikrofonen», og
+`AudioRecorder`-fallbacken, som står der NETTOPP for simulator, ble aldri nådd.
+
+Rettet 20. august: primærveien er nå et **forsøk**, ikke en tilgjengelighetssjekk
+— enhver feil faller gjennom til fallbacken. Det hjelper også på enheter der
+VoiceProcessingIO svikter av andre grunner.
+
+> Merk likevel at **stemmen aldri har vært verifisert på simulator**, kun på
+> enhet (12.–13. august). Ekko-kansellering, nærhetssensor og lydsesjonens
+> avbruddshåndtering er maskinvare. Fallbacken holder mikrofonen døv mens
+> assistenten snakker, så barge-in virker ikke der — det er forventet.
+
+**Slik ser du hvor det stopper** (Debug, Metro-konsollen). Loggen er en stige:
+`Live: kobler til` → `Live: setup OK — starter mikrofon` → `Live: mikrofon
+streamer` → `Live: mottar lyd fra modellen`. Den siste du ser, er der det stoppet.
+I Release leses feilen HØYT, og strengene peker rett på grenen: «avviste
+tilkoblingen» = lukket før setup, «Mistet forbindelsen» = WS-feil, «Fikk ikke
+startet mikrofonen» = mikrofonen, stille fade = ren lukking.
+
+### Åpne punkter i stemmelaget
+
+- ~~**`liveConnectConstraints` mangler**~~ **GJORT.** Tokenet er nå låst til
+  `model` og `responseModalities: ['AUDIO']`. Det stanser den faktiske trusselen
+  — en dyr modell på firmaets kvote — og at tokenet gjenbrukes som en gratis
+  tekst-LLM.
+
+  **Ikke** låst, med vilje: `sessionResumption` (Googles eget eksempel setter den
+  til `{}`, men klienten sender et `handle` for å gjenoppta forrige samtale —
+  låsing ville drept det), `speechConfig` (stemmen er et personlig valg i
+  Meg-fanen), og `systemInstruction`/`tools` (instruksen bygges på klienten fordi
+  den inneholder brukerens navn, notater, påminnelser og skjemakatalog).
+
+  **Nødbryter:** `supabase secrets set GEMINI_LIVE_UNLOCK=1` slår låsen av uten
+  utrulling. Tokensvaret har et `laast`-flagg som klienten bruker til å legge
+  «Tokenet er låst til modell og lyd» på avvisningsmeldingen — som leses høyt i
+  Release, så låsen ikke blir en stille mistenkt.
+
+  **Uprøvd.** Semantikken rundt hvilke config-felt som blir låst når man setter
+  bare noen av dem er tynt dokumentert. Første økt etter utrulling avgjør. Blir
+  den avvist ved setup: flipp nødbryteren, så virker stemmen igjen mens det
+  feilsøkes.
+
+  **Gjenstår:** Google anbefaler å flytte `systemInstruction` serverside. Det
+  krever at all brukerkonteksten sendes til edge-funksjonen først, og er en egen
+  jobb.
+- ~~**Kode og dokumentasjon er uenige om aktivering.**~~ **AVKLART 20. august:
+  Ampex-merket er inngangen.** `lib/ai/shake-listener.ts` er slettet.
+
+  Merket sto allerede på åtte skjermer og startet økten; nå står det også på
+  Prosjekter, Lager og Meg, så det er tilgjengelig fra alle fem faner.
+  To-finger-dobbelttrykk beholdes som den usynlige veien når merket ikke er på
+  skjermen.
+
+  **Batterigevinsten er den egentlige grunnen.** Rist krevde et 50 Hz
+  aksellerometer i forgrunnen HELE DAGEN for ti aktiveringer — i strid med regel
+  8. Men strømmen var ikke bare til rist: ørepositur-sjekken leste den for å
+  flytte lyden til ørehøyttaleren. Den har nå sitt eget abonnement på **10 Hz,
+  kun mens en økt varer**.
+
+  Sidegevinst: `setIsShakeToShowDevMenuEnabled(false)` forsvant med lytteren, så
+  rist åpner React-dev-menyen normalt igjen i dev-builds.
+- **Google-søk er av** (`ENABLE_GOOGLE_SEARCH = false`) fordi grounding har egen
+  døgnkvote som drepte hele økter ved setup. Riktig beslutning, men assistenten
+  kan ikke slå opp noe utenfor appen.
+
+### Konsekvensen av at Ampex er leverandør, ikke elektrofirma
+
+Dette er ikke bare et anskaffelsesspørsmål — det former produktet:
+
+- **Varekartoteket er per firma, ikke felles.** `products` og `product_prices`
+  er scopet på `company_id` med RLS. Det er riktig som det er, men det betyr at
+  **prisfil-import er en del av onboardingen for hver eneste kunde**, ikke et
+  oppsett vi gjør én gang.
+- **Derfor må FTP-henting kjøre per kunde**, med kundens egne innloggingsdata, i
+  Ampex Desktop eller en Edge Function scopet på `company_id`. Ikke én
+  Ampex-bred nedlasting.
+- **Det er også grunnen til at EFObasen ble droppet — og grunnen er sterkere enn
+  prisen.** Punkt 2 i EFOs brukeravtale forbyr videreformidling. En leverandør
+  som viser EFO-data til mange firmaer er ikke det API-prisen på 29 412 kr
+  dekker. En prisfil er derimot kundens egne data, som vi leser på deres vegne.
+  Det er juridisk rent, og det koster null.
+- **Prismodellen følger av det samme:** Gripr tar betalt per integrasjon per
+  måned, og lar kunden eie avtalen. Det er formen som bærer grossist- og
+  regnskapskoblingene, og senere en eventuell EFObasen-avtale.
+
+### Hva som fortsatt skiller oss fra konkurrentene
+
+Etter denne runden er hullene mot Cordel/Handyman/Gripr disse, i den rekkefølgen
+de betyr noe: **planlegging** (5), **foto** (2), **serviceavtaler** (7),
+**prisbok per kunde** (9). Tilbud, signatur, timeliste og varekartotek er lukket.
+
+Det vi har som de ikke har: offline-først med usynlig synk, versjonerte
+firmaskjemaer med kommentarer og «hvorfor endret», LiDAR — og nå
+**prissammenligning på tvers av grossister**, som er den ene tingen ingen
+grossists eget system strukturelt kan bygge. Ahlsell gir bort autopåfyll fra
+Ahlsell. Ingen kan gi bort «bestill hos den billigste».
+
+Skjemamotoren er også den eneste som kan ta imot et fremmed skjema uten å miste
+klikklistene.
 
 ### Fortsatt ikke synket
 
@@ -199,10 +761,21 @@ Ordre, timer, materiell, faktura og varesøk virker fullt ut.
   identitetsfarge.
 - **Bygg ikke EDI mot grossist.** Minuba har 80+ grossister på e-postmal ut og
   FTP inn, med inntil 20 minutters forsinkelse. Det holder.
+- **`ios/` er gitignorert og genereres av `expo prebuild`.** Rettelser i
+  Xcode-prosjektet må gjøres som config-plugin under `plugins/`, ellers
+  forsvinner de ved neste prebuild. `with-widget-version.js` er et eksempel: den
+  synkroniserer widget-målets `MARKETING_VERSION` med appens `version`, fordi
+  App Store Connect avviser opplasting når de spriker.
+- **Ikke les priser fra grossistens nettbutikk.** Prisen som ligger åpent er
+  listepris, og listeprisen er nesten lik hos alle — det er rabatten som
+  skiller, og den finnes bare bak kundenummeret. En sammenligning på offentlige
+  priser ville sagt «Onninen og Solar koster det samme», som er usant og verre
+  enn ingen sammenligning. Full begrunnelse i `docs/GROSSIST_INTEGRASJON.md`.
 - **AI-en kan foreslå tilleggsarbeid, aldri godkjenne det.** Et tillegg som
   fødes godkjent er et tillegg ingen spurte kunden om.
-- **Rist-lytteren bør slettes** (`useShakeListener()` i `app/_layout.tsx`).
-  50 Hz akselerometer i forgrunnen for ti aktiveringer om dagen. Ikke gjort.
+- ~~**Rist-lytteren bør slettes.**~~ **GJORT 20. august.** Ampex-merket er
+  inngangen, to-finger-dobbelttrykk er reserven. Aksellerometeret leses nå kun
+  under en aktiv økt, til ørepositur-sjekken.
 
 ---
 
@@ -302,8 +875,20 @@ Og den hører sannsynligvis i **Ampex Desktop**, ikke i montørappen — se
 
 ### Sikkert (verifisert mot kode, kilde eller database)
 
-- **Databasen synker 22 tabeller** etter ombyggingen, registerdrevet. Verifisert
-  med `watermelon_pull(0)`.
+- **Databasen synker 25 tabeller** etter ombyggingen, registerdrevet. Verifisert
+  med `watermelon_pull(0)`. `quotes`, `quote_lines` og `order_signatures` kom til
+  19. august og er verifisert med full rundtur (insert → delvis update → pull →
+  soft delete) i en transaksjon som ble rullet tilbake.
+- **Den registerdrevne synken plukket opp `orders.quote_id` uten kodeendring.**
+  Kolonnen dukket opp i pull fordi kolonnene leses fra katalogen. Det var
+  påstanden bak ombyggingen, og den er nå prøvd.
+- **Skjemaformatets v1-lesevei virker.** Gamle flate `items`-revisjoner løftes til
+  seksjoner av `toSections()`, testet i `verify:forms`.
+- **Seks selvtester er grønne**: pricefile, invoicing, forms, quoting, timesheet,
+  varesok.
+- **To grossistpriser på samme el-nummer lever side om side**, og en ny import
+  fra samme grossist oppdaterer raden i stedet for å duplisere. Verifisert med
+  rundtur mot `product_prices`.
 - **Fiken vil ha øre som heltall** og engelsk MVA-enum. Lest rett fra
   `api.fiken.no/api/v2/docs/swagger.yaml` (111 endepunkter).
 - **Fiken HAR timeføring i API-et** — `/timeEntries`, `/activities`, `/timeUsers`
@@ -325,10 +910,33 @@ Og den hører sannsynligvis i **Ampex Desktop**, ikke i montørappen — se
 
 ### Usikkert (anslag eller uprøvd)
 
-- **Parseren er ikke møtt med en ekte fil.** Fixturen er håndskrevet mot spec.
+- **Parseren er ikke møtt med en ekte fil.** Både fixturen og demokatalogen er
+  skrevet mot spesifikasjonen av samme hode som skrev parseren — en
+  feiltolkning av formatet ville stått begge steder og passert alle testene.
   **Fortsatt den viktigste usikkerheten i alt som er levert.**
-- **Ingenting er kjørt på en enhet.** Verken skjermene, migrasjonen v21→v23,
-  eller en ekte synk fra appen.
+- **Ingen ekte synk fra appen er sett lykkes.** Migrasjonen og skjermene er
+  verifisert i simulator, men pushen stoppes av UUID-feilen over. Til den er
+  rettet vet vi ikke om synken virker fra klienten i det hele tatt.
+- **Ingenting er kjørt på en fysisk telefon**, kun simulator.
+- **Android er ikke bygget** i denne runden i det hele tatt.
+- **Signaturflaten er uprøvd på ekte glass.** Skia + gesture-handler er riktig
+  valg på papiret (ingen ny avhengighet), men om strøket føles som en penn på en
+  telefon i regn er ikke noe som kan avgjøres i en typecheck.
+- **Ukelista antar at `time_entries.date` er midnatt lokal tid.** Føres en time
+  med et klokkeslett fra en annen tidssone, kan den havne på feil dag. Ikke
+  observert, ikke testet mot ekte data.
+- **Varekortet er bygget på hva `VX`/`VA`-postene BØR inneholde.** Vi vet at
+  FELTID-ene `BILDE`, `FDV`, `HMS` og `EFOBASE` finnes, men ikke om alle
+  grossister fyller dem, om de er URL-er hos alle, eller hvilke andre FELTID-er
+  som er i bruk. Derfor lagres ALT i `products.extra` og vises med FELTID-en som
+  etikett når vi ikke kjenner den — ingenting kastes, og en senere versjon kan
+  forfremme flere felt uten ny import.
+- **Ytelsen ved søk er beregnet, ikke målt.** LIKE-forfiltreringen bør holde,
+  men verken 40 000 varer eller `products.search_text` uten indeks er prøvd på en
+  telefon.
+- **EFObasen-lenken på varekortet gjetter URL-formen** (`efobasen.no/produkt/<elnr>`).
+  Den vises kun når fila oppgir en EFOBASE-verdi, men selve adressen er ikke
+  verifisert.
 - **Fiken-adapteren er ikke testet mot ekte API** — kun mot spesifikasjonen.
 - **Om FTP-veien er åpen for tredjeparter** eller kun for systemleverandører med
   avtale. Viktigste enkeltspørsmål i grossistsporet.

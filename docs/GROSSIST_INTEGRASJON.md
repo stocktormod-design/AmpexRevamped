@@ -237,6 +237,81 @@ Samme kanal, samme parser, samme innlogging som prisfila.
 virkeligheten.** Det er posttypene vi allerede kjenner, og gevinsten er stor:
 avvik mellom bestilt og fakturert blir synlig av seg selv.
 
+## Katalog uten P4: be om V4
+
+«Vi burde kunne hente katalogen uten en prisfil» — og svaret er at **det finnes
+to prisfiler, og de er ikke like vanskelige å få tak i.**
+
+| Fil | Innhold | Hvor vanskelig |
+|-----|---------|----------------|
+| **P4** — pristilbud | Firmaets EGNE priser etter forhandlet rabatt | Vanskelig. Konfidensielt, og tilhører kunden. Krever kundeforhold |
+| **V4** — varefil | Grossistens FULLE sortiment til listepris | Lett. Ingenting konfidensielt i den |
+
+**En V4 er i praksis grossistens katalog i maskinlesbar form.** Den inneholder
+navn, produsent, typebetegnelse, EAN, NRF, bilde-URL, FDV, HMS, EAN,
+pakningsstørrelse og lagerstatus — alt som gjør varekortet til et varekort. Det
+eneste den ikke har, er hva firmaet betaler.
+
+Og det er nettopp derfor den er lett å be om: **det står ingenting hemmelig i
+den.** En systemleverandør som ber om en V4 til integrasjonsarbeid ber om noe
+grossisten allerede viser på nett, bare strukturert. Det er en helt annen
+samtale enn å be om en kundes rabattavtale.
+
+Rekkefølgen blir da:
+
+1. **V4 → hele varekartoteket.** Bla, søk, bilder, dokumenter, varegrupper.
+   Prisene er listepriser og merkes som det (se `lib/pricing.ts`).
+2. **P4 per kunde → riktige priser.** Legges oppå, per `company_id`. Først da
+   blir dekningsbidraget riktig og prissammenligningen mellom grossister ekte.
+
+### De andre veiene, ærlig vurdert
+
+| Kilde | Dom |
+|-------|-----|
+| **EFObasen sine nettsider** | Nei. Offentlig å lese, men å høste dem og vise dem til mange firmaer er nøyaktig den videreformidlingen brukeravtalen forbyr. Samme felle som API-et, uten å ha betalt for det |
+| **Grossistens nettbutikk** | Nei. Samme problem, pluss botbeskyttelse og HTML som endrer seg |
+| **Produsentenes egne kataloger** | **Ja, på sikt.** ABB, Schneider, Nexans og Elko publiserer produktdata, og mange leverer BMEcat/ETIM-XML til partnere på forespørsel. Produsenten VIL at varene skal være synlige. Dette er den riktige veien for bilder og datablad spesifikt, og vi har allerede `fabrikat` + `type` på hver vare, så matching er mulig uten ny import |
+
+## Hvorfor vi ikke leser prisen fra grossistens nettbutikk
+
+Naturlig spørsmål: prisene ligger jo åpent på onninen.no — hvorfor ikke bare
+hente dem derfra?
+
+**Fordi det er feil pris.** En B2B-nettbutikk viser enten ingen pris uten
+innlogging, eller **listeprisen**. Firmaets egen nettopris — etter forhandlet
+rabatt per rabattgruppe — finnes bare bak kundenummeret.
+
+Og listeprisen er nesten identisk hos alle grossistene, fordi den kommer fra
+produsenten. **Det er rabatten som skiller.** I demokatalogen er dette modellert
+eksplisitt: samme bruttopris hos begge, 38 % rabatt på kabel hos den ene og
+42 % hos den andre. Det tallet står ikke på nett.
+
+En prissammenligning bygget på offentlige priser ville altså svart «Onninen og
+Solar koster det samme» — som er usant for kunden, og verre enn ingen
+sammenligning, fordi det er selvsikkert galt.
+
+Tre grunner til:
+
+1. **Nettoprisen krever innlogging som kunden.** Da må vi oppbevare firmaets
+   innloggingsdata hos grossisten og kjøre deres sesjon. Det er en helt annen
+   sikkerhets- og ansvarsflate enn å lese en fil de gir oss.
+2. **Det bryter som regel bruksvilkårene** på en B2B-nettbutikk, og møter
+   botbeskyttelse.
+3. **Det er skjørt.** HTML endres, og en prissammenligning som stille slutter å
+   virke er verre enn en som ikke finnes.
+
+Det som *er* offentlig og nyttig er **produktdata** — navn, produsent, bilde,
+datablad, EAN. Men det får vi allerede fra prisfila (`VX`/`VA`-postene, se
+`lib/pricefile/varekort.ts`), så det er ikke der behovet er.
+
+**Den voksne versjonen av samme idé finnes, og den står allerede i planen:**
+sanntids lagerstatus og OCI/punch-out. Cordel spør åtte navngitte grossister om
+lagerstatus, og Solar tilbyr OCI. Det er autoriserte endepunkter per kunde, ikke
+skraping — og det hører hjemme etter at prisfila og bestillingen virker.
+
+> **Rask test hvis du er i tvil om hva du ser:** slå opp samme el-nummer hos to
+> grossister uten å være innlogget. Er tallet likt, er det listepris.
+
 ## Hvem bruker hvilken transport
 
 | Grossist | Transport | Kilde |

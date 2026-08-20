@@ -104,6 +104,46 @@ feil part, så dette skal aldri skje automatisk.
 Det er et prosessproblem, ikke et kodeproblem, og det må sies høyt til kunden:
 velg skjæringsdato per ordre, ikke slå av det gamle systemet på en gitt dato.
 
+### Skjemaimport: MALEN og DOKUMENTET er to forskjellige problemer
+
+Dette ble blandet sammen tidligere, og skillet avgjør hele designet:
+
+| Hva | Hvor det skal | Hvorfor |
+|-----|---------------|---------|
+| **Malen** (blankt skjema) | Ekte Ampex-mal i `form_templates` | Firmaet skal fortsette å bruke skjemaet sitt. Det er dette som gjør bytte mulig |
+| **Utfylte, signerte dokumenter** | Arkivert vedlegg med original metadata | De ble signert under en annens autorisasjon — se neste avsnitt |
+
+**Mottakersiden er klar fra 19. august.** Firmamal-formatet (`lib/forms/schema.ts`)
+tok tidligere bare fire felttyper i en flat liste, og **klikklister kunne ikke
+uttrykkes** — en Cordel-sluttkontroll med «OK / Avvik / Utbedret» ville blitt
+importert feil. Nå finnes seksjoner, klikklister med egne alternativer, tabeller
+(kursfortegnelse), hjelpetekst, enhet på tall og betinget visning.
+`validateFirmSections()` er kvalitetsporten: en mal som ikke kan brukes i felt
+kan ikke lagres, og den porten gjelder importerte maler like mye som håndlagde.
+
+### Veien inn: PDF/bilde → mal, ikke database → mal
+
+Den opprinnelige planen var å lese `speedycraft`-basen. Det er fortsatt riktig
+for kunder, ordre og timer. **For skjemaer er det feil førstevalg**, av tre
+grunner:
+
+1. SpeedyCrafts egendefinerte felt ligger i XML (`ObjectDataDefinition`), altså
+   nøyaktig der firmaets egne skjemaer bor — og oppdagelsessteget kan ikke
+   skrives før vi har en ekte base å kjøre det mot.
+2. **Cordel har ingen lokal base å lese.** Ingen dokumentert eksport heller.
+   «Import fra Cordel» skal ikke loves før vi har sett en fil fra en.
+3. De fleste småfirma har ikke skjemaene sine i fagsystemet i det hele tatt. De
+   har dem i et Word-dokument fra 2009.
+
+En importør som tar **PDF eller bilde inn og bygger malen** virker mot alle tre,
+og mot Handyman og JobOffice på kjøpet. Den er dessuten den eneste varianten
+kunden kan bruke selv, uten at vi har tilgang til maskinen deres.
+
+Rekkefølgen blir: last opp → foreslå mal → **mennesket ser over hvert punkt** →
+`validateFirmSections()` → lagre som v1 med `change_note` «Importert fra
+\<filnavn\>». Aldri auto-publisert: et skjema er dokumentasjon, og en AI-gjettet
+klikkliste på en sluttkontroll er verre enn ingen mal.
+
 ### Dokumentasjon: importer som arkiv, ikke som Ampex-skjema
 
 Samsvarserklæringer og sluttkontroller ble signert i SpeedyCraft av en person

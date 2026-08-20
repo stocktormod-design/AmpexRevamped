@@ -13,6 +13,36 @@ import type { Fakturagrunnlag, MvaType } from '../invoicing'
  *    som etterprosess, aldri i veien for montøren.
  */
 
+/**
+ * ── Hvem eier hva ───────────────────────────────────────────────────────────
+ *
+ * Undersøkt 20. august mot SpeedyCraft × Tripletex, som er den modne norske
+ * referansen (Tripletex' egne integrasjonssider + Devincos support):
+ *
+ *   Tripletex → SpeedyCraft:  ansatte, produkter, leverandører
+ *   SpeedyCraft → Tripletex:  timer
+ *   TOVEIS:                   prosjekter, kunder
+ *
+ * Mønsteret er riktig i hovedsak: **regnskapet eier registrene, feltsystemet
+ * eier arbeidet.** Det er den eneste delingen som gir én sannhet per ting.
+ *
+ * Men vi kopierer IKKE toveis på kunder. Toveis kundesynk mellom to systemer
+ * som begge kan opprette en kunde er nettopp der duplikatene oppstår — og en
+ * duplisert kunde betyr faktura til feil part. Derfor:
+ *
+ *   REGNSKAPET EIER:  kunder, ansatte, aktiviteter/lønnsarter, kontoplan
+ *   AMPEX EIER:       ordre, timer, materiell, dokumentasjon, tilbud, signatur
+ *
+ * Oppretter montøren en kunde i felt, opprettes den i regnskapet FØRST og
+ * `external_id` hentes tilbake. Kunden finnes ikke «i Ampex» før den har en ID
+ * der ute. Det er ett ekstra nettkall ved sjeldne hendelser, mot en klasse feil
+ * som er dyr og vanskelig å rydde opp i.
+ *
+ * Uten nett: kunden lages lokalt uten `external_id`, og ordren kan arbeides på —
+ * men fakturagrunnlaget sier fra at den ikke kan sendes før koblingen er gjort.
+ * Det er samme mønster som listepris kontra nettopris: bygg videre, men si
+ * tydelig fra om hva som mangler.
+ */
 export type Regnskapssystem = 'fiken' | 'tripletex'
 
 export type KundeUt = {

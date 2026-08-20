@@ -287,13 +287,20 @@ leverandøren vår blir godkjent er den motsatte av lav friksjon.
 Fiken for lite om to år, er flytting til Tripletex en kjent og støttet vei. Er
 Tripletex for mye det første året, er pengene brukt.
 
-### Men vær ærlig om hva det koster oss
+### Skill de to Tripletex-ene
 
-**Tripletex Elektro/VVS til 699 kr/mnd er Ampex' direkte konkurrent**, ikke en
-regnskapsintegrasjon. Den markedsføres som «alt-i-ett for elektro» med ordre,
-prosjekt, timeføring, regnskap, faktura, lønn **og grossistintegrasjon,
-kontrollskjemaer og sjekklister** — og den er en **medlemsfordel hos NELFO/NHO
-Elektro**, altså det faren din blir tilbudt idet han melder seg inn.
+**Tripletex som regnskap er et integrasjonsmål**, på linje med Fiken: hovedbok,
+faktura, lønn — og en adapter mot det. Det er en kobling vi skal ha.
+
+**Tripletex Elektro/VVS til 699 kr/mnd er noe annet: konkurrenten.** Fagpakken
+markedsføres som «alt-i-ett for elektro» med ordre, prosjekt, timeføring,
+regnskap, faktura, lønn **og grossistintegrasjon, kontrollskjemaer og
+sjekklister** — og den er en **medlemsfordel hos NELFO/NHO Elektro**, altså det
+faren din blir tilbudt idet han melder seg inn.
+
+Valget er derfor ikke «Fiken eller Tripletex». Det er **hvilken hovedbok**, og
+separat: om firmaet også kjøper fagpakken. Gjør de det, kjøper de noe Ampex skal
+være.
 
 Velger han Fiken, velger han samtidig bort den pakken. Det er riktig for oss,
 men det må være et bevisst valg og ikke noe som skjer ved et uhell.
@@ -304,3 +311,55 @@ lenge det er planen uansett, er Fiken riktig partner: den gjør regnskapet, vi
 gjør driften, og de to overlapper minst mulig.
 
 Tripletex er motsatt: den gjør begge deler, og da konkurrerer vi mot verten vår.
+
+---
+
+## Hvem eier hva — undersøkt mot SpeedyCraft × Tripletex (20.08.2026)
+
+SpeedyCraft er den modne norske referansen, og Tripletex dokumenterer
+integrasjonen selv:
+
+| Retning | Objekter |
+|---------|----------|
+| Tripletex → SpeedyCraft | ansatte, produkter, leverandører |
+| SpeedyCraft → Tripletex | timer |
+| **Toveis** | prosjekter, kunder |
+
+Krever **Tripletex Komplett + logistikk basis** (eller VVS/elektro-pakken), og
+kunden må ligge i SpeedyCrafts egen skyløsning. Aktiveres ved å kontakte
+Devinco — ikke selvbetjent. Tripletex fraskriver seg ansvar for feil i
+integrasjonen.
+
+### Hva vi tar med, og hva vi ikke tar med
+
+Hovedmønsteret er riktig: **regnskapet eier registrene, feltsystemet eier
+arbeidet.** Det er den eneste delingen som gir én sannhet per ting.
+
+**Men vi kopierer ikke toveis kundesynk.** To systemer som begge kan opprette en
+kunde er nettopp der duplikatene oppstår, og en duplisert kunde betyr faktura
+til feil part. `docs/DESKTOP_OG_IMPORT.md` sier allerede at kundededup er den
+farlige delen ved import; det er samme problem, bare kontinuerlig.
+
+Vår deling:
+
+| Eier | Objekter |
+|------|----------|
+| **Regnskapet** | kunder, ansatte, aktiviteter/lønnsarter, kontoplan |
+| **Ampex** | ordre, timer, materiell, dokumentasjon, tilbud, signatur |
+
+Oppretter montøren en kunde i felt, opprettes den i regnskapet **først** og
+`external_id` hentes tilbake. Uten nett lages den lokalt uten `external_id`, og
+ordren kan arbeides på — men fakturagrunnlaget sier fra at den ikke kan sendes
+før koblingen er gjort. Samme mønster som listepris kontra nettopris: bygg
+videre, men si tydelig fra om hva som mangler.
+
+### Friksjonen som må bort
+
+Det som gjør SpeedyCraft-oppsettet tungt, og som vi kan gjøre bedre:
+
+1. **Aktivering krever en telefonsamtale med leverandøren.** Fiken har OAuth —
+   to minutter, selvbetjent. Det er hele grunnen til at Fiken er valgt først.
+2. **Krever en bestemt Tripletex-pakke.** Vi kan ikke fjerne det kravet, men vi
+   kan si det FØR kunden prøver, ikke etter.
+3. **Ingen synlig tilstand.** En kunde som ikke er koblet, en time som ikke er
+   overført — det skal stå på ordren, ikke oppdages i regnskapet en måned senere.
