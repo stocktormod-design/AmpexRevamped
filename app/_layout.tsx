@@ -12,7 +12,6 @@ import { enforceCompanyBoundary } from '../lib/db/company-guard'
 import { seedAktiviteter } from '../lib/activities'
 import { retryPendingAiEnrichment, registerDraftHandler } from '../lib/ai/retry'
 import { useVoiceSession, VoiceSessionProvider } from '../lib/ai/voice-session'
-import { useShakeListener } from '../lib/ai/shake-listener'
 import { VoiceAssistantOverlay } from '../components/voice-assistant-overlay'
 import { VoiceCommandSheet } from '../components/voice-command-sheet'
 import { loadDraft, clearDraft } from '../lib/ai/voice-drafts'
@@ -29,7 +28,8 @@ registerDraftHandler('skjema', runGapCheck)
 // barn under providern (kan ikke ligge i RootLayout selv, som er over providern).
 // Håndterer også ordre-oppslag ved tale (Fase 2) — global, siden kommandoen skal
 // virke uansett hvilken skjerm brukeren er på, ikke bare ordre-skjermene.
-// Aktiveringshistorikk (alle forkastet): rist (utløstes av å reise seg), iOS Back
+// Aktiveringshistorikk (alle forkastet): rist (utløstes av å reise seg — fjernet
+// helt 2026-08-20), iOS Back
 // Tap (manuelt oppsett per telefon), dobbeltbank på kroppen (akselerometeret ser
 // ikke 10ms-transienter — hardware-lavpassfiltrert), løft-til-øret (føltes som
 // telefonsamtale). Landet på: TO FINGRE, DOBBELTTRYKK hvor som helst på skjermen —
@@ -65,9 +65,12 @@ function AssistantGesture({ children }: { children: React.ReactNode }) {
 }
 
 function VoiceAssistant() {
-  // Rist er tilbake — men som ARMERING (to myke vipp → tal innen 2s for å starte,
-  // stillhet avbryter lydløst). Se lib/ai/shake-listener.ts og armAndListen.
-  useShakeListener()
+  // Inngangene til assistenten er Ampex-merket (components/ampex-mark-button.tsx)
+  // og to-finger-dobbelttrykk (AssistantGesture over). Rist ble fjernet
+  // 2026-08-20: den utløste seg selv når man reiste seg, og et 50 Hz
+  // aksellerometer i forgrunnen hele dagen for ti aktiveringer er i strid med
+  // batterikravet (regel 8). Aksellerometeret leses nå kun mens en økt varer,
+  // til ørepositur-sjekken.
   const { lastCompletedSessionId, clearLastCompleted, liveOrderFound, clearLiveOrderFound } = useVoiceSession()
   const [commandOutcome, setCommandOutcome] = useState<OrderLookupOutcome | null>(null)
   const hasDynamicIsland = useHasDynamicIsland()

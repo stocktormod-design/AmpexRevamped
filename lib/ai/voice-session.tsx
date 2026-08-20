@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AppState, Platform } from 'react-native'
-import { getLatestAccelSample } from './voice-level'
+import { Accelerometer } from 'expo-sensors'
+import { getLatestAccelSample, reportAccelSample } from './voice-level'
 import { addProximityListener, isProximityAvailable, setProximityEnabled } from '../../modules/ampex-splat'
 import { usePathname, useGlobalSearchParams, router } from 'expo-router'
 import * as Haptics from 'expo-haptics'
@@ -33,7 +34,6 @@ type VoiceSessionValue = {
   /** Avslutter gjeldende økt. discard=true forkaster opptaket (brukt ved rist-avbrytelse). */
   endSession: (opts?: { discard?: boolean }) => Promise<void>
   /** Kalt av rist-deteksjon — bestemmer selv om det skal starte, avbryte bekreftelse, eller forkaste opptak. */
-  handleShake: () => void
   /** ID-en til siste økt som ble avsluttet MED lagret opptak (ikke forkastet) — skjermer
    *  (f.eks. skjema.tsx) som gjenkjenner sin egen routeContext her kan starte berikelse. */
   lastCompletedSessionId: string | null
@@ -48,7 +48,7 @@ const VoiceSessionContext = createContext<VoiceSessionValue | null>(null)
 
 /**
  * Eneste kilde til AI-assistentens økt-tilstand — mountes én gang i app/_layout.tsx.
- * Både rist-deteksjon (lib/ai/shake-listener.ts) og manuell knapp (components/ampex-mark-button.tsx)
+ * Inngangene er Ampex-merket (components/ampex-mark-button.tsx) og to-finger-
  * driver samme økt gjennom denne, slik at det aldri finnes to samtidige opptak.
  */
 export function VoiceSessionProvider({ children }: { children: ReactNode }) {
@@ -58,7 +58,7 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
   const stageRef = useRef<VoiceAssistantStage>('idle')
   stageRef.current = stage
   const sessionIdRef = useRef<string | null>(null)
-  const sessionBeganAtRef = useRef(0) // etterslep-vakt: rist kan ikke avslutte i øktens første 2,5 s
+  const sessionBeganAtRef = useRef(0) // etterslep-vakt mot dobbeltutløsning like etter start
   const [lastCompletedSessionId, setLastCompletedSessionId] = useState<string | null>(null)
 
   const { recorder, start: startRecording, stop: stopRecordingHook } = useVoiceRecorder()
@@ -188,28 +188,6 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
     [stopRecordingHook],
   )
 
-  // Rist → start økten DIREKTE (armert-lytting-mellomlaget er fjernet 2026-08-12:
-  // det feilet på nytt sted i hver runde — engangs-opptaker, sesjonsrace, usynlig
-  // orb — mens direkteflyten hadde fungert stabilt hele dagen. En falsk utløsning
-  // koster en hilsen og ett rist for å legge på.)
-  const handleShake = useCallback(() => {
-    console.log(`Shake: håndteres (stage=${stageRef.current})`)
-    if (stageRef.current === 'idle') {
-      beginSession()
-      return
-    }
-    // ETTERSLEP-VAKT (feilsøkt 2026-08-13): start-ristens egen utløpsbevegelse (eller
-    // neste skritt når man går) registreres som NYTT rist ~1,3-2 s senere — akkurat idet
-    // «kobler til» blir ferdig — og la på FØR første stavelse. Symptom: glød → stille
-    // fade, ingen feilmelding; server-loggen viste token-par 2-3 s fra hverandre.
-    // Rist kan ikke AVSLUTTE en økt i dens første 2,5 s.
-    if (Date.now() - sessionBeganAtRef.current < 2500) {
-      console.log('Shake: ignorert — etterslep like etter øktstart')
-      return
-    }
-    endSession({ discard: stageRef.current === 'recording' || stageRef.current === 'checking' })
-  }, [beginSession, endSession])
-
   const clearLastCompleted = useCallback(() => setLastCompletedSessionId(null), [])
   const clearLiveOrderFound = useCallback(() => setLiveOrderFound(null), [])
 
@@ -226,9 +204,17 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
     }
     let upright = false
 
-    // Posen leses fra rist-detektorens 50Hz-strøm (getLatestAccelSample) — ALDRI
-    // rør Accelerometer.setUpdateInterval her: innstillingen er global, og en
-    // 4Hz-posesjekk drepte rist-deteksjonen for resten av app-økten.
+    // Posen leses fra vårt EGET aksellerometer-abonnement, som lever bare så
+    // lenge økten gjør. Tidligere satt vi på rist-detektorens 50 Hz-strøm, som
+    // gikk hele dagen i forgrunnen — det var i strid med batterikravet (regel 8)
+    // for en funksjon som brukes noen ganger daglig. Nå: 10 Hz, kun i økt.
+    //
+    // (Den gamle advarselen om å ALDRI røre setUpdateInterval gjaldt fordi
+    // innstillingen er global per sensor og en treg posesjekk halshugget
+    // rist-deteksjonen. Med risting borte er vi eneste leser.)
+    Accelerometer.setUpdateInterval(100)
+    const accelSub = Accelerometer.addListener(({ y }) => reportAccelSample(y))
+
     const poseTimer = setInterval(() => {
       const sample = getLatestAccelSample()
       if (!sample || Date.now() - sample.at > 2000) return
@@ -249,6 +235,7 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
 
     return () => {
       clearInterval(poseTimer)
+      accelSub.remove()
       proxSub.remove()
       appSub.remove()
       setProximityEnabled(false)
@@ -307,7 +294,7 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
 
   return (
     <VoiceSessionContext.Provider
-      value={{ stage, beginSession, endSession, handleShake, lastCompletedSessionId, clearLastCompleted, liveOrderFound, clearLiveOrderFound }}
+      value={{ stage, beginSession, endSession, lastCompletedSessionId, clearLastCompleted, liveOrderFound, clearLiveOrderFound }}
     >
       {children}
     </VoiceSessionContext.Provider>

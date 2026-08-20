@@ -27,10 +27,19 @@ const CLIENT_TIMEOUT_MS = 25_000
  * 'live_token'). Tokenet er kortlevd og må brukes umiddelbart til å åpne
  * WebSocket-økten (lib/ai/live-session.ts).
  */
-export async function fetchLiveToken(): Promise<{ token: string; model: string; voice: string | null } | null> {
+export async function fetchLiveToken(): Promise<
+  { token: string; model: string; voice: string | null; laast: boolean } | null
+> {
   const result = await callAiVoice({ mode: 'live_token', routeContext: 'live' })
   if (!result.ok || typeof result.token !== 'string' || typeof result.model !== 'string') return null
-  return { token: result.token, model: result.model, voice: typeof result.voice === 'string' ? result.voice : null }
+  return {
+    token: result.token,
+    model: result.model,
+    voice: typeof result.voice === 'string' ? result.voice : null,
+    // Tokenet er låst til modell + lydmodus (liveConnectConstraints). Brukes kun
+    // til feilmeldingen når Google avviser oppsettet.
+    laast: result.laast !== false,
+  }
 }
 
 export async function callAiVoice(request: AiVoiceRequest): Promise<AiVoiceResult> {

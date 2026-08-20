@@ -26,6 +26,7 @@ import { syncQuietly } from '../db/sync'
 import { TimeEntry } from '../db/models/time-entry'
 import { finnAktivitet } from '../activities'
 import { OrderExtra, type TilleggPrising } from '../db/models/order-extra'
+import { Quote } from '../db/models/quote'
 import { resolveTemplate, listAllTemplates, type TemplateCatalogEntry } from '../forms/resolve'
 import { startVoiceFill, applyVoiceFill, type VoiceFillEntry } from '../forms/voice-fill'
 import { emitVoiceLevel } from './voice-level'
@@ -46,6 +47,8 @@ import { getForecast } from '../weather'
 import { computeProjectProgress, progressToSpokenContext } from '../project-progress'
 import { fetchLiveToken } from './gemini-client'
 import type { VoiceRouteContext } from './voice-drafts'
+import { sokVareVerktoy, taUtMateriellVerktoy, leggTilMateriellVerktoy } from './materiell-tools'
+import { nyttTilbudVerktoy, tilbudslinjeVerktoy, tilbudssumVerktoy } from './tilbud-tools'
 
 // Gemini Live: rå PCM16 little-endian begge veier — 16kHz opp, 24kHz ned
 // (dokumentert format, ikke valgbart). 100ms-chunks opp gir ~3,2KB per melding:
@@ -112,6 +115,25 @@ Mallisten (inkl. firmaets egne skjemaer) står nederst i instruksene — velg al
 
 TILLEGGSARBEID: nevner brukeren noe kunden ikke bestilte opprinnelig, bruk foresla_tillegg med en gang. Det registreres som foreslått — si at kunden må godkjenne før det kan faktureres. TIMEFØRING: foer_timer fører timer på en ordre brukeren er med på (bekreft antall timer høyt først). Oppgi aktivitet når den nevnes — den avgjør timeprisen. Notatet er synlig på fakturaen. mine_timer
 oppsummerer brukerens førte timer.
+
+MATERIELL OG VARER: Dette er det du kan som ingen andre — ikke bare snakke om jobben, men GJØRE den.
+- «Jeg tok ti downlights fra bilen» → ta_ut_materiell med en gang. Uttaket havner i kurven til det plasseres.
+- «Sett tre meter PFXP på ordre 42» → legg_til_materiell. Krever at brukeren er med på ordren.
+- «Hva koster en jordfeilautomat på 16?» eller et el-nummer lest av en eske → sok_vare.
+To ærlighetsregler du ALDRI bryter, fordi begge handler om penger:
+1. Er prisen merket listepris, SI at det er grossistens katalogpris og ikke firmaets — den er for høy, og
+   dekningsbidraget blir feil. Be dem importere en P4-fil for riktige priser.
+2. Gir et uttak negativ beholdning, si det høyt. Enten er noe ikke registrert, eller så er tallet feil.
+Les opp de to-tre mest relevante treffene, aldri hele lista. Er billigste grossist merkbart billigere, nevn det —
+det er hele poenget: ingen grossists eget system kan si «bestill hos den andre».
+
+TILBUD: Et tilbud blir til på vei hjem fra befaring — brukeren husker rommet nå, ikke om en time.
+Flyten: nytt_tilbud først, så én legg_til_tilbudslinje per ting han ramser opp, så tilbudssum av deg selv når
+lista ser ferdig ut. Materiell og aktiviteter slås opp i kartoteket, så «tolv downlights og åtte timer montasje»
+blir ekte beløp — du skal IKKE spørre om pris når varen finnes. Les summen og dekningsbidraget høyt: det er det
+eneste tidspunktet det tallet kan endre noe. Er dekningsbidraget negativt, si det rett ut.
+Du kan ALDRI sende et tilbud — det er en bindende pris ut til en kunde, og mennesket trykker. Kall vis_tilbud og
+si at de ser over og sender selv.
 
 VÆR EN GUIDE, IKKE ET INTERVJU: Åpne ting på skjermen (vis_ordre, vis_skjema) i stedet for å bare snakke om dem.
 Når du oppretter eller endrer noe: bruk ALT brukeren allerede har sagt uten å spørre om det på nytt — nevner de
@@ -517,6 +539,103 @@ const TOOL_DECLARATIONS = [
         description: 'Lister ordrer (nyeste først, maks 20) med ordrenummer, tittel, kunde og status. Bruk når brukeren spør hva som ligger av ordrer eller hva som pågår.',
         parameters: { type: 'OBJECT', properties: {} },
       },
+      {
+        name: 'sok_vare',
+        description:
+          'Søker i varekartoteket. Bruk når brukeren spør hva noe koster, hvor det er billigst, eller om vi har noe på lager. '
+          + 'Godtar el-nummer, EAN/strekkode, produsent, typebetegnelse eller vanlig navn. Les opp de mest relevante, ikke alle.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            sok: { type: 'STRING', description: 'Det brukeren sa — el-nummer, navn, produsent eller en kombinasjon.' },
+          },
+          required: ['sok'],
+        },
+      },
+      {
+        name: 'ta_ut_materiell',
+        description:
+          'Registrerer et uttak fra lager eller bil. Uttaket havner i kurven til det plasseres på en ordre. '
+          + 'Bruk når brukeren sier at han TAR eller HAR TATT noe. Er lokasjonen uklar og firmaet har flere, spør før du kaller.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            vare: { type: 'STRING', description: 'Varen slik brukeren beskrev den, eller el-nummeret.' },
+            antall: { type: 'NUMBER', description: 'Antall i varens enhet (stk, meter).' },
+            lokasjon: { type: 'STRING', description: 'Navn på lager eller bil. Utelates når brukeren ikke sa noe — da brukes hans egen bil.' },
+          },
+          required: ['vare', 'antall'],
+        },
+      },
+      {
+        name: 'legg_til_materiell',
+        description:
+          'Legger materiell rett på en ordre, med pris fra varekartoteket. Krever at brukeren er med på ordren. '
+          + 'Bruk når brukeren sier at noe er BRUKT eller skal PÅ en bestemt ordre.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            ordrenummer: { type: 'NUMBER', description: 'Ordrenummeret.' },
+            vare: { type: 'STRING', description: 'Varen slik brukeren beskrev den, eller el-nummeret.' },
+            antall: { type: 'NUMBER', description: 'Antall i varens enhet.' },
+          },
+          required: ['ordrenummer', 'vare', 'antall'],
+        },
+      },
+      {
+        name: 'nytt_tilbud',
+        description:
+          'Oppretter et tilbud. Bruk når brukeren vil prise en jobb han ikke har fått ennå — typisk på vei hjem fra befaring. '
+          + 'Legg linjer på etterpå med legg_til_tilbudslinje.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            tittel: { type: 'STRING', description: 'Hva tilbudet gjelder, f.eks. «Nytt sikringsskap Storgata 4».' },
+            kunde: { type: 'STRING', description: 'Kundens navn hvis brukeren nevnte den. Slås opp i kunderegisteret.' },
+            gyldig_dager: { type: 'NUMBER', description: 'Antall dager tilbudet skal være gyldig. Standard 30.' },
+          },
+          required: ['tittel'],
+        },
+      },
+      {
+        name: 'legg_til_tilbudslinje',
+        description:
+          'Legger én linje på et tilbud. Materiell slås opp i varekartoteket så prisen blir ekte; arbeid slås opp mot '
+          + 'aktiviteten så timeprisen blir riktig. «tekst» er en overskrift eller et forbehold uten beløp. '
+          + 'Kall én gang per linje — brukeren ramser dem gjerne opp etter hverandre.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            tilbudsnummer: { type: 'NUMBER', description: 'Nummeret på tilbudet.' },
+            art: { type: 'STRING', enum: ['materiell', 'arbeid', 'tekst'], description: 'Standard materiell.' },
+            beskrivelse: { type: 'STRING', description: 'Varen, aktiviteten eller teksten slik brukeren sa den.' },
+            antall: { type: 'NUMBER', description: 'Antall — stk/meter for materiell, timer for arbeid. Standard 1.' },
+            pris: { type: 'NUMBER', description: 'Kun når brukeren OPPGIR en pris. Ellers hentes den fra kartoteket.' },
+            rabatt: { type: 'NUMBER', description: 'Rabatt i prosent på linja, hvis nevnt.' },
+          },
+          required: ['tilbudsnummer', 'beskrivelse'],
+        },
+      },
+      {
+        name: 'tilbudssum',
+        description:
+          'Leser opp hva tilbudet summerer til, og dekningsbidraget. Bruk når brukeren spør hva det blir, '
+          + 'og av deg selv når linjene ser ut til å være ferdige.',
+        parameters: {
+          type: 'OBJECT',
+          properties: { tilbudsnummer: { type: 'NUMBER' } },
+          required: ['tilbudsnummer'],
+        },
+      },
+      {
+        name: 'vis_tilbud',
+        description: 'Åpner tilbudet på skjermen, så brukeren kan se over og sende det selv.',
+        parameters: {
+          type: 'OBJECT',
+          properties: { tilbudsnummer: { type: 'NUMBER' } },
+          required: ['tilbudsnummer'],
+        },
+      },
     ],
   },
 ]
@@ -829,7 +948,11 @@ export class LiveSession {
       // LESER feilen høyt, og det er eneste diagnosekanal i felt (TTS-loggtrikset).
       const detail = [e?.code, typeof e?.reason === 'string' ? e.reason.slice(0, 60) : '']
         .filter(Boolean).join(' — ')
-      this.finish(this.gotSetupComplete ? undefined : `AI-tjenesten avviste tilkoblingen${detail ? ` (${detail})` : ''}.`)
+      // Tokenet er låst til modell + lydmodus. Avvises oppsettet, er låsen den
+      // mest sannsynlige nye årsaken — si det, ellers står operatøren og gjetter
+      // mellom kvote, modellnavn og lås. Nødbryter: GEMINI_LIVE_UNLOCK=1.
+      const laasHint = auth.laast && !this.gotSetupComplete ? ' Tokenet er låst til modell og lyd.' : ''
+      this.finish(this.gotSetupComplete ? undefined : `AI-tjenesten avviste tilkoblingen${detail ? ` (${detail})` : ''}.${laasHint}`)
     }
   }
 
@@ -917,23 +1040,42 @@ export class LiveSession {
     // RangeError. Eksplisitt 0-offset er semantisk likt og passerer valideringen.
     this.queueNode.start(0, 0)
 
+    // Primærvei (iOS device): ekko-kansellert mikrofon (AmpexMicModule.swift,
+    // Apples VoiceProcessingIO — samme som Gemini-appen). Hennes stemme trekkes
+    // fra i HARDWARE → ingen selv-avbrytelse, full dupleks, naturlig barge-in.
+    // Chunkene er ferdig PCM16@16kHz base64 — rett i realtimeInput.
+    //
+    // MERK at dette er et FORSØK, ikke en tilgjengelighetssjekk.
+    // `isEchoCancelledMicAvailable` sier bare at modulen er KOMPILERT INN, ikke
+    // at den virker her: på simulatoren er den kompilert inn, men
+    // `setVoiceProcessingEnabled(true)` kaster fordi VoiceProcessingIO ikke
+    // finnes der. Før 2026-08-20 drepte det hele økten med «Fikk ikke startet
+    // mikrofonen» — fallbacken under, som står der NETTOPP for simulator, ble
+    // aldri nådd. Nå faller vi gjennom på enhver feil, ikke bare på fravær.
     if (isEchoCancelledMicAvailable) {
-      // Primærvei (iOS device): ekko-kansellert mikrofon (AmpexMicModule.swift,
-      // Apples VoiceProcessingIO — samme som Gemini-appen). Hennes stemme trekkes
-      // fra i HARDWARE → ingen selv-avbrytelse, full dupleks, naturlig barge-in.
-      // Chunkene er ferdig PCM16@16kHz base64 — rett i realtimeInput.
-      this.micSub = await startEchoCancelledMic(({ base64, rms }) => {
-        if (this.ended || this.ws?.readyState !== WebSocket.OPEN) return
-        emitVoiceLevel({ level: rms, modelSpeaking: Date.now() < this.playbackEndsAtMs })
-        this.ws.send(
-          JSON.stringify({
-            realtimeInput: { audio: { mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}`, data: base64 } },
-          }),
-        )
-      })
-      console.log('Live: ekko-kansellert mikrofon aktiv')
-    } else {
-      // Fallback (simulator/Android inntil videre): bibliotekets recorder har ingen
+      try {
+        this.micSub = await startEchoCancelledMic(({ base64, rms }) => {
+          if (this.ended || this.ws?.readyState !== WebSocket.OPEN) return
+          emitVoiceLevel({ level: rms, modelSpeaking: Date.now() < this.playbackEndsAtMs })
+          this.ws.send(
+            JSON.stringify({
+              realtimeInput: { audio: { mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}`, data: base64 } },
+            }),
+          )
+        })
+        console.log('Live: ekko-kansellert mikrofon aktiv')
+        return
+      } catch (e) {
+        // Ingen AEC her — modellen vil høre seg selv. Fallbacken under demper det
+        // ved å holde mikrofonen døv mens hun snakker. Dårligere, men i live.
+        console.warn('Live: ekko-kansellert mikrofon utilgjengelig, faller tilbake:', e)
+        this.micSub?.remove()
+        this.micSub = null
+      }
+    }
+    {
+      // Fallback (simulator/Android, og enhver enhet der VoiceProcessingIO
+      // svikter): bibliotekets recorder har ingen
       // AEC — mikrofonen holdes DØV mens modellen snakker, ellers avbryter hennes
       // egen høyttalerlyd henne (felt-målt 0.21–0.26 RMS, samme område som rop).
       const recorder = new AudioRecorder()
@@ -1466,6 +1608,38 @@ export class LiveSession {
         }
         this.callbacks.onOpenForm?.(resolved.order.id, template.id)
         return { ok: true, beskjed: 'Skjemaet vises på skjermen nå — be brukeren se over, rette og fullføre selv.' }
+      }
+      if (name === 'sok_vare') {
+        return sokVareVerktoy(typeof args.sok === 'string' ? args.sok : '')
+      }
+      if (name === 'ta_ut_materiell') {
+        const user = await getCurrentUser()
+        if (!user) return { feil: 'Ingen innlogget bruker.' }
+        return taUtMateriellVerktoy(args as { vare?: string; antall?: number; lokasjon?: string }, user.id)
+      }
+      if (name === 'legg_til_materiell') {
+        const resolved = await this.resolveOrder(args)
+        if ('feil' in resolved) return resolved
+        // Samme sperre som resten: materiell føres kun på ordrer brukeren er med på.
+        if (!resolved.member) return { feil: 'Brukeren er ikke med på ordren. Tilby bli_med_pa_ordre først.' }
+        return leggTilMateriellVerktoy(args as { vare?: string; antall?: number }, resolved.order.id, resolved.n)
+      }
+      if (name === 'nytt_tilbud') {
+        return nyttTilbudVerktoy(args as { tittel?: string; kunde?: string; gyldig_dager?: number })
+      }
+      if (name === 'legg_til_tilbudslinje') {
+        return tilbudslinjeVerktoy(args as Parameters<typeof tilbudslinjeVerktoy>[0])
+      }
+      if (name === 'tilbudssum') {
+        return tilbudssumVerktoy(args.tilbudsnummer)
+      }
+      if (name === 'vis_tilbud') {
+        const n = typeof args.tilbudsnummer === 'number' ? args.tilbudsnummer : NaN
+        if (!Number.isInteger(n)) return { feil: 'Tilbudsnummer mangler.' }
+        const [q] = await database.get<Quote>('quotes').query(Q.where('quote_number', n)).fetch()
+        if (!q) return { feil: `Fant ingen tilbud med nummer ${n}.` }
+        this.callbacks.onNavigate?.(`/(app)/tilbud/${q.id}`)
+        return { ok: true, beskjed: `Tilbud ${n} vises på skjermen nå.` }
       }
       if (name === 'foer_timer') {
         const resolved = await this.resolveOrder(args)
