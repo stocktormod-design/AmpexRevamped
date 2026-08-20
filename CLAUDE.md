@@ -39,6 +39,7 @@ npm run verify:timesheet  selvtest av ukelista (ukestart, arv av fakturerbarhet)
 npm run verify:varesok    selvtest av varesøk og varekort (el-nummer, EAN, flerord)
 npm run verify:approvals  selvtest av faglig godkjenning (snapshot, avslag)
 npm run verify:arkiv      selvtest av arkivpakken (SHA-256, determinisme, frister)
+npm run verify:id-repair  selvtest av id-reparasjonen (kjører SQL-en mot ekte SQLite)
 ```
 
 Selvtestene er kjørbare skript med harde påstander, ikke en testrunner. Ny ren

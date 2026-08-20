@@ -1,8 +1,16 @@
-import { schemaMigrations, createTable, addColumns } from '@nozbe/watermelondb/Schema/migrations'
+import { schemaMigrations, createTable, addColumns, unsafeExecuteSql } from '@nozbe/watermelondb/Schema/migrations'
+import { byggReparasjonsSql, TABELLER_V30 } from './id-repair'
 
 // Holder eksisterende lokale databaser i live ved skjemabump — MÅ speile schema.ts.
 export const migrations = schemaMigrations({
   migrations: [
+    {
+      // Ingen skjemaendring — bare data. Åtte rader fra før setGenerator (eef17dd)
+      // har base62-id der Postgres krever uuid, og siden watermelon_push kjører i
+      // én transaksjon blokkerer de ALL synk, stille og for alltid. Se lib/db/id-repair.ts.
+      toVersion: 30,
+      steps: [unsafeExecuteSql(byggReparasjonsSql(TABELLER_V30))],
+    },
     {
       toVersion: 29,
       steps: [
