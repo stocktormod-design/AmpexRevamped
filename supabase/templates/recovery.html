@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="nb">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Tilbakestill passordet ditt</title>
+  </head>
+  <!-- Ampex-identiteten: brunt og kremet, ingen rene svarte flater. Ingen
+       eksterne bilder eller webfonter — e-postklienter blokkerer dem uansett,
+       og en logo som ikke lastes ser verre ut enn ingen logo. Tabell-layout og
+       inline-stil fordi Outlook fortsatt ikke kan noe annet. -->
+  <body style="margin:0;padding:0;background:#EFEAE1;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EFEAE1;">
+      <tr>
+        <td align="center" style="padding:40px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background:#FFFFFF;border-radius:20px;border:1px solid #DED6C7;">
+            <tr>
+              <td style="padding:32px 32px 0 32px;">
+                <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:#A97C4F;">Ampex</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 32px 0 32px;">
+                <h1 style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:26px;line-height:32px;font-weight:700;letter-spacing:-0.4px;color:#2E281F;">Tilbakestill passordet</h1>
+                <p style="margin:12px 0 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;line-height:24px;color:#2E281F;">Vi fikk en forespørsel om å tilbakestille passordet til denne adressen. Lenken varer i én time.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 32px 0 32px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" style="background:#2E281F;border-radius:14px;">
+                      <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;color:#FFFFFF;text-decoration:none;">Velg nytt passord</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px 0 32px;">
+                <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;color:#96896F;">
+                  Virker ikke knappen? Lim inn denne adressen i nettleseren:
+                </p>
+                <p style="margin:6px 0 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;word-break:break-all;">
+                  <a href="{{ .ConfirmationURL }}" style="color:#A97C4F;text-decoration:underline;">{{ .ConfirmationURL }}</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px 32px 32px;">
+                <div style="height:1px;background:#DED6C7;line-height:1px;font-size:0;">&nbsp;</div>
+                <p style="margin:16px 0 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;color:#96896F;">
+                  Ba du ikke om dette, trenger du ikke gjøre noe — passordet ditt står uendret så lenge lenken ikke brukes.
+                </p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:20px 0 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#96896F;">
+            Ampex — dokumentasjon, timer og materiell for elektrikere
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

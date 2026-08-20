@@ -239,11 +239,12 @@ Samme spørring bekreftet at **revisjonssporet virker i appen**, ikke bare mot
 databasen: `actor_name` fanges opp, og en oppdatering lagres som KUN det som
 endret seg — `{"status": {"fra": "mottatt", "til": "fakturaklar"}}`.
 
-**Ett hull det avdekket:** `company_settings` har `company_id` som
-primærnøkkel, ikke `id`, så `audit_row()` skrev hendelsen med `rad_id = null` —
-et spor som ikke kan si hvilken rad det beskriver. Rettelsen ligger klar i
-`supabase/migrations/20260820210000_audit_rad_id_uten_id_kolonne.sql`, men er
-**ikke anvendt** — verktøyet mitt fikk ikke lov å kjøre den mot databasen.
+**Ett hull det avdekket, og som er rettet:** `company_settings` har `company_id`
+som primærnøkkel, ikke `id`, så `audit_row()` skrev hendelsen med `rad_id = null`
+— et spor som ikke kan si hvilken rad det beskriver. For en tabell med én rad per
+firma ER `company_id` radens identitet, så `coalesce(id, company_id)` er ikke en
+tilnærming, det er riktig nøkkel. Anvendt og verifisert: **0 av 14 hendelser står
+uten `rad_id`.**
 
 ### En stum synk er ikke det samme som en usynlig synk
 
@@ -480,10 +481,13 @@ kundens kundenummer — ikke gjennom en godkjenning av oss som leverandør. Spø
 FTP-vert og brukernavn, om `F*`-fakturafiler ligger i samme katalog, og om de tar
 imot bestilling på samme server. Se `docs/GROSSIST_INTEGRASJON.md`.
 
-**2. Fire e-postmaler mangler.** `supabase/config.toml` peker på
-`supabase/templates/invite.html`, `recovery.html`, `confirmation.html` og
-`magic_link.html`. Ingen finnes, og det **blokkerer hele `supabase`-CLI-en**
-(`db reset`, `db push`, `db pull`).
+**~~2. Fire e-postmaler mangler.~~ GJORT 20. august.** `supabase/config.toml`
+pekte på fire maler som ikke fantes, og CLI-en validerer HELE konfigurasjonen
+selv for en funksjonsutrulling — så de blokkerte alt, også `functions deploy`.
+Skrevet i Ampex-identiteten (brunt og kremet, ikke «dark theme» som kommentaren i
+config.toml lovet), tabell-layout og inline-stil fordi Outlook ikke kan noe annet,
+og **uten eksterne bilder eller webfonter**: e-postklienter blokkerer dem, og en
+logo som ikke lastes ser verre ut enn ingen logo. CLI-en er dermed i drift igjen.
 
 **3. Regnskap: start på Fiken.** 229 kr/mnd ENK, 349 kr AS. Ikke på grunn av
 API-et, men fordi Fiken er den eneste veien der Ampex kan være koblet **fra dag
@@ -730,15 +734,35 @@ startet mikrofonen» = mikrofonen, stille fade = ren lukking.
   Meg-fanen), og `systemInstruction`/`tools` (instruksen bygges på klienten fordi
   den inneholder brukerens navn, notater, påminnelser og skjemakatalog).
 
-  **Nødbryter:** `supabase secrets set GEMINI_LIVE_UNLOCK=1` slår låsen av uten
-  utrulling. Tokensvaret har et `laast`-flagg som klienten bruker til å legge
-  «Tokenet er låst til modell og lyd» på avvisningsmeldingen — som leses høyt i
-  Release, så låsen ikke blir en stille mistenkt.
+  **UTRULLET 20. august — `ai-voice` versjon 5, ACTIVE.**
 
-  **Uprøvd.** Semantikken rundt hvilke config-felt som blir låst når man setter
-  bare noen av dem er tynt dokumentert. Første økt etter utrulling avgjør. Blir
-  den avvist ved setup: flipp nødbryteren, så virker stemmen igjen mens det
-  feilsøkes.
+  Semantikken rundt `liveConnectConstraints` er tynt dokumentert, og en
+  sikkerhetsherding som kan slå ut stemmen i felt er ikke en herding — den er en
+  feil med god begrunnelse. Derfor er låsen bygget som noe som ikke KAN drepe
+  stemmen, i stedet for noe som forhåpentligvis ikke gjør det:
+
+  1. **Serveren faller tilbake selv.** Avviser Google selve constraint-formen
+     (feil feltnavn, feil nesting, ikke støttet på modellen), utstedes tokenet
+     uten lås i stedet for at kallet feiler. Vi er da tilbake på gårsdagens
+     sikkerhet — ikke bedre, men heller ikke verre — og svaret sier
+     `laast: false`, så det ikke blir en stille nedgradering.
+  2. **Klienten har en stige.** Avvises økten ved setup, prøves den på nytt uten
+     Google-søk (kvoten på grounding er den vanlige synderen), og deretter med et
+     ULÅST token. Ett forsøk per trinn, aldri flere: `laast` er false på neste
+     runde, så det kan ikke bli en løkke.
+
+  Å la klienten be om et ulåst token svekker ikke trusselmodellen. Den handler om
+  et token som snappes opp i tominuttersvinduet — den som allerede har brukerens
+  innlogging kan uansett be om så mange tokens den vil.
+
+  Feilmeldingen sier nå «Prøvd både med og uten låst token» først når BEGGE er
+  utelukket. Å peke på låsen vi nettopp fjernet ville sendt feilsøkingen feil vei.
+
+  **Nødbryter beholdt:** `supabase secrets set GEMINI_LIVE_UNLOCK=1` slår låsen av
+  på serveren helt, uten utrulling.
+
+  **Fortsatt uprøvd i en ekte økt** — men verste utfall er nå en logget
+  nedgradering, ikke en død stemme.
 
   **Gjenstår:** Google anbefaler å flytte `systemInstruction` serverside. Det
   krever at all brukerkonteksten sendes til edge-funksjonen først, og er en egen
