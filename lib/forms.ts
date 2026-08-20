@@ -1,7 +1,7 @@
 import { database } from './db'
 import { syncQuietly } from './db/sync'
 import { supabase } from './supabase'
-import { FormTemplate, type FormField } from './db/models/form-template'
+import { FormTemplate, type FormSection } from './db/models/form-template'
 import { FormRevision } from './db/models/form-revision'
 import { FormComment } from './db/models/form-comment'
 
@@ -17,7 +17,7 @@ async function displayName(): Promise<string> {
 }
 
 /** Nytt skjema + første revisjon (v1). */
-export async function createTemplate(input: { title: string; category: string; items?: FormField[] }): Promise<string> {
+export async function createTemplate(input: { title: string; category: string; sections?: FormSection[] }): Promise<string> {
   let id = ''
   await database.write(async () => {
     const tpl = await database.get<FormTemplate>('form_templates').create(t => {
@@ -30,7 +30,7 @@ export async function createTemplate(input: { title: string; category: string; i
     await database.get<FormRevision>('form_template_revisions').create(r => {
       r.templateId = tpl.id
       r.version = 1
-      r.schema = JSON.stringify({ items: input.items ?? [] })
+      r.schema = JSON.stringify({ sections: input.sections ?? [] })
       r.changeNote = 'Opprettet'
     })
   })
@@ -38,14 +38,14 @@ export async function createTemplate(input: { title: string; category: string; i
   return id
 }
 
-/** Ny revisjon: bump versjon, snapshot av items + HVORFOR. */
-export async function saveRevision(template: FormTemplate, items: FormField[], changeNote: string): Promise<void> {
+/** Ny revisjon: bump versjon, snapshot av seksjonene + HVORFOR. */
+export async function saveRevision(template: FormTemplate, sections: FormSection[], changeNote: string): Promise<void> {
   const next = template.currentVersion + 1
   await database.write(async () => {
     await database.get<FormRevision>('form_template_revisions').create(r => {
       r.templateId = template.id
       r.version = next
-      r.schema = JSON.stringify({ items })
+      r.schema = JSON.stringify({ sections })
       r.changeNote = changeNote.trim() || 'Endret'
     })
     await template.update(t => { t.currentVersion = next })

@@ -6,6 +6,7 @@ import { Pressable } from './pressable'
 import { SectionHeader } from './ui'
 import { FormFieldView } from './form-field-view'
 import type { FormTemplate, FormValues } from '../lib/forms/types'
+import { visibleSections, pruneHidden } from '../lib/forms/visibility'
 import type { GapCheckExtraction } from '../lib/forms/gap-check'
 import type { AiFieldOriginMap } from '../lib/db/models/order-document'
 import { colors, spacing, radius, sizes, shadows, type as t } from '../lib/theme'
@@ -48,7 +49,9 @@ export function GapCheckReviewSheet({ template, baseValues, extraction, onConfir
   )
 
   function onFieldEdit(key: string, v: string | Record<string, string>[]) {
-    setValues(prev => ({ ...prev, [key]: v }))
+    // Samme rydding som i skjema-skjermen: et svar som nettopp ble skjult skal
+    // ikke bli med videre til onConfirm.
+    setValues(prev => pruneHidden(template, { ...prev, [key]: v }))
     setOrigin(prev => {
       if (!prev[key]) return prev
       const next = { ...prev }
@@ -85,7 +88,7 @@ export function GapCheckReviewSheet({ template, baseValues, extraction, onConfir
         )}
 
         <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-          {template.sections.map(section => (
+          {visibleSections(template, values).map(section => (
             <View key={section.title} style={{ marginBottom: spacing.screen }}>
               <SectionHeader>{section.title}</SectionHeader>
               <View style={{ backgroundColor: colors.fill, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>

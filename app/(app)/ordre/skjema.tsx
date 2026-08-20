@@ -21,6 +21,7 @@ import { OrderDocument, type AiFieldOriginMap } from '../../../lib/db/models/ord
 import { getTemplate } from '../../../lib/forms/templates'
 import { resolveTemplate } from '../../../lib/forms/resolve'
 import { FormValues, FormPrefill, type FormTemplate } from '../../../lib/forms/types'
+import { visibleSections, pruneHidden } from '../../../lib/forms/visibility'
 import { formatDateTime } from '../../../lib/format'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
@@ -173,7 +174,11 @@ export default function SkjemaScreen() {
   }
 
   function onFieldChange(key: string, v: string | Record<string, string>[]) {
-    const next = { ...values, [key]: v }
+    if (!template) return
+    // pruneHidden fjerner svar på punkt som nettopp ble skjult av denne endringen.
+    // Svarer du «Nei» på avvik skal avviksbeskrivelsen forsvinne fra dokumentet,
+    // ikke bli liggende usynlig og havne i dokumentasjonen.
+    const next = pruneHidden(template, { ...values, [key]: v })
     setValues(next)
     // Manuell redigering av et AI-foreslått felt betyr det ikke lenger er AI-opprinnelse.
     if (aiOrigin[key]) {
@@ -285,7 +290,7 @@ export default function SkjemaScreen() {
           </View>
         )}
 
-        {ready && template.sections.map(section => (
+        {ready && visibleSections(template, values).map(section => (
           <View key={section.title} style={{ marginBottom: spacing.screen }}>
             <SectionHeader>{section.title}</SectionHeader>
             <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>

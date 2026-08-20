@@ -4,6 +4,7 @@ import { Order } from '../db/models/order'
 import { OrderDocument, type AiFieldOriginMap } from '../db/models/order-document'
 import { findUnfilledRequired } from './gap-check'
 import type { FormField, FormPrefill, FormTemplate, FormValues } from './types'
+import { pruneHidden, visibleFields } from './visibility'
 
 /**
  * Skjemautfylling for Live-assistenten (lib/ai/live-session.ts): modellen fyller
@@ -48,18 +49,18 @@ async function loadDoc(orderId: string, templateId: string): Promise<OrderDocume
 }
 
 function describeState(template: FormTemplate, values: FormValues): VoiceFillState {
-  const felter = template.sections.flatMap(s =>
-    s.fields
-      .filter(f => f.type !== 'info')
-      .map(f => ({
-        key: f.key,
-        label: f.label,
-        type: f.type,
-        choices: f.choices,
-        required: !!f.required,
-        verdi: typeof values[f.key] === 'string' ? (values[f.key] as string) : Array.isArray(values[f.key]) ? '(tabell — fylles i appen)' : null,
-      })),
-  )
+  // Kun synlige felt: et punkt som er skjult av en betingelse finnes ikke for
+  // modellen — verken å spørre om eller å fylle.
+  const felter = visibleFields(template, values)
+    .filter(f => f.type !== 'info')
+    .map(f => ({
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      choices: f.choices,
+      required: !!f.required,
+      verdi: typeof values[f.key] === 'string' ? (values[f.key] as string) : Array.isArray(values[f.key]) ? '(tabell — fylles i appen)' : null,
+    }))
   return { felter, mangler_required: findUnfilledRequired(template, values).map(f => f.key) }
 }
 
@@ -104,10 +105,11 @@ export async function applyVoiceFill(order: Order, template: FormTemplate, entri
     return { felter: [], mangler_required: [], avvist: entries.map(e => ({ key: e.key, hvorfor: 'Utkastet finnes ikke — kall start_skjema først.' })) }
   }
 
-  const values: FormValues = doc.data ? JSON.parse(doc.data) : {}
+  let values: FormValues = doc.data ? JSON.parse(doc.data) : {}
   const origin: AiFieldOriginMap = doc.aiOriginMap
   const fieldByKey = new Map(template.sections.flatMap(s => s.fields).map(f => [f.key, f]))
   const avvist: { key: string; hvorfor: string }[] = []
+  const skrevet: string[] = []
 
   for (const entry of entries) {
     const field = fieldByKey.get(entry.key)
@@ -125,7 +127,26 @@ export async function applyVoiceFill(order: Order, template: FormTemplate, entri
     }
     values[entry.key] = entry.verdi
     origin[entry.key] = { origin: 'ai', reason: entry.begrunnelse || 'Fylt via samtale' }
+    skrevet.push(entry.key)
   }
+
+  // Betingelser vurderes til slutt, ikke underveis: modellen kan sende
+  // beskrivelsen før bryteren som gjør den synlig, og rekkefølgen i ett
+  // verktøykall er ikke noe den er lovet å styre. Det som fortsatt er skjult
+  // etter at ALT er lagt på, er derimot ekte feil — og sies tilbake.
+  const beforePrune = values
+  values = pruneHidden(template, values)
+  for (const key of skrevet) {
+    if (key in values) continue
+    delete origin[key]
+    const field = fieldByKey.get(key)
+    avvist.push({
+      key,
+      hvorfor: `Punktet «${field?.label ?? key}» vises ikke med svarene som er gitt — svar på punktet som styrer det først.`,
+    })
+  }
+  // Rydd også opprinnelsesmerker for felt som ble skjult av EN ANNEN endring.
+  for (const key of Object.keys(origin)) if (!(key in values) && key in beforePrune) delete origin[key]
 
   await database.write(async () => {
     await doc.update(d => {

@@ -1,6 +1,6 @@
 import { Model } from '@nozbe/watermelondb'
 import { text, field, date, readonly } from '@nozbe/watermelondb/decorators'
-import type { FormSchema, FormField } from './form-template'
+import { parseSchema, type FormField, type FormSection } from '../../forms/schema'
 
 /** Uforanderlig revisjon av et skjema: snapshot av schema + HVORFOR det ble endret. */
 export class FormRevision extends Model {
@@ -14,8 +14,13 @@ export class FormRevision extends Model {
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 
+  /** Seksjoner — gamle v1-revisjoner løftes til én navnløs seksjon. */
+  get sections(): FormSection[] {
+    return parseSchema(this.schema)
+  }
+
+  /** Alle felt flatet ut, uansett seksjon. Brukes til telling og oppslag. */
   get items(): FormField[] {
-    if (!this.schema) return []
-    try { return (JSON.parse(this.schema) as FormSchema).items ?? [] } catch { return [] }
+    return this.sections.flatMap(s => s.fields)
   }
 }
