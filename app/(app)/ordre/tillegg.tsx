@@ -148,7 +148,14 @@ function Rad({ extra }: { extra: OrderExtra }) {
         onVelg={async m => {
           const navn = spørMåte
           setSpørMåte(null)
-          if (navn) await fullførGodkjenning(navn, m)
+          if (!navn) return
+          // «Signert» uten en signatur er bare et ord. Send til signaturflaten
+          // i stedet — den skriver godkjenningen selv når streken er der.
+          if (m === 'signert') {
+            router.push({ pathname: '/(app)/ordre/signatur', params: { id: extra.orderId, extraId: extra.id } })
+            return
+          }
+          await fullførGodkjenning(navn, m)
         }}
         onAvbryt={() => setSpørMåte(null)}
       />
