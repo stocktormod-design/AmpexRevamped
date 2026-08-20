@@ -7,6 +7,7 @@ import { Order } from './db/models/order'
 import { OrderExtra } from './db/models/order-extra'
 import { OrderMaterial } from './db/models/order-material'
 import { TimeEntry } from './db/models/time-entry'
+import { OrderApproval } from './db/models/order-approval'
 import { syncQuietly } from './db/sync'
 import {
   byggFakturagrunnlag, type Fakturagrunnlag, type GrunnlagValg,
@@ -121,11 +122,31 @@ export async function hentFakturagrunnlag(orderId: string, valg: GrunnlagValg = 
  * rekkefølge ville låst linjene på en faktura som aldri ble opprettet, og da
  * finnes det ingen vei tilbake uten å redigere databasen for hånd.
  */
+/**
+ * Kastes når en ordre forsøkes fakturert uten faglig godkjenning.
+ *
+ * Sperren finnes ALLEREDE i databasen (trigger `krev_faglig_godkjenning`), og
+ * det er den som gjelder. Men databasen ser først forsøket ved synk: uten denne
+ * sjekken ville ordren blitt merket fakturert lokalt, sett riktig ut på
+ * telefonen, og så stille nektet å synke. Bedre å stoppe før skrivingen.
+ */
+export class ManglerGodkjenning extends Error {
+  constructor() {
+    super('Ordren må godkjennes av faglig ansvarlig før den kan faktureres.')
+    this.name = 'ManglerGodkjenning'
+  }
+}
+
 export async function markerFakturert(
   order: Order,
   grunnlag: Fakturagrunnlag,
   eksternId: string | null,
 ): Promise<void> {
+  const godkjent = await database.get<OrderApproval>('order_approvals')
+    .query(Q.where('order_id', order.id), Q.where('beslutning', 'godkjent'))
+    .fetchCount()
+  if (godkjent === 0) throw new ManglerGodkjenning()
+
   const naa = new Date()
   const materiellIder = grunnlag.linjer.filter(l => l.kilde === 'materiell').flatMap(l => l.kildeIder)
   const timeIder = grunnlag.linjer.filter(l => l.kilde === 'timer').flatMap(l => l.kildeIder)

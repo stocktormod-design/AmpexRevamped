@@ -8,7 +8,7 @@ import { ListCard, SectionHeader, Chip } from '../../../components/ui'
 import { database } from '../../../lib/db'
 import { Order } from '../../../lib/db/models/order'
 import { useKunde } from '../../../lib/customers'
-import { useFakturagrunnlag, markerFakturert, angreFakturert } from '../../../lib/order-billing'
+import { useFakturagrunnlag, markerFakturert, angreFakturert, ManglerGodkjenning } from '../../../lib/order-billing'
 import { formatKr, mvaLabel, type Fakturalinje, type Gruppering, type UtelattLinje } from '../../../lib/invoicing'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
@@ -127,7 +127,23 @@ export default function FakturaScreen() {
           text: 'Marker',
           onPress: async () => {
             setJobber(true)
-            try { await markerFakturert(order, grunnlag, null) } finally { setJobber(false) }
+            try {
+              await markerFakturert(order, grunnlag, null)
+            } catch (e) {
+              // Faglig godkjenning mangler. Si HVA som må skje, ikke bare at det
+              // ikke gikk — han skal vite hvem som må trykke.
+              if (e instanceof ManglerGodkjenning) {
+                Alert.alert(
+                  'Mangler faglig godkjenning',
+                  'Ordren må godkjennes av faglig ansvarlig før den kan faktureres. '
+                  + 'Den ligger i «Til godkjenning» så snart den er satt fakturaklar.',
+                )
+              } else {
+                throw e
+              }
+            } finally {
+              setJobber(false)
+            }
           },
         },
       ],
