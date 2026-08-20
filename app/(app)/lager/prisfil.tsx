@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { View, Text, ScrollView, TextInput, ActivityIndicator } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { ChevronLeft, Upload, AlertTriangle, CheckCircle2 } from 'lucide-react-native'
@@ -9,6 +9,7 @@ import { Pressable } from '../../../components/pressable'
 import { ListCard, SectionHeader, Chip } from '../../../components/ui'
 import { base64TilBytes, dekodAnsi, parseEfoNelfo, type ParseResultat } from '../../../lib/pricefile/efo-nelfo'
 import { importerPrisfil, prisferskhet, type ImportResultat } from '../../../lib/pricefile/import'
+import { lastInnDemokatalog, fjernDemodata, useDemoAntall } from '../../../lib/pricefile/demo'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 const GROSSISTER = ['Onninen', 'Solar', 'Ahlsell', 'Elektroskandia', 'Otra']
@@ -35,6 +36,26 @@ export default function PrisfilScreen() {
   const [resultat, setResultat] = useState<ImportResultat | null>(null)
   const [feil, setFeil] = useState<string | null>(null)
   const [ferskhet, setFerskhet] = useState<{ grossist: string; sistOppdatert: Date; antall: number }[]>([])
+  const [demoJobber, setDemoJobber] = useState(false)
+  const demoAntall = useDemoAntall()
+
+  /**
+   * `?demo=1` laster demokatalogen med én gang.
+   *
+   * Finnes fordi en demo skal kunne settes opp uten å lete i menyer — enten fra
+   * en dyplenke i en salgssamtale, eller fra `xcrun simctl openurl` på en
+   * simulator. Kjører gjennom nøyaktig samme funksjon som knappen under.
+   */
+  const { demo } = useLocalSearchParams<{ demo?: string }>()
+  const demoBedt = demo === '1'
+  useEffect(() => {
+    if (!demoBedt || demoAntall > 0 || demoJobber) return
+    setDemoJobber(true)
+    lastInnDemokatalog()
+      .then(() => prisferskhet())
+      .then(setFerskhet)
+      .finally(() => setDemoJobber(false))
+  }, [demoBedt, demoAntall, demoJobber])
 
   useEffect(() => { prisferskhet().then(setFerskhet) }, [resultat])
 
@@ -228,8 +249,92 @@ export default function PrisfilScreen() {
               </View>
               <Rad etikett="Nye varer" verdi={String(resultat.nye)} />
               <Rad etikett="Oppdaterte" verdi={String(resultat.oppdaterte)} />
+              {/* Det ingen grossists eget system kan fortelle deg. */}
+              {resultat.billigstHer > 0 && (
+                <Rad etikett={`Billigst hos ${grossist}`} verdi={String(resultat.billigstHer)} />
+              )}
+              {resultat.berikede > 0 && (
+                <Rad etikett="Fikk produsent og varekort" verdi={String(resultat.berikede)} />
+              )}
               {resultat.utgaatte > 0 && <Rad etikett="Utgått hos grossist" verdi={String(resultat.utgaatte)} />}
               {resultat.utenElnummer > 0 && <Rad etikett="Uten el-nummer, hoppet over" verdi={String(resultat.utenElnummer)} />}
+            </ListCard>
+            {/* En V4 gir listepris på alt. Da vet vi hva varen koster i
+                katalogen, ikke hva firmaet betaler — og det må sies med én gang,
+                ikke oppdages på en faktura. */}
+            {resultat.listepriser > 0 && (
+              <View style={{
+                marginHorizontal: spacing.screen, marginBottom: spacing.lg,
+                backgroundColor: colors.warningSoft, borderRadius: radius.lg, padding: spacing.lg,
+              }}>
+                <Text style={[t.subhead, { fontWeight: '700', color: colors.warning, marginBottom: spacing.xs }]}>
+                  {resultat.listepriser === resultat.nye + resultat.oppdaterte
+                    ? 'Dette er listepriser'
+                    : `${resultat.listepriser} linjer er listepris`}
+                </Text>
+                <Text style={t.footnote}>
+                  Fila oppgir bruttopris uten rabatt, altså grossistens katalogpris —
+                  ikke deres. Be om en <Text style={{ fontWeight: '700' }}>P4</Text>
+                  {' '}(pristilbud) for å få firmaets egne priser. Uten den blir
+                  dekningsbidraget for lavt, og prissammenligningen mellom grossister
+                  meningsløs — listeprisene er nesten like hos alle.
+                </Text>
+              </View>
+            )}
+            {/* Sammenligning krever minst to filer. Si det, i stedet for å la
+                brukeren lure på hvorfor «billigst»-merket aldri dukker opp. */}
+            <Text style={[t.footnote, { marginHorizontal: spacing.screen, marginBottom: spacing.lg }]}>
+              Importer en fil fra én grossist til, så vises prisene side om side på hver
+              vare — og hvor det er billigst.
+            </Text>
+          </>
+        )}
+
+        {/* Demokatalogen.
+            Ampex er systemleverandør og har ikke egne grossistavtaler, så
+            varekartoteket står tomt til en kunde deler fila si. Uten noe å bla
+            i er hverken søket, varekortet eller prissammenligningen mulig å se
+            — og de er ferdig bygget. */}
+        {!parset && (
+          <>
+            <SectionHeader>Uten en ekte fil</SectionHeader>
+            <ListCard style={{ marginBottom: spacing.lg }}>
+              <View style={{ padding: spacing.lg }}>
+                <Text style={[t.bodyMedium, { marginBottom: spacing.xs }]}>
+                  {demoAntall > 0 ? 'Demokatalogen er lastet inn' : 'Last inn demokatalog'}
+                </Text>
+                <Text style={t.footnote}>
+                  {demoAntall > 0
+                    ? `${demoAntall} oppdiktede varer fra to grossister. Prisene er funnet på og merket som demo — de kan fjernes når som helst.`
+                    : '36 varer fra to grossister med ulik rabatt, i ekte EFO/NELFO-format. Oppdiktede priser, merket som demo. Nok til å prøve søk, varekort og prissammenligning før en ekte fil finnes.'}
+                </Text>
+                <Pressable
+                  haptic="medium"
+                  disabled={demoJobber}
+                  onPress={async () => {
+                    setDemoJobber(true)
+                    try {
+                      if (demoAntall > 0) await fjernDemodata()
+                      else await lastInnDemokatalog()
+                      setFerskhet(await prisferskhet())
+                    } finally {
+                      setDemoJobber(false)
+                    }
+                  }}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+                    height: 44, borderRadius: radius.lg, marginTop: spacing.md,
+                    backgroundColor: demoAntall > 0 ? colors.fill : colors.brandSoft,
+                    opacity: demoJobber ? 0.4 : 1,
+                  }}
+                >
+                  {demoJobber
+                    ? <ActivityIndicator color={colors.brand} />
+                    : <Text style={[t.subhead, { fontWeight: '600', color: demoAntall > 0 ? colors.secondaryLabel : colors.brand }]}>
+                        {demoAntall > 0 ? 'Fjern demodata' : 'Last inn demokatalog'}
+                      </Text>}
+                </Pressable>
+              </View>
             </ListCard>
           </>
         )}

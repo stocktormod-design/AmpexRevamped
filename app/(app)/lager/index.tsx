@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { View, Text, ScrollView } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { Plus, Warehouse, Truck, ChevronRight, FileUp } from 'lucide-react-native'
+import { Plus, Warehouse, Truck, ChevronRight, FileUp, Search } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
+import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { SectionHeader, AmbientBackdrop } from '../../../components/ui'
 import { database } from '../../../lib/db'
 import { Location } from '../../../lib/db/models/location'
 import { useLocationCounts } from '../../../lib/stock'
+import { useVareantall } from '../../../lib/products'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 function useLocations() {
@@ -57,6 +59,7 @@ export default function LagerScreen() {
   const insets = useSafeAreaInsets()
   const locations = useLocations()
   const counts = useLocationCounts()
+  const vareantall = useVareantall()
   const lagre = locations.filter(l => l.type === 'lager')
   const biler = locations.filter(l => l.type === 'bil')
 
@@ -91,8 +94,9 @@ export default function LagerScreen() {
           flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
           paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
         }}>
-          <Text style={t.largeTitle}>Lager</Text>
+          <Text style={t.display}>Lager</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <AmpexMarkButton />
           {/* Prisfila er inngangen til hele vareregisteret — uten den er lageret
               en liste over ting noen har skrevet inn for hånd. */}
           <Pressable
@@ -152,7 +156,36 @@ export default function LagerScreen() {
           </View>
         ) : (
           <>
-            <Group title="Lager" items={lagre} />
+            {/* Varekartoteket ligger ØVERST, over lokasjonene: «hva er denne varen
+            og hva koster den» er et hyppigere spørsmål enn «hva står i bilen». */}
+        <Pressable
+          haptic="light"
+          onPress={() => router.push('/(app)/lager/varer')}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+            backgroundColor: colors.bg, borderRadius: radius.lg,
+            marginHorizontal: spacing.screen, marginBottom: spacing.screen,
+            paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+          }}
+        >
+          <View style={{
+            width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm,
+            backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Search size={sizes.icon - 2} color={colors.brand} strokeWidth={sizes.lucideStroke} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={t.bodyMedium}>Søk i varer</Text>
+            <Text style={[t.footnote, { marginTop: 1 }]}>
+              {vareantall === 0
+                ? 'Kartoteket er tomt — importer en prisfil'
+                : `${vareantall} varer · el-nummer, produsent, strekkode`}
+            </Text>
+          </View>
+          <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+        </Pressable>
+
+        <Group title="Lager" items={lagre} />
             <Group title="Biler" items={biler} />
           </>
         )}
