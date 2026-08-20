@@ -143,6 +143,11 @@ Det er den skarpeste posisjoneringen vi har funnet:
 > Grossistens lagerstyring er gratis fordi den er en lås.
 > Vår er den samme funksjonen uten låsen.
 
+**Datamodellen som gjør det mulig ligger nå på plass** (`product_prices`,
+19.08.2026). Varekortet viser prisen fra hver grossist side om side med
+«BILLIGST» på den laveste, og materiellvelgeren sier «Solar er 2,50 billigere»
+i det varen legges på ordren — som er der valget faktisk tas.
+
 ---
 
 ## 5. AI: vinduet er i ferd med å lukkes globalt, men er åpent i Norge
@@ -275,9 +280,13 @@ om komplett kalkyle, prosjekt og FDV bor.
    e-post ut og FTP inn.
 3. **Prioriter `ta_ut_materiell` opp.** Stemme → transaksjon er det eneste vi
    fant som ingen har. Stemme → dokumentasjon er tatt.
-4. **Datamodellen for pris må være (el-nummer, grossist, dato)** fra første
+4. ~~**Datamodellen for pris må være (el-nummer, grossist, dato)** fra første
    migrasjon — Cordels prissett 1–4 er den formen, og den er dyr å legge til
-   etterpå.
+   etterpå.~~ **GJORT 19.08.2026** (`product_prices`, skjema v26). Den var IKKE
+   fulgt: prisen lå som én kolonne på varen, og neste grossists fil overskrev
+   den forrige. Rettet før første ekte prisfil, altså mens den fortsatt var
+   billig. Samme runde reddet varekortdataene (fabrikat, EAN, bilde, FDV, HMS)
+   som `VX`/`VA`-postene inneholdt og importen kastet — se `docs/STATUS.md`.
 5. **Selg nøytralitet, ikke autobestilling.** Ahlsell gir bort autobestilling.
    Ingen kan gi bort «bestill hos den billigste».
 6. **LiDAR skal selges på rehab**, der plantegningen ikke finnes. Spark eier
