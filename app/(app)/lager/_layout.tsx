@@ -10,6 +10,8 @@ export default function LagerLayout() {
       <Stack.Screen name="bevegelse" options={{ presentation: 'modal' }} />
       <Stack.Screen name="uttak" options={{ presentation: 'modal' }} />
       <Stack.Screen name="prisfil" />
+      <Stack.Screen name="varer" />
+      <Stack.Screen name="vare" />
     </Stack>
   )
 }

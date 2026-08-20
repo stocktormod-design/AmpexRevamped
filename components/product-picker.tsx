@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { View, Text, TextInput } from 'react-native'
-import { Package, Plus } from 'lucide-react-native'
+import { View, Text, TextInput, Image } from 'react-native'
+import { Package, Plus, TrendingDown } from 'lucide-react-native'
 import { Pressable } from './pressable'
 import { Product } from '../lib/db/models/product'
 import { useVaresok, formatBeholdning } from '../lib/products'
@@ -30,7 +30,7 @@ export function ProductPicker({ onVelg, onNy, autoFocus }: {
       <TextInput
         value={sok}
         onChangeText={setSok}
-        placeholder="Søk vare eller el-nummer"
+        placeholder="El-nummer, navn, produsent eller strekkode"
         placeholderTextColor={colors.tertiaryLabel}
         autoFocus={autoFocus}
         autoCorrect={false}
@@ -82,20 +82,49 @@ export function ProductPicker({ onVelg, onNy, autoFocus }: {
                 borderBottomColor: colors.separator,
               }}
             >
-              <Package size={17} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-              <View style={{ flex: 1 }}>
-                <Text style={t.body} numberOfLines={1}>{x.product.name}</Text>
-                <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>
-                  {x.product.elnummer ? `EL ${x.product.elnummer}` : 'Uten el-nummer'}
-                  {x.beholdning !== null ? `  ·  ${formatBeholdning(x.beholdning, x.product.unit)} på lager` : ''}
-                  {x.product.supplier ? `  ·  ${x.product.supplier}` : ''}
-                </Text>
+              {/* Bildet kommer fra grossistens katalog via prisfila. Uten det
+                  er raden en tekstlinje, og da er varen vanskelig å kjenne igjen. */}
+              <View style={{
+                width: 34, height: 34, borderRadius: radius.sm,
+                backgroundColor: x.product.imageUrl ? colors.brandSoft : colors.fill,
+                alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+              }}>
+                {x.product.imageUrl
+                  ? <Image source={{ uri: x.product.imageUrl }} style={{ width: 34, height: 34 }} resizeMode="contain" />
+                  : <Package size={17} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
               </View>
-              {x.product.unitPrice != null && (
-                <Text style={[t.subhead, { fontVariant: ['tabular-nums'] }]}>
-                  {formatKr(tilOre(x.product.unitPrice))}
+              <View style={{ flex: 1 }}>
+                <Text style={t.body} numberOfLines={2}>{x.product.name}</Text>
+                <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>
+                  {[
+                    x.product.fabrikat,
+                    x.product.elnummer ? `EL ${x.product.elnummer}` : 'Uten el-nummer',
+                    x.beholdning !== null ? `${formatBeholdning(x.beholdning, x.product.unit)} på lager` : null,
+                  ].filter(Boolean).join('  ·  ')}
                 </Text>
-              )}
+                {/* Hvor det er billigst. Det er her valget faktisk tas — når
+                    varen legges på ordren, ikke i en rapport en måned senere. */}
+                {x.besparelse !== null && x.besparelse > 0 && x.billigste && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                    <TrendingDown size={11} color={colors.success} strokeWidth={2.4} />
+                    <Text style={[t.caption, { color: colors.success, fontWeight: '600' }]} numberOfLines={1}>
+                      {`${x.billigste.grossist} ${formatKr(tilOre(x.besparelse))} billigere`}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                {x.product.unitPrice != null && (
+                  <Text style={[t.subhead, { fontVariant: ['tabular-nums'] }]}>
+                    {formatKr(tilOre(x.product.unitPrice))}
+                  </Text>
+                )}
+                {/* Kjenner vi bare listeprisen, er kostnaden — og dermed
+                    dekningsbidraget på ordren — ikke til å stole på. */}
+                {x.pris.kunListepriser && (
+                  <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 1 }]}>listepris</Text>
+                )}
+              </View>
             </Pressable>
           ))}
         </View>
