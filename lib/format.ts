@@ -23,3 +23,24 @@ export function formatSince(d: Date) {
   if (days < 7) return `${days}d`
   return d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })
 }
+
+/** «3. jul. 2026» — for frister og datoer uten klokkeslett */
+export function formatDate(d: Date | null) {
+  return d?.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' }) ?? null
+}
+
+/**
+ * Dager igjen til en frist, som ord. Negativt tall betyr forfalt.
+ * Grensen er kalenderdøgn, ikke 24-timersbolker: «i morgen» skal si i morgen
+ * selv om det er 30 timer til, ellers stemmer det ikke med kalenderen i hodet.
+ */
+export function formatFrist(d: Date | null, naa = new Date()): string | null {
+  if (!d) return null
+  const dag = (x: Date) => Math.floor(new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime() / 86_400_000)
+  const diff = dag(d) - dag(naa)
+  if (diff < -1) return `utløp for ${-diff} dager siden`
+  if (diff === -1) return 'utløp i går'
+  if (diff === 0) return 'utløper i dag'
+  if (diff === 1) return 'utløper i morgen'
+  return `${diff} dager igjen`
+}

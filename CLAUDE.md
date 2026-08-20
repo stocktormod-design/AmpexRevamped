@@ -32,7 +32,17 @@ worker/                GPU-bake-worker (Python, kjører på PC-pool)
 ```
 npm run typecheck         tsc --noEmit
 npm run verify:pricefile  selvtest av EFO/NELFO-parseren mot fixture
+npm run verify:invoicing  selvtest av fakturagrunnlaget (øre, MVA, gruppering)
+npm run verify:forms      selvtest av skjemaformatet (v1-lesevei, betinget visning)
+npm run verify:quoting    selvtest av tilbudsregningen (rabatt, DB, gyldighet)
+npm run verify:timesheet  selvtest av ukelista (ukestart, arv av fakturerbarhet)
+npm run verify:varesok    selvtest av varesøk og varekort (el-nummer, EAN, flerord)
+npm run verify:approvals  selvtest av faglig godkjenning (snapshot, avslag)
+npm run verify:arkiv      selvtest av arkivpakken (SHA-256, determinisme, frister)
 ```
+
+Selvtestene er kjørbare skript med harde påstander, ikke en testrunner. Ny ren
+logikk som håndterer penger, dokumentasjon eller lønn skal ha én.
 
 ## Ruting
 - Ikke innlogget → `/(auth)/login`

@@ -40,6 +40,12 @@ import { DrawingLoop } from './models/drawing-loop'
 import { OrderScan } from './models/order-scan'
 import { MeshMarker } from './models/mesh-marker'
 import { NfcTag } from './models/nfc-tag'
+import { OrderSignature } from './models/order-signature'
+import { ProductPrice } from './models/product-price'
+import { OrderApproval } from './models/order-approval'
+import { OrderArchive } from './models/order-archive'
+import { Quote } from './models/quote'
+import { QuoteLine } from './models/quote-line'
 
 const adapter = new SQLiteAdapter({
   schema,
@@ -53,5 +59,5 @@ const adapter = new SQLiteAdapter({
 
 export const database = new Database({
   adapter,
-  modelClasses: [Order, OrderDocument, OrderMaterial, OrderExtra, Product, Customer, Activity, Location, StockMovement, Project, Drawing, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, NfcTag],
+  modelClasses: [Order, OrderDocument, OrderMaterial, OrderExtra, Product, Customer, Activity, Location, StockMovement, Project, Drawing, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, NfcTag, Quote, QuoteLine, OrderSignature, ProductPrice, OrderApproval, OrderArchive],
 })
