@@ -1,9 +1,10 @@
 import { Model } from '@nozbe/watermelondb'
 import { text, field, date, readonly } from '@nozbe/watermelondb/decorators'
 
-export type FormFieldType = 'check' | 'text' | 'number' | 'photo'
-export type FormField = { id: string; type: FormFieldType; label: string; required?: boolean }
-export type FormSchema = { items: FormField[] }
+// Skjemaformatet bor i lib/forms/schema.ts — det er data, ikke en
+// databasemodell, og må kunne leses uten å dra inn WatermelonDB.
+// Re-eksporteres her fordi resten av appen alltid har importert det herfra.
+export * from '../../forms/schema'
 
 /** Firmaets skjema. Innhold ligger i revisjoner (versjonert); dette er «hodet». */
 export class FormTemplate extends Model {

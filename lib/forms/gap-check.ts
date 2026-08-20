@@ -5,6 +5,7 @@ import { Order } from '../db/models/order'
 import { OrderDocument } from '../db/models/order-document'
 import { resolveTemplate } from './resolve'
 import type { FormField, FormTemplate, FormValues } from './types'
+import { isFieldVisible, visibleFields } from './visibility'
 import { callAiVoice } from '../ai/gemini-client'
 import { audioSegmentPath, saveDraftMeta, type VoiceDraftSession } from '../ai/voice-drafts'
 
@@ -21,12 +22,18 @@ export type GapCheckExtraction = {
   confidence: 'high' | 'medium' | 'low'
 }
 
-/** Felt som er required og fortsatt tomt — hopper over info-felt (lagres aldri). */
+/**
+ * Felt som er required og fortsatt tomt — hopper over info-felt (lagres aldri)
+ * og felt som er skjult av en betingelse. Et punkt som ikke vises kan ikke
+ * være «manglende»: da ville AI-en spurt montøren om avviksbeskrivelsen på et
+ * avvik som ikke finnes.
+ */
 export function findUnfilledRequired(template: FormTemplate, values: FormValues): FormField[] {
   const out: FormField[] = []
   for (const section of template.sections) {
     for (const field of section.fields) {
       if (field.type === 'info' || !field.required) continue
+      if (!isFieldVisible(field, values)) continue
       const v = values[field.key]
       const isEmpty = v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
       if (isEmpty) out.push(field)
@@ -36,20 +43,28 @@ export function findUnfilledRequired(template: FormTemplate, values: FormValues)
 }
 
 /** Avviser choice-verdier som ikke er et eksakt match — se plan: "Kritisk forsvar". */
-function isValidExtractedField(template: FormTemplate, e: GapCheckExtractedField): boolean {
+function isValidExtractedField(template: FormTemplate, e: GapCheckExtractedField, after: FormValues): boolean {
   const field = template.sections.flatMap(s => s.fields).find(f => f.key === e.key)
   if (!field) return false
+  if (!isFieldVisible(field, after)) return false
   if (field.type === 'choice') return (field.choices ?? []).includes(e.value)
   return true
 }
 
-function coerceExtraction(raw: Record<string, unknown>, template: FormTemplate): GapCheckExtraction {
+function coerceExtraction(raw: Record<string, unknown>, template: FormTemplate, currentValues: FormValues): GapCheckExtraction {
   const extracted = Array.isArray(raw.extracted) ? (raw.extracted as GapCheckExtractedField[]) : []
   const stillMissing = Array.isArray(raw.stillMissing) ? (raw.stillMissing as GapCheckFollowUp[]) : []
   const confidence = raw.confidence
+
+  const wellFormed = extracted.filter(e => e && typeof e.key === 'string' && typeof e.value === 'string')
+  // Synlighet vurderes ETTER at rundens egne svar er lagt på. «Det var avvik på
+  // jordingen, kabelen var skadet» fyller både bryteren og beskrivelsen i samme
+  // sving — måles beskrivelsen mot verdiene FØR runden, ville den blitt kastet.
+  const after: FormValues = { ...currentValues, ...Object.fromEntries(wellFormed.map(e => [e.key, e.value])) }
+
   return {
     transcript: typeof raw.transcript === 'string' ? raw.transcript : '',
-    extracted: extracted.filter(e => e && typeof e.key === 'string' && typeof e.value === 'string' && isValidExtractedField(template, e)),
+    extracted: wellFormed.filter(e => isValidExtractedField(template, e, after)),
     stillMissing: stillMissing.filter(m => m && typeof m.key === 'string' && typeof m.followUpQuestion === 'string'),
     spokenReply: typeof raw.spokenReply === 'string' ? raw.spokenReply : '',
     confidence: confidence === 'high' || confidence === 'medium' || confidence === 'low' ? confidence : 'low',
@@ -96,9 +111,12 @@ export async function runGapCheck(draft: VoiceDraftSession): Promise<{ ok: true;
         status: order.status,
       },
       template: { id: template.id, name: template.name, source: template.source, reviewNote: template.reviewNote },
-      fields: template.sections.flatMap(s => s.fields
+      // Kun felt som faktisk vises nå: skjulte punkt skal modellen verken se
+      // eller kunne fylle. Blir de synlige av et svar i samme opptak, fanges de
+      // opp av neste runde (MAX_GAP_CHECK_ROUNDS).
+      fields: visibleFields(template, currentValues)
         .filter(f => f.type !== 'info')
-        .map(f => ({ key: f.key, label: f.label, type: f.type, choices: f.choices, required: !!f.required }))),
+        .map(f => ({ key: f.key, label: f.label, type: f.type, choices: f.choices, unit: f.unit, help: f.help, required: !!f.required })),
       currentValues,
       stillUnfilledKeys: findUnfilledRequired(template, currentValues).map(f => f.key),
     }
@@ -115,7 +133,7 @@ export async function runGapCheck(draft: VoiceDraftSession): Promise<{ ok: true;
       return { ok: false }
     }
 
-    const extraction = coerceExtraction(result, template)
+    const extraction = coerceExtraction(result, template, currentValues)
     await saveDraftMeta({ ...draft, status: 'enriched', extraction })
     return { ok: true, extraction }
   } catch (err) {

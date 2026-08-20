@@ -7,7 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import {
   ChevronLeft, Pencil, SquareCheck, Type, Hash, Camera, Send,
-  CheckCircle2, Circle,
+  CheckCircle2, Circle, AlignLeft, List, Table2, Info, Eye,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { Segmented } from '../../../components/segmented'
@@ -22,10 +22,12 @@ import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib
 type Tab = 'skjema' | 'historikk' | 'diskusjon'
 
 const FIELD_ICON: Record<FormFieldType, typeof Type> = {
-  check: SquareCheck, text: Type, number: Hash, photo: Camera,
+  check: SquareCheck, choice: List, text: Type, multiline: AlignLeft,
+  number: Hash, table: Table2, photo: Camera, info: Info,
 }
 const FIELD_LABEL: Record<FormFieldType, string> = {
-  check: 'Avkryssing', text: 'Tekst', number: 'Tall', photo: 'Foto',
+  check: 'Avkryssing', choice: 'Klikkliste', text: 'Tekst', multiline: 'Fritekst',
+  number: 'Tall', table: 'Tabell', photo: 'Foto', info: 'Informasjon',
 }
 
 export default function SkjemaDetail() {
@@ -66,6 +68,11 @@ export default function SkjemaDetail() {
     [revisions, template?.currentVersion],
   )
   const openCount = comments.filter(c => !c.resolved).length
+  /** Felt-id → felt, for å kunne skrive ut hva en betingelse peker på. */
+  const byId = useMemo(
+    () => new Map((current?.items ?? []).map(f => [f.id, f])),
+    [current],
+  )
 
   async function send() {
     const body = draft.trim()
@@ -117,24 +124,55 @@ export default function SkjemaDetail() {
           contentContainerStyle={{ padding: spacing.screen, paddingBottom: insets.bottom + spacing.xxl }}
           showsVerticalScrollIndicator={false}>
           {current && current.items.length > 0 ? (
-            <View style={[{ backgroundColor: colors.bg, borderRadius: radius.lg }, shadows.card]}>
-              {current.items.map((it, i, arr) => {
-                const Icon = FIELD_ICON[it.type] ?? Type
-                return (
-                  <View key={it.id} style={[
-                    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-                    i < arr.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
-                  ]}>
-                    <View style={{ width: 30, height: 30, borderRadius: radius.sm, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md }}>
-                      <Icon size={16} color={colors.iconMuted} strokeWidth={2} />
-                    </View>
-                    <Text style={[t.body, { flex: 1 }]} numberOfLines={2}>{it.label}</Text>
-                    {it.required && <Text style={[t.caption, { color: colors.danger }]}>påkrevd</Text>}
-                    <Text style={[t.caption, { color: colors.tertiaryLabel, marginLeft: spacing.sm }]}>{FIELD_LABEL[it.type]}</Text>
-                  </View>
-                )
-              })}
-            </View>
+            current.sections.map((section, si) => (
+              <View key={section.id} style={{ marginBottom: spacing.lg }}>
+                {!!section.title.trim() && (
+                  <Text style={[t.caption, { textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
+                    {section.title}
+                  </Text>
+                )}
+                <View style={[{ backgroundColor: colors.bg, borderRadius: radius.lg }, shadows.card]}>
+                  {section.fields.map((it, i, arr) => {
+                    const Icon = FIELD_ICON[it.type] ?? Type
+                    return (
+                      <View key={it.id} style={[
+                        { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
+                        i < arr.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+                      ]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <View style={{ width: 30, height: 30, borderRadius: radius.sm, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md }}>
+                            <Icon size={16} color={colors.iconMuted} strokeWidth={2} />
+                          </View>
+                          <Text style={[t.body, { flex: 1 }]} numberOfLines={2}>{it.label}</Text>
+                          {it.required && <Text style={[t.caption, { color: colors.danger }]}>påkrevd</Text>}
+                          <Text style={[t.caption, { color: colors.tertiaryLabel, marginLeft: spacing.sm }]}>{FIELD_LABEL[it.type]}</Text>
+                        </View>
+                        {/* Alternativene ER punktet på en klikkliste — uten dem sier
+                            raden ingenting om hva montøren faktisk kan svare. */}
+                        {it.type === 'choice' && (
+                          <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 4, marginLeft: 30 + spacing.md }]}>
+                            {(it.choices ?? []).filter(Boolean).join(' · ') || 'Ingen alternativer'}
+                          </Text>
+                        )}
+                        {it.type === 'table' && (
+                          <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 4, marginLeft: 30 + spacing.md }]}>
+                            {(it.columns ?? []).map(c => c.label).filter(Boolean).join(' · ') || 'Ingen kolonner'}
+                          </Text>
+                        )}
+                        {!!it.showIf && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, marginLeft: 30 + spacing.md }}>
+                            <Eye size={12} color={colors.tertiaryLabel} strokeWidth={2} />
+                            <Text style={[t.caption, { color: colors.tertiaryLabel }]} numberOfLines={1}>
+                              {`Vises når «${byId.get(it.showIf.field)?.label ?? 'et punkt'}» er ${it.showIf.equals.join(' eller ')}`}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )
+                  })}
+                </View>
+              </View>
+            ))
           ) : (
             <View style={{ alignItems: 'center', paddingTop: spacing.xxl }}>
               <Text style={[t.footnote]}>Tomt skjema. Trykk Rediger for å legge til felt.</Text>

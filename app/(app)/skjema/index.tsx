@@ -83,7 +83,7 @@ export default function SkjemaIndex() {
             style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
             <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
           </Pressable>
-          <Text style={[t.largeTitle, { marginTop: spacing.lg }]}>Skjema</Text>
+          <Text style={[t.display, { marginTop: spacing.lg }]}>Skjema</Text>
           <Text style={[t.footnote, { marginTop: spacing.xs, maxWidth: 320 }]}>
             Levende dokumentasjon. Endre, diskuter og revider — alt med logg og begrunnelse.
           </Text>

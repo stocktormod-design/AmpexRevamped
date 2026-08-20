@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { View, Text, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Pressable } from '../../../components/pressable'
-import { FieldsEditor } from '../../../components/form-fields-editor'
+import { SectionsEditor, newSection } from '../../../components/form-fields-editor'
 import { createTemplate } from '../../../lib/forms'
-import type { FormField } from '../../../lib/db/models/form-template'
+import { validateFirmSections } from '../../../lib/forms/firm-schema'
+import { FormProblems } from '../../../components/form-problems'
+import type { FormSection } from '../../../lib/db/models/form-template'
 import { colors, spacing, radius, type as t } from '../../../lib/theme'
 
 const CATEGORIES = ['Sluttkontroll', 'Risiko / SJA', 'HMS', 'Måleprotokoll', 'Egenkontroll', 'Diverse']
@@ -14,14 +16,16 @@ export default function NyttSkjema() {
   const insets = useSafeAreaInsets()
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('Sluttkontroll')
-  const [items, setItems] = useState<FormField[]>([])
+  const [sections, setSections] = useState<FormSection[]>(() => [newSection()])
   const [busy, setBusy] = useState(false)
+  const problems = useMemo(() => validateFirmSections(sections), [sections])
+  const canSave = !!title.trim() && problems.length === 0 && !busy
 
   async function create() {
-    if (!title.trim() || busy) return
+    if (!canSave) return
     setBusy(true)
     try {
-      const id = await createTemplate({ title, category, items })
+      const id = await createTemplate({ title, category, sections })
       router.replace({ pathname: '/(app)/skjema/[id]', params: { id } })
     } finally {
       setBusy(false)
@@ -33,8 +37,8 @@ export default function NyttSkjema() {
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing.lg, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm }}>
         <Pressable hitSlop={8} onPress={() => router.back()}><Text style={[t.body, { color: colors.secondaryLabel }]}>Avbryt</Text></Pressable>
         <Text style={t.headline}>Nytt skjema</Text>
-        <Pressable hitSlop={8} onPress={create} disabled={!title.trim() || busy}>
-          <Text style={[t.body, { color: title.trim() ? colors.brand : colors.tertiaryLabel, fontWeight: '600' }]}>Opprett</Text>
+        <Pressable hitSlop={8} onPress={create} disabled={!canSave}>
+          <Text style={[t.body, { color: canSave ? colors.brand : colors.tertiaryLabel, fontWeight: '600' }]}>Opprett</Text>
         </Pressable>
       </View>
 
@@ -58,8 +62,10 @@ export default function NyttSkjema() {
           })}
         </View>
 
-        <Text style={[t.caption, { textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>Felt</Text>
-        <FieldsEditor items={items} onChange={setItems} />
+        <View style={{ marginTop: spacing.xl }}>
+          <FormProblems problems={problems} />
+          <SectionsEditor sections={sections} onChange={setSections} />
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   )
