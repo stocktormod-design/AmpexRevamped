@@ -12,6 +12,7 @@ export default function OrdreLayout() {
       <Stack.Screen name="timer" />
       <Stack.Screen name="deltakere" />
       <Stack.Screen name="tillegg" />
+      <Stack.Screen name="signatur" />
     </Stack>
   )
 }

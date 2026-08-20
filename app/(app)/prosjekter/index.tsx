@@ -5,6 +5,7 @@ import { router } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import { Plus, FolderOpen, ChevronRight } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
+import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { database } from '../../../lib/db'
 import { Project, projectStatusLabel } from '../../../lib/db/models/project'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
@@ -36,14 +37,17 @@ export default function ProsjekterScreen() {
             flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
             paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
           }}>
-            <Text style={t.largeTitle}>Prosjekter</Text>
+            <Text style={t.display}>Prosjekter</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
+            <AmpexMarkButton />
             <Pressable
               haptic="medium" pressScale={0.92}
               onPress={() => router.push('/(app)/prosjekter/ny')}
-              style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.cta, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs }}
+              style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.cta, alignItems: 'center', justifyContent: 'center' }}
             >
               <Plus size={sizes.icon} color={colors.ctaLabel} strokeWidth={2.2} />
             </Pressable>
+            </View>
           </View>
         }
         ItemSeparatorComponent={() => (

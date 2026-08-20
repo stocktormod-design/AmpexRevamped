@@ -3,7 +3,7 @@ import { View, Text, FlatList, ScrollView } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { Plus, ChevronRight, Inbox } from 'lucide-react-native'
+import { Plus, ChevronRight, Inbox, FileText } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { Chip, GlassCard, AmbientBackdrop } from '../../../components/ui'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
@@ -95,9 +95,24 @@ export default function OrdreScreen() {
               flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
               paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
             }}>
-              <Text style={t.largeTitle}>Ordre</Text>
+              <Text style={t.display}>Ordre</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
                 <AmpexMarkButton />
+                {/* Tilbudet er steget FØR ordren — derfor står inngangen her, ved
+                    siden av ordrelista, og ikke gjemt under Meg. */}
+                <Pressable
+                  haptic="light"
+                  pressScale={0.94}
+                  onPress={() => router.push('/(app)/tilbud')}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+                    height: 36, paddingHorizontal: spacing.md, borderRadius: radius.pill,
+                    backgroundColor: colors.fill,
+                  }}
+                >
+                  <FileText size={15} color={colors.label} strokeWidth={2.1} />
+                  <Text style={[t.subhead, { fontWeight: '600' }]}>Tilbud</Text>
+                </Pressable>
                 <Pressable
                   haptic="medium"
                   pressScale={0.92}

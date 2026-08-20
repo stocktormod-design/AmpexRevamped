@@ -74,7 +74,7 @@ export default function RomDetailScreen() {
               <Text style={t.title1}>{room.name}</Text>
               <Text style={[t.footnote, { marginTop: spacing.xs }]}>{room.plan}</Text>
             </View>
-            <Text style={[t.largeTitle, { color: colors.cta, fontVariant: ['tabular-nums'] }]}>{overall}%</Text>
+            <Text style={[t.display, { color: colors.cta, fontVariant: ['tabular-nums'] }]}>{overall}%</Text>
           </View>
         </View>
 

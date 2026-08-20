@@ -16,7 +16,13 @@ som iOS Innstillinger. Se «Overflate» under for det som skiller de to.
 
 ## Idiomer (gjør alltid)
 
-1. **Stor tittel** (`type.largeTitle`) øverst på hver hovedskjerm, venstrestilt.
+1. **Stor tittel** (`type.display`) øverst på hver hovedskjerm, venstrestilt.
+   `display` er Ampex-signaturen — 800-vekt, −1.0 tracking. `largeTitle` er
+   HIG-fallbacken og skal IKKE brukes som skjermtittel: forskjellen mellom de to
+   er nettopp forskjellen på «laget med omhu» og «Innstillinger».
+   Samme token brukes til **det ene store tallet** en skjerm finnes for —
+   ukesummen, tilbudets total, billigste pris. Har en skjerm ikke ett slikt
+   tall, har den sannsynligvis ikke ett tydelig formål heller.
 2. **Alle trykkbare flater bruker `components/pressable.tsx`** — spring-skalering
    + haptikk er innebygd. Aldri `TouchableOpacity` direkte.
 3. **Lister**: rader med 0.5px `separator`-hairline, ikonbrikke 40px `rounded-md`
