@@ -7,8 +7,14 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import {
   ChevronLeft, Phone, MapPin, FileText, Check, ChevronRight, Plus, Package, Navigation, Trash2,
   Receipt, UserPlus, Clock, Users, FilePlus2,
+  PenLine,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
+import { AvtaltPrisKort } from '../../../components/avtalt-pris-kort'
+import { useSignaturer } from '../../../lib/signatures'
+import { useGodkjenninger, useGrunnlag } from '../../../lib/approvals'
+import { GodkjenningKort } from '../../../components/godkjenning-kort'
+import { ArkivKort } from '../../../components/arkiv-kort'
 import { CreamCard, ListCard, SectionHeader, Chip } from '../../../components/ui'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { ScanCard } from '../../../components/scan-card'
@@ -321,6 +327,9 @@ export default function OrderDetailScreen() {
   const timer = useOrderTimer(id ?? '')
   const antallMedlemmer = useOrderMemberCount(id ?? '')
   const tillegg = useOrderExtras(id ?? '')
+  const signaturer = useSignaturer(id ?? '')
+  const godkjenninger = useGodkjenninger(id)
+  const godkjenningsgrunnlag = useGrunnlag(id, grunnlag?.bruttoOre ?? 0)
   const allDocsDone = doneCount === AMPEX_TEMPLATES.length
 
   useEffect(() => {
@@ -537,8 +546,55 @@ export default function OrderDetailScreen() {
               </Text>
               <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
             </Pressable>
+            {/* Signaturen står sammen med timer, deltakere og tillegg fordi den
+                hører til det som skjer PÅ jobben — ikke i fakturaskjermen, der
+                den kommer for sent til å hjelpe. */}
+            <Pressable
+              onPress={() => router.push({ pathname: '/(app)/ordre/signatur', params: { id } })}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+                borderTopWidth: 0.5, borderTopColor: colors.separator,
+              }}
+            >
+              <PenLine size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              <View style={{ flex: 1 }}>
+                <Text style={t.headline}>Kundesignatur</Text>
+                {signaturer.length === 0 && (
+                  <Text style={[t.footnote, { marginTop: 1 }]}>Bevis på at arbeidet er godtatt</Text>
+                )}
+              </View>
+              <Text style={[t.bodyMedium, { color: colors.secondaryLabel }]}>
+                {signaturer.length > 0 ? String(signaturer.length) : '—'}
+              </Text>
+              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
           </ListCard>
         </View>
+
+        {/* Arkivet står øverst når jobben er ferdig — da er det det eneste som
+            gjenstår, og det som betyr noe om syv år. */}
+        {order.status === 'fakturert' && (
+          <View style={{ marginBottom: spacing.screen }}>
+            <ArkivKort order={order} />
+          </View>
+        )}
+
+        {/* Faglig godkjenning står OVER fakturagrunnlaget: er ordren sendt
+            tilbake, er summen under uinteressant til det er rettet. */}
+        {godkjenninger.length > 0 && (
+          <View style={{ marginBottom: spacing.screen }}>
+            <GodkjenningKort godkjenninger={godkjenninger} grunnlag={godkjenningsgrunnlag} />
+          </View>
+        )}
+
+        {/* Kom ordren fra et tilbud, er den avtalte prisen det viktigste tallet på
+            skjermen — den overstyrer alt fakturagrunnlaget regner ut. */}
+        {!!order.quoteId && (
+          <View style={{ marginBottom: spacing.screen }}>
+            <AvtaltPrisKort quoteId={order.quoteId} />
+          </View>
+        )}
 
         {/*
           Fakturagrunnlag. Ligger over Materiell fordi det er svaret montøren
