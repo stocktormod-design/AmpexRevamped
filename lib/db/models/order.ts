@@ -32,6 +32,8 @@ export class Order extends Model {
    * ordre fortsatt vise adressen jobben faktisk ble utført på.
    */
   @text('customer_id') customerId: string | null
+  /** Tilbudet ordren ble akseptert fra, når den kom den veien. */
+  @text('quote_id') quoteId: string | null
   @text('source_system') sourceSystem: string | null
   @text('external_id') externalId: string | null
   @text('invoice_external_id') invoiceExternalId: string | null

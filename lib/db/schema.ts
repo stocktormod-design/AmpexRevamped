@@ -4,8 +4,140 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 23,
+  version: 29,
   tables: [
+    tableSchema({
+      name: 'product_prices',
+      columns: [
+        { name: 'product_id', type: 'string', isIndexed: true },
+        // El-nummeret dupliseres hit med vilje: det er join-nøkkelen på tvers av
+        // grossister, og en prisrad skal kunne leses uten å slå opp varen.
+        { name: 'elnummer', type: 'string', isIndexed: true },
+        { name: 'supplier', type: 'string', isIndexed: true },
+        { name: 'net_price', type: 'number' },        // kr eks. mva, etter rabatt
+        { name: 'gross_price', type: 'number', isOptional: true }, // listepris før rabatt
+        { name: 'discount_percent', type: 'number', isOptional: true },
+        { name: 'price_type', type: 'string', isOptional: true }, // brutto|netto|ukjent
+        { name: 'sales_pack', type: 'number', isOptional: true }, // minste bestillingsmengde
+        { name: 'stocked', type: 'boolean', isOptional: true },   // lagerført hos grossisten
+        { name: 'discontinued', type: 'boolean', isOptional: true },
+        { name: 'price_date', type: 'number', isOptional: true }, // grossistens egen prisdato
+        { name: 'valid_from', type: 'number', isOptional: true }, // fra filhodet
+        { name: 'valid_to', type: 'number', isOptional: true },
+        { name: 'imported_at', type: 'number' },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'order_archives',
+      columns: [
+        { name: 'order_id', type: 'string', isIndexed: true },
+        // Kunden dupliseres hit: «alt vi har gjort for Hansen» skal være ett
+        // oppslag, ikke en join gjennom en ordre som kan ha byttet kunde.
+        { name: 'customer_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'customer_name', type: 'string', isOptional: true },
+        { name: 'order_number', type: 'number', isOptional: true },
+        { name: 'aar', type: 'number', isIndexed: true },
+        { name: 'r2_key', type: 'string' },
+        { name: 'sha256', type: 'string' }, // beviset — endres pakken, stemmer den ikke
+        { name: 'bytes', type: 'number' },
+        { name: 'innhold', type: 'string', isOptional: true }, // JSON: telleverk
+        { name: 'frosset_at', type: 'number' },
+        { name: 'frosset_av', type: 'string', isOptional: true },
+        // Stemplet ved frysing. Skrus oppbevaringstiden ned senere, forkorter
+        // det ikke det som allerede er lovet.
+        { name: 'oppbevares_til', type: 'number' },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'order_approvals',
+      columns: [
+        { name: 'order_id', type: 'string', isIndexed: true },
+        { name: 'beslutning', type: 'string' }, // godkjent|avvist
+        { name: 'godkjenner_id', type: 'string', isOptional: true },
+        { name: 'godkjenner_navn', type: 'string' }, // snapshot — navnet skal stå igjen
+        { name: 'begrunnelse', type: 'string', isOptional: true }, // påkrevd ved avslag
+        // Snapshot av det som FAKTISK ble godkjent. Uten dette kan ingen se at
+        // noen førte to timer etter at faglig ansvarlig sa ja.
+        { name: 'sum_ore', type: 'number', isOptional: true },
+        { name: 'timer', type: 'number', isOptional: true },
+        { name: 'antall_materiell', type: 'number', isOptional: true },
+        { name: 'antall_dokumenter', type: 'number', isOptional: true },
+        { name: 'antall_signaturer', type: 'number', isOptional: true },
+        { name: 'besluttet_at', type: 'number' },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'order_signatures',
+      columns: [
+        { name: 'order_id', type: 'string', isIndexed: true },
+        { name: 'extra_id', type: 'string', isOptional: true, isIndexed: true }, // signatur på ETT tilleggsarbeid
+        { name: 'purpose', type: 'string' }, // ferdig|overtakelse|tillegg|annet
+        { name: 'signer_name', type: 'string' },
+        { name: 'signer_title', type: 'string', isOptional: true }, // rolle hos kunden
+        // Vektorstrøk, ikke bilde: signaturen tas ofte i en kjeller uten dekning,
+        // og et bilde ville krevd opplasting som kan feile. JSON synker som alt annet.
+        { name: 'strokes', type: 'string' }, // JSON: [{points:[[x,y],…]}] i 0–1-koordinater
+        { name: 'aspect', type: 'number' }, // bredde/høyde på feltet den ble tegnet i
+        { name: 'note', type: 'string', isOptional: true },
+        { name: 'signed_at', type: 'number' },
+        { name: 'signed_by', type: 'string', isOptional: true }, // vår bruker som holdt telefonen
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'quotes',
+      columns: [
+        { name: 'quote_number', type: 'number', isOptional: true }, // settes av server-trigger
+        { name: 'title', type: 'string' },
+        { name: 'description', type: 'string', isOptional: true },
+        // Snapshot av kunden, samme grunn som på orders: tilbudet er et
+        // dokument som ble sendt, og skal kunne leses uendret etterpå.
+        { name: 'customer_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'customer_name', type: 'string', isOptional: true },
+        { name: 'customer_phone', type: 'string', isOptional: true },
+        { name: 'address', type: 'string', isOptional: true },
+        { name: 'status', type: 'string' }, // utkast|sendt|akseptert|avslatt («utlopt» regnes ut, lagres aldri)
+        { name: 'valid_until', type: 'number', isOptional: true }, // epoch ms
+        { name: 'sent_at', type: 'number', isOptional: true },
+        { name: 'decided_at', type: 'number', isOptional: true },
+        { name: 'decided_by', type: 'string', isOptional: true }, // hvem hos KUNDEN som svarte
+        { name: 'decision_method', type: 'string', isOptional: true }, // muntlig|sms|epost|signert
+        { name: 'decision_note', type: 'string', isOptional: true }, // hvorfor avslått — det eneste som gjør tapte tilbud lærerike
+        { name: 'order_id', type: 'string', isOptional: true, isIndexed: true }, // ordren «akseptert» opprettet
+        { name: 'project_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'source_system', type: 'string', isOptional: true },
+        { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'quote_lines',
+      columns: [
+        { name: 'quote_id', type: 'string', isIndexed: true },
+        { name: 'sort_order', type: 'number' }, // brukerens rekkefølge — den er en del av dokumentet
+        { name: 'kind', type: 'string' }, // materiell|arbeid|tekst
+        { name: 'description', type: 'string' },
+        { name: 'elnummer', type: 'string', isOptional: true },
+        { name: 'product_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'activity_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'quantity', type: 'number', isOptional: true },
+        { name: 'unit', type: 'string', isOptional: true },
+        { name: 'unit_price', type: 'number', isOptional: true }, // kr eks. mva, SNAPSHOT — tilbudet er bindende
+        { name: 'cost_price', type: 'number', isOptional: true },
+        { name: 'discount_percent', type: 'number', isOptional: true },
+        { name: 'vat_type', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
     tableSchema({
       name: 'order_extras',
       columns: [
@@ -291,8 +423,28 @@ export const schema = appSchema({
         { name: 'cost_price', type: 'number', isOptional: true }, // nettopris fra grossist
         { name: 'vat_type', type: 'string', isOptional: true },
         { name: 'income_account', type: 'string', isOptional: true },
-        { name: 'supplier', type: 'string', isOptional: true }, // hvilken grossist prisen kom fra
+        { name: 'supplier', type: 'string', isOptional: true }, // grossisten cost_price kom fra — se product_prices for alle
         { name: 'price_updated_at', type: 'number', isOptional: true }, // ferskhet per vare
+        // Varekortet. Alt dette står allerede i prisfila (VL/VX/VA-poster) og
+        // ble kastet før — det er grunnen til at søket føltes tomt mot EFObasen.
+        { name: 'fabrikat', type: 'string', isOptional: true, isIndexed: true }, // produsent
+        { name: 'type_betegnelse', type: 'string', isOptional: true }, // produsentens typenavn
+        { name: 'discount_group', type: 'string', isOptional: true, isIndexed: true }, // grossistens rabattgruppe = varegruppe i faget
+        { name: 'ean', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'nrf', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'image_url', type: 'string', isOptional: true },
+        { name: 'fdv_url', type: 'string', isOptional: true },
+        { name: 'hms_url', type: 'string', isOptional: true },
+        { name: 'efobase_id', type: 'string', isOptional: true },
+        { name: 'replaced_by', type: 'string', isOptional: true }, // el-nummer som erstatter en utgått vare
+        { name: 'sales_pack', type: 'number', isOptional: true },  // minste bestillingsmengde
+        { name: 'extra', type: 'string', isOptional: true },       // JSON: alle VX-felt, også de vi ikke viser
+        // Ett felt SQLite kan LIKE-filtrere på. Uten det leses hele kartoteket
+        // inn i JS ved hvert tastetrykk.
+        { name: 'search_text', type: 'string', isOptional: true },
+        // Varegruppe utledet av varenavnet (lib/product-category.ts). Lagres
+        // fordi den skal kunne filtreres på i SQL, ikke bare regnes ut i UI-et.
+        { name: 'category', type: 'string', isOptional: true, isIndexed: true },
         { name: 'source_system', type: 'string', isOptional: true },
         { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'created_at', type: 'number' },
@@ -374,6 +526,7 @@ export const schema = appSchema({
         { name: 'customer_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'source_system', type: 'string', isOptional: true },
         { name: 'external_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'quote_id', type: 'string', isOptional: true, isIndexed: true }, // tilbudet ordren ble akseptert fra
         { name: 'invoice_external_id', type: 'string', isOptional: true }, // utkast-/faktura-ID i regnskapet
         { name: 'invoiced_at', type: 'number', isOptional: true },
         { name: 'created_at', type: 'number' },
