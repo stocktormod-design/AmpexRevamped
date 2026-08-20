@@ -48,3 +48,4 @@ worker/fixture/
 
 # Kompilert output fra tools/-skript
 .tmp/
+supabase/.temp/

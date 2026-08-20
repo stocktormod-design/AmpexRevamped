@@ -22,6 +22,8 @@ type AiVoiceRequest = {
   audio?: { base64: string; mimeType: string }
   text?: string
   context?: unknown
+  /** live_token: be om et token UTEN lås, etter at en låst økt ble avvist ved setup. */
+  ulaast?: boolean
 }
 
 type GeminiSpec = {
@@ -81,9 +83,8 @@ function liveConnectConstraints(): Record<string, unknown> | undefined {
   }
 }
 
-async function createLiveToken(apiKey: string): Promise<{ token: string; model: string; voice: string }> {
+async function issueToken(apiKey: string, constraints: Record<string, unknown> | undefined): Promise<string> {
   const now = Date.now()
-  const constraints = liveConnectConstraints()
   const res = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
@@ -102,7 +103,36 @@ async function createLiveToken(apiKey: string): Promise<{ token: string; model: 
   if (typeof json?.name !== 'string' || json.name.length === 0) {
     throw new Error('token-utstedelse ga uventet svar')
   }
-  return { token: json.name, model: GEMINI_LIVE_MODEL, voice: GEMINI_LIVE_VOICE }
+  return json.name
+}
+
+/**
+ * En sikkerhetsherding som kan slå ut stemmen er ikke en herding, det er en
+ * feil med god begrunnelse. Derfor to fallback-veier:
+ *
+ *  1. HER: avviser Google selve `liveConnectConstraints`-formen (feil feltnavn,
+ *     feil nesting, ikke støttet på modellen), utstedes tokenet uten lås i
+ *     stedet for at økten dør. Vi er da tilbake på gårsdagens sikkerhet — ikke
+ *     bedre, men heller ikke verre, og svaret sier `laast: false` så det ikke
+ *     blir en stille nedgradering.
+ *  2. `ulaast`: klienten ber om et ulåst token etter at en LÅST økt ble avvist
+ *     ved setup. Det svekker ikke trusselmodellen — den handler om et token som
+ *     snappes opp i tominuttersvinduet, og den som allerede har brukerens
+ *     innlogging kan uansett be om så mange tokens den vil.
+ */
+async function createLiveToken(
+  apiKey: string,
+  ulaast: boolean,
+): Promise<{ token: string; model: string; voice: string; laast: boolean }> {
+  const constraints = ulaast ? undefined : liveConnectConstraints()
+  const felles = { model: GEMINI_LIVE_MODEL, voice: GEMINI_LIVE_VOICE }
+  if (!constraints) return { token: await issueToken(apiKey, undefined), ...felles, laast: false }
+  try {
+    return { token: await issueToken(apiKey, constraints), ...felles, laast: true }
+  } catch (err) {
+    console.error('[ai-voice] låst token avvist av Google — utsteder ulåst:', err)
+    return { token: await issueToken(apiKey, undefined), ...felles, laast: false }
+  }
 }
 
 // Gemini dokumenterer audio/wav|mp3|aiff|aac|ogg|flac for inline lyd — expo-audio
@@ -315,12 +345,11 @@ export default {
 
     if (body.mode === 'live_token') {
       try {
-        const { token, model, voice } = await createLiveToken(apiKey)
-        // `laast` sier om tokenet har liveConnectConstraints. Klienten bruker det
-        // KUN til å stille en bedre diagnose når Google avviser oppsettet — uten
-        // det er «avvist ved setup» umulig å skille fra en kvote- eller
-        // modellfeil, og nødbryteren blir gjetting.
-        return Response.json({ ok: true, token, model, voice, laast: !LIVE_CONSTRAINTS_OFF })
+        const { token, model, voice, laast } = await createLiveToken(apiKey, body.ulaast === true)
+        // `laast` sier om tokenet FAKTISK fikk liveConnectConstraints — ikke om vi
+        // ba om dem. Klienten bruker det til to ting: å stille en bedre diagnose
+        // når Google avviser oppsettet, og å be om ett ulåst forsøk før den gir opp.
+        return Response.json({ ok: true, token, model, voice, laast })
       } catch (err) {
         console.error('[ai-voice] live_token feilet:', err)
         return Response.json({ ok: false, error: err instanceof Error ? err.message : 'ukjent feil' })

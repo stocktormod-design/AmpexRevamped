@@ -874,10 +874,20 @@ export class LiveSession {
     await this.connectSocket()
   }
 
-  /** Tokenhenting + WS-oppkobling. Egen metode så kvote-avvisning (1011) kan prøve på
-      nytt uten søkeverktøyet — ferske engangs-tokens per forsøk. */
-  private async connectSocket(): Promise<void> {
-    const auth = await fetchLiveToken()
+  /**
+   * Tokenhenting + WS-oppkobling. Egen metode fordi avvisning ved setup prøves på
+   * nytt med færre antakelser — ferske engangs-tokens per forsøk. Stigen:
+   *
+   *   1. låst token + Google-søk
+   *   2. låst token, uten søk        (kvoten på grounding er den vanlige synderen)
+   *   3. ULÅST token, uten søk       (låsen selv er det siste vi mistenker)
+   *
+   * Trinn 3 finnes fordi en sikkerhetsherding som kan slå ut stemmen i felt ikke
+   * er en herding. Vi kommer ikke lenger ned enn hit: er tokenet alt ulåst, er
+   * problemet et annet, og da skal feilen SIES, ikke skjules bak flere forsøk.
+   */
+  private async connectSocket(opts?: { ulaast?: boolean }): Promise<void> {
+    const auth = await fetchLiveToken({ ulaast: opts?.ulaast })
     if (!auth) {
       this.finish('Fikk ikke koblet til AI-tjenesten.')
       return
@@ -944,6 +954,14 @@ export class LiveSession {
         void this.connectSocket()
         return
       }
+      // Siste trinn: søket er alt av, og tokenet var LÅST. Da er låsen den eneste
+      // antakelsen vi har igjen å fjerne. Ett forsøk, aldri flere — auth.laast er
+      // false neste gang, så dette kan ikke bli en løkke.
+      if (!this.gotSetupComplete && auth.laast && !this.ended) {
+        console.warn('Live: avvist med låst token — prøver ulåst én gang')
+        void this.connectSocket({ ulaast: true })
+        return
+      }
       // Kode + grunn inn i meldingen: i Release finnes ingen konsoll — assistenten
       // LESER feilen høyt, og det er eneste diagnosekanal i felt (TTS-loggtrikset).
       const detail = [e?.code, typeof e?.reason === 'string' ? e.reason.slice(0, 60) : '']
@@ -951,7 +969,10 @@ export class LiveSession {
       // Tokenet er låst til modell + lydmodus. Avvises oppsettet, er låsen den
       // mest sannsynlige nye årsaken — si det, ellers står operatøren og gjetter
       // mellom kvote, modellnavn og lås. Nødbryter: GEMINI_LIVE_UNLOCK=1.
-      const laasHint = auth.laast && !this.gotSetupComplete ? ' Tokenet er låst til modell og lyd.' : ''
+      // Kom vi hit uten setupComplete, er BÅDE søket og låsen alt prøvd fjernet.
+      // Da er årsaken noe annet — modellnavn, kvote eller nøkkel — og det er den
+      // beskjeden som hjelper, ikke en peker mot låsen vi nettopp utelukket.
+      const laasHint = !this.gotSetupComplete && !auth.laast ? ' Prøvd både med og uten låst token.' : ''
       this.finish(this.gotSetupComplete ? undefined : `AI-tjenesten avviste tilkoblingen${detail ? ` (${detail})` : ''}.${laasHint}`)
     }
   }
