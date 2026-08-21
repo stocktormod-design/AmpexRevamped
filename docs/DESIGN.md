@@ -34,6 +34,35 @@ som iOS Innstillinger. Se «Overflate» under for det som skiller de to.
 7. **Safe areas** alltid via `useSafeAreaInsets` — aldri hardkodede toppmarger.
 8. **Skeleton/placeholder** ved lasting — aldri spinner alene på en tom skjerm.
 
+## Soner, ikke kort på kort på kort
+
+Den skarpeste kritikken skjermene har fått: **«det ser ut som en handleliste.»**
+Den var riktig, og diagnosen var ikke fargen — det var rytmen. Like høye, like
+hvite kort stablet i én jevn kolonne, med en «+ Legg til …»-knapp under hvert.
+Da leser øyet listepunkter med avhukingsbokser, uansett hvor pen beigen er.
+
+En skjerm som beskriver noe SAMMENSATT — en jobb, et prosjekt — skal deles i
+soner med ulik vekt, ikke i like kort:
+
+1. **Et mørkt hode.** `colors.cta` mot `brandSoft`-tekst, full bredde, avrundet
+   bare nedad. Det gir skjermen et anker og sier «dette er en jobb», ikke «dette
+   er et ark». Det viktigste — kunde, adresse, kart — bor HER, ikke i et hvitt
+   kort under.
+2. **Ett stort tall.** Én bred stripe der tallet står i `type.display`. Annen
+   høyde og annen typografi enn alt annet på siden.
+3. **Fliser side om side.** To like ting ved siden av hverandre er et
+   instrumentpanel; de samme to under hverandre er en liste. `flexDirection:
+   'row'` er det billigste grepet som finnes mot handleliste-følelsen.
+4. **En mørk verktøysone** for det som er handling snarere enn papirarbeid
+   (`colors.slate`). Den bryter den hvite kolonnen én gang til.
+
+**Pluss-knapper hører til PÅ tingen, ikke UNDER den.** En stor «+ Legg til
+materiell» under et kort skriver seg inn i kolonnen som enda en linje. Et lite
+pluss i flisas hjørne er en handling på det du ser på.
+
+**Status er en stripe, ikke en prikk.** En 3 px kobberstrek foran ordet leses
+før teksten; en liten prikk i en pille gjør ikke det.
+
 ## Overflate: ambient + glass (ikke Settings)
 
 Samme innhold og flyt som før — kun materialene endrer seg.

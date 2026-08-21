@@ -25,8 +25,13 @@ const RING = sizes.iconChip * 2.6 // ytterste lyn-ring ved full utladning
  * UI-arbeid uten informasjonsverdi. Ringene finnes bare i overgangen — de er
  * utladningen som blir til orben.
  */
-export function AmpexMarkButton() {
+/**
+ * `tone="light"` for bruk mot mørk bakgrunn (ordrehodet). Brunt på brunt
+ * forsvinner — merket må være synlig for å kunne trykkes på.
+ */
+export function AmpexMarkButton({ tone = 'default' }: { tone?: 'default' | 'light' } = {}) {
   const { stage, beginSession } = useVoiceSession()
+  const paaMorkt = tone === 'light'
 
   // 0 = i ro, 1 = full utladning. Driver begge ringene med hver sin forsinkelse.
   const burst = useSharedValue(0)
@@ -71,7 +76,8 @@ export function AmpexMarkButton() {
       accessibilityLabel="Start med AI"
       style={{
         width: sizes.iconChip, height: sizes.iconChip, borderRadius: sizes.iconChip / 2,
-        backgroundColor: colors.brandWash, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: paaMorkt ? 'rgba(255,255,255,0.14)' : colors.brandWash,
+        alignItems: 'center', justifyContent: 'center',
       }}
     >
       {/* Ringene ligger utenfor knappen og må ikke ta trykk. */}
@@ -87,7 +93,7 @@ export function AmpexMarkButton() {
       </View>
 
       <Animated.View style={markStyle}>
-        <AmpexLogo size={sizes.icon} color={colors.brand} />
+        <AmpexLogo size={sizes.icon} color={paaMorkt ? colors.brandSoft : colors.brand} />
       </Animated.View>
     </Pressable>
   )
