@@ -7,6 +7,7 @@ import { Pressable } from '../../components/pressable'
 import { AmpexMarkButton } from '../../components/ampex-mark-button'
 import { useTilGodkjenning, useKanGodkjenne } from '../../lib/approvals'
 import { useSynkStatus } from '../../lib/db/sync'
+import { PALETTER, lagretPalett, velgPalett, type PalettId } from '../../lib/palett'
 import { getPreferredVoice, setPreferredVoice, VOICE_OPTIONS } from '../../lib/ai/voice-prefs'
 import { colors, spacing, radius, type as t } from '../../lib/theme'
 
@@ -16,6 +17,7 @@ export default function Screen() {
   const kanGodkjenne = useKanGodkjenne()
   const insets = useSafeAreaInsets()
   const [voice, setVoice] = useState<string | null>(null)
+  const [palett, setPalett] = useState<PalettId>('naavaerende')
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
@@ -23,6 +25,7 @@ export default function Screen() {
       setVoice(v)
       setLoaded(true)
     })
+    lagretPalett().then(setPalett).catch(() => {})
   }, [])
 
   async function choose(id: string | null) {
@@ -187,6 +190,54 @@ export default function Screen() {
       <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>
         Gjelder fra neste samtale — trykk på Ampex-merket for å starte en.
       </Text>
+
+      {/* MIDLERTIDIG: palettprøving. Slettes sammen med lib/palett.ts når én
+          er valgt og verdiene er skrevet inn i lib/tokens.js. Ligger her og
+          ikke bak en dev-flagg fordi den som skal VELGE er deg, på en telefon,
+          i det lyset appen faktisk brukes i. */}
+      <Text style={[t.footnote, { color: colors.secondaryLabel, fontWeight: '600', textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
+        Fargeprøve
+      </Text>
+      <View style={{ backgroundColor: '#fff', borderRadius: radius.xl, overflow: 'hidden' }}>
+        {PALETTER.map((p, i) => {
+          const aktiv = palett === p.id
+          return (
+            <Pressable
+              key={p.id}
+              haptic="medium"
+              onPress={() => { setPalett(p.id); void velgPalett(p.id) }}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+                borderBottomWidth: i < PALETTER.length - 1 ? 0.5 : 0,
+                borderBottomColor: colors.separator,
+              }}
+            >
+              {/* Prøvene tegnes med paletten sine EGNE hex-verdier, ikke med
+                  temaet — ellers ville alle tre sett like ut. */}
+              <View style={{ flexDirection: 'row' }}>
+                {p.proever.map((farge, n) => (
+                  <View
+                    key={farge}
+                    style={{
+                      width: 22, height: 22, borderRadius: 11, backgroundColor: farge,
+                      borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.12)',
+                      marginLeft: n === 0 ? 0 : -7,
+                    }}
+                  />
+                ))}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[t.body, { fontWeight: aktiv ? '700' : '400' }]}>{p.navn}</Text>
+                <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 1, lineHeight: 18 }]}>
+                  {p.beskrivelse}
+                </Text>
+              </View>
+              {aktiv && <Check size={18} color={colors.brand} strokeWidth={2.6} />}
+            </Pressable>
+          )
+        })}
+      </View>
 
       {/* Synken er usynlig (regel 2) og skal forbli det. Men blir vi AVVIST av
           serveren tre ganger på rad, er det en defekt, ikke en kjeller — og da
