@@ -27,11 +27,24 @@ export default function AppLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        // Frosted glass bar — floats over content, screens scroll under it.
+        /*
+         * Mørk brun bar, ikke frostet lys.
+         *
+         * Den lyse glassbaren var det siste store beige feltet i appen, og den
+         * ligger på HVER skjerm — også over de mørke. Da blir den en lys stripe
+         * som skjærer gjennom uansett hvor du er.
+         *
+         * Nå er den samme brune som knappene og ordrehodet. Det er også det som
+         * gjør at kremfargen kan bety noe: chromen er konstant brun, og når
+         * FLATEN blir kremet, er det fordi du har åpnet et dokument.
+         *
+         * Blur beholdt — innholdet ruller under, og en flat farge ville tatt
+         * bort dybden. Tinten er «dark» så materialet virker med det brune.
+         */
         tabBarStyle: {
           position: 'absolute',
           backgroundColor: 'transparent',
-          borderTopColor: 'rgba(60,60,67,0.2)',
+          borderTopColor: 'rgba(255,255,255,0.10)',
           borderTopWidth: 0.5,
           paddingBottom: 4,
           paddingTop: 6,
@@ -40,13 +53,13 @@ export default function AppLayout() {
         },
         tabBarBackground: () => (
           <BlurView
-            tint="systemChromeMaterialLight"
-            intensity={90}
-            style={[StyleSheet.absoluteFill, { backgroundColor: colors.chromeGlass }]}
+            tint="dark"
+            intensity={60}
+            style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(33,28,21,0.88)' }]}
           />
         ),
-        tabBarActiveTintColor: '#000',
-        tabBarInactiveTintColor: '#8e8e93',
+        tabBarActiveTintColor: colors.brand,
+        tabBarInactiveTintColor: colors.toolTertiary,
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: '500',

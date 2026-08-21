@@ -48,6 +48,24 @@ Fargen er ikke feil. Den hadde bare ingen jobb. Nå har den én:
 | **Verktøy** | `toolBg` mørk | Ordre, lager, prosjekter, lister, kart |
 | **Papir** | `canvas` kremet | Skjema, tilbud, arkiv, fakturagrunnlag |
 
+**Chromen er ALLTID brun.** Tab-baren er mørk på hver eneste skjerm, også de
+kremede. Den lyse glassbaren var det siste store beige feltet i appen, og fordi
+den ligger over alt, skar den som en lys stripe gjennom de mørke skjermene.
+At chromen er konstant er dessuten det som gjør at kremfargen kan BETY noe: når
+flaten blir kremet, er det fordi du har åpnet et dokument — ikke fordi skjermen
+tilfeldigvis er lys.
+
+**Knapper er brune.** Hovedhandlingen er `colors.cta` på papir. På mørk grunn
+kan den ikke være det, og kremet flyter når baren under er brun — der er
+hovedhandlingen `colors.brand` (kobber). Det er det ENE stedet kobber brukes
+som flate og ikke som aksent, og derfor leses den umiddelbart som handlingen.
+
+**Statuslinja følger flaten.** `useMorkStatuslinje()` i mørke skjermer setter
+lys stil i fokus og MØRK igjen ved blur. `<StatusBar>` gjenoppretter ingenting
+ved unmount, så uten dette blir klokka hvit på kremet bakgrunn i det du åpner
+et skjema. Å legge `<StatusBar style="dark" />` i alle papirskjermene ville
+vært å rette symptomet 32 ganger.
+
 Skiftet betyr noe: det forteller deg at du har gått fra å JOBBE til å
 DOKUMENTERE. `components/tool-surface.tsx` er rammen — bruk `ToolScreen`,
 `ToolCard`, `ToolChip` og `ToolSectionHeader`, ikke egne verdier.
