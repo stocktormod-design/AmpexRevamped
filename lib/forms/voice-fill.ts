@@ -5,6 +5,7 @@ import { OrderDocument, type AiFieldOriginMap } from '../db/models/order-documen
 import { findUnfilledRequired } from './gap-check'
 import type { FormField, FormPrefill, FormTemplate, FormValues } from './types'
 import { pruneHidden, visibleFields } from './visibility'
+import { aiKanFylle, avvisningsgrunn } from './ai-fill-rules'
 
 /**
  * Skjemautfylling for Live-assistenten (lib/ai/live-session.ts): modellen fyller
@@ -33,6 +34,8 @@ export type VoiceFillField = {
   choices?: string[]
   required: boolean
   verdi: string | null
+  /** Satt når punktet må fylles i appen (tabell). Modellen skal SI det, ikke prøve. */
+  fylles_i_appen?: string
 }
 
 export type VoiceFillState = {
@@ -51,16 +54,29 @@ async function loadDoc(orderId: string, templateId: string): Promise<OrderDocume
 function describeState(template: FormTemplate, values: FormValues): VoiceFillState {
   // Kun synlige felt: et punkt som er skjult av en betingelse finnes ikke for
   // modellen — verken å spørre om eller å fylle.
+  //
+  // Tabeller er MED, men merket. Her, i motsetning til i gap-check, er lista
+  // også en STATUSRAPPORT modellen leser opp — utelot vi kursfortegnelsen,
+  // ville den sagt «skjemaet er ferdig» om et skjema som ikke er det.
+  // Info-punkt er derimot ikke spørsmål og hører ikke hjemme i en status.
   const felter = visibleFields(template, values)
     .filter(f => f.type !== 'info')
-    .map(f => ({
-      key: f.key,
-      label: f.label,
-      type: f.type,
-      choices: f.choices,
-      required: !!f.required,
-      verdi: typeof values[f.key] === 'string' ? (values[f.key] as string) : Array.isArray(values[f.key]) ? '(tabell — fylles i appen)' : null,
-    }))
+    .map(f => {
+      const rad: VoiceFillField = {
+        key: f.key,
+        label: f.label,
+        type: f.type,
+        choices: f.choices,
+        required: !!f.required,
+        verdi: typeof values[f.key] === 'string' ? (values[f.key] as string) : null,
+      }
+      if (!aiKanFylle(f.type)) {
+        rad.fylles_i_appen = avvisningsgrunn(f.type) ?? 'Fylles i appen.'
+        const rader = values[f.key]
+        rad.verdi = Array.isArray(rader) ? `${rader.length} rader fylt i appen` : null
+      }
+      return rad
+    })
   return { felter, mangler_required: findUnfilledRequired(template, values).map(f => f.key) }
 }
 
@@ -113,12 +129,12 @@ export async function applyVoiceFill(order: Order, template: FormTemplate, entri
 
   for (const entry of entries) {
     const field = fieldByKey.get(entry.key)
-    if (!field || field.type === 'info') {
+    if (!field) {
       avvist.push({ key: entry.key, hvorfor: 'Ukjent felt.' })
       continue
     }
-    if (field.type === 'table') {
-      avvist.push({ key: entry.key, hvorfor: 'Tabellfelt fylles i appen, ikke via tale.' })
+    if (!aiKanFylle(field.type)) {
+      avvist.push({ key: entry.key, hvorfor: avvisningsgrunn(field.type) ?? 'Feltet fylles i appen.' })
       continue
     }
     if (field.type === 'choice' && !(field.choices ?? []).includes(entry.verdi)) {

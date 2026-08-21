@@ -15,7 +15,11 @@ import { TimeEntry } from '../db/models/time-entry'
 import { syncQuietly } from '../db/sync'
 import { signedR2Url } from '../drawings-storage'
 import { supabase } from '../supabase'
-import { arkivNokkel, byggPakke, type Arkivinnhold } from './bundle'
+import { resolveTemplateAt } from '../forms/resolve'
+import {
+  arkivNokkel, byggDokumentpunkter, byggPakke,
+  type Arkivinnhold, type ArkivDokument, type ArkivFeltbeskrivelse,
+} from './bundle'
 
 /**
  * Frysing: fra levende ordre til uforanderlig arkiv.
@@ -31,6 +35,60 @@ export class KanIkkeFryses extends Error {
   constructor(grunn: string) {
     super(grunn)
     this.name = 'KanIkkeFryses'
+  }
+}
+
+/**
+ * Ett dokument → arkivform, med SPØRSMÅLENE hentet fra den malversjonen
+ * dokumentet faktisk ble fylt mot.
+ *
+ * Uten dette bærer pakken bare nøkler og svar. For en Ampex-mal går det an å
+ * slå opp i appen, men for et IMPORTERT firmaskjema finnes ordlyden kun i
+ * `form_template_revisions` — og en arkivpakke som må ha databasen for å gi
+ * mening er ikke et arkiv, det er en peker til ett.
+ *
+ * Feiler oppslaget, faller alle svarene ned i `uplasserteSvar`. Ingenting går
+ * tapt, og at ordlyden mangler står svart på hvitt i pakken.
+ */
+async function beskrivDokument(d: OrderDocument): Promise<ArkivDokument> {
+  const verdier: Record<string, unknown> = d.data ? JSON.parse(d.data) : {}
+  const funn = await resolveTemplateAt(d.templateId, d.templateVersion).catch(() => undefined)
+
+  if (!funn) {
+    return {
+      mal: d.templateId,
+      malnavn: '(malen ble ikke funnet)',
+      malversjon: d.templateVersion,
+      malversjonLest: null,
+      status: d.status,
+      fullfortAv: d.completedBy,
+      fullfortTid: d.completedAt,
+      punkter: [],
+      uplasserteSvar: verdier,
+    }
+  }
+
+  const felter: ArkivFeltbeskrivelse[] = funn.template.sections.flatMap(sek =>
+    sek.fields.map(f => ({
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      unit: f.unit ?? null,
+      choices: f.choices ?? null,
+    })),
+  )
+  const { punkter, uplasserteSvar } = byggDokumentpunkter(felter, verdier)
+
+  return {
+    mal: d.templateId,
+    malnavn: funn.template.name,
+    malversjon: d.templateVersion,
+    malversjonLest: funn.version,
+    status: d.status,
+    fullfortAv: d.completedBy,
+    fullfortTid: d.completedAt,
+    punkter,
+    uplasserteSvar,
   }
 }
 
@@ -85,11 +143,7 @@ async function samle(order: Order): Promise<Arkivinnhold> {
     tillegg: tillegg.map(e => ({
       tittel: e.title, prising: e.pricing, status: e.status, godkjentAv: e.approvedBy,
     })),
-    dokumenter: dokumenter.map(d => ({
-      mal: d.templateId, malversjon: d.templateVersion, status: d.status,
-      fullfortAv: d.completedBy, fullfortTid: d.completedAt,
-      verdier: d.data ? JSON.parse(d.data) : {},
-    })),
+    dokumenter: await Promise.all(dokumenter.map(beskrivDokument)),
     signaturer: signaturer.map(s => ({
       formaal: s.purpose, signertAv: s.signerName, tittel: s.signerTitle,
       signertTid: s.signedAt, strok: s.punkter, merknad: s.note,

@@ -1316,7 +1316,14 @@ export class LiveSession {
           database.get<OrderScan>('order_scans').query(Q.where('order_id', resolved.order.id)).fetch(),
           database.get<FormTemplate>('form_templates').query().fetch(),
         ])
-        const templateTitle = new Map(templates.map(t => [t.id, t.title]))
+        // Malnavn må slås opp i BEGGE kilder. `form_templates` inneholder kun
+        // firmaets egne; et dokument fylt fra en Ampex-mal har id 'ampex.*' og
+        // ble tidligere rapportert som «Ukjent skjema» — altså alle
+        // sluttkontroller og samsvarserklæringer. Katalogen dekker begge.
+        const templateTitle = new Map<string, string>([
+          ...this.templateCatalog.map(t => [t.id, t.name] as [string, string]),
+          ...templates.map(t => [t.id, t.title] as [string, string]),
+        ])
         return {
           skjemaer: docs.map(d => ({
             tittel: templateTitle.get(d.templateId) ?? 'Ukjent skjema',

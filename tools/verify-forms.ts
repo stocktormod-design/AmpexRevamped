@@ -20,6 +20,7 @@ import {
   type FormField as FirmField, type FormSection as FirmSection, type FormSchema,
 } from '../lib/forms/schema'
 import { convertFirmField, convertFirmSections, validateFirmSections } from '../lib/forms/firm-schema'
+import { aiKanFylle, avvisningsgrunn } from '../lib/forms/ai-fill-rules'
 import { isFieldVisible, pruneHidden, visibleFields, visibleSections } from '../lib/forms/visibility'
 import type { FormTemplate, FormValues } from '../lib/forms/types'
 
@@ -181,6 +182,26 @@ sjekk('betingelse uten svar fanges — punktet ville aldri vist seg',
     { id: 'a', type: 'check', label: 'A' },
     { id: 'b', type: 'text', label: 'B', showIf: { field: 'a', equals: [] } },
   ] }]).length, 1)
+
+/* ── Begge AI-veier inn i et skjema må oppføre seg likt ──────────────────── */
+
+// gap-check (ett opptak → felter) og Live-assistenten (felt fylles underveis)
+// hadde hver sin regel for hva AI-en fikk skrive, og de var ikke like. Da
+// avhenger innholdet i et dokument av hvilken knapp som ble trykt — en
+// forskjell ingen kan se i ettertid. Regelen ligger nå ett sted.
+
+sjekk('tabell kan ikke fylles av AI', aiKanFylle('table'), false)
+sjekk('info kan ikke fylles av AI', aiKanFylle('info'), false)
+for (const t of ['text', 'multiline', 'number', 'choice']) {
+  sjekk(`${t} kan fylles av AI`, aiKanFylle(t), true)
+}
+// Hvorfor tabell er den viktige: en tabell lagres som RADER. En tekststreng der
+// rendres som en TOM tabell (components/form-field-view.tsx faller tilbake til
+// [] når verdien ikke er en liste) — skjemaet ser komplett ut, montøren
+// signerer, og svaret finnes ingen steder.
+sjekk('avvisningen sier hvor punktet fylles i stedet',
+  avvisningsgrunn('table'), 'Tabellfelt fylles i appen, ikke via tale.')
+sjekk('et felt AI-en KAN fylle har ingen avvisningsgrunn', avvisningsgrunn('number'), null)
 
 console.log('')
 if (feil > 0) {

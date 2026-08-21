@@ -39,6 +39,49 @@ export async function resolveTemplate(id: string): Promise<FormTemplate | undefi
   return getBundledTemplate(id) ?? (await resolveFirmTemplate(id))
 }
 
+/**
+ * Malen slik den så ut i en BESTEMT versjon.
+ *
+ * Arkivet må sitere ordlyden dokumentet faktisk ble fylt mot. Bruker vi
+ * gjeldende versjon, vil et skjema som ble revidert etterpå få frosne svar
+ * merket med nye spørsmål — og da lyver arkivet, stille og troverdig.
+ *
+ * Finner vi ikke akkurat den versjonen (bundlet mal som er oppdatert i en ny
+ * app-utgivelse, eller en revisjon som aldri rakk å synke hit), returneres det
+ * vi HAR sammen med versjonen det er — kalleren skal si fra, ikke skjule det.
+ */
+export async function resolveTemplateAt(
+  id: string,
+  version: number,
+): Promise<{ template: FormTemplate; version: number } | undefined> {
+  const bundled = getBundledTemplate(id)
+  if (bundled) return { template: bundled, version: bundled.version }
+
+  const row = await database.get<FirmTemplate>('form_templates').find(id).catch(() => null)
+  if (!row) return undefined
+  const [revision] = await database
+    .get<FormRevision>('form_template_revisions')
+    .query(Q.where('template_id', row.id), Q.where('version', version))
+    .fetch()
+  if (revision) {
+    const sections = revision.sections
+    if (sections.length > 0) {
+      return {
+        template: {
+          id: row.id,
+          version,
+          name: row.title,
+          source: `Firmaskjema · ${row.category}`,
+          sections: convertFirmSections(sections, row.title),
+        },
+        version,
+      }
+    }
+  }
+  const naa = await resolveFirmTemplate(id)
+  return naa ? { template: naa, version: naa.version } : undefined
+}
+
 export type TemplateCatalogEntry = { id: string; name: string; source: string }
 
 /** Alle maler AI-en kan tilby: bundlede + publiserte firmamaler. */

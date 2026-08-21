@@ -51,13 +51,92 @@ export type ArkivTime = {
   notat?: string | null
 }
 
+/**
+ * Ett utfylt punkt: SPØRSMÅLET og svaret, sammen.
+ *
+ * Grunnen til at spørsmålet må ligge i pakken og ikke bare nøkkelen: et
+ * firmaskjema er importert eller skrevet av kunden selv, og ordlyden finnes
+ * KUN i `form_template_revisions`. Om syv år skal denne pakken kunne bevise hva
+ * som ble kontrollert, uten appen, uten databasen, uten oss. «12» er ikke et
+ * bevis. «Målt isolasjonsresistans: 12 MΩ» er det.
+ */
+export type ArkivDokumentpunkt = {
+  nokkel: string
+  sporsmal: string
+  type: string
+  enhet?: string | null
+  /** For klikklister: hva man KUNNE svart. Uten den er «Nei» uten kontekst. */
+  alternativer?: string[] | null
+  svar: unknown
+}
+
 export type ArkivDokument = {
   mal: string
+  /** Malens navn slik det sto da dokumentet ble frosset. */
+  malnavn: string
+  /** Versjonen dokumentet ble FYLT mot. */
   malversjon: number
+  /**
+   * Versjonen vi faktisk fant ordlyden i. Er den ulik `malversjon`, eller null,
+   * står det HER i stedet for å skjules — en pakke som later som den er
+   * fullstendig er verre enn en som sier hva den mangler.
+   */
+  malversjonLest: number | null
   status: string
   fullfortAv?: string | null
   fullfortTid?: Date | null
-  verdier: Record<string, unknown>
+  punkter: ArkivDokumentpunkt[]
+  /**
+   * Svar vi ikke fant et spørsmål til — feltet er fjernet i en senere revisjon,
+   * eller malen er borte. Ingen svar skal noensinne falle ut av arkivet, heller
+   * ikke et vi ikke lenger vet spørsmålet til.
+   */
+  uplasserteSvar: Record<string, unknown>
+}
+
+/** Feltet slik arkivet trenger det — samme form for Ampex-maler og firmamaler. */
+export type ArkivFeltbeskrivelse = {
+  key: string
+  label: string
+  type: string
+  unit?: string | null
+  choices?: string[] | null
+}
+
+/**
+ * Svar + malbeskrivelse → punkter i skjemaets rekkefølge, pluss det som ikke
+ * lot seg plassere. Ren funksjon: hele grunnen til at den kan selvtestes.
+ *
+ * Punkt uten svar tas MED. At noe ikke ble besvart er også dokumentasjon — og
+ * en pakke som bare viser de utfylte punktene ser mer komplett ut enn jobben var.
+ * Unntaket er `info`, som aldri lagres og ikke er et spørsmål.
+ */
+export function byggDokumentpunkter(
+  felter: ArkivFeltbeskrivelse[],
+  verdier: Record<string, unknown>,
+): { punkter: ArkivDokumentpunkt[]; uplasserteSvar: Record<string, unknown> } {
+  const punkter: ArkivDokumentpunkt[] = []
+  const plassert = new Set<string>()
+
+  for (const f of felter) {
+    if (f.type === 'info') continue
+    plassert.add(f.key)
+    const p: ArkivDokumentpunkt = {
+      nokkel: f.key,
+      sporsmal: f.label,
+      type: f.type,
+      svar: f.key in verdier ? verdier[f.key] : null,
+    }
+    if (f.unit) p.enhet = f.unit
+    if (f.choices && f.choices.length > 0) p.alternativer = f.choices
+    punkter.push(p)
+  }
+
+  const uplasserteSvar: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(verdier)) {
+    if (!plassert.has(k)) uplasserteSvar[k] = v
+  }
+  return { punkter, uplasserteSvar }
 }
 
 export type ArkivSignatur = {
@@ -89,8 +168,15 @@ export type Arkivinnhold = {
   vedlegg: string[]
 }
 
-/** Versjonsnummer på selve formatet. Endres det, må gamle pakker kunne leses. */
-export const ARKIVFORMAT = 1
+/**
+ * Versjonsnummer på selve formatet. Endres det, må gamle pakker kunne leses.
+ *
+ * 2 (21.08.2026): dokumenter bærer nå SPØRSMÅLET, ikke bare nøkkelen og svaret.
+ * Endret mens det ennå var gratis — det fantes null frosne pakker. Etter den
+ * første er formatet i praksis uforanderlig, for en gammel pakke kan aldri
+ * skrives om uten at hashen ryker.
+ */
+export const ARKIVFORMAT = 2
 
 /**
  * Rekursiv, deterministisk serialisering.
