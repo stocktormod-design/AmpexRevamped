@@ -7,11 +7,13 @@ import { Pressable } from '../../components/pressable'
 import { AmpexMarkButton } from '../../components/ampex-mark-button'
 import { useTilGodkjenning, useKanGodkjenne } from '../../lib/approvals'
 import { useSynkStatus } from '../../lib/db/sync'
+import { useMorkStatuslinje } from '../../components/tool-surface'
 import { PALETTER, lagretPalett, velgPalett, type PalettId } from '../../lib/palett'
 import { getPreferredVoice, setPreferredVoice, VOICE_OPTIONS } from '../../lib/ai/voice-prefs'
 import { colors, spacing, radius, type as t } from '../../lib/theme'
 
 export default function Screen() {
+  useMorkStatuslinje()
   const tilGodkjenning = useTilGodkjenning()
   const synk = useSynkStatus()
   const kanGodkjenne = useKanGodkjenne()
@@ -40,11 +42,11 @@ export default function Screen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: colors.canvas }}
+      style={{ flex: 1, backgroundColor: colors.toolBg }}
       contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.screen, paddingBottom: spacing.xxl }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xl }}>
-        <Text style={t.display}>Meg</Text>
+        <Text style={[t.display, { color: colors.toolLabel }]}>Meg</Text>
         <AmpexMarkButton />
       </View>
 
@@ -52,7 +54,7 @@ export default function Screen() {
           forskriftsfestet oppgave med en kø, ikke en innstilling. Er køen tom,
           eller er du ikke faglig ansvarlig, tar den ingen plass. */}
       {kanGodkjenne && tilGodkjenning.length > 0 && (
-        <View style={{ backgroundColor: '#fff', borderRadius: radius.xl, overflow: 'hidden', marginBottom: spacing.xl }}>
+        <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl }}>
           <Pressable
             haptic="light"
             onPress={() => router.push('/(app)/godkjenning')}
@@ -63,8 +65,8 @@ export default function Screen() {
           >
             <ShieldCheck size={18} color={colors.brand} strokeWidth={2.2} />
             <View style={{ flex: 1 }}>
-              <Text style={t.body}>Til godkjenning</Text>
-              <Text style={[t.footnote, { color: colors.secondaryLabel }]}>
+              <Text style={[t.body, { color: colors.toolLabel }]}>Til godkjenning</Text>
+              <Text style={[t.footnote, { color: colors.toolSecondary }]}>
                 {`${tilGodkjenning.length} ${tilGodkjenning.length === 1 ? 'ordre venter' : 'ordrer venter'} på deg`}
               </Text>
             </View>
@@ -74,14 +76,14 @@ export default function Screen() {
             }}>
               <Text style={[t.caption, { color: '#fff', fontWeight: '700' }]}>{tilGodkjenning.length}</Text>
             </View>
-            <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={2.2} />
+            <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
           </Pressable>
         </View>
       )}
 
       {/* Mine timer står ØVERST og ikke under registrene: det er det eneste her
           en montør åpner mer enn én gang i uken. */}
-      <View style={{ backgroundColor: '#fff', borderRadius: radius.xl, overflow: 'hidden', marginBottom: spacing.xl }}>
+      <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl }}>
         <Pressable
           haptic="light"
           onPress={() => router.push('/(app)/mine-timer')}
@@ -90,12 +92,12 @@ export default function Screen() {
             paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
           }}
         >
-          <CalendarClock size={18} color={colors.iconMuted} strokeWidth={2.2} />
+          <CalendarClock size={18} color={colors.brand} strokeWidth={2.2} />
           <View style={{ flex: 1 }}>
-            <Text style={t.body}>Mine timer</Text>
-            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Uke for uke — grunnlaget for lønn</Text>
+            <Text style={[t.body, { color: colors.toolLabel }]}>Mine timer</Text>
+            <Text style={[t.footnote, { color: colors.toolSecondary }]}>Uke for uke — grunnlaget for lønn</Text>
           </View>
-          <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={2.2} />
+          <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
         </Pressable>
         <Pressable
           haptic="light"
@@ -103,26 +105,26 @@ export default function Screen() {
           style={{
             flexDirection: 'row', alignItems: 'center', gap: spacing.md,
             paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
-            borderTopWidth: 0.5, borderTopColor: colors.separator,
+            borderTopWidth: 1, borderTopColor: colors.toolBorder,
           }}
         >
-          <Archive size={18} color={colors.iconMuted} strokeWidth={2.2} />
+          <Archive size={18} color={colors.brand} strokeWidth={2.2} />
           <View style={{ flex: 1 }}>
-            <Text style={t.body}>Gamle jobber</Text>
-            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Arkivet — filtrert på kunde og år</Text>
+            <Text style={[t.body, { color: colors.toolLabel }]}>Gamle jobber</Text>
+            <Text style={[t.footnote, { color: colors.toolSecondary }]}>Arkivet — filtrert på kunde og år</Text>
           </View>
-          <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={2.2} />
+          <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
         </Pressable>
       </View>
 
       {/* Registrene. Ligger her fordi de settes opp sjelden og brukes via ordren. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, marginBottom: spacing.sm }}>
-        <Users size={15} color={colors.secondaryLabel} strokeWidth={2.2} />
-        <Text style={[t.footnote, { color: colors.secondaryLabel, fontWeight: '600', textTransform: 'uppercase' }]}>
+        <Users size={15} color={colors.toolTertiary} strokeWidth={2.2} />
+        <Text style={[t.footnote, { color: colors.toolTertiary, fontWeight: '600', textTransform: 'uppercase' }]}>
           Register
         </Text>
       </View>
-      <View style={{ backgroundColor: '#fff', borderRadius: radius.xl, overflow: 'hidden', marginBottom: spacing.xl }}>
+      <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl }}>
         <Pressable
           haptic="light"
           onPress={() => router.push('/(app)/kunder')}
@@ -131,9 +133,9 @@ export default function Screen() {
             paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
           }}
         >
-          <Users size={18} color={colors.iconMuted} strokeWidth={2.2} />
-          <Text style={[t.body, { flex: 1 }]}>Kunder</Text>
-          <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={2.2} />
+          <Users size={18} color={colors.brand} strokeWidth={2.2} />
+          <Text style={[t.body, { flex: 1, color: colors.toolLabel }]}>Kunder</Text>
+          <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
         </Pressable>
         <Pressable
           haptic="light"
@@ -144,22 +146,22 @@ export default function Screen() {
             borderTopWidth: 1, borderTopColor: colors.border,
           }}
         >
-          <Timer size={18} color={colors.iconMuted} strokeWidth={2.2} />
+          <Timer size={18} color={colors.brand} strokeWidth={2.2} />
           <View style={{ flex: 1 }}>
-            <Text style={t.body}>Aktiviteter og timepriser</Text>
-            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Avgjør hva en time koster på fakturaen</Text>
+            <Text style={[t.body, { color: colors.toolLabel }]}>Aktiviteter og timepriser</Text>
+            <Text style={[t.footnote, { color: colors.toolSecondary }]}>Avgjør hva en time koster på fakturaen</Text>
           </View>
-          <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={2.2} />
+          <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
         </Pressable>
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, marginBottom: spacing.sm }}>
-        <Mic size={15} color={colors.secondaryLabel} strokeWidth={2.2} />
-        <Text style={[t.footnote, { color: colors.secondaryLabel, fontWeight: '600', textTransform: 'uppercase' }]}>
+        <Mic size={15} color={colors.toolTertiary} strokeWidth={2.2} />
+        <Text style={[t.footnote, { color: colors.toolTertiary, fontWeight: '600', textTransform: 'uppercase' }]}>
           AI-assistentens stemme
         </Text>
       </View>
-      <View style={{ backgroundColor: '#fff', borderRadius: radius.xl, overflow: 'hidden' }}>
+      <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden' }}>
         {loaded &&
           rows.map((row, i) => {
             const active = voice === row.id
@@ -179,15 +181,15 @@ export default function Screen() {
                 }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[t.body, { fontWeight: active ? '700' : '400' }]}>{row.label}</Text>
-                  <Text style={[t.footnote, { color: colors.secondaryLabel }]}>{row.description}</Text>
+                  <Text style={[t.body, { color: colors.toolLabel, fontWeight: active ? '700' : '400' }]}>{row.label}</Text>
+                  <Text style={[t.footnote, { color: colors.toolSecondary }]}>{row.description}</Text>
                 </View>
                 {active && <Check size={18} color={colors.brand} strokeWidth={2.6} />}
               </Pressable>
             )
           })}
       </View>
-      <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>
+      <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: spacing.sm }]}>
         Gjelder fra neste samtale — trykk på Ampex-merket for å starte en.
       </Text>
 
@@ -195,10 +197,10 @@ export default function Screen() {
           er valgt og verdiene er skrevet inn i lib/tokens.js. Ligger her og
           ikke bak en dev-flagg fordi den som skal VELGE er deg, på en telefon,
           i det lyset appen faktisk brukes i. */}
-      <Text style={[t.footnote, { color: colors.secondaryLabel, fontWeight: '600', textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
+      <Text style={[t.footnote, { color: colors.toolTertiary, fontWeight: '600', textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
         Fargeprøve
       </Text>
-      <View style={{ backgroundColor: '#fff', borderRadius: radius.xl, overflow: 'hidden' }}>
+      <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden' }}>
         {PALETTER.map((p, i) => {
           const aktiv = palett === p.id
           return (
@@ -210,7 +212,7 @@ export default function Screen() {
                 flexDirection: 'row', alignItems: 'center', gap: spacing.md,
                 paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
                 borderBottomWidth: i < PALETTER.length - 1 ? 0.5 : 0,
-                borderBottomColor: colors.separator,
+                borderBottomColor: colors.toolBorder,
               }}
             >
               {/* Prøvene tegnes med paletten sine EGNE hex-verdier, ikke med
@@ -228,8 +230,8 @@ export default function Screen() {
                 ))}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[t.body, { fontWeight: aktiv ? '700' : '400' }]}>{p.navn}</Text>
-                <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 1, lineHeight: 18 }]}>
+                <Text style={[t.body, { color: colors.toolLabel, fontWeight: aktiv ? '700' : '400' }]}>{p.navn}</Text>
+                <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 1, lineHeight: 18 }]}>
                   {p.beskrivelse}
                 </Text>
               </View>
@@ -244,21 +246,21 @@ export default function Screen() {
           må noen få vite at arbeidet står på telefonen og ikke kommer videre.
           Uten nett teller ikke: det er normaltilstanden appen er bygget for. */}
       {synk?.nivaa === 'blokkert' && (
-        <View style={{ backgroundColor: '#fff', borderRadius: radius.xl, padding: spacing.lg, marginTop: spacing.xl, flexDirection: 'row', gap: spacing.md }}>
+        <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.xl, flexDirection: 'row', gap: spacing.md }}>
           <CloudOff size={20} color={colors.danger} strokeWidth={2.2} style={{ marginTop: 2 }} />
           <View style={{ flex: 1 }}>
-            <Text style={[t.body, { fontWeight: '600' }]}>{synk.tekst}</Text>
-            <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 2 }]}>
+            <Text style={[t.body, { color: colors.toolLabel, fontWeight: '600' }]}>{synk.tekst}</Text>
+            <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 2 }]}>
               Ingenting er tapt — alt ligger lagret på telefonen. Men det kommer ikke fram før dette er rettet.
             </Text>
             {synk.detalj && (
-              <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>{synk.detalj}</Text>
+              <Text style={[t.caption, { color: colors.toolSecondary, marginTop: spacing.sm }]}>{synk.detalj}</Text>
             )}
           </View>
         </View>
       )}
       {synk && synk.nivaa !== 'blokkert' && (
-        <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: spacing.xl, textAlign: 'center' }]}>
+        <Text style={[t.caption, { color: colors.toolTertiary, marginTop: spacing.xl, textAlign: 'center' }]}>
           {synk.tekst}
         </Text>
       )}

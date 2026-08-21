@@ -6,6 +6,7 @@ import { Q } from '@nozbe/watermelondb'
 import { Plus, FolderOpen, ChevronRight } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
+import { ToolScreen } from '../../../components/tool-surface'
 import { database } from '../../../lib/db'
 import { Project, projectStatusLabel } from '../../../lib/db/models/project'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
@@ -26,7 +27,7 @@ export default function ProsjekterScreen() {
   const projects = useProjects()
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <ToolScreen>
       <FlatList
         data={projects}
         keyExtractor={p => p.id}
@@ -37,57 +38,64 @@ export default function ProsjekterScreen() {
             flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
             paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
           }}>
-            <Text style={t.display}>Prosjekter</Text>
+            <Text style={[t.display, { color: colors.toolLabel }]}>Prosjekter</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
             <AmpexMarkButton />
             <Pressable
               haptic="medium" pressScale={0.92}
               onPress={() => router.push('/(app)/prosjekter/ny')}
-              style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.cta, alignItems: 'center', justifyContent: 'center' }}
+              style={{
+                width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.brand,
+                alignItems: 'center', justifyContent: 'center',
+              }}
             >
-              <Plus size={sizes.icon} color={colors.ctaLabel} strokeWidth={2.2} />
+              <Plus size={sizes.icon} color="#fff" strokeWidth={2.2} />
             </Pressable>
             </View>
           </View>
         }
-        ItemSeparatorComponent={() => (
-          <View style={{ backgroundColor: colors.bg, marginHorizontal: spacing.screen }}>
-            <View style={{ height: 0.5, backgroundColor: colors.separator, marginLeft: spacing.lg + sizes.iconChip - 8 + spacing.md }} />
-          </View>
-        )}
+        ItemSeparatorComponent={null}
         renderItem={({ item, index }) => (
           <Pressable
             onPress={() => router.push(`/(app)/prosjekter/${item.id}`)}
             style={{
-              backgroundColor: colors.bg, marginHorizontal: spacing.screen,
-              paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+              backgroundColor: colors.toolRaised, marginHorizontal: spacing.screen,
+              paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 3,
               flexDirection: 'row', alignItems: 'center',
+              borderColor: colors.toolBorder, borderLeftWidth: 1, borderRightWidth: 1,
+              borderTopWidth: index === 0 ? 1 : 0, borderBottomWidth: 1,
               borderTopLeftRadius: index === 0 ? radius.lg : 0, borderTopRightRadius: index === 0 ? radius.lg : 0,
               borderBottomLeftRadius: index === projects.length - 1 ? radius.lg : 0, borderBottomRightRadius: index === projects.length - 1 ? radius.lg : 0,
             }}
           >
             <View style={{
-              width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm,
-              backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
+              width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.md,
+              backgroundColor: colors.brandWash, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
             }}>
-              <FolderOpen size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              <FolderOpen size={sizes.icon - 2} color={colors.brand} strokeWidth={sizes.lucideStroke} />
             </View>
             <View style={{ flex: 1, marginRight: spacing.md }}>
-              <Text style={t.bodyMedium} numberOfLines={1}>{item.name}</Text>
-              <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>
+              <Text style={[t.bodyMedium, { color: colors.toolLabel }]} numberOfLines={1}>{item.name}</Text>
+              <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 1 }]} numberOfLines={1}>
                 {[item.customerName, projectStatusLabel[item.status]].filter(Boolean).join(' · ')}
               </Text>
             </View>
-            <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
           </Pressable>
         )}
         ListEmptyComponent={
-          <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, alignItems: 'center', paddingVertical: spacing.xxl }}>
-            <Text style={t.headline}>Ingen prosjekter</Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs }]}>Opprett et prosjekt for å legge til tegninger.</Text>
+          <View style={{
+            borderRadius: radius.lg, marginHorizontal: spacing.screen, alignItems: 'center',
+            paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl,
+            borderWidth: 1, borderColor: colors.toolBorder, borderStyle: 'dashed',
+          }}>
+            <Text style={[t.headline, { color: colors.toolLabel }]}>Ingen prosjekter</Text>
+            <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: spacing.xs, textAlign: 'center' }]}>
+              Opprett et prosjekt for å legge til tegninger.
+            </Text>
           </View>
         }
       />
-    </View>
+    </ToolScreen>
   )
 }
