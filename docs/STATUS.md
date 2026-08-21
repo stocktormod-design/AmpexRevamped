@@ -660,6 +660,51 @@ den flyttes uendret til Ampex Desktop når den finnes.
     overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
     så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
 
+### Ordreskjermen lagt om — feltarbeid først, kontor sist
+
+Kritikken var berettiget: deltakerliste, tilleggsarbeid, kundesignatur OG
+fakturagrunnlag lå alle sammen OVER materiell og dokumentasjon. Fire
+kontoroppgaver foran de tre tingene jobben faktisk består av.
+
+Montøren står i et sikringsskap med hansker på. Han trenger, i denne
+rekkefølgen: **hvor er jeg, hva gjør jeg, hva brukte jeg, hva må dokumenteres.**
+
+| Før | Nå |
+|-----|-----|
+| Oppdrag | Oppdrag |
+| Timer · Deltakere · Tillegg · Signatur | **På jobben:** Timer → Materiell → Dokumentasjon → LiDAR |
+| Arkiv / Godkjenning / Avtalt pris | **Når jobben er ferdig:** Signatur → Tillegg* → Deltakere |
+| Fakturagrunnlag | Avtalt pris → Fakturagrunnlag → Godkjenning |
+| Materiell, Dokumentasjon, LiDAR | Status → Detaljer |
+
+\* **Tilleggsarbeid vises nå kun når ordren har en avtalt pris.** Innvendingen
+var riktig for løpende regning: der ER ekstra arbeid bare flere timer og mer
+materiell, og begrepet står bare i veien. Men på fastpris er det motsatt —
+timer og materiell utover avtalen blir slukt av fastprisen og aldri fakturert,
+med mindre de føres som et tillegg kunden har godkjent. Begrepet beholdes
+derfor, men kun der det gjør en forskjell (`order.quoteId`).
+
+Fire nesten like Pressable-blokker ble til én `Rad`-komponent. Det var
+dessuten grunnen til at rekkefølgen ikke ble rettet før: det var tungvint å
+flytte en rad.
+
+### Kartvisning av jobbene
+
+Nytt: kartknapp på ordrelista. Alle jobber med adresse som pins, trykk viser
+jobben nederst, ett trykk til åpner den — to ledd, fordi et feiltrykk på et
+kart er lett og skal ikke navigere.
+
+Kartet er en VISNING av samme liste, ikke en egen skjerm: filteret over gjelder
+begge. Slik gjør Jobber, Housecall Pro og Tradify det, og grunnen er ikke at
+kart er pent — **rekkefølgen på dagens jobber bestemmes av geografi**, og en
+liste sortert på klokkeslett skjuler at to av dem ligger i samme gate.
+
+Geokodingen er den samme hurtigbufrede som adressekortet alt brukte
+(`lib/geocode.ts`): hver adresse slås opp én gang, aldri på nytt. Pins tegnes
+etter hvert som de kommer, så første gang ikke gir flere sekunder tom skjerm.
+iOS-only, med samme fallback-mønster som `address-map` — `kartStottes` er
+false på Android, og da skjules knappen.
+
 ### Andre runde gjennomgang: pengeveien, lageret og godkjenningen
 
 Samme sporing som på skjemaene, nå på resten. Fire nye brudd, alle av samme
