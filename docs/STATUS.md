@@ -660,6 +660,28 @@ den flyttes uendret til Ampex Desktop når den finnes.
     overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
     så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
 
+### Timeføring: si det, eller skriv det
+
+Klokka som startet ved «Start jobben» ble bygget og **reversert samme dag**.
+Den løste feil problem. Modellen er ikke at appen måler dagen din — den er at
+du trykker på merket og sier *«legg til 7,5 timer på den ordren»*, eller fører
+dem for hånd på ordren. To veier, ingen tredje som må vedlikeholdes.
+
+Det som manglet var ikke en klokke. Det var at assistenten **aldri spurte om
+kommentaren**. `foer_timer` har alltid tatt et notat — og notatet står PÅ
+FAKTURAEN til kunden, ofte det eneste hun leser — men montøren tilbyr det ikke
+selv, og verktøyet ba aldri om det.
+
+Nå: timene føres FØRST, uten spørsmål. Så tilbys kommentaren, én gang, og bare
+når den mangler. Rekkefølgen er med vilje — timene er det viktige, og et
+spørsmål i veien kan koste begge deler hvis samtalen brytes.
+
+Nytt verktøy `utfyll_timenotat` (38 totalt) legger kommentaren på føringen
+etterpå. Fire grenser: bare din egen føring, bare på den ordren, bare i dag, og
+bare hvis den ikke alt har en kommentar. Uten dem kunne assistenten skrevet
+over en kollegas beskrivelse av hva HAN gjorde — og en kommentar som er feil er
+verre enn ingen kommentar.
+
 ### Telefonen er felt, desktop er kontor
 
 SpeedyCraft-skjermbildet avgjorde rekkefølgen. Deres ordre er Timer →

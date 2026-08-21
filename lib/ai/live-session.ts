@@ -489,7 +489,9 @@ const TOOL_DECLARATIONS = [
       {
         name: 'foer_timer',
         description:
-          'Fører timer på en ordre brukeren er med på. Bekreft antall timer og ordre muntlig først. Dato er valgfri (standard i dag).',
+          'Fører timer på en ordre brukeren er med på. Bekreft antall timer og ordre muntlig først. Dato er valgfri (standard i dag). ' +
+          'Ble det ikke sagt hva som ble gjort, IKKE spør før du fører — før timene først, så tilby kommentaren etterpå med utfyll_timenotat. ' +
+          'Timene er det viktige; kommentaren er en bonus, og et spørsmål i veien kan koste begge deler hvis samtalen brytes.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -500,6 +502,20 @@ const TOOL_DECLARATIONS = [
             dato: { type: 'STRING', description: 'ÅÅÅÅ-MM-DD hvis ikke i dag.' },
           },
           required: ['ordrenummer', 'timer'],
+        },
+      },
+      {
+        name: 'utfyll_timenotat',
+        description:
+          'Legger en kommentar på timene du nettopp førte — hva som faktisk ble gjort. Kommentaren står PÅ FAKTURAEN til kunden. ' +
+          'Treffer bare din egen føring på den ordren i dag, og bare hvis den ikke alt har en kommentar. Kall den rett etter foer_timer.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            ordrenummer: { type: 'INTEGER', description: 'Ordren timene ble ført på.' },
+            notat: { type: 'STRING', description: 'Kort, i montørens egne ord. F.eks. «Byttet sikringsskap og kursfortegnelse».' },
+          },
+          required: ['ordrenummer', 'notat'],
         },
       },
       {
@@ -1694,11 +1710,48 @@ export class LiveSession {
             e.activityId = aktivitet?.id ?? null
           })
         })
+        const fikkNotat = typeof args.notat === 'string' && !!args.notat.trim()
         return {
           ok: true,
           beskjed: `Førte ${hours} timer på ordre ${resolved.n}${aktivitet ? ` som ${aktivitet.name.toLowerCase()}` : ''}.`,
           ...(aktivitet ? {} : { advarsel: 'Fant ingen aktivitet — timene får ingen pris før aktivitet er satt.' }),
+          // Kommentaren står på FAKTURAEN til kunden og er ofte det eneste hun
+          // leser. Montøren tilbyr den aldri selv — så assistenten spør, ÉN gang,
+          // og bare når den mangler.
+          ...(fikkNotat ? {} : {
+            oppfolging: 'Timene er ført uten kommentar. Spør kort om hva som ble gjort, og bruk utfyll_timenotat. Godtar de ikke, la det ligge — ikke mas.',
+          }),
         }
+      }
+      if (name === 'utfyll_timenotat') {
+        const resolved = await this.resolveOrder(args)
+        if ('feil' in resolved) return resolved
+        const notat = typeof args.notat === 'string' ? args.notat.trim() : ''
+        if (!notat) return { feil: 'Tom kommentar — ingenting å legge til.' }
+
+        /*
+         * Bare DIN egen føring, bare på den ordren, bare i dag, og bare hvis den
+         * ikke alt har en kommentar.
+         *
+         * Uten de fire grensene kunne assistenten skrive over en kollegas
+         * beskrivelse av hva HAN gjorde — og den teksten står på fakturaen til
+         * kunden. En kommentar som er feil er verre enn ingen kommentar.
+         */
+        const idag = new Date(); idag.setHours(0, 0, 0, 0)
+        const mine = await database.get<TimeEntry>('time_entries')
+          .query(
+            Q.where('order_id', resolved.order.id),
+            Q.where('user_id', resolved.user.id),
+            Q.where('date', Q.gte(idag.getTime())),
+            Q.sortBy('created_at', Q.desc),
+          ).fetch()
+        const foring = mine.find(e => !e.note)
+        if (!foring) {
+          return { feil: 'Fant ingen timeføring fra deg på den ordren i dag uten kommentar fra før. Før timene først.' }
+        }
+        await database.write(async () => { await foring.update(e => { e.note = notat }) })
+        syncQuietly()
+        return { ok: true, beskjed: `La kommentaren på timene: «${notat}»` }
       }
       if (name === 'foresla_tillegg') {
         const resolved = await this.resolveOrder(args)
