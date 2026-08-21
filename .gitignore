@@ -49,3 +49,18 @@ worker/fixture/
 # Kompilert output fra tools/-skript
 .tmp/
 supabase/.temp/
+
+# Ampex Kontor (desktop/) — Vite, Tauri og Rust bygger her
+desktop/node_modules/
+desktop/dist/
+desktop/.env
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# Vercel
+.vercel
+
+# PyInstaller-bygg av worker-en (326 MB, gjenskapes fra ampex-worker.spec)
+worker/dist/
+worker/build/
+worker/build.log

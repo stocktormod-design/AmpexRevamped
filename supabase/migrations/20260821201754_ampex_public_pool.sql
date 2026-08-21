@@ -1,3 +1,6 @@
+-- MERK: kjørt mot basen 21. august 2026 som `ampex_public_pool` +
+-- `claim_scan_job_uten_lock_paa_vindu`.
+
 -- Ampex public pool + rettferdig kø + versjonssperre + køposisjon
 --
 -- Bakgrunn: 20260815120000 lot en node KUN ta jobber fra sitt eget firma
@@ -45,8 +48,39 @@ alter table public.worker_nodes
 -- Settes ved innlegging fra firmaets innstilling. Er den false, forlater aldri
 -- skannet firmaets egne maskiner — det er salgsargumentet for kunder som ikke
 -- vil ha data utenfor eget hus.
+-- ENDRET FRA UTKASTET, MED VILJE: sto `default true`. Et skann er LiDAR av
+-- kundens bolig, og at det pakkes ut på en maskin firmaet ikke eier er en
+-- utlevering til tredjepart, ikke en lastbalanseringsdetalj. Slikt skal firmaet
+-- slå PÅ, ikke oppdage at noen glemte å skru av.
 alter table public.scan_jobs
-  add column allow_ampex_pool boolean not null default true;
+  add column allow_ampex_pool boolean not null default false;
+
+alter table public.company_settings
+  add column if not exists ampex_pool boolean not null default false;
+
+comment on column public.company_settings.ampex_pool is
+  'Tillat at skann bakes på Ampex sine maskiner. Av som standard: det er en utlevering av kundens bolig til tredjepart, og skal være et aktivt valg.';
+
+-- Håndhevet i basen, ikke i appen: en klient som setter allow_ampex_pool på et
+-- firma som ikke har skrudd det på, får en feil — ikke en stille utlevering.
+create or replace function public.krev_ampex_pool_samtykke()
+returns trigger
+language plpgsql security definer set search_path to 'public'
+as $$
+begin
+  if NEW.allow_ampex_pool
+     and not coalesce((select s.ampex_pool from company_settings s
+                       where s.company_id = NEW.company_id), false) then
+    raise exception 'Firmaet har ikke slått på Ampex-poolen.' using errcode = '42501';
+  end if;
+  return NEW;
+end $$;
+
+create trigger scan_jobs_ampex_pool_trg
+  before insert or update of allow_ampex_pool on public.scan_jobs
+  for each row execute function public.krev_ampex_pool_samtykke();
+
+revoke execute on function public.krev_ampex_pool_samtykke() from anon, authenticated;
 
 -- Køuttrekket for offentlige noder: eldste ventende jobb med samtykke, uansett firma
 create index scan_jobs_public_queue_idx
@@ -84,6 +118,7 @@ declare
   v_settings public.pool_settings;
   v_min int[];
   v_node_ver int[];
+  v_id uuid;
 begin
   v_node := public.worker_node_for_token(node_token);
   if v_node.id is null then
@@ -110,9 +145,14 @@ begin
   -- Rettferdighet innad i køen: `rang` er hvor mange jobber samme bruker
   -- allerede har foran seg. Én montør som køer tjue skann låser dermed ikke
   -- alle andre bak seg — alles første jobb går før noens andre.
-  select j.* into v_job
+  -- Postgres tillater ikke `for update` sammen med en vindusfunksjon
+  -- (0A000). Rangeringen TRENGER row_number(), så låsen skjer i eget steg:
+  -- finn id-en uten lås, lås akkurat den raden, og bekreft at den fortsatt er
+  -- `queued`. Taper vi et kappløp mot en annen node, blir det en tom runde --
+  -- ikke en dobbel bake.
+  select j.id into v_id
   from (
-    select s.*,
+    select s.id, s.created_at,
            row_number() over (
              partition by s.company_id, coalesce(s.requested_by, s.id)
              order by s.created_at
@@ -134,12 +174,15 @@ begin
       )
   ) j
   order by j.rang, j.created_at
-  for update skip locked
   limit 1;
 
-  if not found then
-    return null;
-  end if;
+  if v_id is null then return null; end if;
+
+  select * into v_job from public.scan_jobs
+  where id = v_id and status = 'queued'
+  for update skip locked;
+
+  if not found then return null; end if;
 
   update public.scan_jobs
      set status = 'claimed',
