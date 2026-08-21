@@ -8,15 +8,18 @@ const KEY = 'ampex_live_voice'
 
 export type VoiceOption = { id: string; label: string; description: string }
 
+// Mannsstemmene står først fordi de treffer norsk prosodi bedre. De kvinnelige
+// lander mellom dialekter og blir slitsomme å høre på over en arbeidsdag —
+// derfor er de flyttet ned, ikke fjernet.
 export const VOICE_OPTIONS: VoiceOption[] = [
-  { id: 'Kore', label: 'Kore', description: 'Kvinne — fast og tydelig' },
-  { id: 'Aoede', label: 'Aoede', description: 'Kvinne — lett og luftig' },
-  { id: 'Leda', label: 'Leda', description: 'Kvinne — ung og energisk' },
-  { id: 'Zephyr', label: 'Zephyr', description: 'Kvinne — lys og blid' },
   { id: 'Charon', label: 'Charon', description: 'Mann — dyp og rolig' },
   { id: 'Orus', label: 'Orus', description: 'Mann — nøytral og saklig' },
   { id: 'Fenrir', label: 'Fenrir', description: 'Mann — kraftig' },
   { id: 'Puck', label: 'Puck', description: 'Mann — kvikk og leken' },
+  { id: 'Kore', label: 'Kore', description: 'Kvinne — fast og tydelig' },
+  { id: 'Aoede', label: 'Aoede', description: 'Kvinne — lett og luftig' },
+  { id: 'Leda', label: 'Leda', description: 'Kvinne — ung og energisk' },
+  { id: 'Zephyr', label: 'Zephyr', description: 'Kvinne — lys og blid' },
 ]
 
 export async function getPreferredVoice(): Promise<string | null> {
