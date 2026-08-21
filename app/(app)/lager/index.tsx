@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView } from 'react-native'
+import { View, ScrollView } from 'react-native'
+import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Plus, Warehouse, Truck, ChevronRight, FileUp, Search } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
-import { SectionHeader, AmbientBackdrop } from '../../../components/ui'
+import { ToolSectionHeader, ToolGlow, useMorkStatuslinje } from '../../../components/tool-surface'
 import { database } from '../../../lib/db'
 import { Location } from '../../../lib/db/models/location'
 import { useLocationCounts } from '../../../lib/stock'
 import { useVareantall } from '../../../lib/products'
-import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, toolType as t } from '../../../lib/theme'
 
 function useLocations() {
   const [locations, setLocations] = useState<Location[]>([])
@@ -29,7 +30,7 @@ function LocationRow({ location, count, first, last }: {
     <Pressable
       onPress={() => router.push(`/(app)/lager/${location.id}`)}
       style={{
-        backgroundColor: colors.bg, marginHorizontal: spacing.screen,
+        backgroundColor: colors.toolRaised, marginHorizontal: spacing.screen,
         paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
         flexDirection: 'row', alignItems: 'center',
         borderTopLeftRadius: first ? radius.lg : 0, borderTopRightRadius: first ? radius.lg : 0,
@@ -38,9 +39,9 @@ function LocationRow({ location, count, first, last }: {
     >
       <View style={{
         width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm,
-        backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
+        backgroundColor: colors.toolRaisedStrong, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
       }}>
-        <Icon size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+        <Icon size={sizes.icon - 2} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={t.bodyMedium} numberOfLines={1}>{location.name}</Text>
@@ -50,13 +51,15 @@ function LocationRow({ location, count, first, last }: {
             : `${count} ${count === 1 ? 'vare' : 'varer'}`}
         </Text>
       </View>
-      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+      <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
     </Pressable>
   )
 }
 
 export default function LagerScreen() {
   const insets = useSafeAreaInsets()
+  // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
+  useMorkStatuslinje()
   const locations = useLocations()
   const counts = useLocationCounts()
   const vareantall = useVareantall()
@@ -67,14 +70,14 @@ export default function LagerScreen() {
     if (items.length === 0) return null
     return (
       <View style={{ marginBottom: spacing.screen }}>
-        <SectionHeader>{title}</SectionHeader>
+        <ToolSectionHeader>{title}</ToolSectionHeader>
         <View style={{ overflow: 'hidden' }}>
           {items.map((l, i) => (
             <View key={l.id}>
               <LocationRow location={l} count={counts[l.id] ?? 0} first={i === 0} last={i === items.length - 1} />
               {i < items.length - 1 && (
-                <View style={{ backgroundColor: colors.bg, marginHorizontal: spacing.screen }}>
-                  <View style={{ height: 0.5, backgroundColor: colors.separator, marginLeft: spacing.lg }} />
+                <View style={{ backgroundColor: colors.toolRaised, marginHorizontal: spacing.screen }}>
+                  <View style={{ height: 0.5, backgroundColor: colors.toolBorder, marginLeft: spacing.lg }} />
                 </View>
               )}
             </View>
@@ -85,7 +88,8 @@ export default function LagerScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <View style={{ flex: 1, backgroundColor: colors.toolBg }}>
+      <ToolGlow />
       <ScrollView
         contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
         showsVerticalScrollIndicator={false}
@@ -103,11 +107,11 @@ export default function LagerScreen() {
             haptic="light" pressScale={0.92}
             onPress={() => router.push('/(app)/lager/prisfil')}
             style={{
-              width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.fill,
+              width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.toolRaisedStrong,
               alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs,
             }}
           >
-            <FileUp size={sizes.icon - 2} color={colors.secondaryLabel} strokeWidth={2.2} />
+            <FileUp size={sizes.icon - 2} color={colors.toolSecondary} strokeWidth={2.2} />
           </Pressable>
           <Pressable
             haptic="medium" pressScale={0.92}
@@ -125,9 +129,9 @@ export default function LagerScreen() {
         {locations.length === 0 ? (
           <View style={{
             marginHorizontal: spacing.screen, borderRadius: radius.hero, overflow: 'hidden',
-            backgroundColor: colors.bg,
+            backgroundColor: colors.toolRaised,
           }}>
-            <AmbientBackdrop height={280} />
+            <ToolGlow height={280} />
             <View style={{ alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl }}>
               <View style={{
                 width: sizes.iconChip + 8, height: sizes.iconChip + 8, borderRadius: radius.pill,
@@ -163,7 +167,7 @@ export default function LagerScreen() {
           onPress={() => router.push('/(app)/lager/varer')}
           style={{
             flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-            backgroundColor: colors.bg, borderRadius: radius.lg,
+            backgroundColor: colors.toolRaised, borderRadius: radius.lg,
             marginHorizontal: spacing.screen, marginBottom: spacing.screen,
             paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
           }}
@@ -182,7 +186,7 @@ export default function LagerScreen() {
                 : `${vareantall} varer · el-nummer, produsent, strekkode`}
             </Text>
           </View>
-          <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+          <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
         </Pressable>
 
         <Group title="Lager" items={lagre} />

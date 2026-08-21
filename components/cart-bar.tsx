@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { Text } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BlurView } from 'expo-blur'
 import { usePathname } from 'expo-router'
@@ -46,7 +47,7 @@ export function CartBar() {
       >
         <View style={[{ borderRadius: radius.xl }, shadows.floating]}>
           <BlurView
-            tint="systemChromeMaterialLight"
+            tint="systemChromeMaterialDark"
             intensity={90}
             style={{
               borderRadius: radius.xl, overflow: 'hidden',

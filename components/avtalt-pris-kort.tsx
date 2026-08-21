@@ -1,4 +1,5 @@
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { Text } from './text'
 import { router } from 'expo-router'
 import { FileText, ChevronRight } from 'lucide-react-native'
 import { Pressable } from './pressable'

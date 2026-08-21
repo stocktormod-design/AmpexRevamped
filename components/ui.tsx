@@ -1,4 +1,5 @@
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { Text } from './text'
 import { BlurView } from 'expo-blur'
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated'
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg'
@@ -34,15 +35,19 @@ export function AmbientBackdrop({ scrollY, height = 460 }: { scrollY?: SharedVal
   )
 }
 
-/** Seksjonsoverskrift: eyebrow-caps med bred tracking — Ampex-rytmen, ikke Settings */
-/** `tone="light"` for skjermer med mørk grunn (ordredetaljen). */
-export function SectionHeader({ children, tone = 'default' }: { children: string; tone?: 'default' | 'light' }) {
+/**
+ * Seksjonsoverskrift: eyebrow-caps med bred tracking — Ampex-rytmen, ikke Settings.
+ *
+ * `tone="papir"` for dokumentskjermene. Standard er brun grunn, som resten av
+ * appen — det var motsatt før grunnflaten ble brun.
+ */
+export function SectionHeader({ children, tone = 'default' }: { children: string; tone?: 'default' | 'papir' }) {
   return (
     <Text style={[t.eyebrow, {
       textTransform: 'uppercase',
       marginHorizontal: spacing.screen + spacing.lg,
       marginBottom: spacing.sm - 1,
-    }, tone === 'light' && { color: 'rgba(251,247,240,0.55)' }]}>
+    }, tone === 'papir' && { color: colors.paperSecondary }]}>
       {children}
     </Text>
   )
@@ -52,7 +57,7 @@ export function SectionHeader({ children, tone = 'default' }: { children: string
 export function GlassCard({ children, onPress }: { children: React.ReactNode; onPress?: () => void }) {
   const inner = (
     <BlurView
-      tint="light"
+      tint="dark"
       intensity={40}
       style={{
         borderRadius: radius.hero,

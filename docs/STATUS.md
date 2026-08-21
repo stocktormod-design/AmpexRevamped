@@ -4,15 +4,20 @@ Sist oppdatert: 2026-08-21. Holdes oppdatert; ikke lag daterte kopier.
 
 ## Overlevering — start her
 
-Branch **`grossist-og-pool`**, pushet. **32 commits** over `7633048`
+Branch **`grossist-og-pool`**, pushet. **34 commits** over `7633048`
 (19.–21. august). Arbeidstreet er rent bortsett fra `modules/ampex-splat/ios/
 MeshBakeV2.swift` og `MeshScanPresenter.swift`, som er Tormods egen WIP fra før
 og skal ikke røres.
 
-**Grønt:** `npm run typecheck` og ti selvtester — `verify:pricefile`,
+**Grønt:** `npm run typecheck` og elleve selvtester — `verify:pricefile`,
 `verify:invoicing`, `verify:forms`, `verify:quoting`, `verify:timesheet`,
-`verify:varesok`, `verify:approvals`, `verify:arkiv`, `verify:id-repair`,
-`verify:form-import`. Skjema **v31**. iOS-bygget: 0 feil, 1 advarsel.
+`verify:kalender`, `verify:varesok`, `verify:approvals`, `verify:arkiv`,
+`verify:id-repair`, `verify:form-import`. Skjema **v31**. iOS-bygget: 0 feil,
+1 advarsel. Hele appen bundler rent (`npx expo export --platform ios`).
+
+**Sist inn: UI-runden 21. august kveld** — brun grunnflate i hele appen, én
+font (Geist), og ordrekalenderen. Se eget avsnitt rett under. Den runden er
+**ikke sett på en skjerm** — det er det første som bør gjøres.
 
 ### Det aller viktigste å ta med seg
 
@@ -44,10 +49,11 @@ konfigurasjon.
 
 ### IKKE verifisert — gjør dette først
 
-1. **Logg inn og se de mørke skjermene.** Hjem, Prosjekter, Meg og ordre ble
-   lagt om til mørk grunn i dag. Jeg fant to tilfeller av usynlig tekst ved å
-   ta skjermbilde, rettet dem, men **fikk ikke sett resultatet** — simulatoren
-   logget seg ut ved reinstallasjon. Kontrast kan ikke typecheckes.
+1. **Logg inn og se HELE appen.** Grunnflaten ble brun overalt 21. august, og
+   ingen av skjermene er sett etterpå. Kontrast kan ikke typecheckes. Jeg lukket
+   alle kontrastfellene jeg kunne finne mekanisk (se «Runden 21. august kveld»),
+   men det som eventuelt står igjen er kremet tekst på en kremet flate — se
+   spesielt etter kort som var hvite før.
 2. **Snakk med assistenten.** Mannsstemmen, den guidede skjemagjennomgangen og
    Jarvis-regelen er alle uprøvd i en ekte økt.
 3. **Kjør skjemaimporten mot en ekte PDF.** Oppryddingen er testet i hjel,
@@ -86,16 +92,14 @@ ren tekst. I dette faget ER dokumentet leveransen. Se eget avsnitt lenger nede.
    strippet.
 3. **Foto på ordre og i skjema.** `photo` finnes som felttype, R2-opplasting
    finnes to steder. Bare fangsten mangler — krever ny avhengighet og dev-build.
-4. **Lager over på verktøyflaten.** Hjem, Prosjekter, Meg og ordre er mørke;
-   Lager står igjen kremet og vil se halvferdig ut. `ToolScreen`/`ToolCard` står
-   klare — mekanisk arbeid, ingen nye avgjørelser. Samme med `cart-bar`, som er
-   lys og svever rett over den brune tab-baren.
-5. **Instruksjoner/notater på ordren.** Både Jobber og SpeedyCraft har det.
+4. **Instruksjoner/notater på ordren.** Både Jobber og SpeedyCraft har det.
    Montøren kommer fram og trenger å vite hva han skal gjøre; vi har
    dokumentasjon å FYLLE UT, men ingenting som forteller ham oppdraget.
 
-Ikke gjør uten at Tormod ber om det: flere faner, kalender, bilmodus. Alle tre
-er foreslått og avvist — de løser at appen betjenes for hånd.
+Ikke gjør uten at Tormod ber om det: flere faner, bilmodus. Begge er foreslått
+og avvist — de løser at appen betjenes for hånd. (Kalenderen sto på samme liste
+til 21. august, da Tormod ba om den selv. Den ble en VISNING av ordrelista, ikke
+en ny fane — det er forskjellen på å be om den og å foreslå den.)
 
 ### Arbeidsmåte som fungerte
 
@@ -104,7 +108,18 @@ er foreslått og avvist — de løser at appen betjenes for hånd.
   ganger.
 - **Bulk-erstatning av farger er en dårlig idé.** Typestilene bærer sin egen
   farge, så et kort som bytter bakgrunn må overstyre HVER tekst — ikke bare de
-  som tilfeldigvis hadde en override fra før.
+  som tilfeldigvis hadde en override fra før. **Løsningen ble en parallell
+  typeskala** (`toolType`/`paperType`): en skjerm bytter flate ved å bytte
+  importlinjen sin, ikke ved å redigere hundre `<Text>`.
+- **Snu tokenene, ikke skjermene.** Da alt skulle bli brunt var det 39 skjermer
+  igjen. Å flippe standardverdiene i `lib/tokens.js` og gi UNNTAKET (papiret)
+  egne navn tok en brøkdel av tiden, og gjør at neste skjerm blir riktig av seg
+  selv i stedet for å måtte huskes på.
+- **Skriv en sjekk for det typecheck ikke ser.** `colors` er
+  `Record<string, string>`, så `colors.finnesIkke` kompilerer fint og blir
+  `undefined` ved kjøring — gjennomsiktig flate, usynlig tekst. Et 20-linjers
+  skript som slår hver `colors.X` i app/, components/ og lib/ opp i tokens
+  fanger hele klassen.
 - **Expo-pakker installeres med `npx expo install`, aldri `npm install`.** Et
   SDK 57-bibliotek i et SDK 56-prosjekt bygget med 0 feil og krasjet ved
   oppstart med «Symbol not found».
@@ -115,6 +130,111 @@ er foreslått og avvist — de løser at appen betjenes for hånd.
 
 `modules/ampex-splat/ios/MeshBakeV2.swift` og `MeshScanPresenter.swift` er din
 WIP fra før. Urørt.
+
+---
+
+## Runden 21. august (kveld): brun grunnflate, én font, ordrekalender
+
+Fire ting Tormod ba om, i denne rekkefølgen. Alt er typechecket, alle elleve
+selvtestene er grønne og hele appen bundler for iOS — men **ingenting er sett
+på en skjerm.** Kontrast er det eneste i denne runden som ikke kan verifiseres
+uten øyne.
+
+### 1. Ordrekalenderen
+
+«Elsker timer-charten for uken — kan man gjøre noe lignende på avtalte jobber?»
+
+Det ble en tredje **visning** av ordrelista (knappen ved siden av kartet), ikke
+en ny fane og ikke en ny skjerm. Filterchipsene gjelder alle tre visningene —
+samme begrunnelse som allerede sto i koden for kartet.
+
+- Samme ukevelger og samme søylehøyde som «Mine timer», men **hver blokk er én
+  avtalt jobb**. En dag med fire jobber ser tung ut på en meters avstand; det er
+  hele poenget med å tegne det.
+- Under søylene: dagens jobber med klokkeslett først, og til slutt **«Ikke satt
+  opp»** — ordrene uten dato. De hører ikke til i noen uke, og er derfor det
+  egentlige arbeidet på skjermen.
+- Regnestykket ligger i `lib/schedule-calc.ts`, uten database, og deler
+  ukevelgeren med `timesheet-calc` så de to aldri kan bli uenige om hvilken uke
+  det er. `npm run verify:kalender` — 14 påstander som dekker det som faktisk
+  kan gå galt: jobb i feil dag, søndag 23:59 som lekker til neste uke, og
+  sommertidsukene i mars og oktober der en floor-divisjon på døgnet bommer.
+- **Jobber har ingen varighet.** Blokkene sier *antall*, ikke *hvor lenge*. En
+  ekte dagsplan med tidslinje (08–16) krever et estimert timetall på ordren.
+
+### 2. Én font: Geist
+
+Instrument Serif på titler + systemfont på brødtekst er borte. Systemfonten var
+dessuten ikke ett valg men to — SF på iOS, Roboto på Android.
+
+**Regelen som følger av dette, og som er lett å bryte uten å merke det:**
+`Text` og `TextInput` importeres fra `components/text.tsx`, aldri fra
+react-native. En egendefinert font kan ikke gjøres fetere av `fontWeight` — hver
+vekt er sin egen fil — så vekt→fil oversettes der, ett sted, for alle 118
+stedene appen overstyrer vekt. Importerer du fra react-native vises teksten
+fint, bare i feil vekt. Det er en feil ingen oppdager og alle ser.
+
+RN 0.85 gjorde `Text` til en vanlig funksjonskomponent, så den kan ikke patches
+sentralt slik man kunne før. Innpakningen ER løsningen, ikke en snarvei.
+
+Kun de fire vektene appen bruker lastes (400/500/600/700, 364 kB). Importer fra
+undermappene — `@expo-google-fonts/geist/400Regular` — pakkeroten drar med seg
+alle 18 vektene inn i bundelen.
+
+### 3. Grunnflaten er brun — overalt
+
+«Alt skal være brunt bortsett fra inne i dokumenter.»
+
+Gjort ved å **snu standardverdiene** i `lib/tokens.js` i stedet for å konvertere
+39 skjermer hver for seg: `canvas`, `bg`, `fill`, `label`, `separator` og resten
+peker nå på de brune verdiene. Papiret fikk egne navn (`paperCanvas`,
+`paperLabel`, …) og gjelder kun der du står INNE i et dokument:
+
+- utfylling av skjema på ordre, og signering
+- skjemamalen: vise, redigere, lage nytt, importere
+- tilbudsdokumentet
+- tegningen (arbeidsflaten var lys fra før)
+
+Lister over dokumenter — skjema-lista, tilbudslista, arkivet — er brune. Det er
+ikke et dokument å bla i en liste.
+
+Papirskjermer bruker `paperType as t`, `colors.paper*` og
+`usePapirStatuslinje()`. Alt annet bruker standardtokenene og blir riktig av seg
+selv.
+
+### 4. Knapper er kremet eller kobber
+
+`cta` er kremet (#F6F1E8) med varm sort tekst; kobber (`brand` + nye
+`brandLabel`) er den andre. Den gamle varmsorte knappen forsvant i det grunnen
+ble brun. Dokumentskjermene bruker kobber — en kremet knapp på et kremet ark er
+ingen knapp.
+
+Samtidig: **«Legg til materiell/dokumentasjon» er ekte knapper nå**, ikke 13 px
+kobbertekst med teksten selv som treffflate. Og skjemavelgeren og
+skanntype-velgeren bruker Ampex-arket (`components/sheet.tsx`) i stedet for
+`ActionSheetIOS`. Det siste var mer enn kosmetikk: systemarket finnes ikke på
+Android, og fallbacken der åpnet bare *det første* skjemaet i lista uten å
+spørre.
+
+### Fellene som ble lukket i flippen
+
+Disse hadde alle blitt usynlig tekst eller usynlige flater. De står her fordi
+samme klasse feil kommer tilbake neste gang noe bytter flate:
+
+| Felle | Rettet til |
+|-------|-----------|
+| `*Soft`-statusfargene var nesten hvite (#FFF4E5) | fargen som alfa — virker på begge flater |
+| `slate` #3F4B5C — riktig på kremet, usynlig på brunt | løftet til en lys kjølig tone |
+| Statuslinja sto på mørk tekst | lys er standard; papiret ber om mørk |
+| Ordredetaljen brukte `cta` som sin egen mørke grunn | `canvas` |
+| Varesøket og Ampex-merket hadde papir som standard | brunt som standard, papir som prop |
+| Handlekurv-arket og regnestykket på tilbudslinja var kremede paneler | panel på grunnen |
+| Glass, ambient-flekker og BlurView-toner | mørke på brunt, lyse på papir |
+
+**Sjekken som fanger resten:** `colors` er `Record<string, string>`, så et
+fargenavn som ikke finnes kompilerer fint og blir `undefined` ved kjøring. Et
+lite skript som slår hver `colors.X`-referanse opp i tokens fanger hele klassen
+— verdt å skrive på nytt neste gang paletten røres.
 
 ---
 
@@ -414,33 +534,37 @@ Registrene er skjult fra tab-baren (`href: null`) — de settes opp sjelden.
 4. **Tusenskilleren er U+00A0**, skrevet som escape. Et vanlig mellomrom lar
    «1 234 567» brekke over to linjer i en fakturatabell.
 5. **`Alert.prompt` finnes ikke på Android** og gjør ingenting — stille.
-   `Alert.alert` viser maks tre knapper der. Bruk `components/sheet.tsx`.
-6. **`pruneHidden` må kalles hver gang et skjemasvar endres.** Fjernes den,
+   `Alert.alert` viser maks tre knapper der, og `ActionSheetIOS` finnes ikke i
+   det hele tatt. Bruk `components/sheet.tsx`.
+6. **`Text` og `TextInput` importeres fra `components/text.tsx`**, aldri fra
+   react-native. Vekt→fontfil oversettes der; importerer du fra react-native
+   vises teksten fint, bare i feil vekt — en feil ingen oppdager og alle ser.
+7. **`pruneHidden` må kalles hver gang et skjemasvar endres.** Fjernes den,
    blir svaret på et punkt som ble skjult liggende igjen i dokumentet uten å
    vises noe sted i appen — «ingen avvik» levert sammen med en avviksbeskrivelse.
    Kalles i dag tre steder: skjema-skjermen, gjennomgangsarket og `applyVoiceFill`.
-7. **En skjemarevisjon skrives ALDRI om.** v1-formatet (flat `items`) må derfor
+8. **En skjemarevisjon skrives ALDRI om.** v1-formatet (flat `items`) må derfor
    kunne leses for alltid — `toSections()` er den ene leseveien, og selvtesten
    passer på den.
-8. **Tilbudslinjens pris er et snapshot i kroner**, ikke en peker til varen.
+9. **Tilbudslinjens pris er et snapshot i kroner**, ikke en peker til varen.
    Gjøres den om til et oppslag, endrer et sendt og bindende tilbud beløp fordi
    grossisten sendte ny prisfil.
-9. **Rabatt rundes én gang, etter rabatten** (`linjeNettoOre`). Rundes
+10. **Rabatt rundes én gang, etter rabatten** (`linjeNettoOre`). Rundes
    linjebeløpet først og rabatten etterpå, stemmer ikke summen med det kunden
    regner ut av tallene på arket.
-10. **`products.cost_price` er den BILLIGSTE kjente prisen, ikke den sist
+11. **`products.cost_price` er den BILLIGSTE kjente prisen, ikke den sist
     importerte.** Settes den til siste import igjen, blir dekningsbidraget feil
     på hver linje der en annen grossist er billigere. Alle prisene ligger i
     `product_prices`; `cost_price` er kun det raske oppslaget.
-11. **`search_text` må skrives hver gang en vare lagres.** Uten den faller varen
+12. **`search_text` må skrives hver gang en vare lagres.** Uten den faller varen
     ut av SQLite-forfiltreringen og blir usynlig i søket. `useVaresok` bygger den
     på farten som reserve, men det virker bare for rader som allerede er hentet.
-12. **Listepris og nettopris er ikke samme størrelse.** `lib/pricing.ts` lar
+13. **Listepris og nettopris er ikke samme størrelse.** `lib/pricing.ts` lar
     ALDRI en listepris (brutto uten rabatt, altså en `V4`) slå en ekte nettopris,
     og påstår aldri en «besparelse» mellom to listepriser. Fjernes den regelen,
     anbefaler systemet en grossist på et tall ingen har avtalt — og
     dekningsbidraget blir for lavt, så en lønnsom jobb ser ulønnsom ut.
-13. **Prisfil-import fyller kun varekortfelt fila FAKTISK har.** En grossist uten
+14. **Prisfil-import fyller kun varekortfelt fila FAKTISK har.** En grossist uten
     bilde skal ikke tømme et bilde en annen grossist ga oss — derfor `if (kort.x)`
     og ikke rett tilordning.
 

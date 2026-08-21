@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, ScrollView } from 'react-native'
+import { View, ScrollView } from 'react-native'
+import { Text } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { X } from 'lucide-react-native'
 import { Pressable } from './pressable'
@@ -9,7 +10,7 @@ import type { FormTemplate, FormValues } from '../lib/forms/types'
 import { visibleSections, pruneHidden } from '../lib/forms/visibility'
 import type { GapCheckExtraction } from '../lib/forms/gap-check'
 import type { AiFieldOriginMap } from '../lib/db/models/order-document'
-import { colors, spacing, radius, sizes, shadows, type as t } from '../lib/theme'
+import { colors, spacing, radius, sizes, shadows, paperType as t } from '../lib/theme'
 
 function AiSuggestedBadge() {
   return (
@@ -69,20 +70,20 @@ export function GapCheckReviewSheet({ template, baseValues, extraction, onConfir
           {
             position: 'absolute', left: spacing.sm, right: spacing.sm,
             top: insets.top + spacing.xxl, bottom: insets.bottom + spacing.sm,
-            backgroundColor: colors.bg, borderRadius: radius.hero, overflow: 'hidden',
+            backgroundColor: colors.paperBg, borderRadius: radius.hero, overflow: 'hidden',
           },
           shadows.floating,
         ]}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screen, paddingTop: spacing.lg, paddingBottom: spacing.md }}>
           <Text style={t.headline}>Gjennomgang</Text>
-          <Pressable onPress={onDiscard} pressScale={0.92} style={{ width: 32, height: 32, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-            <X size={18} color={colors.label} strokeWidth={2.2} />
+          <Pressable onPress={onDiscard} pressScale={0.92} style={{ width: 32, height: 32, borderRadius: radius.pill, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
+            <X size={18} color={colors.paperLabel} strokeWidth={2.2} />
           </Pressable>
         </View>
 
         {!!extraction.transcript && (
-          <View style={{ backgroundColor: colors.fillPressed, borderRadius: radius.md, marginHorizontal: spacing.screen, marginBottom: spacing.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
+          <View style={{ backgroundColor: colors.paperFillPressed, borderRadius: radius.md, marginHorizontal: spacing.screen, marginBottom: spacing.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
             <Text style={t.footnote}>{`"${extraction.transcript}"`}</Text>
           </View>
         )}
@@ -91,9 +92,9 @@ export function GapCheckReviewSheet({ template, baseValues, extraction, onConfir
           {visibleSections(template, values).map(section => (
             <View key={section.title} style={{ marginBottom: spacing.screen }}>
               <SectionHeader>{section.title}</SectionHeader>
-              <View style={{ backgroundColor: colors.fill, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+              <View style={{ backgroundColor: colors.paperFill, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
                 {section.fields.map((f, i) => (
-                  <View key={f.key} style={i < section.fields.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator }}>
+                  <View key={f.key} style={i < section.fields.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.paperSeparator }}>
                     {origin[f.key]?.origin === 'ai' && <AiSuggestedBadge />}
                     <FormFieldView field={f} value={values[f.key]} onChange={v => onFieldEdit(f.key, v)} readOnly={false} />
                     {origin[f.key]?.origin === 'ai' && !!origin[f.key].reason && (
@@ -123,16 +124,16 @@ export function GapCheckReviewSheet({ template, baseValues, extraction, onConfir
           {extraction.stillMissing.length > 0 && (
             <Pressable
               haptic="medium" onPress={() => onRecordMore(values, origin)}
-              style={{ height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}
+              style={{ height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={[t.headline, { color: colors.label }]}>Ta opp mer</Text>
+              <Text style={[t.headline, { color: colors.paperLabel }]}>Ta opp mer</Text>
             </Pressable>
           )}
           <Pressable
             haptic="medium" onPress={() => onConfirm(values, origin)}
-            style={{ height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.cta, alignItems: 'center', justifyContent: 'center' }}
+            style={{ height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}
           >
-            <Text style={[t.headline, { color: colors.ctaLabel }]}>Bruk disse svarene</Text>
+            <Text style={[t.headline, { color: colors.brandLabel }]}>Bruk disse svarene</Text>
           </Pressable>
         </View>
       </View>

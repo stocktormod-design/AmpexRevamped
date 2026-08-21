@@ -1,11 +1,12 @@
 import { useMemo, useRef, useState } from 'react'
-import { View, Text, LayoutChangeEvent } from 'react-native'
+import { View, LayoutChangeEvent } from 'react-native'
+import { Text } from './text'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import { runOnJS } from 'react-native-reanimated'
 import { Canvas, Path } from '@shopify/react-native-skia'
 import { Pressable } from './pressable'
 import type { SignaturStrok } from '../lib/db/models/order-signature'
-import { colors, spacing, radius, type as t } from '../lib/theme'
+import { colors, spacing, radius, paperType as t } from '../lib/theme'
 
 /** Punkter (0–1) → SVG-sti i piksler. Delt av tegneflaten og gjengivelsen. */
 export function signaturSti(points: [number, number][], w: number, h: number): string {
@@ -79,29 +80,29 @@ export function SignaturePad({ strokes, onChange, height = 200 }: {
         <View
           onLayout={onLayout}
           style={{
-            height, backgroundColor: colors.bg, borderRadius: radius.lg,
-            borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+            height, backgroundColor: colors.paperBg, borderRadius: radius.lg,
+            borderWidth: 1, borderColor: colors.paperBorder, overflow: 'hidden',
           }}
         >
           <Canvas style={{ flex: 1 }}>
             {strokes.map((s, i) => (
               <Path key={i} path={signaturSti(s.points, size.w, size.h)}
-                style="stroke" color={colors.label} strokeWidth={2.4} strokeCap="round" strokeJoin="round" />
+                style="stroke" color={colors.paperLabel} strokeWidth={2.4} strokeCap="round" strokeJoin="round" />
             ))}
             {current.length > 0 && (
               <Path path={signaturSti(current, size.w, size.h)}
-                style="stroke" color={colors.label} strokeWidth={2.4} strokeCap="round" strokeJoin="round" />
+                style="stroke" color={colors.paperLabel} strokeWidth={2.4} strokeCap="round" strokeJoin="round" />
             )}
           </Canvas>
           {tomt && (
             <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={[t.footnote, { color: colors.tertiaryLabel }]}>Signer her</Text>
+              <Text style={[t.footnote, { color: colors.paperTertiary }]}>Signer her</Text>
             </View>
           )}
           {/* Signaturlinje, som på papir — den forteller hvor man skal skrive. */}
           <View pointerEvents="none" style={{
             position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: spacing.lg + 4,
-            height: 0.5, backgroundColor: colors.separator,
+            height: 0.5, backgroundColor: colors.paperSeparator,
           }} />
         </View>
       </GestureDetector>
@@ -109,10 +110,10 @@ export function SignaturePad({ strokes, onChange, height = 200 }: {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm }}>
         <Pressable haptic="light" hitSlop={8} disabled={strokes.length === 0}
           onPress={() => onChange(strokes.slice(0, -1))}>
-          <Text style={[t.subhead, { color: strokes.length === 0 ? colors.tertiaryLabel : colors.secondaryLabel }]}>Angre strøk</Text>
+          <Text style={[t.subhead, { color: strokes.length === 0 ? colors.paperTertiary : colors.paperSecondary }]}>Angre strøk</Text>
         </Pressable>
         <Pressable haptic="light" hitSlop={8} disabled={tomt} onPress={() => onChange([])}>
-          <Text style={[t.subhead, { color: tomt ? colors.tertiaryLabel : colors.secondaryLabel }]}>Tøm</Text>
+          <Text style={[t.subhead, { color: tomt ? colors.paperTertiary : colors.paperSecondary }]}>Tøm</Text>
         </Pressable>
       </View>
     </View>
@@ -132,7 +133,7 @@ export function SignaturVisning({ strokes, aspect, width }: {
     <Canvas style={{ width, height: h }}>
       {strokes.map((s, i) => (
         <Path key={i} path={signaturSti(s.points, width, h)}
-          style="stroke" color={colors.label} strokeWidth={1.8} strokeCap="round" strokeJoin="round" />
+          style="stroke" color={colors.paperLabel} strokeWidth={1.8} strokeCap="round" strokeJoin="round" />
       ))}
     </Canvas>
   )

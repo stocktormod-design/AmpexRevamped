@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
-import { View, Text, FlatList, ScrollView } from 'react-native'
+import { View, FlatList, ScrollView } from 'react-native'
+import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Plus, ChevronRight, FileText } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { Chip, GlassCard, AmbientBackdrop } from '../../../components/ui'
+import { Chip, GlassCard } from '../../../components/ui'
+import { ToolGlow } from '../../../components/tool-surface'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { Quote } from '../../../lib/db/models/quote'
 import { useTilbud } from '../../../lib/quotes'
@@ -87,7 +89,7 @@ export default function TilbudScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <AmbientBackdrop height={340} />
+      <ToolGlow height={340} />
       <FlatList
         data={tilbud}
         keyExtractor={q => q.id}

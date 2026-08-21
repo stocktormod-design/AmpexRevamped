@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { View, Text, TextInput, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { router } from 'expo-router'
@@ -12,7 +13,8 @@ import { validateFirmSections } from '../../../lib/forms/firm-schema'
 import { IMPORT_KATEGORIER, oppsummer, type Importresultat } from '../../../lib/forms/import'
 import { lesSkjemafil, velgSkjemafil, type Valgtfil } from '../../../lib/forms/import-fil'
 import type { FormSection } from '../../../lib/db/models/form-template'
-import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, paperType as t } from '../../../lib/theme'
+import { usePapirStatuslinje } from '../../../components/tool-surface'
 
 /**
  * Importer firmaets eget skjema — PDF eller bilde → redigerbar mal.
@@ -32,6 +34,8 @@ import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 type Steg = 'velg' | 'leser' | 'gjennomgang'
 
 export default function ImporterSkjema() {
+  // Mørk klokke og batteri: dette er papir, ikke brun grunn.
+  usePapirStatuslinje()
   const insets = useSafeAreaInsets()
   const [steg, setSteg] = useState<Steg>('velg')
   const [fil, setFil] = useState<Valgtfil | null>(null)
@@ -83,15 +87,15 @@ export default function ImporterSkjema() {
   const flagg = res?.usikre ?? {}
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.canvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.paperCanvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing.lg, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm }}>
         <Pressable hitSlop={8} onPress={() => router.back()}>
-          <Text style={[t.body, { color: colors.secondaryLabel }]}>Avbryt</Text>
+          <Text style={[t.body, { color: colors.paperSecondary }]}>Avbryt</Text>
         </Pressable>
         <Text style={t.headline}>{steg === 'gjennomgang' ? 'Gjennomgang' : 'Importer skjema'}</Text>
         {steg === 'gjennomgang' ? (
           <Pressable hitSlop={8} onPress={lagre} disabled={!kanLagre}>
-            <Text style={[t.body, { color: kanLagre ? colors.brand : colors.tertiaryLabel, fontWeight: '600' }]}>Lagre</Text>
+            <Text style={[t.body, { color: kanLagre ? colors.brand : colors.paperTertiary, fontWeight: '600' }]}>Lagre</Text>
           </Pressable>
         ) : (
           <View style={{ width: 48 }} />
@@ -123,13 +127,13 @@ export default function ImporterSkjema() {
               haptic="medium" onPress={velgOgLes}
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-                height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.cta, marginTop: spacing.xl,
+                height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.brand, marginTop: spacing.xl,
               }}>
-              <FileText size={sizes.icon} color={colors.ctaLabel} strokeWidth={2.2} />
-              <Text style={[t.headline, { color: colors.ctaLabel }]}>Velg fil</Text>
+              <FileText size={sizes.icon} color={colors.brandLabel} strokeWidth={2.2} />
+              <Text style={[t.headline, { color: colors.brandLabel }]}>Velg fil</Text>
             </Pressable>
 
-            <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: spacing.md, textAlign: 'center', lineHeight: 17 }]}>
+            <Text style={[t.caption, { color: colors.paperSecondary, marginTop: spacing.md, textAlign: 'center', lineHeight: 17 }]}>
               Du går gjennom og retter alt før det lagres.{'\n'}
               Ingenting publiseres automatisk.
             </Text>
@@ -154,7 +158,7 @@ export default function ImporterSkjema() {
           contentContainerStyle={{ padding: spacing.screen, paddingBottom: insets.bottom + spacing.xxl }}
           showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-          <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.lg }}>
+          <View style={{ backgroundColor: colors.paperBg, borderRadius: radius.lg, padding: spacing.lg }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
               <Sparkles size={16} color={colors.brand} strokeWidth={2.2} />
               <Text style={[t.subhead, { fontWeight: '700', flex: 1 }]} numberOfLines={1}>{fil?.navn}</Text>
@@ -164,7 +168,7 @@ export default function ImporterSkjema() {
               {sum!.usikre > 0 ? ` · ${sum!.usikre} markert usikre` : ''}
             </Text>
             {!!res.merknad && (
-              <Text style={[t.footnote, { marginTop: spacing.sm, lineHeight: 19, color: colors.secondaryLabel }]}>{res.merknad}</Text>
+              <Text style={[t.footnote, { marginTop: spacing.sm, lineHeight: 19, color: colors.paperSecondary }]}>{res.merknad}</Text>
             )}
           </View>
 
@@ -179,20 +183,20 @@ export default function ImporterSkjema() {
           )}
 
           {res.rettelser.length > 0 && (
-            <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginTop: spacing.md, overflow: 'hidden' }}>
+            <View style={{ backgroundColor: colors.paperBg, borderRadius: radius.lg, marginTop: spacing.md, overflow: 'hidden' }}>
               <Pressable haptic="light" onPress={() => setVisRettelser(v => !v)}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md }}>
-                <Wand2 size={15} color={colors.iconMuted} strokeWidth={2.2} />
+                <Wand2 size={15} color={colors.paperIcon} strokeWidth={2.2} />
                 <Text style={[t.footnote, { flex: 1, fontWeight: '600' }]}>
                   {res.rettelser.length === 1 ? 'Én ting ble rettet automatisk' : `${res.rettelser.length} ting ble rettet automatisk`}
                 </Text>
-                {visRettelser ? <ChevronDown size={16} color={colors.tertiaryLabel} strokeWidth={2} />
-                              : <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={2} />}
+                {visRettelser ? <ChevronDown size={16} color={colors.paperTertiary} strokeWidth={2} />
+                              : <ChevronRight size={16} color={colors.paperTertiary} strokeWidth={2} />}
               </Pressable>
               {visRettelser && (
                 <View style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.md }}>
                   {res.rettelser.map((r, i) => (
-                    <Text key={i} style={[t.caption, { color: colors.secondaryLabel, lineHeight: 18, marginTop: 3 }]}>{`· ${r}`}</Text>
+                    <Text key={i} style={[t.caption, { color: colors.paperSecondary, lineHeight: 18, marginTop: 3 }]}>{`· ${r}`}</Text>
                   ))}
                 </View>
               )}
@@ -202,8 +206,8 @@ export default function ImporterSkjema() {
           <Text style={[t.caption, { textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>Tittel</Text>
           <TextInput
             value={tittel} onChangeText={setTittel}
-            placeholder="Tittel på skjemaet" placeholderTextColor={colors.tertiaryLabel}
-            style={[t.title3, { backgroundColor: colors.bg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
+            placeholder="Tittel på skjemaet" placeholderTextColor={colors.paperTertiary}
+            style={[t.title3, { backgroundColor: colors.paperBg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
           />
 
           <Text style={[t.caption, { textTransform: 'uppercase', marginTop: spacing.lg, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>Kategori</Text>
@@ -212,8 +216,8 @@ export default function ImporterSkjema() {
               const aktiv = kategori === c
               return (
                 <Pressable key={c} haptic="light" onPress={() => setKategori(c)}
-                  style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: aktiv ? colors.label : colors.bg }}>
-                  <Text style={[t.subhead, { fontWeight: '600', color: aktiv ? colors.bg : colors.secondaryLabel }]}>{c}</Text>
+                  style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: aktiv ? colors.paperLabel : colors.paperBg }}>
+                  <Text style={[t.subhead, { fontWeight: '600', color: aktiv ? colors.paperBg : colors.paperSecondary }]}>{c}</Text>
                 </Pressable>
               )
             })}

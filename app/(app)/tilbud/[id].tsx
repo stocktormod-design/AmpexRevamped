@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, ScrollView } from 'react-native'
+import { View, ScrollView } from 'react-native'
+import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import * as Haptics from 'expo-haptics'
@@ -19,12 +20,13 @@ import {
 import { kanRedigeres, tilbudStatusLabel, type TilbudStatus } from '../../../lib/quoting'
 import { formatKr } from '../../../lib/invoicing'
 import { formatDate, formatFrist } from '../../../lib/format'
-import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, shadows, paperType as t } from '../../../lib/theme'
+import { usePapirStatuslinje } from '../../../components/tool-surface'
 
 const ART_IKON = { materiell: Package, arbeid: Clock, tekst: AlignLeft }
 
 const statusFarge: Record<TilbudStatus, string> = {
-  utkast: colors.tertiaryLabel,
+  utkast: colors.paperTertiary,
   sendt: colors.brand,
   akseptert: colors.success,
   avslatt: colors.danger,
@@ -34,6 +36,8 @@ const statusFarge: Record<TilbudStatus, string> = {
 type Ark = null | 'svar' | 'mate' | 'hvem' | 'notat'
 
 export default function TilbudDetail() {
+  // Mørk klokke og batteri: dette er papir, ikke brun grunn.
+  usePapirStatuslinje()
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const tilbud = useEttTilbud(id)
@@ -48,7 +52,7 @@ export default function TilbudDetail() {
   const [hvem, setHvem] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (!tilbud) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
+  if (!tilbud) return <View style={{ flex: 1, backgroundColor: colors.paperCanvas }} />
 
   const status = tilbud.visStatus
   const redigerbar = kanRedigeres(tilbud.status)
@@ -75,7 +79,7 @@ export default function TilbudDetail() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <View style={{ flex: 1, backgroundColor: colors.paperCanvas }}>
       <AmbientBackdrop height={400} />
       <ScrollView
         contentContainerStyle={{
@@ -88,23 +92,23 @@ export default function TilbudDetail() {
         <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Pressable onPress={() => router.back()} pressScale={0.92}
-              style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+              style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.paperBg, alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronLeft size={sizes.icon} color={colors.paperLabel} strokeWidth={2.2} />
             </Pressable>
             <Pressable haptic="light" pressScale={0.94}
               onPress={async () => {
                 const nyId = await dupliserTilbud(tilbud)
                 router.replace({ pathname: '/(app)/tilbud/[id]', params: { id: nyId } })
               }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 34, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.fill }}>
-              <Copy size={15} color={colors.label} strokeWidth={2.1} />
+              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 34, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.paperFill }}>
+              <Copy size={15} color={colors.paperLabel} strokeWidth={2.1} />
               <Text style={[t.subhead, { fontWeight: '600' }]}>Kopier</Text>
             </Pressable>
           </View>
 
           <Text style={[t.display, { marginTop: spacing.lg }]}>{tilbud.title}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs }}>
-            <View style={{ paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.sm, backgroundColor: colors.fill }}>
+            <View style={{ paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.sm, backgroundColor: colors.paperFill }}>
               <Text style={[t.caption, { color: statusFarge[status], fontWeight: '700' }]}>
                 {tilbudStatusLabel[status].toUpperCase()}
               </Text>
@@ -117,7 +121,7 @@ export default function TilbudDetail() {
           {!!tilbud.validUntil && (status === 'sendt' || status === 'utlopt' || status === 'utkast') && (
             <Text style={[t.footnote, {
               marginTop: 2,
-              color: status === 'utlopt' ? colors.warning : colors.secondaryLabel,
+              color: status === 'utlopt' ? colors.warning : colors.paperSecondary,
             }]}>
               {`Gyldig til ${formatDate(tilbud.validUntil)} — ${formatFrist(tilbud.validUntil)}`}
             </Text>
@@ -154,8 +158,8 @@ export default function TilbudDetail() {
         )}
 
         {/* Linjer */}
-        <SectionHeader>Linjer</SectionHeader>
-        <View style={[{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }, shadows.card]}>
+        <SectionHeader tone="papir">Linjer</SectionHeader>
+        <View style={[{ backgroundColor: colors.paperBg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }, shadows.card]}>
           {sum.linjer.length === 0 && (
             <Text style={[t.footnote, { padding: spacing.lg, textAlign: 'center' }]}>
               Ingen linjer ennå. Legg til materiell, arbeid eller en tekst.
@@ -165,21 +169,21 @@ export default function TilbudDetail() {
             const Ikon = ART_IKON[l.art]
             const rad = linjeById.get(l.id)
             return (
-              <View key={l.id} style={i < sum.linjer.length - 1 ? { borderBottomWidth: 0.5, borderBottomColor: colors.separator } : undefined}>
+              <View key={l.id} style={i < sum.linjer.length - 1 ? { borderBottomWidth: 0.5, borderBottomColor: colors.paperSeparator } : undefined}>
                 <Pressable
                   disabled={!redigerbar || !rad}
                   onPress={() => rad && router.push({ pathname: '/(app)/tilbud/linje', params: { quoteId: tilbud.id, lineId: rad.id } })}
                   style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}
                 >
                   <View style={{ width: 26, alignItems: 'center', marginTop: 2 }}>
-                    <Ikon size={15} color={colors.iconMuted} strokeWidth={2} />
+                    <Ikon size={15} color={colors.paperIcon} strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1, marginHorizontal: spacing.sm }}>
-                    <Text style={l.art === 'tekst' ? [t.subhead, { color: colors.secondaryLabel }] : t.body}>
+                    <Text style={l.art === 'tekst' ? [t.subhead, { color: colors.paperSecondary }] : t.body}>
                       {l.beskrivelse || '—'}
                     </Text>
                     {l.art !== 'tekst' && (
-                      <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 2 }]}>
+                      <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 2 }]}>
                         {`${String(l.antall).replace('.', ',')} ${l.enhet} × ${formatKr(l.enhetsprisOre)}`}
                         {l.rabattProsent > 0 ? ` · −${String(l.rabattProsent).replace('.', ',')} %` : ''}
                       </Text>
@@ -192,10 +196,10 @@ export default function TilbudDetail() {
                 {redigerbar && sum.linjer.length > 1 && rad && (
                   <View style={{ flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm }}>
                     <Pressable hitSlop={8} haptic="light" disabled={i === 0} onPress={() => flytt(rad, -1)}>
-                      <ChevronUp size={16} color={i === 0 ? colors.separator : colors.tertiaryLabel} strokeWidth={2.2} />
+                      <ChevronUp size={16} color={i === 0 ? colors.paperSeparator : colors.paperTertiary} strokeWidth={2.2} />
                     </Pressable>
                     <Pressable hitSlop={8} haptic="light" disabled={i === sum.linjer.length - 1} onPress={() => flytt(rad, 1)}>
-                      <ChevronDown size={16} color={i === sum.linjer.length - 1 ? colors.separator : colors.tertiaryLabel} strokeWidth={2.2} />
+                      <ChevronDown size={16} color={i === sum.linjer.length - 1 ? colors.paperSeparator : colors.paperTertiary} strokeWidth={2.2} />
                     </Pressable>
                   </View>
                 )}
@@ -207,7 +211,7 @@ export default function TilbudDetail() {
               onPress={() => router.push({ pathname: '/(app)/tilbud/linje', params: { quoteId: tilbud.id } })}
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-                paddingVertical: spacing.md, borderTopWidth: sum.linjer.length > 0 ? 0.5 : 0, borderTopColor: colors.separator,
+                paddingVertical: spacing.md, borderTopWidth: sum.linjer.length > 0 ? 0.5 : 0, borderTopColor: colors.paperSeparator,
               }}>
               <Plus size={17} color={colors.brand} strokeWidth={2.2} />
               <Text style={[t.subhead, { color: colors.brand, fontWeight: '600' }]}>Legg til linje</Text>
@@ -216,24 +220,24 @@ export default function TilbudDetail() {
         </View>
 
         {/* Sum */}
-        <View style={{ marginTop: spacing.lg, marginHorizontal: spacing.screen, backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.lg }}>
+        <View style={{ marginTop: spacing.lg, marginHorizontal: spacing.screen, backgroundColor: colors.paperBg, borderRadius: radius.lg, padding: spacing.lg }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <Text style={t.subhead}>Sum eks. mva</Text>
             <Text style={t.bodyMedium}>{formatKr(sum.nettoOre)}</Text>
           </View>
           {sum.rabattOre > 0 && (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xs }}>
-              <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Herav rabatt</Text>
-              <Text style={[t.footnote, { color: colors.secondaryLabel }]}>{`− ${formatKr(sum.rabattOre)}`}</Text>
+              <Text style={[t.footnote, { color: colors.paperSecondary }]}>Herav rabatt</Text>
+              <Text style={[t.footnote, { color: colors.paperSecondary }]}>{`− ${formatKr(sum.rabattOre)}`}</Text>
             </View>
           )}
           {sum.mvaFordeling.map(g => (
             <View key={g.mva} style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xs }}>
-              <Text style={[t.footnote, { color: colors.secondaryLabel }]}>{`Mva av ${formatKr(g.nettoOre)}`}</Text>
-              <Text style={[t.footnote, { color: colors.secondaryLabel }]}>{formatKr(g.mvaOre)}</Text>
+              <Text style={[t.footnote, { color: colors.paperSecondary }]}>{`Mva av ${formatKr(g.nettoOre)}`}</Text>
+              <Text style={[t.footnote, { color: colors.paperSecondary }]}>{formatKr(g.mvaOre)}</Text>
             </View>
           ))}
-          <View style={{ height: 0.5, backgroundColor: colors.separator, marginVertical: spacing.md }} />
+          <View style={{ height: 0.5, backgroundColor: colors.paperSeparator, marginVertical: spacing.md }} />
           {/* Dette er tallet hele skjermen finnes for. Det skal ikke stå i
               samme vekt som linjene over det. */}
           <View style={{ marginTop: spacing.xs }}>
@@ -253,11 +257,11 @@ export default function TilbudDetail() {
           }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Text style={[t.caption, { textTransform: 'uppercase', letterSpacing: 0.6 }]}>Dekningsbidrag</Text>
-              <Text style={[t.title2, { color: sum.dbOre < 0 ? colors.danger : colors.label, fontVariant: ['tabular-nums'] }]}>
+              <Text style={[t.title2, { color: sum.dbOre < 0 ? colors.danger : colors.paperLabel, fontVariant: ['tabular-nums'] }]}>
                 {`${formatKr(sum.dbOre)}${sum.dbProsent !== null ? `  ·  ${String(sum.dbProsent).replace('.', ',')} %` : ''}`}
               </Text>
             </View>
-            <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: spacing.xs }]}>
+            <Text style={[t.caption, { color: colors.paperTertiary, marginTop: spacing.xs }]}>
               Kost {formatKr(sum.kostOre)}. Vises aldri for kunden.
             </Text>
           </View>
@@ -273,10 +277,10 @@ export default function TilbudDetail() {
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
                 height: sizes.ctaHeight, borderRadius: radius.xl,
-                backgroundColor: sum.linjer.length > 0 && tilbud.customerId ? colors.cta : colors.fill,
+                backgroundColor: sum.linjer.length > 0 && tilbud.customerId ? colors.brand : colors.paperFill,
               }}>
-              <Send size={17} color={sum.linjer.length > 0 && tilbud.customerId ? colors.ctaLabel : colors.tertiaryLabel} strokeWidth={2.2} />
-              <Text style={[t.headline, { color: sum.linjer.length > 0 && tilbud.customerId ? colors.ctaLabel : colors.tertiaryLabel }]}>
+              <Send size={17} color={sum.linjer.length > 0 && tilbud.customerId ? colors.brandLabel : colors.paperTertiary} strokeWidth={2.2} />
+              <Text style={[t.headline, { color: sum.linjer.length > 0 && tilbud.customerId ? colors.brandLabel : colors.paperTertiary }]}>
                 Marker som sendt
               </Text>
             </Pressable>
@@ -290,18 +294,18 @@ export default function TilbudDetail() {
               <Pressable haptic="medium"
                 onPress={() => { setAkseptert(true); setArk('mate') }}
                 style={{
-                  height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.cta,
+                  height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.brand,
                   alignItems: 'center', justifyContent: 'center',
                 }}>
-                <Text style={[t.headline, { color: colors.ctaLabel }]}>Kunden sa ja — opprett ordre</Text>
+                <Text style={[t.headline, { color: colors.brandLabel }]}>Kunden sa ja — opprett ordre</Text>
               </Pressable>
               <Pressable haptic="light"
                 onPress={() => { setAkseptert(false); setArk('mate') }}
                 style={{ alignItems: 'center', paddingVertical: spacing.md }}>
-                <Text style={[t.body, { color: colors.secondaryLabel }]}>Kunden sa nei</Text>
+                <Text style={[t.body, { color: colors.paperSecondary }]}>Kunden sa nei</Text>
               </Pressable>
               <Pressable haptic="light" onPress={() => angreSendt(tilbud)} style={{ alignItems: 'center', paddingVertical: spacing.xs }}>
-                <Text style={[t.footnote, { color: colors.tertiaryLabel }]}>Angre «sendt» og rediger videre</Text>
+                <Text style={[t.footnote, { color: colors.paperTertiary }]}>Angre «sendt» og rediger videre</Text>
               </Pressable>
             </>
           )}

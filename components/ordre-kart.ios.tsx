@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { Text } from './text'
 import MapView, { Marker, type Region } from 'react-native-maps'
 import { Pressable } from './pressable'
 import { geocodeAddress } from '../lib/geocode'

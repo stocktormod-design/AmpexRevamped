@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView, TextInput, ActivityIndicator } from 'react-native'
+import { View, ScrollView, ActivityIndicator } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { ChevronLeft, Upload, AlertTriangle, CheckCircle2 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { ListCard, SectionHeader, Chip } from '../../../components/ui'
+import { ToolCard, ToolSectionHeader, ToolChip, ToolGlow, useMorkStatuslinje } from '../../../components/tool-surface'
 import { base64TilBytes, dekodAnsi, parseEfoNelfo, type ParseResultat } from '../../../lib/pricefile/efo-nelfo'
 import { importerPrisfil, prisferskhet, type ImportResultat } from '../../../lib/pricefile/import'
 import { lastInnDemokatalog, fjernDemodata, useDemoAntall } from '../../../lib/pricefile/demo'
-import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, toolType as t } from '../../../lib/theme'
 
 const GROSSISTER = ['Onninen', 'Solar', 'Ahlsell', 'Elektroskandia', 'Otra']
 
@@ -28,6 +29,8 @@ function Rad({ etikett, verdi, sterk }: { etikett: string; verdi: string; sterk?
 
 export default function PrisfilScreen() {
   const insets = useSafeAreaInsets()
+  // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
+  useMorkStatuslinje()
   const [grossist, setGrossist] = useState(GROSSISTER[0])
   const [paslag, setPaslag] = useState('')
   const [jobber, setJobber] = useState(false)
@@ -108,13 +111,14 @@ export default function PrisfilScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <View style={{ flex: 1, backgroundColor: colors.toolBg }}>
+      <ToolGlow />
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
         paddingTop: insets.top + spacing.sm, paddingBottom: spacing.md, paddingHorizontal: spacing.screen,
       }}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <ChevronLeft size={26} color={colors.label} strokeWidth={sizes.lucideStroke} />
+          <ChevronLeft size={26} color={colors.toolLabel} strokeWidth={sizes.lucideStroke} />
         </Pressable>
         <Text style={t.headline}>Prisfil fra grossist</Text>
       </View>
@@ -135,13 +139,13 @@ export default function PrisfilScreen() {
             gammel gir feil svar med full selvtillit. */}
         {ferskhet.length > 0 && (
           <>
-            <SectionHeader>Sist oppdatert</SectionHeader>
-            <ListCard style={{ marginBottom: spacing.xl }}>
+            <ToolSectionHeader>Sist oppdatert</ToolSectionHeader>
+            <ToolCard style={{ marginBottom: spacing.xl }}>
               {ferskhet.map((f, i) => (
                 <View key={f.grossist} style={{
                   flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
                   paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-                  borderBottomWidth: i === ferskhet.length - 1 ? 0 : 0.5, borderBottomColor: colors.separator,
+                  borderBottomWidth: i === ferskhet.length - 1 ? 0 : 0.5, borderBottomColor: colors.toolBorder,
                 }}>
                   <View style={{ flex: 1 }}>
                     <Text style={t.body}>{f.grossist}</Text>
@@ -149,27 +153,27 @@ export default function PrisfilScreen() {
                   </View>
                   <Text style={[t.subhead, {
                     color: (Date.now() - f.sistOppdatert.getTime()) > 60 * 86400000
-                      ? colors.warning : colors.secondaryLabel,
+                      ? colors.warning : colors.toolSecondary,
                   }]}>
                     {dagerSiden(f.sistOppdatert)}
                   </Text>
                 </View>
               ))}
-            </ListCard>
+            </ToolCard>
           </>
         )}
 
-        <SectionHeader>Grossist</SectionHeader>
+        <ToolSectionHeader>Grossist</ToolSectionHeader>
         <View style={{
           flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
           paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
         }}>
           {GROSSISTER.map(g => (
-            <Chip key={g} label={g} selected={grossist === g} onPress={() => setGrossist(g)} />
+            <ToolChip key={g} label={g} selected={grossist === g} onPress={() => setGrossist(g)} />
           ))}
         </View>
 
-        <ListCard style={{ marginBottom: spacing.lg }}>
+        <ToolCard style={{ marginBottom: spacing.lg }}>
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: spacing.md,
             paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
@@ -184,36 +188,36 @@ export default function PrisfilScreen() {
               value={paslag}
               onChangeText={setPaslag}
               placeholder="—"
-              placeholderTextColor={colors.tertiaryLabel}
+              placeholderTextColor={colors.toolTertiary}
               keyboardType="decimal-pad"
               style={[t.body, { minWidth: 56, textAlign: 'right', fontVariant: ['tabular-nums'] }]}
             />
-            <Text style={[t.footnote, { color: colors.tertiaryLabel }]}>%</Text>
+            <Text style={[t.footnote, { color: colors.toolTertiary }]}>%</Text>
           </View>
-        </ListCard>
+        </ToolCard>
 
         {!!feil && (
-          <ListCard style={{ marginBottom: spacing.lg, borderColor: colors.danger }}>
+          <ToolCard style={{ marginBottom: spacing.lg, borderColor: colors.danger }}>
             <View style={{ flexDirection: 'row', gap: spacing.md, padding: spacing.lg }}>
               <AlertTriangle size={18} color={colors.danger} strokeWidth={sizes.lucideStroke} />
               <Text style={[t.subhead, { flex: 1 }]}>{feil}</Text>
             </View>
-          </ListCard>
+          </ToolCard>
         )}
 
         {/* Forhåndsvisning FØR import. Å skrive 30 000 varer først og fortelle
             etterpå er ikke et valg brukeren har tatt. */}
         {parset && (
           <>
-            <SectionHeader>{filnavn ?? 'Fil'}</SectionHeader>
-            <ListCard style={{ marginBottom: spacing.lg }}>
+            <ToolSectionHeader>{filnavn ?? 'Fil'}</ToolSectionHeader>
+            <ToolCard style={{ marginBottom: spacing.lg }}>
               <Rad etikett="Selger" verdi={parset.hode.selgerNavn || '—'} />
               <Rad etikett="Type" verdi={parset.hode.filtype === 'vare' ? 'Varefil' : 'Pristilbud'} />
               <Rad etikett="Varelinjer" verdi={String(parset.varer.length)} sterk />
               {parset.avvik.length > 0 && (
                 <View style={{
                   flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg,
-                  paddingVertical: spacing.md, borderTopWidth: 0.5, borderTopColor: colors.separator,
+                  paddingVertical: spacing.md, borderTopWidth: 0.5, borderTopColor: colors.toolBorder,
                 }}>
                   <AlertTriangle size={17} color={colors.warning} strokeWidth={sizes.lucideStroke} />
                   <Text style={[t.footnote, { flex: 1 }]}>
@@ -221,7 +225,7 @@ export default function PrisfilScreen() {
                   </Text>
                 </View>
               )}
-            </ListCard>
+            </ToolCard>
             <Pressable
               haptic="medium"
               onPress={importer}
@@ -241,8 +245,8 @@ export default function PrisfilScreen() {
 
         {resultat && (
           <>
-            <SectionHeader>Importert</SectionHeader>
-            <ListCard style={{ marginBottom: spacing.lg }}>
+            <ToolSectionHeader>Importert</ToolSectionHeader>
+            <ToolCard style={{ marginBottom: spacing.lg }}>
               <View style={{ flexDirection: 'row', gap: spacing.md, padding: spacing.lg, paddingBottom: spacing.sm }}>
                 <CheckCircle2 size={18} color={colors.success} strokeWidth={sizes.lucideStroke} />
                 <Text style={[t.bodyMedium, { flex: 1 }]}>{grossist} er oppdatert</Text>
@@ -258,14 +262,14 @@ export default function PrisfilScreen() {
               )}
               {resultat.utgaatte > 0 && <Rad etikett="Utgått hos grossist" verdi={String(resultat.utgaatte)} />}
               {resultat.utenElnummer > 0 && <Rad etikett="Uten el-nummer, hoppet over" verdi={String(resultat.utenElnummer)} />}
-            </ListCard>
+            </ToolCard>
             {/* En V4 gir listepris på alt. Da vet vi hva varen koster i
                 katalogen, ikke hva firmaet betaler — og det må sies med én gang,
                 ikke oppdages på en faktura. */}
             {resultat.listepriser > 0 && (
               <View style={{
                 marginHorizontal: spacing.screen, marginBottom: spacing.lg,
-                backgroundColor: colors.warningSoft, borderRadius: radius.lg, padding: spacing.lg,
+                backgroundColor: colors.warningWash, borderRadius: radius.lg, padding: spacing.lg,
               }}>
                 <Text style={[t.subhead, { fontWeight: '700', color: colors.warning, marginBottom: spacing.xs }]}>
                   {resultat.listepriser === resultat.nye + resultat.oppdaterte
@@ -297,8 +301,8 @@ export default function PrisfilScreen() {
             — og de er ferdig bygget. */}
         {!parset && (
           <>
-            <SectionHeader>Uten en ekte fil</SectionHeader>
-            <ListCard style={{ marginBottom: spacing.lg }}>
+            <ToolSectionHeader>Uten en ekte fil</ToolSectionHeader>
+            <ToolCard style={{ marginBottom: spacing.lg }}>
               <View style={{ padding: spacing.lg }}>
                 <Text style={[t.bodyMedium, { marginBottom: spacing.xs }]}>
                   {demoAntall > 0 ? 'Demokatalogen er lastet inn' : 'Last inn demokatalog'}
@@ -324,18 +328,18 @@ export default function PrisfilScreen() {
                   style={{
                     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
                     height: 44, borderRadius: radius.lg, marginTop: spacing.md,
-                    backgroundColor: demoAntall > 0 ? colors.fill : colors.brandSoft,
+                    backgroundColor: demoAntall > 0 ? colors.toolRaisedStrong : colors.brandSoft,
                     opacity: demoJobber ? 0.4 : 1,
                   }}
                 >
                   {demoJobber
                     ? <ActivityIndicator color={colors.brand} />
-                    : <Text style={[t.subhead, { fontWeight: '600', color: demoAntall > 0 ? colors.secondaryLabel : colors.brand }]}>
+                    : <Text style={[t.subhead, { fontWeight: '600', color: demoAntall > 0 ? colors.toolSecondary : colors.brand }]}>
                         {demoAntall > 0 ? 'Fjern demodata' : 'Last inn demokatalog'}
                       </Text>}
                 </Pressable>
               </View>
-            </ListCard>
+            </ToolCard>
           </>
         )}
 

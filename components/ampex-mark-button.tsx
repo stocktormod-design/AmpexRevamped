@@ -26,12 +26,14 @@ const RING = sizes.iconChip * 2.6 // ytterste lyn-ring ved full utladning
  * utladningen som blir til orben.
  */
 /**
- * `tone="light"` for bruk mot mørk bakgrunn (ordrehodet). Brunt på brunt
- * forsvinner — merket må være synlig for å kunne trykkes på.
+ * Standard er brun grunn — kremet merke i et lyst felt. `tone="papir"` for
+ * dokumentskjermene, der merket i stedet står i kobber på kremet.
+ *
+ * Kobber på brunt forsvinner, og et merke som ikke synes kan ikke trykkes på.
  */
-export function AmpexMarkButton({ tone = 'default' }: { tone?: 'default' | 'light' } = {}) {
+export function AmpexMarkButton({ tone = 'default' }: { tone?: 'default' | 'papir' } = {}) {
   const { stage, beginSession } = useVoiceSession()
-  const paaMorkt = tone === 'light'
+  const paaMorkt = tone !== 'papir'
 
   // 0 = i ro, 1 = full utladning. Driver begge ringene med hver sin forsinkelse.
   const burst = useSharedValue(0)

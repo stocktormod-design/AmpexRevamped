@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { View, Text, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
@@ -270,7 +271,7 @@ export default function Linje() {
 
             {/* Regnestykket, mens du skriver. */}
             <View style={{
-              backgroundColor: colors.brandSoft, borderRadius: radius.lg,
+              backgroundColor: colors.fill, borderRadius: radius.lg,
               padding: spacing.lg, marginTop: spacing.lg,
             }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>

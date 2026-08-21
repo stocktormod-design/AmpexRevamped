@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Modal, View, Text, TextInput, Pressable as RNPressable } from 'react-native'
+import { Modal, View, Pressable as RNPressable } from 'react-native'
+import { Text, TextInput } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated'
 import { Pressable } from './pressable'

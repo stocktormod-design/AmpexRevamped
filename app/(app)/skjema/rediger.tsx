@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { View, Text, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
@@ -11,9 +12,12 @@ import { FormRevision } from '../../../lib/db/models/form-revision'
 import { saveRevision } from '../../../lib/forms'
 import { validateFirmSections } from '../../../lib/forms/firm-schema'
 import { FormProblems } from '../../../components/form-problems'
-import { colors, spacing, radius, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, paperType as t } from '../../../lib/theme'
+import { usePapirStatuslinje } from '../../../components/tool-surface'
 
 export default function RedigerSkjema() {
+  // Mørk klokke og batteri: dette er papir, ikke brun grunn.
+  usePapirStatuslinje()
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [template, setTemplate] = useState<FormTemplate | null>(null)
@@ -59,15 +63,15 @@ export default function RedigerSkjema() {
   const canSave = !!note.trim() && problems.length === 0 && !busy
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.canvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.paperCanvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing.lg, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm }}>
-        <Pressable hitSlop={8} onPress={() => router.back()}><Text style={[t.body, { color: colors.secondaryLabel }]}>Avbryt</Text></Pressable>
+        <Pressable hitSlop={8} onPress={() => router.back()}><Text style={[t.body, { color: colors.paperSecondary }]}>Avbryt</Text></Pressable>
         <View style={{ alignItems: 'center' }}>
           <Text style={t.headline}>Rediger skjema</Text>
           {template && <Text style={t.caption}>lagres som v{nextVersion}</Text>}
         </View>
         <Pressable hitSlop={8} onPress={save} disabled={!canSave}>
-          <Text style={[t.body, { color: canSave ? colors.brand : colors.tertiaryLabel, fontWeight: '600' }]}>Lagre</Text>
+          <Text style={[t.body, { color: canSave ? colors.brand : colors.paperTertiary, fontWeight: '600' }]}>Lagre</Text>
         </Pressable>
       </View>
 
@@ -77,8 +81,8 @@ export default function RedigerSkjema() {
           <TextInput
             value={note} onChangeText={setNote}
             placeholder="F.eks. «Punkt om jording var uklart, omformulert etter innspill fra montør»"
-            placeholderTextColor={colors.tertiaryLabel} multiline
-            style={[t.body, { backgroundColor: colors.bg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, minHeight: 72 }]}
+            placeholderTextColor={colors.paperTertiary} multiline
+            style={[t.body, { backgroundColor: colors.paperBg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, minHeight: 72 }]}
           />
           <Text style={[t.footnote, { marginTop: spacing.xs, marginLeft: spacing.xs }]}>Lagres i historikken slik at alle ser hvorfor.</Text>
 

@@ -36,6 +36,7 @@ npm run verify:invoicing  selvtest av fakturagrunnlaget (øre, MVA, gruppering)
 npm run verify:forms      selvtest av skjemaformatet (v1-lesevei, betinget visning)
 npm run verify:quoting    selvtest av tilbudsregningen (rabatt, DB, gyldighet)
 npm run verify:timesheet  selvtest av ukelista (ukestart, arv av fakturerbarhet)
+npm run verify:kalender   selvtest av ukeplanen (dagbøtting, sommertid)
 npm run verify:varesok    selvtest av varesøk og varekort (el-nummer, EAN, flerord)
 npm run verify:approvals  selvtest av faglig godkjenning (snapshot, avslag)
 npm run verify:arkiv      selvtest av arkivpakken (SHA-256, determinisme, frister)
@@ -78,4 +79,6 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=
 5. Soft delete på alt — aldri `DELETE`, bruk `deleted_at`
 6. Audit log på destruktive handlinger
 7. Commit/push kun når bruker ber om det
-8. Batteri/termikk — ingen polling-løkker (synk trigges av forgrunn/nettverksretur), animasjoner kun transform/opacity på UI-tråden (Reanimated), Realtime-abonnement kun i forgrunn, tunge jobber (splat-bake) viser progress og respekterer `thermalState`
+8. Én font: Geist. Importer `Text`/`TextInput` fra `components/text`, ALDRI fra react-native — vekt→fontfil oversettes der, og uten den ignoreres `fontWeight` i stillhet
+9. Grunnflaten er BRUN. Kremet papir er unntaket, og gjelder kun INNE I et dokument (utfylling/redigering av skjema, tilbudsdokumentet, tegningen). Papirskjermer bruker `paperType as t`, `colors.paper*` og `usePapirStatuslinje()`; alt annet bruker standardtokenene. Knapper er kremet (`cta`) eller kobber (`brand` + `brandLabel`) — aldri mørke
+10. Batteri/termikk — ingen polling-løkker (synk trigges av forgrunn/nettverksretur), animasjoner kun transform/opacity på UI-tråden (Reanimated), Realtime-abonnement kun i forgrunn, tunge jobber (splat-bake) viser progress og respekterer `thermalState`

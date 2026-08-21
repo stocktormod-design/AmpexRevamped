@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { Text, AnimatedText } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, {
   FadeInDown, useSharedValue, useAnimatedScrollHandler, useAnimatedStyle,
@@ -201,7 +202,7 @@ function ActionTile({ action, primary }: { action: (typeof actions)[number]; pri
     <>
       <action.Icon
         size={sizes.iconLg - 2}
-        color={soon ? colors.toolTertiary : primary ? '#fff' : colors.slate}
+        color={soon ? colors.toolTertiary : primary ? '#fff' : colors.label}
         strokeWidth={sizes.lucideStroke}
       />
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs }}>
@@ -292,7 +293,7 @@ export default function HomeScreen() {
         }}>
           <View>
             <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.toolTertiary, marginBottom: spacing.xs }]}>{today}</Text>
-            <Animated.Text style={[t.display, { color: colors.toolLabel }, titleStyle]}>I dag</Animated.Text>
+            <AnimatedText style={[t.display, { color: colors.toolLabel }, titleStyle]}>I dag</AnimatedText>
           </View>
           {/* Merket ER assistenten — samme knapp som på de andre skjermene.
               Sto tidligere som ren dekorasjon her. */}

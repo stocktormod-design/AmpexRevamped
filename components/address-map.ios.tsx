@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { InteractionManager, View, Text } from 'react-native'
+import { InteractionManager, View } from 'react-native'
+import { Text } from './text'
 import MapView, { Marker } from 'react-native-maps'
 import { BlurView } from 'expo-blur'
 import { Navigation } from 'lucide-react-native'

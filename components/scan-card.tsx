@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, Image, ActionSheetIOS, Alert, Platform } from 'react-native'
+import { View, Image, ActionSheetIOS, Alert, Platform } from 'react-native'
+import { Text } from './text'
 import { ScanLine, Box, Ellipsis } from 'lucide-react-native'
 import { Pressable } from './pressable'
 import { listRevisions, scanThumbUri, type ScanRevision } from '../lib/scan-revisions'

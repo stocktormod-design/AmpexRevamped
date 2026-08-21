@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { View, Text, ScrollView, ActivityIndicator, Dimensions, Alert, Platform } from 'react-native'
+import { View, ScrollView, ActivityIndicator, Dimensions, Alert, Platform } from 'react-native'
+import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Pdf from 'react-native-pdf'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -19,7 +20,8 @@ import { Room, type RoomShape } from '../../../lib/db/models/room'
 import { DrawingLoop, type LoopNode } from '../../../lib/db/models/drawing-loop'
 import { getLocalPdf } from '../../../lib/drawings-storage'
 import { loadDraft, saveDraft, clearDraft } from '../../../lib/markup-drafts'
-import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, shadows, paperType as t } from '../../../lib/theme'
+import { usePapirStatuslinje } from '../../../components/tool-surface'
 
 type Mode = 'draw' | 'pan' | 'room' | 'loop'
 
@@ -42,6 +44,8 @@ function svgFrom(points: [number, number][]): string {
 }
 
 export default function TegningEdit() {
+  // Mørk klokke og batteri: dette er papir, ikke brun grunn.
+  usePapirStatuslinje()
   const insets = useSafeAreaInsets()
   const { drawingId } = useLocalSearchParams<{ drawingId: string }>()
   const [drawing, setDrawing] = useState<Drawing | null>(null)
@@ -446,7 +450,7 @@ export default function TegningEdit() {
             </Animated.View>
           </GestureDetector>
         ) : (
-          <ActivityIndicator color={colors.secondaryLabel} />
+          <ActivityIndicator color={colors.paperSecondary} />
         )}
       </View>
 
@@ -454,8 +458,8 @@ export default function TegningEdit() {
       <View style={{ position: 'absolute', top: insets.top + spacing.sm, left: spacing.screen, right: spacing.screen, flexDirection: 'row' }} pointerEvents="box-none">
         <View style={[panel, { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: 5, paddingRight: spacing.md, height: 44, borderRadius: radius.pill, maxWidth: '82%' }]}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
-            style={{ width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+            style={{ width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={sizes.icon} color={colors.paperLabel} strokeWidth={2.2} />
           </Pressable>
           <View style={{ flexShrink: 1 }}>
             <Text style={[t.subhead, { fontWeight: '700' }]} numberOfLines={1}>{drawing.name}</Text>
@@ -473,8 +477,8 @@ export default function TegningEdit() {
             const active = mode === m
             return (
               <Pressable key={m} haptic="light" pressScale={0.9} onPress={() => setMode(m)}
-                style={{ width: 46, height: 46, borderRadius: radius.lg, backgroundColor: active ? colors.label : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon size={20} color={active ? '#fff' : colors.secondaryLabel} strokeWidth={2} />
+                style={{ width: 46, height: 46, borderRadius: radius.lg, backgroundColor: active ? colors.paperLabel : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon size={20} color={active ? '#fff' : colors.paperSecondary} strokeWidth={2} />
               </Pressable>
             )
           })}
@@ -493,25 +497,25 @@ export default function TegningEdit() {
                     const active = l.id === activeLoopId
                     return (
                       <Pressable key={l.id} haptic="light" pressScale={0.95} onPress={() => setActiveLoopId(l.id)}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, height: 30, borderRadius: radius.pill, backgroundColor: active ? colors.label : colors.fill }}>
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, height: 30, borderRadius: radius.pill, backgroundColor: active ? colors.paperLabel : colors.paperFill }}>
                         <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: l.color }} />
-                        <Text style={[t.footnote, { fontWeight: '700', color: active ? '#fff' : colors.label }]}>{l.name}</Text>
-                        <Text style={[t.caption, { color: active ? 'rgba(255,255,255,0.55)' : colors.tertiaryLabel, fontVariant: ['tabular-nums'] }]}>{l.nodeList.length}</Text>
+                        <Text style={[t.footnote, { fontWeight: '700', color: active ? '#fff' : colors.paperLabel }]}>{l.name}</Text>
+                        <Text style={[t.caption, { color: active ? 'rgba(255,255,255,0.55)' : colors.paperTertiary, fontVariant: ['tabular-nums'] }]}>{l.nodeList.length}</Text>
                       </Pressable>
                     )
                   })}
                   <Pressable haptic="light" pressScale={0.9} onPress={createLoop}
-                    style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-                    <Plus size={16} color={colors.label} strokeWidth={2.4} />
+                    style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
+                    <Plus size={16} color={colors.paperLabel} strokeWidth={2.4} />
                   </Pressable>
                 </ScrollView>
                 <Pressable pressScale={0.9} onPress={loopUndo} disabled={!activeLoop || activeLoop.nodeList.length === 0} hitSlop={6}
                   style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', opacity: !activeLoop || activeLoop.nodeList.length === 0 ? 0.3 : 1 }}>
-                  <Undo2 size={19} color={colors.label} strokeWidth={2} />
+                  <Undo2 size={19} color={colors.paperLabel} strokeWidth={2} />
                 </Pressable>
                 <Pressable pressScale={0.9} onPress={deleteActiveLoop} disabled={!activeLoop} hitSlop={6}
                   style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', opacity: !activeLoop ? 0.3 : 1 }}>
-                  <Trash2 size={19} color={colors.label} strokeWidth={2} />
+                  <Trash2 size={19} color={colors.paperLabel} strokeWidth={2} />
                 </Pressable>
               </View>
               {/* Rad B: enhets-palett — hva sløyfa setter ut */}
@@ -520,11 +524,11 @@ export default function TegningEdit() {
                   const active = deviceSym === s.id
                   return (
                     <Pressable key={s.id} haptic="light" pressScale={0.95} onPress={() => setDeviceSym(s.id)}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingLeft: spacing.xs, paddingRight: spacing.sm + 2, height: 34, borderRadius: radius.pill, backgroundColor: active ? colors.label : colors.fill }}>
-                      <View style={{ width: 24, height: 24, borderRadius: radius.sm, backgroundColor: active ? 'rgba(255,255,255,0.16)' : colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-                        <SvgXml xml={symbolSvg(s.id, active ? '#fff' : colors.label)} width={16} height={16} color={active ? '#fff' : colors.label} />
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingLeft: spacing.xs, paddingRight: spacing.sm + 2, height: 34, borderRadius: radius.pill, backgroundColor: active ? colors.paperLabel : colors.paperFill }}>
+                      <View style={{ width: 24, height: 24, borderRadius: radius.sm, backgroundColor: active ? 'rgba(255,255,255,0.16)' : colors.paperBg, alignItems: 'center', justifyContent: 'center' }}>
+                        <SvgXml xml={symbolSvg(s.id, active ? '#fff' : colors.paperLabel)} width={16} height={16} color={active ? '#fff' : colors.paperLabel} />
                       </View>
-                      <Text style={[t.footnote, { fontWeight: '600', color: active ? '#fff' : colors.label }]}>{s.label}</Text>
+                      <Text style={[t.footnote, { fontWeight: '600', color: active ? '#fff' : colors.paperLabel }]}>{s.label}</Text>
                     </Pressable>
                   )
                 })}
@@ -537,45 +541,45 @@ export default function TegningEdit() {
                   <Pressable key={c} pressScale={0.9} onPress={() => setColor(c)}
                     style={{
                       width: 28, height: 28, borderRadius: 14, backgroundColor: c,
-                      borderWidth: color === c ? 2.5 : 1, borderColor: color === c ? colors.label : 'rgba(0,0,0,0.14)',
+                      borderWidth: color === c ? 2.5 : 1, borderColor: color === c ? colors.paperLabel : 'rgba(0,0,0,0.14)',
                     }} />
                 ))}
                 <View style={{ width: 0.5, height: 26, backgroundColor: 'rgba(0,0,0,0.12)', marginHorizontal: spacing.xs }} />
                 {WIDTHS.map(w => (
                   <Pressable key={w} pressScale={0.9} onPress={() => setWidth(w)}
-                    style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: width === w ? colors.fill : 'transparent' }}>
-                    <View style={{ width: 16, height: w, borderRadius: w, backgroundColor: colors.label }} />
+                    style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: width === w ? colors.paperFill : 'transparent' }}>
+                    <View style={{ width: 16, height: w, borderRadius: w, backgroundColor: colors.paperLabel }} />
                   </Pressable>
                 ))}
               </ScrollView>
               <Pressable pressScale={0.9} onPress={undo} disabled={draft.length === 0} hitSlop={6}
                 style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', opacity: draft.length === 0 ? 0.3 : 1 }}>
-                <Undo2 size={20} color={colors.label} strokeWidth={2} />
+                <Undo2 size={20} color={colors.paperLabel} strokeWidth={2} />
               </Pressable>
               <Pressable pressScale={0.9} onPress={clearAll} disabled={draft.length === 0} hitSlop={6}
                 style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', opacity: draft.length === 0 ? 0.3 : 1 }}>
-                <Trash2 size={20} color={colors.label} strokeWidth={2} />
+                <Trash2 size={20} color={colors.paperLabel} strokeWidth={2} />
               </Pressable>
               <Pressable haptic="medium" pressScale={0.95} onPress={publish} disabled={draft.length === 0 || publishing}
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 34, paddingHorizontal: spacing.md,
-                  borderRadius: radius.pill, backgroundColor: draft.length === 0 ? colors.fill : colors.cta,
+                  borderRadius: radius.pill, backgroundColor: draft.length === 0 ? colors.paperFill : colors.brand,
                   opacity: publishing ? 0.6 : 1,
                 }}>
                 {publishing
-                  ? <ActivityIndicator size="small" color={draft.length === 0 ? colors.label : colors.ctaLabel} />
-                  : <CloudUpload size={17} color={draft.length === 0 ? colors.tertiaryLabel : colors.ctaLabel} strokeWidth={2.1} />
+                  ? <ActivityIndicator size="small" color={draft.length === 0 ? colors.paperLabel : colors.brandLabel} />
+                  : <CloudUpload size={17} color={draft.length === 0 ? colors.paperTertiary : colors.brandLabel} strokeWidth={2.1} />
                 }
-                <Text style={[t.subhead, { fontWeight: '700', color: draft.length === 0 ? colors.tertiaryLabel : colors.ctaLabel }]}>Publiser</Text>
+                <Text style={[t.subhead, { fontWeight: '700', color: draft.length === 0 ? colors.paperTertiary : colors.brandLabel }]}>Publiser</Text>
               </Pressable>
             </View>
           ) : mode === 'room' ? (
-            <Text style={[t.subhead, { color: colors.secondaryLabel, textAlign: 'center' }]}>Dra en firkant over rommet · trykk et rom for framdrift</Text>
+            <Text style={[t.subhead, { color: colors.paperSecondary, textAlign: 'center' }]}>Dra en firkant over rommet · trykk et rom for framdrift</Text>
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={[t.footnote, { color: colors.tertiaryLabel }]}>To fingre for å zoome og panorere</Text>
+              <Text style={[t.footnote, { color: colors.paperTertiary }]}>To fingre for å zoome og panorere</Text>
               <Pressable pressScale={0.95} haptic="light" onPress={resetView}>
-                <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>Nullstill zoom</Text>
+                <Text style={[t.subhead, { color: colors.paperSecondary, fontWeight: '600' }]}>Nullstill zoom</Text>
               </Pressable>
             </View>
           )}

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, LayoutChangeEvent } from 'react-native'
+import { View, LayoutChangeEvent } from 'react-native'
+import { Text } from './text'
 import Animated, { useAnimatedStyle, useDerivedValue, withSpring } from 'react-native-reanimated'
 import { Pressable } from './pressable'
 import { colors, radius, spacing, springs, type as t } from '../lib/theme'

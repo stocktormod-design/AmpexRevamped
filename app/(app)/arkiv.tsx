@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { View, Text, TextInput, ScrollView, FlatList } from 'react-native'
+import { View, ScrollView, FlatList } from 'react-native'
+import { Text, TextInput } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { ChevronLeft, Archive, ChevronRight, ShieldCheck } from 'lucide-react-native'
 import { Pressable } from '../../components/pressable'
-import { Chip, AmbientBackdrop } from '../../components/ui'
+import { Chip } from '../../components/ui'
+import { ToolGlow } from '../../components/tool-surface'
 import { OrderArchive } from '../../lib/db/models/order-archive'
 import { useArkiv, useArkivAar } from '../../lib/archive/freeze'
 import { useKunder } from '../../lib/customers'
@@ -81,7 +83,7 @@ export default function Arkiv() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <AmbientBackdrop height={340} />
+      <ToolGlow height={340} />
       <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen }}>
         <Pressable onPress={() => router.back()} pressScale={0.92}
           style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>

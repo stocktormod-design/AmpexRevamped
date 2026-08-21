@@ -2,7 +2,7 @@
 // (text styles, spring presets). Import from here in all screens/components.
 import type { TextStyle, ViewStyle } from 'react-native'
 import { WithSpringConfig } from 'react-native-reanimated'
-import { DISPLAY_FONT } from './fonts'
+import './fonts' // kobler på vekt→fil-oversettelsen for Geist
 
 const tokens = require('./tokens.js') as {
   colors: Record<string, string>
@@ -21,16 +21,14 @@ export const sizes = tokens.sizes
 export const type = {
   // Ampex display-signatur: skjermtitler og store tall. Tyngre og strammere enn
   // HIG-largeTitle — det som skiller «verktøy laget med omhu» fra Innstillinger.
-  // Serif. Ingen fontWeight: med en egendefinert familie synteser iOS en falsk
-  // fetstil som ser billig ut — vekten ligger i filen, ikke i stilen.
-  // En serif trenger dessuten mindre negativ sporing enn en grotesk; -1.0 ville
-  // presset seriffene inn i hverandre.
-  display: { fontSize: 38, lineHeight: 44, fontFamily: DISPLAY_FONT, letterSpacing: -0.4, color: colors.label } satisfies TextStyle,
+  // Sporingen er strammere enn HIG fordi en grotesk i 38 px står for luftig med
+  // normal sporing; det er trangheten som gjør en tittel til en display-tittel.
+  display: { fontSize: 38, lineHeight: 44, fontWeight: '600', letterSpacing: -0.9, color: colors.label } satisfies TextStyle,
   // Eyebrow: liten caps-linje over titler/hero-kort (dato, status·tid). Bred tracking
   // gir teknisk «måleinstrument»-rytme. Brukes med textTransform: 'uppercase'.
   eyebrow: { fontSize: 12, lineHeight: 16, fontWeight: '600', letterSpacing: 1.1, color: colors.secondaryLabel } satisfies TextStyle,
-  largeTitle: { fontSize: 36, lineHeight: 42, fontFamily: DISPLAY_FONT, letterSpacing: -0.3, color: colors.label } satisfies TextStyle,
-  title1: { fontSize: 30, lineHeight: 36, fontFamily: DISPLAY_FONT, letterSpacing: -0.2, color: colors.label } satisfies TextStyle,
+  largeTitle: { fontSize: 36, lineHeight: 42, fontWeight: '600', letterSpacing: -0.8, color: colors.label } satisfies TextStyle,
+  title1: { fontSize: 30, lineHeight: 36, fontWeight: '600', letterSpacing: -0.6, color: colors.label } satisfies TextStyle,
   title2: { fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.3, color: colors.label } satisfies TextStyle,
   title3: { fontSize: 20, lineHeight: 25, fontWeight: '600', letterSpacing: -0.3, color: colors.label } satisfies TextStyle,
   headline: { fontSize: 17, lineHeight: 22, fontWeight: '600', letterSpacing: -0.3, color: colors.label } satisfies TextStyle,
@@ -40,6 +38,53 @@ export const type = {
   subhead: { fontSize: 15, lineHeight: 20, fontWeight: '400', letterSpacing: -0.2, color: colors.label } satisfies TextStyle,
   footnote: { fontSize: 13, lineHeight: 18, fontWeight: '400', letterSpacing: 0, color: colors.secondaryLabel } satisfies TextStyle,
   caption: { fontSize: 12, lineHeight: 16, fontWeight: '500', letterSpacing: 0.3, color: colors.secondaryLabel } satisfies TextStyle,
+} as const
+
+/**
+ * Samme skala, mørkt blekk — for dokumentskjermene (papir).
+ *
+ * Papiret er unntaket i appen: alt er brunt bortsett fra det du ser inne i et
+ * dokument. Importeres som `paperType as t` der, på samme måte som resten av
+ * appen bruker `type`.
+ */
+export const paperType = {
+  display: { ...type.display, color: colors.paperLabel },
+  eyebrow: { ...type.eyebrow, color: colors.paperSecondary },
+  largeTitle: { ...type.largeTitle, color: colors.paperLabel },
+  title1: { ...type.title1, color: colors.paperLabel },
+  title2: { ...type.title2, color: colors.paperLabel },
+  title3: { ...type.title3, color: colors.paperLabel },
+  headline: { ...type.headline, color: colors.paperLabel },
+  body: { ...type.body, color: colors.paperLabel },
+  bodyMedium: { ...type.bodyMedium, color: colors.paperLabel },
+  callout: { ...type.callout, color: colors.paperLabel },
+  subhead: { ...type.subhead, color: colors.paperLabel },
+  footnote: { ...type.footnote, color: colors.paperSecondary },
+  caption: { ...type.caption, color: colors.paperSecondary },
+} as const
+
+/**
+ * Samme skala, kremet blekk — for de mørke verktøyskjermene.
+ *
+ * Uten denne må hver eneste `<Text>` på en mørk skjerm skrive
+ * `[t.body, { color: colors.toolLabel }]`, og det er nøyaktig slik en skjerm
+ * ender opp med tre nyanser grått som ingen har bestemt. Importeres som
+ * `toolType as t`, så en skjerm bytter flate ved å bytte ÉN linje.
+ */
+export const toolType = {
+  display: { ...type.display, color: colors.toolLabel },
+  eyebrow: { ...type.eyebrow, color: colors.toolTertiary },
+  largeTitle: { ...type.largeTitle, color: colors.toolLabel },
+  title1: { ...type.title1, color: colors.toolLabel },
+  title2: { ...type.title2, color: colors.toolLabel },
+  title3: { ...type.title3, color: colors.toolLabel },
+  headline: { ...type.headline, color: colors.toolLabel },
+  body: { ...type.body, color: colors.toolLabel },
+  bodyMedium: { ...type.bodyMedium, color: colors.toolLabel },
+  callout: { ...type.callout, color: colors.toolLabel },
+  subhead: { ...type.subhead, color: colors.toolLabel },
+  footnote: { ...type.footnote, color: colors.toolSecondary },
+  caption: { ...type.caption, color: colors.toolSecondary },
 } as const
 
 // Shadows — hero/feature cards only; inset-list cards stay flat on grouped bg.

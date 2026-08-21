@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, TextInput, ScrollView, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Pressable } from '../../../components/pressable'
 import { Chip } from '../../../components/ui'

@@ -199,7 +199,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }} key={`${nokkel}-${fonterKlare}`}>
       <SafeAreaProvider>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <VoiceSessionProvider>
           <AssistantGesture>
             <Stack screenOptions={{ headerShown: false }} />

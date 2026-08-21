@@ -1,4 +1,5 @@
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { Text } from './text'
 import { ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react-native'
 import { ListCard } from './ui'
 import { OrderApproval } from '../lib/db/models/order-approval'

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, ScrollView, TextInput } from 'react-native'
+import { View, ScrollView } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { ChevronLeft, Plus, ChevronRight, Building2, User } from 'lucide-react-native'

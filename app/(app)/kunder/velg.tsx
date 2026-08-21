@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, ScrollView, TextInput } from 'react-native'
+import { View, ScrollView } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Plus, Building2, User, Check } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
