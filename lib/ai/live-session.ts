@@ -83,6 +83,41 @@ export type LiveSessionCallbacks = {
   onNavigate?: (path: string) => void
 }
 
+import { byggLag1, byggLag2, byggLag3 } from './instruks'
+import { kanKalle, verktoyrettigheter, type Verktoyrett } from './verktoy-tilgang'
+import { nyNonce, pakkSvar } from './vask'
+
+/**
+ * Hvilke verktøy som krever hvilken rett. Kun de som SKRIVER står her.
+ *
+ * Oppslag (mine_ordrer, finn_ordre, sok_vare) og regnestykker (spenningsfall,
+ * kortslutning_ende) har ingen rad: de endrer ingenting, og medlemskapsvernet i
+ * finn_ordre gjør allerede sin egen jobb.
+ *
+ * Påminnelser og notater er brukerens egne, om brukeren selv. En lærling som
+ * ikke får be appen huske hvor han parkerte, har fått en app som er sur.
+ *
+ * DETTE ER IKKE SIKKERHETSMODELLEN — RLS er det. Men verktøykallene skriver til
+ * lokal WatermelonDB, og RLS ser ingenting før `watermelon_push` kjører, kanskje
+ * timer senere. Uten denne sperren sier assistenten «ordren er opprettet»,
+ * brukeren hører det, og avvisningen kommer som en synkfeil lenge etterpå.
+ */
+const VERKTOY_KREVER: Record<string, Verktoyrett> = {
+  opprett_ordre: 'ordre.opprett',
+  bli_med_pa_ordre: 'ordre.bli_med',
+  oppdater_ordre: 'ordre.endre',
+  legg_til_medlem: 'ordre.endre',
+  foer_timer: 'timer.egne',
+  utfyll_timenotat: 'timer.egne',
+  start_skjema: 'skjema.fyll',
+  fyll_skjemafelt: 'skjema.fyll',
+  legg_til_materiell: 'materiell.for',
+  ta_ut_materiell: 'materiell.for',
+  foresla_tillegg: 'materiell.for',
+  nytt_tilbud: 'tilbud.skriv',
+  legg_til_tilbudslinje: 'tilbud.skriv',
+}
+
 const SYSTEM_INSTRUCTION = `Du er Ampex-assistenten — en stemmestyrt hjelper for norske elektrikere ute på jobb.
 Svar ALLTID på norsk, kort og muntlig: én til to setninger, som en kollega over skulderen, ikke som en manual.
 Brukeren kan snakke hvilken som helst dialekt — forstå den, men SNAKK SELV ALLTID standard østnorsk (Oslo-mål,
@@ -1023,30 +1058,51 @@ export class LiveSession {
   }
 
 
+  /**
+   * Lag 1 + lag 2. Se `lib/ai/instruks.ts` for hvorfor de er skilt.
+   *
+   * Kort: context caching er en PREFIKS-mekanisme. Da denne funksjonen limte
+   * brukernavn, skjerm og påminnelser inn i den samme strengen, var hele
+   * strengen unik per bruker, og det fantes ingen felles prefiks å cache —
+   * uansett hvor mye statisk innhold som lå foran.
+   *
+   * Lag 3 (vær, aktiv ordre, påminnelser, notater) ligger IKKE her lenger. Det
+   * er observasjoner, ikke regler, og de sendes som innhold i samtalen.
+   */
+  /**
+   * Én nonce per økt. Innholdet i basen kan ikke kjenne den, og kan derfor
+   * ikke lukke konvolutten sin egen og late som det som følger er systemets ord.
+   * En ordre importert fra Tripletex i fjor kjenner ingen nonce fra i dag.
+   */
+  private readonly dataNonce = nyNonce()
+
   private buildSystemInstruction(): string {
     const ctx = this.routeContext
-    const screenInfo =
-      ctx.screen === 'prosjekt'
-        ? `Brukeren står inne på et prosjekt — prosjekt_status uten navn gjelder dette prosjektet.`
-        : ctx.screen === 'ordre'
-          ? 'Brukeren står på ordrelisten.'
-          : 'Brukeren er et sted i appen uten spesiell kontekst.'
-    const userInfo = this.user
-      ? `BRUKER: ${this.user.name || 'ukjent navn'} (rolle: ${this.user.role || 'ukjent'}). Du handler alltid PÅ VEGNE AV denne brukeren og kan aldri gjøre mer enn rollen deres tillater.`
-      : ''
-    const catalog =
-      this.templateCatalog.length > 0
-        ? `\nTILGJENGELIGE SKJEMAMALER (bruk mal_id ordrett):\n${this.templateCatalog.map(t => `- ${t.id}: ${t.name} (${t.source})`).join('\n')}`
-        : ''
-    const reminders =
-      this.dueReminders.length > 0
-        ? `\nPÅMINNELSER SOM FORFALLER I DAG/ER FORFALT — nevn dem kort i din FØRSTE replikk: ${this.dueReminders.join('; ')}`
-        : ''
-    const notes =
-      this.userNotes.length > 0
-        ? `\nHUKOMMELSE OM BRUKEREN (bruk naturlig, ikke les opp; slett med glem_notat om brukeren ber om det):\n${this.userNotes.map(n => `- [${n.id}] ${n.content}`).join('\n')}`
-        : ''
-    return `${SYSTEM_INSTRUCTION}\n\n${userInfo}\nNÅVÆRENDE SKJERM: ${screenInfo}${catalog}${reminders}${notes}`
+    const skjerm = ctx.screen === 'prosjekt' ? 'prosjekt' : ctx.screen === 'ordre' ? 'ordre' : 'annet'
+    return [
+      byggLag1(SYSTEM_INSTRUCTION),
+      byggLag2({
+        bruker: this.user ? { navn: this.user.name, rolle: this.user.role } : null,
+        skjerm,
+        maler: this.templateCatalog.map(t => ({ id: t.id, navn: t.name, kilde: t.source })),
+        rettigheter: verktoyrettigheter(this.user?.role),
+      }),
+    ].join('\n\n')
+  }
+
+  /**
+   * Lag 3 — situasjonen akkurat nå, som INNHOLD og aldri som instruks.
+   *
+   * Returnerer en tur som legges foran hilsenen. At den kommer som en melding
+   * og ikke som en instruks er poenget: endrer været seg, kommer den nye
+   * meldingen ETTER den gamle, og modellen ser rekkefølgen. Bygges instruksen
+   * om i stedet, mister den at noe endret seg.
+   */
+  private byggSituasjon(): { role: 'user'; parts: { text: string }[] } | null {
+    return byggLag3({
+      paaminnelser: this.dueReminders,
+      notater: this.userNotes.map(n => ({ id: n.id, innhold: n.content })),
+    })
   }
 
   /** Telefon-mot-øret: rut lyden til ørehøyttaleren (privat, som en samtale) i stedet for speaker. */
@@ -1179,10 +1235,12 @@ export class LiveSession {
       // Modellen venter ELLERS stille på at brukeren snakker først — uten en hørbar
       // hilsen virker økten død og brukeren rister den i senk. Tekst-turn her gir
       // umiddelbar talerespons og beviser samtidig hele lydkjeden ned til høyttaler.
+      const situasjon = this.byggSituasjon()
       this.ws?.send(
         JSON.stringify({
           clientContent: {
             turns: [
+              ...(situasjon ? [situasjon] : []),
               {
                 role: 'user',
                 parts: [
@@ -1312,6 +1370,16 @@ export class LiveSession {
   }
 
   private async runTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    // Rollesjekk FØR noe skrives. Se VERKTOY_KREVER for hvorfor RLS alene ikke
+    // holder når appen er offline-first.
+    const krav = VERKTOY_KREVER[name]
+    if (krav) {
+      const dom = kanKalle(this.user?.role, krav)
+      if (!dom.tillatt) {
+        console.warn(`Live: ${name} avvist lokalt (${dom.grunn}) for rolle ${this.user?.role ?? 'ukjent'}`)
+        return { feil: dom.beskjed, grunn: dom.grunn }
+      }
+    }
     try {
       if (name === 'finn_ordre') {
         const resolved = await this.resolveOrder(args)
@@ -1322,28 +1390,32 @@ export class LiveSession {
         if (!member) {
           // Visittkortet — og IKKE mer. Innhold (kunde, adresse, beskrivelse,
           // dokumentasjon) er forbeholdt de som er med på ordren.
-          return {
+          // Tittelen er skrevet av et menneske, ofte importert fra Fiken eller
+          // Tripletex. Den skal aldri kunne leses som en instruksjon. Se vask.ts.
+          return pakkSvar(this.dataNonce, {
             funnet: true,
             du_er_med: false,
             ordrenummer: n,
-            tittel: order.title,
             medlemmer: memberNames,
             beskjed: 'Brukeren er IKKE med på ordren — del kun dette, og tilby bli_med_pa_ordre for full tilgang.',
-          }
+          }, {
+            tittel: { verdi: order.title, mene: 'tittel' },
+          })
         }
         this.callbacks.onOrderFound?.(order)
-        return {
+        return pakkSvar(this.dataNonce, {
           funnet: true,
           du_er_med: true,
           ordrenummer: n,
-          tittel: order.title,
           status: orderStatusLabel[order.status] ?? order.status,
-          kunde: order.customerName ?? undefined,
-          adresse: order.address ?? undefined,
-          beskrivelse: order.description ?? undefined,
           medlemmer: memberNames.length > 0 ? memberNames : [user.name || 'deg'],
           beskjed: 'Appen viser en snarvei til ordren nå.',
-        }
+        }, {
+          tittel: { verdi: order.title, mene: 'tittel' },
+          kunde: { verdi: order.customerName, mene: 'navn' },
+          adresse: { verdi: order.address, mene: 'adresse' },
+          beskrivelse: { verdi: order.description, mene: 'fritekst' },
+        })
       }
       if (name === 'ordre_dokumentasjon') {
         const resolved = await this.resolveOrder(args)
