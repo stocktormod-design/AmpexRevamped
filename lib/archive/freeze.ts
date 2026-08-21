@@ -132,6 +132,7 @@ async function samle(order: Order): Promise<Arkivinnhold> {
     materiell: materiell.map(m => ({
       beskrivelse: m.description, antall: m.quantity, enhet: m.unit,
       elnummer: m.elnummer, enhetspris: m.unitPrice,
+      rabattProsent: m.discountPercent,
     })),
     timer: timer.map(t => ({
       dato: t.date, timer: t.hours, person: t.userName,

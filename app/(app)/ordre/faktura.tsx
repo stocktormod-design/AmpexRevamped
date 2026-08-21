@@ -47,6 +47,14 @@ function Linje({ linje, sist }: { linje: Fakturalinje; sist: boolean }) {
             {antallTekst(linje.antall)} {linje.enhet} × {formatKr(linje.enhetsprisOre)}
             {linje.elnummer ? `  ·  EL ${linje.elnummer}` : ''}
           </Text>
+          {/* Rabatten MÅ vises. Uten den ganger ikke antall × enhetspris opp til
+              beløpet til høyre, og en montør som ser to tall som ikke stemmer
+              stoler ikke på noen av dem. */}
+          {!!linje.rabattProsent && (
+            <Text style={[t.footnote, { marginTop: 2, color: colors.brand }]}>
+              {`− ${antallTekst(linje.rabattProsent)} % avtalt rabatt  ·  ${formatKr(linje.rabattOre ?? 0)}`}
+            </Text>
+          )}
         </View>
         <Text style={[t.bodyMedium, { fontVariant: ['tabular-nums'] }]}>{formatKr(linje.nettoOre)}</Text>
       </View>
@@ -98,9 +106,10 @@ export default function FakturaScreen() {
 
   async function del() {
     if (!grunnlag || !order) return
-    const rader = grunnlag.linjer.map(l =>
-      `${l.beskrivelse.split('\n')[0]}\t${antallTekst(l.antall)} ${l.enhet}\t${formatKr(l.enhetsprisOre)}\t${formatKr(l.nettoOre)}`,
-    )
+    const rader = grunnlag.linjer.map(l => {
+      const rabatt = l.rabattProsent ? ` (− ${antallTekst(l.rabattProsent)} %)` : ''
+      return `${l.beskrivelse.split('\n')[0]}\t${antallTekst(l.antall)} ${l.enhet}\t${formatKr(l.enhetsprisOre)}${rabatt}\t${formatKr(l.nettoOre)}`
+    })
     const tekst = [
       `Ordre ${order.orderNumber ?? ''} — ${order.title}`.trim(),
       kunde ? kunde.name : order.customerName ?? '',

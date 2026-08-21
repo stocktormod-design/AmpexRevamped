@@ -80,12 +80,44 @@ export function useGodkjenninger(orderId: string | null | undefined): OrderAppro
  * Speiler `kan_godkjenne_faglig()` i databasen — men KUN for å vise/skjule
  * knapper. Sannheten ligger i RLS-policyen; denne er høflighet, ikke sikkerhet.
  */
+/** Siste kjente svar fra serveren. Overlever appstart, synkes ikke. */
+const KAN_GODKJENNE_NOKKEL = 'kan_godkjenne_faglig'
+
+/**
+ * Får denne brukeren godkjenne faglig?
+ *
+ * Svaret eies av serveren (`kan_godkjenne_faglig`, som leser
+ * `company_settings.faglig_ansvarlig`), men det MÅ finnes offline. Før dette
+ * ble RPC-en kalt rått fra skjermen: uten nett kom det ikke noe svar, `kan`
+ * ble stående false, og hele godkjenningskøen forsvant fra «Meg». Faglig
+ * ansvarlig i en kjeller ville sett en app som sa at ingenting ventet på ham.
+ *
+ * Nå: siste kjente svar brukes med én gang, og oppdateres når serveren svarer.
+ * Et FEILET oppslag overskriver aldri et kjent svar — «vet ikke» er ikke det
+ * samme som «nei».
+ *
+ * At et hurtigbufret «ja» ikke er en sikkerhetsrisiko følger av at sperren
+ * ligger i databasen: `krev_faglig_godkjenning` blokkerer fakturering uten
+ * godkjenning, og RLS avgjør hvem som får skrive godkjenningsraden. Dette
+ * flagget styrer kun hva som VISES.
+ */
 export function useKanGodkjenne(): boolean {
   const [kan, setKan] = useState(false)
   useEffect(() => {
     let levende = true
-    supabase.rpc('kan_godkjenne_faglig')
-      .then(({ data }) => { if (levende) setKan(data === true) })
+    database.localStorage.get(KAN_GODKJENNE_NOKKEL)
+      .then(lagret => { if (levende && typeof lagret === 'boolean') setKan(lagret) })
+      .catch(() => {})
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('kan_godkjenne_faglig')
+        if (error || typeof data !== 'boolean') return
+        if (levende) setKan(data)
+        await database.localStorage.set(KAN_GODKJENNE_NOKKEL, data)
+      } catch {
+        // Uten nett beholder vi siste kjente svar. Se forklaringen over.
+      }
+    })()
     return () => { levende = false }
   }, [])
   return kan

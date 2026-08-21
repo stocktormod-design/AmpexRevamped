@@ -12,6 +12,7 @@ import {
   byggFakturagrunnlag, formatKr, linjebelopOre, mvaBelopOre, somMvaType, tilOre,
   type MateriellInn, type TilleggInn, type TimeInn,
 } from '../lib/invoicing'
+import { sisteFakturarunde } from '../lib/invoicing'
 import { MVA_FIKEN, MVA_TRIPLETEX } from '../lib/accounting/adapter'
 
 let feil = 0
@@ -170,6 +171,67 @@ const drift = byggFakturagrunnlag(mange, [])
 sjekk('100 × 0,333 kr = 100 × 33 øre', drift.nettoOre, 3300)
 sjekk('summen er et heltall øre', Number.isInteger(drift.nettoOre), true)
 sjekk('mva på summen er heltall', Number.isInteger(drift.mvaOre), true)
+
+/* ── Rabatt fra tilbudet må overleve inn på fakturaen ────────────────────── */
+
+// quote_lines hadde discount_percent, order_materials ikke. Et akseptert tilbud
+// med 20 % rabatt ble fakturert til FULL pris — kunden fikk regning på noe annet
+// enn det hun sa ja til, og ingenting sa fra.
+const medRabatt = byggFakturagrunnlag(
+  [{ id: 'm1', beskrivelse: 'Downlight', antall: 10, enhet: 'stk', enhetsprisKr: 249, rabattProsent: 20 }],
+  [],
+)
+sjekk('rabatten trekkes fra', medRabatt.linjer[0].nettoOre, 199200)
+sjekk('rabatten VISES, ikke bare virker', medRabatt.linjer[0].rabattOre, 49800)
+sjekk('rabattprosenten følger med linja', medRabatt.linjer[0].rabattProsent, 20)
+sjekk('enhetsprisen er fortsatt listeprisen', medRabatt.linjer[0].enhetsprisOre, 24900)
+sjekk('mva regnes av nettoen ETTER rabatt', medRabatt.mvaOre, Math.round(199200 * 0.25))
+
+// Samme regel som tilbudet: én avrunding, etter rabatten. Ellers spriker det
+// kunden ble lovet fra det hun får.
+sjekk('avrunding skjer én gang, etter rabatten',
+  byggFakturagrunnlag([{ id: 'm', beskrivelse: 'x', antall: 3, enhet: 'stk', enhetsprisKr: 10.10, rabattProsent: 33 }], []).linjer[0].nettoOre,
+  Math.round(3 * 1010 * 0.67))
+
+const utenRabatt = byggFakturagrunnlag(
+  [{ id: 'm1', beskrivelse: 'Downlight', antall: 10, enhet: 'stk', enhetsprisKr: 249 }], [],
+)
+sjekk('uten rabatt: fullt beløp', utenRabatt.linjer[0].nettoOre, 249000)
+sjekk('uten rabatt: ingen rabattlinje å vise', utenRabatt.linjer[0].rabattOre, null)
+
+// Tull inn skal ikke gi en tilfeldig faktura.
+for (const [r, forventet] of [[-5, 249000], [150, 0], [NaN, 249000]] as [number, number][]) {
+  sjekk(`rabatt ${r} klemmes til noe fornuftig`,
+    byggFakturagrunnlag([{ id: 'm', beskrivelse: 'x', antall: 10, enhet: 'stk', enhetsprisKr: 249, rabattProsent: r }], []).linjer[0].nettoOre,
+    forventet)
+}
+
+/* ── Angre fakturert skal angre ÉN runde, ikke alt ───────────────────────── */
+
+// Delfakturering er designet inn: en linje som alt er fakturert utelates fra
+// neste grunnlag. Tømmer «angre» invoiced_at på ALT, blir forrige fakturas
+// linjer ufakturerte igjen og havner på neste faktura — kunden betaler to
+// ganger for samme jobb, og ingenting i appen sier fra.
+const R1 = 1_700_000_000_000
+const R2 = 1_700_900_000_000
+const linjer = [
+  { navn: 'faktura 1 · kabel', fakturertTid: R1 },
+  { navn: 'faktura 1 · timer', fakturertTid: R1 },
+  { navn: 'faktura 2 · tillegg', fakturertTid: R2 },
+  { navn: 'ikke fakturert', fakturertTid: null },
+]
+const siste = sisteFakturarunde(linjer)
+sjekk('kun siste runde angres', siste.runde.map(l => l.navn), ['faktura 2 · tillegg'])
+sjekk('ordren var fakturert ved forrige runde', siste.forrigeTid, R1)
+
+const enRunde = sisteFakturarunde([{ navn: 'a', fakturertTid: R1 }, { navn: 'b', fakturertTid: R1 }])
+sjekk('én runde: begge angres', enRunde.runde.length, 2)
+sjekk('én runde: ingen tidligere å falle tilbake til', enRunde.forrigeTid, null)
+
+const utenRunde = sisteFakturarunde([{ navn: 'a', fakturertTid: null }])
+sjekk('ufakturert ordre: ingenting å angre', utenRunde.runde.length, 0)
+sjekk('ufakturert ordre: ingen forrige tid', utenRunde.forrigeTid, null)
+sjekk('tom ordre tåles', sisteFakturarunde([]).runde.length, 0)
 
 console.log(feil === 0 ? '\nAlle påstander grønne.' : `\n${feil} påstand(er) feilet.`)
 process.exit(feil === 0 ? 0 : 1)

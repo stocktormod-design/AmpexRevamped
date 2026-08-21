@@ -83,6 +83,10 @@ export type Fakturalinje = {
   antall: number
   enhet: string
   enhetsprisOre: number
+  /** Avtalt rabatt fra tilbudet. Null når ingen ble gitt. */
+  rabattProsent?: number | null
+  /** Hva rabatten utgjorde i kroner — så den kan VISES, ikke bare virke. */
+  rabattOre?: number | null
   mva: MvaType
   nettoOre: number
   mvaOre: number
@@ -116,6 +120,23 @@ export type Fakturagrunnlag = {
 // Inndata er med vilje flate objekter, ikke WatermelonDB-modeller. Da kan
 // regnestykket testes uten database, og AI-verktøyene kan gjenbruke det.
 
+/** Rabattprosent, klemt inn i 0–100. Utenfor spekteret er alltid en feil. */
+export function somRabatt(v: number | null | undefined): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return 0
+  if (v <= 0) return 0
+  return v > 100 ? 100 : v
+}
+
+/**
+ * Nettobeløp for én linje. Avrunding skjer ÉN gang, etter rabatten — ikke
+ * først på linjebeløpet og så på rabatten. To avrundinger på samme linje gir
+ * et øre som ikke stemmer med det kunden kan regne ut selv av tallene på arket.
+ */
+export function linjeNettoOre(antall: number, enhetsprisOre: number, rabattProsent: number): number {
+  const rabatt = somRabatt(rabattProsent)
+  return Math.round(antall * enhetsprisOre * (1 - rabatt / 100))
+}
+
 export type MateriellInn = {
   id: string
   beskrivelse: string
@@ -127,6 +148,11 @@ export type MateriellInn = {
   mvaType?: string | null
   fakturerbar?: boolean | null
   fakturertTid?: number | null
+  /**
+   * Rabatt avtalt i tilbudet. Uten denne ble et akseptert tilbud fakturert til
+   * full pris — kunden fikk regning på noe annet enn det hun sa ja til.
+   */
+  rabattProsent?: number | null
 }
 
 export type TimeInn = {
@@ -205,7 +231,11 @@ export function byggFakturagrunnlag(
     }
     const mva = somMvaType(m.mvaType)
     const enhetsprisOre = tilOre(m.enhetsprisKr)
-    const nettoOre = linjebelopOre(m.antall, enhetsprisOre)
+    const rabattProsent = somRabatt(m.rabattProsent)
+    // Avrunding ÉN gang, etter rabatten — samme regel som tilbudet brukte, fra
+    // samme funksjon. To ulike avrundinger ville gitt et øre i sprik mellom det
+    // kunden ble lovet og det hun får.
+    const nettoOre = linjeNettoOre(m.antall, enhetsprisOre, rabattProsent)
     const mOre = mvaBelopOre(nettoOre, mva)
     linjer.push({
       kilde: 'materiell',
@@ -214,6 +244,8 @@ export function byggFakturagrunnlag(
       antall: m.antall,
       enhet: m.enhet,
       enhetsprisOre,
+      rabattProsent: rabattProsent > 0 ? rabattProsent : null,
+      rabattOre: rabattProsent > 0 ? linjebelopOre(m.antall, enhetsprisOre) - nettoOre : null,
       mva,
       nettoOre,
       mvaOre: mOre,
@@ -352,5 +384,34 @@ export function byggFakturagrunnlag(
     dbOre: harKost ? nettoOre - kostOre : null,
     dbProsent: harKost && nettoOre !== 0 ? ((nettoOre - kostOre) / nettoOre) * 100 : null,
     mvaFordeling: [...perMva.entries()].map(([mva, r]) => ({ mva, ...r })),
+  }
+}
+
+/**
+ * Linjene som ble merket i SISTE fakturarunde.
+ *
+ * Delfakturering er designet inn: en linje som alt er fakturert utelates fra
+ * neste grunnlag (`allerede_fakturert`), så en ordre kan faktureres flere
+ * ganger etter hvert som det kommer på mer arbeid. Da kan ikke «angre
+ * fakturert» tømme `invoiced_at` på ALT — da blir forrige fakturas linjer
+ * ufakturerte igjen, og de havner på neste faktura. Kunden betaler to ganger
+ * for samme jobb.
+ *
+ * Runden kjennes igjen på tidsstempelet: alle linjer i én fakturering får
+ * nøyaktig samme `invoicedAt`, satt én gang i én transaksjon. Vi leser det fra
+ * LINJENE, ikke fra ordreraden — ordren har bare ett felt, og det kan være
+ * overskrevet eller mangle på gamle rader.
+ */
+export function sisteFakturarunde<T extends { fakturertTid?: number | null }>(
+  linjer: T[],
+): { runde: T[]; forrigeTid: number | null } {
+  const tider = linjer.map(l => l.fakturertTid).filter((t): t is number => typeof t === 'number')
+  if (tider.length === 0) return { runde: [], forrigeTid: null }
+  const siste = Math.max(...tider)
+  const foer = tider.filter(t => t < siste)
+  return {
+    runde: linjer.filter(l => l.fakturertTid === siste),
+    // Ordren var fortsatt fakturert på det tidspunktet, om det finnes en runde før.
+    forrigeTid: foer.length > 0 ? Math.max(...foer) : null,
   }
 }

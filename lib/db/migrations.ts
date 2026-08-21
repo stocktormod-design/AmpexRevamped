@@ -5,6 +5,17 @@ import { byggReparasjonsSql, TABELLER_V30 } from './id-repair'
 export const migrations = schemaMigrations({
   migrations: [
     {
+      // Rabatt avtalt i et tilbud fulgte ikke med når tilbudet ble ordre —
+      // ordren ble fakturert til full pris. Se lib/quotes.ts registrerSvar.
+      toVersion: 31,
+      steps: [
+        addColumns({
+          table: 'order_materials',
+          columns: [{ name: 'discount_percent', type: 'number', isOptional: true }],
+        }),
+      ],
+    },
+    {
       // Ingen skjemaendring — bare data. Åtte rader fra før setGenerator (eef17dd)
       // har base62-id der Postgres krever uuid, og siden watermelon_push kjører i
       // én transaksjon blokkerer de ALL synk, stille og for alltid. Se lib/db/id-repair.ts.

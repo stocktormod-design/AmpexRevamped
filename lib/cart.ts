@@ -80,3 +80,46 @@ export async function assignCartToOrder(lines: CartLine[], orderId: string) {
   })
   syncQuietly()
 }
+
+/**
+ * ── Å slette en materiallinje er ikke bare å slette en rad ──────────────────
+ *
+ * Et uttak fra bilen finnes som TO rader: `stock_movements` (varen er fysisk
+ * ute av lageret) og `order_materials` (den skal på fakturaen). Slettet man
+ * bare den siste, ble beholdningen stående for lav for alltid — uten spor, og
+ * uten at noen kunne se hvorfor bilen manglet ti downlights.
+ *
+ * De to utfallene er fysisk forskjellige og bare mennesket vet hvilket som
+ * gjelder, så vi gjetter ikke:
+ *
+ *   'tilbake'   varen ble lagt tilbake i bilen → uttaket slettes, beholdningen
+ *               er som før
+ *   'beholdt'   varen er fortsatt ute, bare ikke på DENNE ordren → uttaket
+ *               løsnes fra ordren og ligger igjen som uplassert (kurven)
+ */
+export type SlettMateriellValg = 'tilbake' | 'beholdt'
+
+/** Uttak som hører til denne materiallinja. Kobles på ordre + vare — det er
+ *  det eneste båndet som finnes mellom de to radene. */
+export async function uttakForMateriell(material: OrderMaterial): Promise<StockMovement[]> {
+  if (!material.productId) return []
+  return database.get<StockMovement>('stock_movements')
+    .query(
+      Q.where('order_id', material.orderId),
+      Q.where('product_id', material.productId),
+      Q.where('kind', 'ut'),
+    )
+    .fetch()
+}
+
+export async function slettMateriell(material: OrderMaterial, valg: SlettMateriellValg): Promise<void> {
+  const uttak = await uttakForMateriell(material)
+  await database.write(async () => {
+    for (const m of uttak) {
+      if (valg === 'tilbake') await m.markAsDeleted()
+      else await m.update(x => { x.orderId = null })
+    }
+    await material.markAsDeleted()
+  })
+  syncQuietly()
+}
