@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS, Alert } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
+import { StatusBar } from 'expo-status-bar'
 import { Q } from '@nozbe/watermelondb'
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable'
 import {
@@ -192,9 +193,13 @@ function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }
      * det bare enda et hvitt kort i rekka, og det var nettopp jevnheten som
      * fikk skjermen til å lese som en huke-av-liste.
      */
+    /* Et NEDSENKET felt, ikke enda et kort. Grunnen er alt mørk, så en mørk
+       blokk til ville blitt grøt — en svak lys film leses i stedet som noe som
+       ligger under overflaten. Fortsatt verktøy, ikke papir. */
     <View style={{
       marginBottom: spacing.screen, marginHorizontal: spacing.screen,
-      backgroundColor: colors.slate, borderRadius: radius.xl,
+      backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: radius.xl,
+      borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)',
       paddingVertical: spacing.lg, paddingHorizontal: spacing.md,
     }}>
       <Text style={[t.caption, {
@@ -613,7 +618,18 @@ export default function OrderDetailScreen() {
             : null
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    /*
+     * HELE siden er mørk, ikke bare hodet.
+     *
+     * Første forsøk hadde mørkt hode over beige grunn, og det ble halvt om
+     * halvt — to konkurrerende bakgrunner med en søm midt på skjermen. Nå er
+     * grunnen ett sammenhengende mørkt felt, og de lyse kortene FLYTER på den.
+     * Det er den samme modellen som før (tonet grunn + kort som løftes), bare
+     * snudd: kontrasten går nå riktig vei, og «arket»-følelsen er borte fordi
+     * det ikke finnes noe ark igjen.
+     */
+    <View style={{ flex: 1, backgroundColor: colors.cta }}>
+      <StatusBar style="light" />
       <ScrollView
         contentContainerStyle={{
           // Plass til den forankrede handlingen — ellers skjuler den siste rad.
@@ -633,13 +649,7 @@ export default function OrderDetailScreen() {
           her inne, så det hvite kortet de lå i forsvinner helt — én ting mindre
           i kolonnen, og den viktigste informasjonen får mest vekt.
         */}
-        <View style={{
-          backgroundColor: colors.cta,
-          paddingTop: insets.top + spacing.sm,
-          paddingBottom: spacing.lg,
-          borderBottomLeftRadius: radius.xl + 8,
-          borderBottomRightRadius: radius.xl + 8,
-        }}>
+        <View style={{ paddingTop: insets.top + spacing.sm, paddingBottom: spacing.lg }}>
           <View style={{ paddingHorizontal: spacing.screen }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Pressable
@@ -767,7 +777,7 @@ export default function OrderDetailScreen() {
               den.
         */}
         <View style={{ marginBottom: spacing.screen }}>
-          <SectionHeader>På jobben</SectionHeader>
+          <SectionHeader tone="light">På jobben</SectionHeader>
 
           <Pressable
             haptic="light"
@@ -840,7 +850,7 @@ export default function OrderDetailScreen() {
                   onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
                   style={{ alignItems: 'center', paddingVertical: spacing.sm }}
                 >
-                  <Text style={[t.footnote, { color: colors.secondaryLabel, fontWeight: '600' }]}>
+                  <Text style={[t.footnote, { color: 'rgba(251,247,240,0.55)', fontWeight: '600' }]}>
                     {`Vis alle ${materials.length}`}
                   </Text>
                 </Pressable>
@@ -855,7 +865,7 @@ export default function OrderDetailScreen() {
             tas foran kunden når arbeidet er gjort, ikke ligge og lyse mens du
             fortsatt drar kabel. */}
         <View style={{ marginBottom: spacing.screen }}>
-          <SectionHeader>Når jobben er ferdig</SectionHeader>
+          <SectionHeader tone="light">Når jobben er ferdig</SectionHeader>
           <ListCard>
             <Rad
               ikon={<PenLine size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
@@ -963,7 +973,7 @@ export default function OrderDetailScreen() {
           for korrigering; ingen funksjonalitet er fjernet, bare rangert.
         */}
         <View style={{ marginBottom: spacing.screen }}>
-          <SectionHeader>Status</SectionHeader>
+          <SectionHeader tone="light">Status</SectionHeader>
           <View style={{ marginHorizontal: spacing.screen, gap: spacing.sm }}>
             {/* Hovedhandlingen er flyttet til den forankrede linja nederst.
                 Her ligger bare korrigering — å hoppe tilbake når noe ble
@@ -973,7 +983,7 @@ export default function OrderDetailScreen() {
               onPress={() => setStatusOpen(o => !o)}
               style={{ alignItems: 'center', paddingVertical: spacing.sm }}
             >
-              <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>
+              <Text style={[t.subhead, { color: 'rgba(251,247,240,0.55)', fontWeight: '600' }]}>
                 {statusOpen ? 'Skjul statusvalg' : 'Endre status'}
               </Text>
             </Pressable>
@@ -994,7 +1004,7 @@ export default function OrderDetailScreen() {
 
         {/* Detaljer — metadata nederst, minst viktig */}
         <View>
-          <SectionHeader>Detaljer</SectionHeader>
+          <SectionHeader tone="light">Detaljer</SectionHeader>
           <ListCard>
             <MetaRow label="Ordrenummer" value={order.orderNumber ? `#${order.orderNumber}` : 'Tildeles ved synk'} />
             <MetaRow label="Opprettet" value={formatDateTime(order.createdAt) ?? '–'} />
@@ -1026,12 +1036,15 @@ export default function OrderDetailScreen() {
             onPress={hovedhandling.gjor}
             style={{
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-              height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.cta,
-              shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+              // Mørk knapp på mørk grunn forsvinner. Kremet flate med mørk
+              // skrift er den sterkeste kontrasten paletten har — og da leses
+              // den som DEN ene handlingen, ikke som enda et element.
+              height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.brandSoft,
+              shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
             }}
           >
-            <Check size={19} color={colors.ctaLabel} strokeWidth={2.4} />
-            <Text style={[t.headline, { color: colors.ctaLabel }]}>{hovedhandling.tekst}</Text>
+            <Check size={19} color={colors.label} strokeWidth={2.4} />
+            <Text style={[t.headline, { color: colors.label }]}>{hovedhandling.tekst}</Text>
           </Pressable>
         </View>
       )}
