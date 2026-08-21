@@ -35,9 +35,14 @@ type GeminiSpec = {
 
 const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash'
 const GEMINI_LIVE_MODEL = Deno.env.get('GEMINI_LIVE_MODEL') ?? 'gemini-3.1-flash-live-preview'
-// Prebuilt-stemme for Live (bytt uten app-utrulling: supabase secrets set GEMINI_LIVE_VOICE=Aoede).
-// Kvinnelige kandidater: Kore (fast/klar), Aoede (lett), Leda (ung), Zephyr (lys). Mannlige: Charon, Orus, Fenrir, Puck.
-const GEMINI_LIVE_VOICE = Deno.env.get('GEMINI_LIVE_VOICE') ?? 'Kore'
+// Prebuilt-stemme for Live (bytt uten app-utrulling: supabase secrets set GEMINI_LIVE_VOICE=Orus).
+//
+// STANDARD ER MANN, og det er et kvalitetsvalg, ikke et smaksvalg: de kvinnelige
+// stemmene treffer ikke norsk prosodi — de lander mellom dialekter og blir
+// slitsomme å høre på over en arbeidsdag. Charon er den dypeste og roligste.
+// Andre mannlige: Orus (nøytral), Fenrir (kraftig), Puck (kvikk).
+// Kvinnelige finnes fortsatt i velgeren under Meg: Kore, Aoede, Leda, Zephyr.
+const GEMINI_LIVE_VOICE = Deno.env.get('GEMINI_LIVE_VOICE') ?? 'Charon'
 const GEMINI_TIMEOUT_MS = 20_000
 
 // Skjemaimport er en SJELDEN operasjon med varig resultat: en mal leses inn én
