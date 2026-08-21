@@ -3,6 +3,8 @@ import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS, Alert } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
+import { LinearGradient } from 'expo-linear-gradient'
+import Animated, { FadeInDown } from 'react-native-reanimated'
 import { Q } from '@nozbe/watermelondb'
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable'
 import {
@@ -323,11 +325,13 @@ function Rad({ ikon, tittel, under, underVarsel, verdi, sterkVerdi, onPress, for
  * «+ Legg til …»-knappen under hvert kort er borte: den skrev seg inn i
  * kolonnen som enda en linje, og det var halve problemet.
  */
-function Flis({ ikon, etikett, tall, under, onPress, paaLegg }: {
+function Flis({ ikon, etikett, tall, under, tom, onPress, paaLegg }: {
   ikon: React.ReactNode
   etikett: string
   tall: string
   under: string
+  /** Vises i stedet for tallet når det ikke finnes noe å telle. */
+  tom?: string
   onPress: () => void
   paaLegg?: () => void
 }) {
@@ -357,9 +361,11 @@ function Flis({ ikon, etikett, tall, under, onPress, paaLegg }: {
         )}
       </View>
       <View>
-        <Text style={[t.title1, { fontVariant: ['tabular-nums'] }]}>
-          {tall}
-        </Text>
+        {tom ? (
+          <Text style={[t.title3, { color: colors.brand }]}>{tom}</Text>
+        ) : (
+          <Text style={[t.title1, { fontVariant: ['tabular-nums'] }]}>{tall}</Text>
+        )}
         <Text style={[t.footnote, { fontWeight: '600', marginTop: 1 }]}>{etikett}</Text>
         <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: 1 }]} numberOfLines={1}>{under}</Text>
       </View>
@@ -630,6 +636,23 @@ export default function OrderDetailScreen() {
      */
     <View style={{ flex: 1, backgroundColor: colors.cta }}>
       <StatusBar style="light" />
+      {/*
+        LYS I ROMMET. En flat mørk flate ser billig ut — ekte mørke grensesnitt
+        har en lyskilde. To lag, begge uten trykkflate:
+          · en vertikal gradient som gjør toppen litt lysere enn bunnen
+          · en kobberglød bak hodet, der tittelen står
+        Det er forskjellen på «bakgrunnsfargen er satt til mørkebrun» og «denne
+        skjermen er belyst».
+      */}
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 460 }}>
+        <LinearGradient
+          colors={['rgba(169,124,79,0.22)', 'rgba(169,124,79,0.05)', 'rgba(0,0,0,0)']}
+          locations={[0, 0.45, 1]}
+          start={{ x: 0.15, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
+          style={{ flex: 1 }}
+        />
+      </View>
       <ScrollView
         contentContainerStyle={{
           // Plass til den forankrede handlingen — ellers skjuler den siste rad.
@@ -776,7 +799,12 @@ export default function OrderDetailScreen() {
               flisas hjørne, som en handling på tingen, ikke en ny linje under
               den.
         */}
-        <View style={{ marginBottom: spacing.screen }}>
+        {/* Bevegelse. Skjermen hadde NULL animasjon — den bare sto der.
+            Innfelling i rekkefølge gjør at øyet får en leserekkefølge servert i
+            stedet for å måtte finne den selv, og det er halve forskjellen på
+            «funker» og «føles laget». Kun transform og opacity, på UI-tråden
+            (regel 8). */}
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(60)} style={{ marginBottom: spacing.screen }}>
           <SectionHeader tone="light">På jobben</SectionHeader>
 
           <Pressable
@@ -795,13 +823,20 @@ export default function OrderDetailScreen() {
             }}>
               <Clock size={20} color={colors.brand} strokeWidth={2.1} />
             </View>
+            {/* Det store tallet er riktig NÅR det er noe å vise. Et fett «0 t»
+                er mye plass til ingenting — da sier vi heller hva du skal gjøre.
+                En tom tilstand er en invitasjon, ikke et null. */}
             <View style={{ flex: 1 }}>
-              <Text style={[t.caption, { textTransform: 'uppercase', color: colors.secondaryLabel }]}>Timer ført</Text>
-              <Text style={[t.display, { marginTop: 1 }]}>
-                {timer > 0
-                  ? `${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t`
-                  : '0 t'}
+              <Text style={[t.caption, { textTransform: 'uppercase', color: colors.secondaryLabel }]}>
+                {timer > 0 ? 'Timer ført' : 'Timeføring'}
               </Text>
+              {timer > 0 ? (
+                <Text style={[t.display, { marginTop: 1 }]}>
+                  {`${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t`}
+                </Text>
+              ) : (
+                <Text style={[t.title3, { marginTop: 2, color: colors.brand }]}>Før første time</Text>
+              )}
             </View>
             <ChevronRight size={20} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
           </Pressable>
@@ -810,8 +845,9 @@ export default function OrderDetailScreen() {
             <Flis
               ikon={<Package size={20} color={colors.brand} strokeWidth={2.1} />}
               etikett="Materiell"
-              tall={materials.length > 0 ? String(materials.length) : '—'}
-              under={materials.length > 0 ? sisteMateriell : 'Ingenting ført'}
+              tall={materials.length > 0 ? String(materials.length) : ''}
+              tom={materials.length === 0 ? 'Skann eller søk' : undefined}
+              under={materials.length > 0 ? sisteMateriell : 'Ingenting ført ennå'}
               onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
               paaLegg={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
             />
@@ -821,9 +857,10 @@ export default function OrderDetailScreen() {
             <Flis
               ikon={<FileText size={20} color={allDocsDone ? colors.slate : colors.brand} strokeWidth={2.1} />}
               etikett="Dokumentasjon"
-              tall={docs.length === 0 ? '—' : `${docsDone}/${docs.length}`}
+              tall={docs.length === 0 ? '' : `${docsDone}/${docs.length}`}
+              tom={docs.length === 0 ? 'Velg skjema' : undefined}
               under={
-                docs.length === 0 ? 'Velg skjema'
+                docs.length === 0 ? 'Ingen lagt til ennå'
                 : allDocsDone ? 'Alt fullført'
                 : `${docs.length - docsDone} gjenstår`
               }
@@ -857,14 +894,14 @@ export default function OrderDetailScreen() {
               )}
             </View>
           )}
-        </View>
+        </Animated.View>
         {/* LiDAR — én seksjon, segmentvalg mellom planlegging og dokumentasjon */}
         <ScanSection orderId={order.id} scans={scans} />
 
         {/* Når jobben er ferdig. Signaturen er en avslutningshandling — den skal
             tas foran kunden når arbeidet er gjort, ikke ligge og lyse mens du
             fortsatt drar kabel. */}
-        <View style={{ marginBottom: spacing.screen }}>
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(140)} style={{ marginBottom: spacing.screen }}>
           <SectionHeader tone="light">Når jobben er ferdig</SectionHeader>
           <ListCard>
             <Rad
@@ -899,7 +936,7 @@ export default function OrderDetailScreen() {
               sist
             />
           </ListCard>
-        </View>
+        </Animated.View>
 
         {/* Kom ordren fra et tilbud, er den avtalte prisen det viktigste tallet på
             skjermen — den overstyrer alt fakturagrunnlaget regner ut. */}

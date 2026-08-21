@@ -2,6 +2,7 @@
 // (text styles, spring presets). Import from here in all screens/components.
 import type { TextStyle, ViewStyle } from 'react-native'
 import { WithSpringConfig } from 'react-native-reanimated'
+import { DISPLAY_FONT } from './fonts'
 
 const tokens = require('./tokens.js') as {
   colors: Record<string, string>
@@ -20,12 +21,16 @@ export const sizes = tokens.sizes
 export const type = {
   // Ampex display-signatur: skjermtitler og store tall. Tyngre og strammere enn
   // HIG-largeTitle — det som skiller «verktøy laget med omhu» fra Innstillinger.
-  display: { fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -1.0, color: colors.label } satisfies TextStyle,
+  // Serif. Ingen fontWeight: med en egendefinert familie synteser iOS en falsk
+  // fetstil som ser billig ut — vekten ligger i filen, ikke i stilen.
+  // En serif trenger dessuten mindre negativ sporing enn en grotesk; -1.0 ville
+  // presset seriffene inn i hverandre.
+  display: { fontSize: 38, lineHeight: 44, fontFamily: DISPLAY_FONT, letterSpacing: -0.4, color: colors.label } satisfies TextStyle,
   // Eyebrow: liten caps-linje over titler/hero-kort (dato, status·tid). Bred tracking
   // gir teknisk «måleinstrument»-rytme. Brukes med textTransform: 'uppercase'.
   eyebrow: { fontSize: 12, lineHeight: 16, fontWeight: '600', letterSpacing: 1.1, color: colors.secondaryLabel } satisfies TextStyle,
-  largeTitle: { fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -0.5, color: colors.label } satisfies TextStyle,
-  title1: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.4, color: colors.label } satisfies TextStyle,
+  largeTitle: { fontSize: 36, lineHeight: 42, fontFamily: DISPLAY_FONT, letterSpacing: -0.3, color: colors.label } satisfies TextStyle,
+  title1: { fontSize: 30, lineHeight: 36, fontFamily: DISPLAY_FONT, letterSpacing: -0.2, color: colors.label } satisfies TextStyle,
   title2: { fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.3, color: colors.label } satisfies TextStyle,
   title3: { fontSize: 20, lineHeight: 25, fontWeight: '600', letterSpacing: -0.3, color: colors.label } satisfies TextStyle,
   headline: { fontSize: 17, lineHeight: 22, fontWeight: '600', letterSpacing: -0.3, color: colors.label } satisfies TextStyle,
