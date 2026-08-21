@@ -25,6 +25,7 @@ import { slettMateriell, uttakForMateriell } from '../../../lib/cart'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Order, orderStatuses, orderStatusLabel, type OrderStatus } from '../../../lib/db/models/order'
 import { OrderDocument } from '../../../lib/db/models/order-document'
+import { FormTemplate } from '../../../lib/db/models/form-template'
 import { OrderMaterial } from '../../../lib/db/models/order-material'
 import { OrderScan, scanKindLabel, type ScanKind } from '../../../lib/db/models/order-scan'
 import { AMPEX_TEMPLATES } from '../../../lib/forms/templates'
@@ -42,6 +43,23 @@ function initials(name: string): string {
 }
 
 /** Dokumentstatus per mal for én ordre — reaktivt (rad finnes først ved første endring) */
+/**
+ * Firmaets egne, publiserte skjemamaler — inkludert de som ble importert fra
+ * en PDF. Uten denne kunne bare Ampex-malene legges på en ordre fra appen.
+ */
+function useFirmTemplates() {
+  const [maler, setMaler] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => {
+    const sub = database
+      .get<FormTemplate>('form_templates')
+      .query(Q.where('status', 'published'), Q.sortBy('title', Q.asc))
+      .observeWithColumns(['title', 'status'])
+      .subscribe(rader => setMaler(rader.map(r => ({ id: r.id, name: r.title }))))
+    return () => sub.unsubscribe()
+  }, [])
+  return maler
+}
+
 function useOrderDocuments(orderId: string) {
   const [docs, setDocs] = useState<OrderDocument[]>([])
   useEffect(() => {
@@ -460,8 +478,19 @@ export default function OrderDetailScreen() {
   const docs = useOrderDocuments(id ?? '')
   const materials = useOrderMaterials(id ?? '')
   const scans = useOrderScans(id ?? '')
+  const firmaMaler = useFirmTemplates()
   const docByTemplate = new Map(docs.map(d => [d.templateId, d]))
-  const doneCount = AMPEX_TEMPLATES.filter(tpl => docByTemplate.get(tpl.id)?.status === 'fullfort').length
+  /**
+   * Nevneren er skjemaene som er LAGT TIL på denne ordren — ikke alle malene
+   * som finnes.
+   *
+   * «0/5» påsto at hver jobb trenger alle fem Ampex-malene. Det stemmer ikke:
+   * en samsvarserklæring hører til et anlegg, en SJA til en risikojobb, og en
+   * servicejobb trenger kanskje ingen av dem. Du velger selv hva som passer, og
+   * da er «2/3» det ærlige tallet — «2/5» var en oppgaveliste vi hadde funnet
+   * på for kunden.
+   */
+  const doneCount = docs.filter(d => d.status === 'fullfort').length
   const grunnlag = useFakturagrunnlag(id ?? '')
   const timer = useOrderTimer(id ?? '')
   const antallMedlemmer = useOrderMemberCount(id ?? '')
@@ -469,7 +498,7 @@ export default function OrderDetailScreen() {
   const signaturer = useSignaturer(id ?? '')
   const godkjenninger = useGodkjenninger(id)
   const godkjenningsgrunnlag = useGrunnlag(id, grunnlag?.bruttoOre ?? 0)
-  const allDocsDone = doneCount === AMPEX_TEMPLATES.length
+  const allDocsDone = docs.length > 0 && doneCount === docs.length
   const docsDone = doneCount
   // Siste linje som ble ført — flisa sier hva som er der, ikke bare hvor mange.
   const sisteMateriell = materials.length > 0 ? materials[materials.length - 1].description : ''
@@ -519,8 +548,18 @@ export default function OrderDetailScreen() {
     Linking.openURL(Platform.OS === 'android' ? `geo:0,0?q=${q}` : `https://maps.apple.com/?daddr=${q}&dirflg=d`)
   }
 
-  const startedTemplates = AMPEX_TEMPLATES.filter(tpl => docByTemplate.has(tpl.id))
-  const remainingTemplates = AMPEX_TEMPLATES.filter(tpl => !docByTemplate.has(tpl.id))
+  /**
+   * Både Ampex-malene og firmaets EGNE — også de som nettopp ble importert fra
+   * en PDF. Før kunne bare Ampex-malene legges på en ordre fra appen; et
+   * importert skjema kunne AI-en bruke, men montøren fant det ikke. Da var
+   * importen halvveis ubrukelig.
+   */
+  const alleMaler: { id: string; name: string }[] = [
+    ...AMPEX_TEMPLATES.map(tpl => ({ id: tpl.id, name: tpl.name })),
+    ...firmaMaler,
+  ]
+  const startedTemplates = alleMaler.filter(tpl => docByTemplate.has(tpl.id))
+  const remainingTemplates = alleMaler.filter(tpl => !docByTemplate.has(tpl.id))
 
   // Dokumentasjon viser kun faktisk lagt-til skjema — «Legg til» velger blant de resterende.
   function addDocumentation() {
@@ -772,8 +811,12 @@ export default function OrderDetailScreen() {
             <Flis
               ikon={<FileText size={20} color={allDocsDone ? colors.slate : colors.brand} strokeWidth={2.1} />}
               etikett="Dokumentasjon"
-              tall={`${docsDone}/${AMPEX_TEMPLATES.length}`}
-              under={allDocsDone ? 'Alt fullført' : startedTemplates.length > 0 ? 'Skjema gjenstår' : 'Ikke påbegynt'}
+              tall={docs.length === 0 ? '—' : `${docsDone}/${docs.length}`}
+              under={
+                docs.length === 0 ? 'Velg skjema'
+                : allDocsDone ? 'Alt fullført'
+                : `${docs.length - docsDone} gjenstår`
+              }
               onPress={() => {
                 const forste = startedTemplates[0]
                 if (forste) {

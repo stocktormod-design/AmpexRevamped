@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { supabase } from '../lib/supabase'
 import { syncQuietly } from '../lib/db/sync'
+import { abonnerPalett, bruk, lagretPalett } from '../lib/palett'
 import { enforceCompanyBoundary } from '../lib/db/company-guard'
 import { seedAktiviteter } from '../lib/activities'
 import { retryPendingAiEnrichment, registerDraftHandler } from '../lib/ai/retry'
@@ -138,6 +139,15 @@ function VoiceAssistant() {
 }
 
 export default function RootLayout() {
+  // MIDLERTIDIG (palettprøving, se lib/palett.ts). `nokkel` re-monterer treet
+  // når paletten byttes — fargene leses ved render, så alt må tegnes på nytt.
+  // Slettes sammen med velgeren når én palett er valgt.
+  const [nokkel, setNokkel] = useState('naavaerende')
+  useEffect(() => {
+    lagretPalett().then(id => { bruk(id); setNokkel(id) }).catch(() => {})
+    return abonnerPalett(id => { bruk(id); setNokkel(id) })
+  }, [])
+
   useEffect(() => {
     // Firma-grensen sjekkes FØR synk: hvis et annet firma har eid den lokale
     // databasen skal den nullstilles før nye data skrives inn i den.
@@ -184,7 +194,7 @@ export default function RootLayout() {
   }, [])
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1 }} key={nokkel}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <VoiceSessionProvider>
