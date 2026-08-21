@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView, TextInput, Alert } from 'react-native'
+import { View, ScrollView, Alert } from 'react-native'
+import { Text, TextInput } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Haptics from 'expo-haptics'
 import { Q } from '@nozbe/watermelondb'
@@ -88,7 +89,8 @@ export function CartSheet({ lines, onClose }: { lines: CartLine[]; onClose: () =
           {
             position: 'absolute', left: spacing.sm, right: spacing.sm,
             top: insets.top + spacing.xxl, bottom: sizes.tabBar + insets.bottom + spacing.sm,
-            backgroundColor: colors.brandSoft, borderRadius: radius.hero, overflow: 'hidden',
+            backgroundColor: colors.canvas, borderRadius: radius.hero, overflow: 'hidden',
+            borderWidth: 1, borderColor: colors.border,
           },
           shadows.floating,
         ]}

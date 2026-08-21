@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { Text } from './text'
 import { useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { setStatusBarStyle } from 'expo-status-bar'
@@ -24,35 +25,57 @@ import { colors, spacing, radius, type as t } from '../lib/theme'
  */
 
 /**
- * Lys statuslinje mens skjermen er i fokus — og MØRK igjen når du forlater den.
- *
- * `<StatusBar>` setter stilen ved mount og gjenoppretter ingenting ved unmount.
- * Uten dette blir klokke og batteri hvite på kremet bakgrunn i det du åpner et
- * skjema fra en mørk skjerm — usynlige, og umulig å spore tilbake til hvor det
- * ble satt. Å legge `<StatusBar style="dark" />` i alle de 32 papirskjermene
- * ville vært å rette symptomet 32 ganger.
+ * Lys klokke og batteri — standarden, siden grunnflaten er brun. Rot-layoutet
+ * setter den allerede; denne finnes for skjermer som kommer TILBAKE fra et
+ * dokument og må sette den på plass igjen.
  */
 export function useMorkStatuslinje() {
+  useFocusEffect(useCallback(() => { setStatusBarStyle('light') }, []))
+}
+
+/**
+ * MØRK statuslinje mens et dokument er i fokus — og lys igjen når du går ut.
+ *
+ * `<StatusBar>` setter stilen ved mount og gjenoppretter ingenting ved unmount.
+ * Uten denne blir klokke og batteri kremhvite på kremet papir i det du åpner et
+ * skjema fra en brun skjerm — usynlige, og umulig å spore tilbake til hvor det
+ * ble satt.
+ */
+export function usePapirStatuslinje() {
   useFocusEffect(useCallback(() => {
-    setStatusBarStyle('light')
-    return () => setStatusBarStyle('dark')
+    setStatusBarStyle('dark')
+    return () => setStatusBarStyle('light')
   }, []))
 }
 
-/** Mørk sidegrunn med lyskilde. En flat mørk flate ser billig ut. */
+/**
+ * Lyskilden alene. En flat mørk flate ser billig ut — ekte mørke grensesnitt
+ * har et sted lyset kommer fra.
+ *
+ * Løsrevet fra `ToolScreen` fordi flere skjermer har sin egen rot-View (modaler,
+ * KeyboardAvoidingView) og bare trenger gløden. Den er den mørke tvillingen til
+ * `AmbientBackdrop`, og byttes rett inn der den lå.
+ */
+export function ToolGlow({ height = 420 }: { height?: number }) {
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height }}>
+      <LinearGradient
+        colors={['rgba(169,124,79,0.20)', 'rgba(169,124,79,0.045)', 'rgba(0,0,0,0)']}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0.15, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+        style={{ flex: 1 }}
+      />
+    </View>
+  )
+}
+
+/** Mørk sidegrunn med lyskilde. */
 export function ToolScreen({ children }: { children: React.ReactNode }) {
   useMorkStatuslinje()
   return (
     <View style={{ flex: 1, backgroundColor: colors.toolBg }}>
-      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 420 }}>
-        <LinearGradient
-          colors={['rgba(169,124,79,0.20)', 'rgba(169,124,79,0.045)', 'rgba(0,0,0,0)']}
-          locations={[0, 0.45, 1]}
-          start={{ x: 0.15, y: 0 }}
-          end={{ x: 0.9, y: 1 }}
-          style={{ flex: 1 }}
-        />
-      </View>
+      <ToolGlow />
       {children}
     </View>
   )

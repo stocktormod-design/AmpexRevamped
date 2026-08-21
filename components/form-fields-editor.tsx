@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, TextInput } from 'react-native'
+import { View } from 'react-native'
+import { Text, TextInput } from './text'
 import Animated, { LinearTransition } from 'react-native-reanimated'
 import {
   Plus, Trash2, SquareCheck, Type, Hash, Camera, AlignLeft, List, Table2, Info,
@@ -11,7 +12,7 @@ import type {
   FormField, FormFieldType, FormSection,
 } from '../lib/db/models/form-template'
 import { JA_NEI_IA } from '../lib/forms/types'
-import { colors, spacing, radius, type as t } from '../lib/theme'
+import { colors, spacing, radius, paperType as t } from '../lib/theme'
 
 const TYPES: FormFieldType[] = ['check', 'choice', 'text', 'multiline', 'number', 'table', 'photo', 'info']
 
@@ -59,9 +60,9 @@ function MiniInput({ value, onChangeText, placeholder, style }: {
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
-      placeholderTextColor={colors.tertiaryLabel}
+      placeholderTextColor={colors.paperTertiary}
       style={[t.subhead, {
-        backgroundColor: colors.fill, borderRadius: radius.md,
+        backgroundColor: colors.paperFill, borderRadius: radius.md,
         paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.sm,
       }, style]}
     />
@@ -73,9 +74,9 @@ function Toggle({ label, on, onPress }: { label: string; on: boolean; onPress: (
     <Pressable haptic="light" onPress={onPress}
       style={{
         paddingHorizontal: spacing.sm + 2, paddingVertical: 4, borderRadius: radius.sm,
-        backgroundColor: on ? colors.label : colors.fill,
+        backgroundColor: on ? colors.paperLabel : colors.paperFill,
       }}>
-      <Text style={[t.caption, { color: on ? colors.bg : colors.secondaryLabel, fontWeight: '600' }]}>{label}</Text>
+      <Text style={[t.caption, { color: on ? colors.paperBg : colors.paperSecondary, fontWeight: '600' }]}>{label}</Text>
     </Pressable>
   )
 }
@@ -91,14 +92,14 @@ function StringListEditor({ values, onChange, addLabel, placeholder }: {
           <MiniInput value={v} placeholder={placeholder(i)} style={{ flex: 1 }}
             onChangeText={next => onChange(values.map((x, j) => (j === i ? next : x)))} />
           <Pressable hitSlop={8} haptic="light" onPress={() => onChange(values.filter((_, j) => j !== i))}>
-            <X size={15} color={colors.tertiaryLabel} strokeWidth={2} />
+            <X size={15} color={colors.paperTertiary} strokeWidth={2} />
           </Pressable>
         </View>
       ))}
       <Pressable haptic="light" onPress={() => onChange([...values, ''])}
         style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingVertical: spacing.xs }}>
-        <Plus size={14} color={colors.secondaryLabel} strokeWidth={2.2} />
-        <Text style={[t.caption, { color: colors.secondaryLabel, fontWeight: '600' }]}>{addLabel}</Text>
+        <Plus size={14} color={colors.paperSecondary} strokeWidth={2.2} />
+        <Text style={[t.caption, { color: colors.paperSecondary, fontWeight: '600' }]}>{addLabel}</Text>
       </Pressable>
     </View>
   )
@@ -139,27 +140,27 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
 
   return (
     <View style={[
-      { backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.sm + 2, marginBottom: spacing.sm },
+      { backgroundColor: colors.paperBg, borderRadius: radius.lg, padding: spacing.sm + 2, marginBottom: spacing.sm },
       !!flagg && { borderWidth: 1, borderColor: colors.warning },
     ]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
         <Pressable haptic="light" onPress={() => setTypeSheet(true)}
-          style={{ width: 34, height: 34, borderRadius: radius.md, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={17} color={colors.label} strokeWidth={2} />
+          style={{ width: 34, height: 34, borderRadius: radius.md, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={17} color={colors.paperLabel} strokeWidth={2} />
         </Pressable>
         <TextInput
           value={field.label} onChangeText={v => onChange({ label: v })}
           placeholder={field.type === 'info' ? 'Teksten som skal leses…' : 'Beskriv punktet…'}
-          placeholderTextColor={colors.tertiaryLabel}
+          placeholderTextColor={colors.paperTertiary}
           multiline={field.type === 'info'}
           style={[t.body, { flex: 1 }]}
         />
         <Pressable haptic="light" hitSlop={8} onPress={() => setOpen(o => !o)}>
-          {open ? <ChevronDown size={18} color={colors.tertiaryLabel} strokeWidth={2} />
-                : <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={2} />}
+          {open ? <ChevronDown size={18} color={colors.paperTertiary} strokeWidth={2} />
+                : <ChevronRight size={18} color={colors.paperTertiary} strokeWidth={2} />}
         </Pressable>
         <Pressable haptic="light" hitSlop={8} onPress={onRemove}>
-          <Trash2 size={18} color={colors.tertiaryLabel} strokeWidth={2} />
+          <Trash2 size={18} color={colors.paperTertiary} strokeWidth={2} />
         </Pressable>
       </View>
 
@@ -173,16 +174,16 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
       {/* Sammendragslinje når kortet er lukket */}
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm, marginLeft: 34 + spacing.sm }}>
         <Pressable haptic="light" onPress={() => setTypeSheet(true)}
-          style={{ paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.sm, backgroundColor: colors.fill }}>
-          <Text style={[t.caption, { color: colors.secondaryLabel }]}>{TYPE_LABEL[field.type]}</Text>
+          style={{ paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.sm, backgroundColor: colors.paperFill }}>
+          <Text style={[t.caption, { color: colors.paperSecondary }]}>{TYPE_LABEL[field.type]}</Text>
         </Pressable>
         {field.type !== 'info' && (
           <Toggle label="Påkrevd" on={!!field.required} onPress={() => onChange({ required: !field.required })} />
         )}
         {!!field.showIf && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-            <Eye size={12} color={colors.tertiaryLabel} strokeWidth={2} />
-            <Text style={[t.caption, { color: colors.tertiaryLabel }]}>betinget</Text>
+            <Eye size={12} color={colors.paperTertiary} strokeWidth={2} />
+            <Text style={[t.caption, { color: colors.paperTertiary }]}>betinget</Text>
           </View>
         )}
       </View>
@@ -191,7 +192,7 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
         <View style={{ marginTop: spacing.md, marginLeft: 34 + spacing.sm, gap: spacing.md }}>
           {field.type !== 'info' && (
             <View>
-              <Text style={[t.caption, { color: colors.tertiaryLabel, marginBottom: spacing.xs }]}>Veiledning (valgfritt)</Text>
+              <Text style={[t.caption, { color: colors.paperTertiary, marginBottom: spacing.xs }]}>Veiledning (valgfritt)</Text>
               <MiniInput value={field.help ?? ''} placeholder="Vises under punktet"
                 onChangeText={v => onChange({ help: v || undefined })} />
             </View>
@@ -199,7 +200,7 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
 
           {field.type === 'choice' && (
             <View>
-              <Text style={[t.caption, { color: colors.tertiaryLabel, marginBottom: spacing.xs }]}>Alternativer</Text>
+              <Text style={[t.caption, { color: colors.paperTertiary, marginBottom: spacing.xs }]}>Alternativer</Text>
               <StringListEditor
                 values={field.choices ?? []}
                 onChange={choices => onChange({ choices })}
@@ -211,7 +212,7 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
 
           {field.type === 'table' && (
             <View>
-              <Text style={[t.caption, { color: colors.tertiaryLabel, marginBottom: spacing.xs }]}>Kolonner</Text>
+              <Text style={[t.caption, { color: colors.paperTertiary, marginBottom: spacing.xs }]}>Kolonner</Text>
               <StringListEditor
                 values={(field.columns ?? []).map(c => c.label)}
                 onChange={labels => onChange({
@@ -227,7 +228,7 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
 
           {field.type === 'number' && (
             <View>
-              <Text style={[t.caption, { color: colors.tertiaryLabel, marginBottom: spacing.xs }]}>Enhet (valgfritt)</Text>
+              <Text style={[t.caption, { color: colors.paperTertiary, marginBottom: spacing.xs }]}>Enhet (valgfritt)</Text>
               <MiniInput value={field.unit ?? ''} placeholder="A, V, Ω, mm²…"
                 onChangeText={v => onChange({ unit: v || undefined })} />
             </View>
@@ -235,15 +236,15 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
 
           {/* Betinget visning */}
           <View>
-            <Text style={[t.caption, { color: colors.tertiaryLabel, marginBottom: spacing.xs }]}>Vis punktet</Text>
+            <Text style={[t.caption, { color: colors.paperTertiary, marginBottom: spacing.xs }]}>Vis punktet</Text>
             <Pressable haptic="light"
               onPress={() => (candidates.length > 0 ? setSourceSheet(true) : undefined)}
-              style={{ backgroundColor: colors.fill, borderRadius: radius.md, paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.sm }}>
-              <Text style={[t.subhead, { color: source ? colors.label : colors.secondaryLabel }]}>
+              style={{ backgroundColor: colors.paperFill, borderRadius: radius.md, paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.sm }}>
+              <Text style={[t.subhead, { color: source ? colors.paperLabel : colors.paperSecondary }]}>
                 {source ? `Bare når «${source.label || 'uten navn'}» er…` : 'Alltid'}
               </Text>
               {candidates.length === 0 && (
-                <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 2 }]}>
+                <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 2 }]}>
                   Krever et avkryss- eller klikklistepunkt lenger opp i skjemaet.
                 </Text>
               )}
@@ -341,12 +342,12 @@ export function SectionsEditor({ sections, flagg, onChange }: {
                 value={section.title}
                 onChangeText={v => patchSection(section.id, { title: v })}
                 placeholder={sections.length === 1 ? 'Del av skjemaet (valgfritt)' : `Del ${si + 1}`}
-                placeholderTextColor={colors.tertiaryLabel}
-                style={[t.caption, { flex: 1, textTransform: 'uppercase', letterSpacing: 0.4, color: colors.secondaryLabel, marginLeft: spacing.xs }]}
+                placeholderTextColor={colors.paperTertiary}
+                style={[t.caption, { flex: 1, textTransform: 'uppercase', letterSpacing: 0.4, color: colors.paperSecondary, marginLeft: spacing.xs }]}
               />
               {sections.length > 1 && (
                 <Pressable hitSlop={8} haptic="light" onPress={() => onChange(sections.filter(s => s.id !== section.id))}>
-                  <Trash2 size={15} color={colors.tertiaryLabel} strokeWidth={2} />
+                  <Trash2 size={15} color={colors.paperTertiary} strokeWidth={2} />
                 </Pressable>
               )}
             </View>
@@ -380,11 +381,11 @@ export function SectionsEditor({ sections, flagg, onChange }: {
               })}
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-                height: 46, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.border,
+                height: 46, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.paperBorder,
                 borderStyle: 'dashed', marginTop: spacing.xs,
               }}>
-              <Plus size={18} color={colors.iconMuted} strokeWidth={2.2} />
-              <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>Legg til punkt</Text>
+              <Plus size={18} color={colors.paperIcon} strokeWidth={2.2} />
+              <Text style={[t.subhead, { color: colors.paperSecondary, fontWeight: '600' }]}>Legg til punkt</Text>
             </Pressable>
           </View>
         ))}
@@ -392,8 +393,8 @@ export function SectionsEditor({ sections, flagg, onChange }: {
 
       <Pressable haptic="light" onPress={() => onChange([...sections, newSection()])}
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.md }}>
-        <Plus size={15} color={colors.secondaryLabel} strokeWidth={2.2} />
-        <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>Ny del</Text>
+        <Plus size={15} color={colors.paperSecondary} strokeWidth={2.2} />
+        <Text style={[t.subhead, { color: colors.paperSecondary, fontWeight: '600' }]}>Ny del</Text>
       </Pressable>
     </View>
   )

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { View, Text, TextInput } from 'react-native'
+import { View } from 'react-native'
+import { Text, TextInput } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Pressable } from './pressable'
 import { speak } from '../lib/ai/voice-speaker'

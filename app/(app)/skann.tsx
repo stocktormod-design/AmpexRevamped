@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { View, Text, Alert, TextInput, ScrollView } from 'react-native'
+import { View, Alert, ScrollView } from 'react-native'
+import { Text, TextInput } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import { SvgXml } from 'react-native-svg'

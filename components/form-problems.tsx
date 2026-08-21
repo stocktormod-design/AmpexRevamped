@@ -1,6 +1,7 @@
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { Text } from './text'
 import { AlertTriangle } from 'lucide-react-native'
-import { colors, spacing, radius, type as t } from '../lib/theme'
+import { colors, spacing, radius, paperType as t } from '../lib/theme'
 
 /**
  * Problemer som gjør en mal ubrukelig i felt (lib/forms/firm-schema.ts).

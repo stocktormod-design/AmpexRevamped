@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { View, Text, ScrollView } from 'react-native'
+import { View, ScrollView } from 'react-native'
+import { Text } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { ChevronLeft, ChevronRight, ChevronLeft as Prev } from 'lucide-react-native'
 import { Pressable } from '../../components/pressable'
-import { SectionHeader, AmbientBackdrop } from '../../components/ui'
+import { SectionHeader } from '../../components/ui'
+import { ToolGlow } from '../../components/tool-surface'
 import { supabase } from '../../lib/supabase'
 import {
   DAGER, flyttUke, formatTimer, ukeEtikett, ukenummer, ukeStart, useUkeliste,
@@ -35,7 +37,7 @@ export default function MineTimer() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <AmbientBackdrop height={300} />
+      <ToolGlow height={300} />
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.sm,

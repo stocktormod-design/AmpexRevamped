@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView } from 'react-native'
+import { View, ScrollView } from 'react-native'
+import { Text } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Check, Mic, Users, Timer, ChevronRight, CalendarClock, ShieldCheck, Archive, CloudOff } from 'lucide-react-native'
 import { router } from 'expo-router'

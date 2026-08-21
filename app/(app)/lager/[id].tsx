@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView, TextInput, TextStyle } from 'react-native'
+import { View, ScrollView, TextStyle } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import * as Haptics from 'expo-haptics'
 import { ChevronLeft, Plus, Minus, Check, Search, ShoppingCart, Nfc } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { SectionHeader } from '../../../components/ui'
+import { ToolSectionHeader, ToolGlow, useMorkStatuslinje } from '../../../components/tool-surface'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Location } from '../../../lib/db/models/location'
@@ -13,7 +14,7 @@ import { Product } from '../../../lib/db/models/product'
 import { StockMovement } from '../../../lib/db/models/stock-movement'
 import { useLocationStock, formatQty } from '../../../lib/stock'
 import { findOrCreateProductTag } from '../../../lib/nfc'
-import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, toolType as t } from '../../../lib/theme'
 
 type AddedItem = { key: string; name: string; qty: number }
 
@@ -60,26 +61,26 @@ function NfcSimSheet({ onCommit, onClose }: { onCommit: (p: Product, qty: number
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end' }}>
       <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)' }} onPress={onClose} />
       <View style={{
-        backgroundColor: colors.bg, borderTopLeftRadius: radius.hero, borderTopRightRadius: radius.hero,
+        backgroundColor: colors.toolRaised, borderTopLeftRadius: radius.hero, borderTopRightRadius: radius.hero,
         maxHeight: '85%', marginBottom: sizes.tabBar,
         paddingTop: spacing.lg, paddingBottom: insets.bottom + spacing.lg,
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: spacing.screen, marginBottom: spacing.sm }}>
           <Text style={t.headline}>Simuler NFC-tapp</Text>
           <Pressable onPress={onClose} hitSlop={8}>
-            <Text style={[t.body, { color: colors.secondaryLabel }]}>Ferdig</Text>
+            <Text style={[t.body, { color: colors.toolSecondary }]}>Ferdig</Text>
           </Pressable>
         </View>
 
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
           marginHorizontal: spacing.screen, marginBottom: spacing.sm,
-          backgroundColor: colors.fill, borderRadius: radius.lg, paddingHorizontal: spacing.md, height: 40,
+          backgroundColor: colors.toolRaisedStrong, borderRadius: radius.lg, paddingHorizontal: spacing.md, height: 40,
         }}>
-          <Search size={16} color={colors.tertiaryLabel} strokeWidth={2} />
+          <Search size={16} color={colors.toolTertiary} strokeWidth={2} />
           <TextInput
             value={query} onChangeText={setQuery}
-            placeholder="Søk navn eller el-nummer" placeholderTextColor={colors.tertiaryLabel}
+            placeholder="Søk navn eller el-nummer" placeholderTextColor={colors.toolTertiary}
             style={[t.body, { flex: 1 }]}
           />
         </View>
@@ -95,7 +96,7 @@ function NfcSimSheet({ onCommit, onClose }: { onCommit: (p: Product, qty: number
                 </View>
               </Pressable>
               <Pressable haptic="light" onPress={() => tapNfc(p)} hitSlop={8}
-                style={{ width: 32, height: 32, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
+                style={{ width: 32, height: 32, borderRadius: radius.pill, backgroundColor: colors.toolRaisedStrong, alignItems: 'center', justifyContent: 'center' }}>
                 <Nfc size={16} color={colors.brand} strokeWidth={2} />
               </Pressable>
             </View>
@@ -109,18 +110,18 @@ function NfcSimSheet({ onCommit, onClose }: { onCommit: (p: Product, qty: number
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: spacing.md,
             marginHorizontal: spacing.screen, marginTop: spacing.sm,
-            backgroundColor: colors.brandSoft, borderRadius: radius.lg,
+            backgroundColor: colors.toolRaisedStrong, borderRadius: radius.lg,
             paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
           }}>
             <Text style={[t.body, { flex: 1 }]} numberOfLines={1}>{pending.name}</Text>
             <Pressable onPress={() => setPendingQty(v => Math.max(1, v - 1))} pressScale={0.9}
-              style={{ width: 28, height: 28, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-              <Minus size={14} color={colors.label} strokeWidth={2.4} />
+              style={{ width: 28, height: 28, borderRadius: radius.pill, backgroundColor: colors.toolRaised, alignItems: 'center', justifyContent: 'center' }}>
+              <Minus size={14} color={colors.toolLabel} strokeWidth={2.4} />
             </Pressable>
             <Text style={[t.bodyMedium, { minWidth: 20, textAlign: 'center', fontVariant: ['tabular-nums'] }]}>{pendingQty}</Text>
             <Pressable onPress={() => setPendingQty(v => v + 1)} pressScale={0.9}
-              style={{ width: 28, height: 28, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-              <Plus size={14} color={colors.label} strokeWidth={2.4} />
+              style={{ width: 28, height: 28, borderRadius: radius.pill, backgroundColor: colors.toolRaised, alignItems: 'center', justifyContent: 'center' }}>
+              <Plus size={14} color={colors.toolLabel} strokeWidth={2.4} />
             </Pressable>
             <Pressable haptic="medium" onPress={confirmPending} pressScale={0.9}
               style={{ width: 32, height: 32, borderRadius: radius.pill, backgroundColor: colors.cta, alignItems: 'center', justifyContent: 'center' }}>
@@ -166,13 +167,13 @@ function VehicleFieldsCard({ location }: { location: Location }) {
 
   return (
     <>
-      <SectionHeader>Kjøretøy</SectionHeader>
-      <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden', marginBottom: spacing.lg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 0.5, borderBottomColor: colors.separator }}>
+      <ToolSectionHeader>Kjøretøy</ToolSectionHeader>
+      <View style={{ backgroundColor: colors.toolRaised, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden', marginBottom: spacing.lg }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder }}>
           <Text style={[t.body, { flex: 1 }]}>Reg.nr</Text>
           <TextInput
             value={regNr} onChangeText={setRegNr} onBlur={() => save(regNr, trackerImei)}
-            autoCapitalize="characters" placeholder="AB 12345" placeholderTextColor={colors.tertiaryLabel}
+            autoCapitalize="characters" placeholder="AB 12345" placeholderTextColor={colors.toolTertiary}
             style={[t.body as TextStyle, { textAlign: 'right', minWidth: 120 }]}
           />
         </View>
@@ -180,7 +181,7 @@ function VehicleFieldsCard({ location }: { location: Location }) {
           <Text style={[t.body, { flex: 1 }]}>Tracker-IMEI</Text>
           <TextInput
             value={trackerImei} onChangeText={setTrackerImei} onBlur={() => save(regNr, trackerImei)}
-            keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.tertiaryLabel}
+            keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.toolTertiary}
             style={[t.body as TextStyle, { textAlign: 'right', minWidth: 120 }]}
           />
         </View>
@@ -191,6 +192,8 @@ function VehicleFieldsCard({ location }: { location: Location }) {
 
 export default function LocationDetailScreen() {
   const insets = useSafeAreaInsets()
+  // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
+  useMorkStatuslinje()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [location, setLocation] = useState<Location | null>(null)
   const [showNfcSim, setShowNfcSim] = useState(false)
@@ -223,10 +226,11 @@ export default function LocationDetailScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
   }
 
-  if (!location) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
+  if (!location) return <View style={{ flex: 1, backgroundColor: colors.toolBg }} />
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <View style={{ flex: 1, backgroundColor: colors.toolBg }}>
+      <ToolGlow />
       <ScrollView
         contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
         showsVerticalScrollIndicator={false}
@@ -234,9 +238,9 @@ export default function LocationDetailScreen() {
         <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.lg }}>
           <Pressable
             onPress={() => router.back()} pressScale={0.92}
-            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.toolRaised, alignItems: 'center', justifyContent: 'center' }}
           >
-            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+            <ChevronLeft size={sizes.icon} color={colors.toolLabel} strokeWidth={2.2} />
           </Pressable>
           <Text style={[t.title1, { marginTop: spacing.lg }]}>{location.name}</Text>
           <Text style={[t.footnote, { marginTop: spacing.xs }]}>
@@ -263,25 +267,25 @@ export default function LocationDetailScreen() {
               onPress={() => setShowNfcSim(true)}
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-                height: sizes.ctaHeight - 14, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, marginTop: spacing.sm,
+                height: sizes.ctaHeight - 14, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.toolBorder, marginTop: spacing.sm,
               }}
             >
-              <Nfc size={sizes.icon - 2} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
-              <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>Simuler NFC-tapp (dev)</Text>
+              <Nfc size={sizes.icon - 2} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />
+              <Text style={[t.subhead, { color: colors.toolSecondary, fontWeight: '600' }]}>Simuler NFC-tapp (dev)</Text>
             </Pressable>
           )}
         </View>
 
         {location.type === 'bil' && <VehicleFieldsCard location={location} />}
 
-        <SectionHeader>{stock.length > 0 ? `Beholdning · ${stock.length}` : 'Beholdning'}</SectionHeader>
-        <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+        <ToolSectionHeader>{stock.length > 0 ? `Beholdning · ${stock.length}` : 'Beholdning'}</ToolSectionHeader>
+        <View style={{ backgroundColor: colors.toolRaised, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
           {stock.map((line, i) => (
             <View
               key={line.product.id}
               style={[
                 { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-                i < stock.length && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+                i < stock.length && { borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder },
               ]}
             >
               <View style={{ flex: 1 }}>
@@ -301,11 +305,11 @@ export default function LocationDetailScreen() {
           >
             <View style={{
               width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm,
-              backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
+              backgroundColor: colors.toolRaisedStrong, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
             }}>
-              <Plus size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              <Plus size={sizes.icon - 2} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />
             </View>
-            <Text style={[t.body, { color: colors.secondaryLabel }]}>Legg til / juster</Text>
+            <Text style={[t.body, { color: colors.toolSecondary }]}>Legg til / juster</Text>
           </Pressable>
         </View>
 

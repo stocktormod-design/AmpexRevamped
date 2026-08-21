@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView } from 'react-native'
+import { View, ScrollView } from 'react-native'
+import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import { ChevronLeft, Plus, Layers, ChevronRight, UserPlus, DoorOpen, ScanLine, Circle, CircleCheckBig, ScanSearch } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { SectionHeader, AmbientBackdrop } from '../../../components/ui'
+import { SectionHeader } from '../../../components/ui'
+import { ToolGlow } from '../../../components/tool-surface'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
@@ -201,7 +203,7 @@ export default function ProsjektDetailScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <AmbientBackdrop height={360} />
+      <ToolGlow height={360} />
       <ScrollView
         contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
         showsVerticalScrollIndicator={false}

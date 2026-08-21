@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { View, Text, TextInput, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
+import { View, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { router } from 'expo-router'
 import { Pressable } from '../../../components/pressable'
-import { Chip } from '../../../components/ui'
+import { ToolChip, ToolGlow, useMorkStatuslinje } from '../../../components/tool-surface'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Location, type LocationType } from '../../../lib/db/models/location'
-import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, toolType as t } from '../../../lib/theme'
 
 export default function NyLokasjonScreen() {
+  // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
+  useMorkStatuslinje()
   const [type, setType] = useState<LocationType>('bil')
   const [name, setName] = useState('')
   const [regNr, setRegNr] = useState('')
@@ -33,42 +36,43 @@ export default function NyLokasjonScreen() {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.toolBg }}>
+      <ToolGlow />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screen, paddingVertical: spacing.lg }}>
         <Pressable onPress={() => router.dismiss()} hitSlop={12}>
-          <Text style={[t.body, { color: colors.secondaryLabel }]}>Avbryt</Text>
+          <Text style={[t.body, { color: colors.toolSecondary }]}>Avbryt</Text>
         </Pressable>
         <Text style={t.headline}>Ny lokasjon</Text>
         <View style={{ width: 48 }} />
       </View>
 
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.screen, marginBottom: spacing.md }}>
-        <Chip label="Sentrallager" selected={type === 'lager'} onPress={() => setType('lager')} />
-        <Chip label="Bil" selected={type === 'bil'} onPress={() => setType('bil')} />
+        <ToolChip label="Sentrallager" selected={type === 'lager'} onPress={() => setType('lager')} />
+        <ToolChip label="Bil" selected={type === 'bil'} onPress={() => setType('bil')} />
       </View>
 
-      <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+      <View style={{ backgroundColor: colors.toolRaised, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
         <TextInput
           value={name} onChangeText={setName}
           placeholder={type === 'lager' ? 'Navn (f.eks. Hovedlager)' : 'Navn (f.eks. Bil – Per)'}
-          placeholderTextColor={colors.tertiaryLabel} autoFocus
+          placeholderTextColor={colors.toolTertiary} autoFocus
           style={[
             t.body as TextStyle,
             { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-            type === 'bil' && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+            type === 'bil' && { borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder },
           ]}
         />
         {type === 'bil' && (
           <>
             <TextInput
               value={regNr} onChangeText={setRegNr}
-              placeholder="Reg.nr (f.eks. AB 12345)" placeholderTextColor={colors.tertiaryLabel}
+              placeholder="Reg.nr (f.eks. AB 12345)" placeholderTextColor={colors.toolTertiary}
               autoCapitalize="characters"
-              style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, borderBottomWidth: 0.5, borderBottomColor: colors.separator }]}
+              style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder }]}
             />
             <TextInput
               value={trackerImei} onChangeText={setTrackerImei}
-              placeholder="Tracker-IMEI (valgfritt)" placeholderTextColor={colors.tertiaryLabel}
+              placeholder="Tracker-IMEI (valgfritt)" placeholderTextColor={colors.toolTertiary}
               keyboardType="number-pad"
               style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }]}
             />

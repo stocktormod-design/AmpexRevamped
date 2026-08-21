@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { View, Text, TextInput, ScrollView, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import * as Haptics from 'expo-haptics'
 import { Pressable } from '../../../components/pressable'
-import { Chip } from '../../../components/ui'
+import { ToolChip, ToolGlow, useMorkStatuslinje } from '../../../components/tool-surface'
 import { ProductPicker } from '../../../components/product-picker'
 import { finnEllerOpprettVare } from '../../../lib/products'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Product } from '../../../lib/db/models/product'
 import { StockMovement } from '../../../lib/db/models/stock-movement'
-import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, toolType as t } from '../../../lib/theme'
 
 const UNITS = ['stk', 'm', 'pk', 'rull', 'sett']
 
@@ -20,6 +21,8 @@ const UNITS = ['stk', 'm', 'pk', 'rull', 'sett']
  * lander som uplassert uttak i kurven. Blir liggende åpen for flere uttak.
  */
 export default function UttakScreen() {
+  // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
+  useMorkStatuslinje()
   const { locationId } = useLocalSearchParams<{ locationId: string }>()
   const [name, setName] = useState('')
   const [elnummer, setElnummer] = useState('')
@@ -65,10 +68,11 @@ export default function UttakScreen() {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.toolBg }}>
+      <ToolGlow />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screen, paddingVertical: spacing.lg }}>
         <Pressable onPress={() => router.dismiss()} hitSlop={12}>
-          <Text style={[t.body, { color: colors.secondaryLabel }]}>Ferdig</Text>
+          <Text style={[t.body, { color: colors.toolSecondary }]}>Ferdig</Text>
         </Pressable>
         <Text style={t.headline}>Ta ut</Text>
         <View style={{ width: 56 }} />
@@ -85,15 +89,15 @@ export default function UttakScreen() {
           </View>
         ) : (
           <>
-        <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+        <View style={{ backgroundColor: colors.toolRaised, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
           <TextInput
             value={name} onChangeText={setName}
-            placeholder="Vare (påkrevd)" placeholderTextColor={colors.tertiaryLabel} autoFocus
-            style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, borderBottomWidth: 0.5, borderBottomColor: colors.separator }]}
+            placeholder="Vare (påkrevd)" placeholderTextColor={colors.toolTertiary} autoFocus
+            style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder }]}
           />
           <TextInput
             value={elnummer} onChangeText={setElnummer}
-            placeholder="El-nummer (valgfritt)" placeholderTextColor={colors.tertiaryLabel} keyboardType="number-pad"
+            placeholder="El-nummer (valgfritt)" placeholderTextColor={colors.toolTertiary} keyboardType="number-pad"
             style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }]}
           />
         </View>
@@ -106,7 +110,7 @@ export default function UttakScreen() {
 
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-          backgroundColor: colors.bg, borderRadius: radius.lg,
+          backgroundColor: colors.toolRaised, borderRadius: radius.lg,
           marginHorizontal: spacing.screen, marginTop: spacing.md,
           paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
         }}>
@@ -120,7 +124,7 @@ export default function UttakScreen() {
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginHorizontal: spacing.screen, marginTop: spacing.md }}>
           {UNITS.map(u => (
-            <Chip key={u} label={u} selected={unit === u} onPress={() => setUnit(u)} />
+            <ToolChip key={u} label={u} selected={unit === u} onPress={() => setUnit(u)} />
           ))}
         </View>
 

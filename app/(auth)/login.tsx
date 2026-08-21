@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, StatusBar } from 'react-native'
+import { View, ActivityIndicator, KeyboardAvoidingView, Platform, StatusBar } from 'react-native'
+import { Text, TextInput } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { supabase } from '../../lib/supabase'
@@ -33,7 +34,7 @@ export default function LoginScreen() {
       style={{ flex: 1, backgroundColor: colors.canvas }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" />
       <View style={{ flex: 1, paddingHorizontal: spacing.screen + 4, paddingTop: insets.top + 72, paddingBottom: insets.bottom + spacing.screen }}>
 
         <Animated.View entering={FadeInDown.springify()} style={{ flex: 1 }}>

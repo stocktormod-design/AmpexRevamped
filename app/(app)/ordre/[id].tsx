@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS, Alert, StyleSheet } from 'react-native'
+import { View, ScrollView, Linking, Platform, Alert, StyleSheet } from 'react-native'
+import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -18,6 +19,7 @@ import { GodkjenningKort } from '../../../components/godkjenning-kort'
 import { ArkivKort } from '../../../components/arkiv-kort'
 import { SectionHeader, Chip } from '../../../components/ui'
 import { ToolCard, useMorkStatuslinje } from '../../../components/tool-surface'
+import { ChoiceSheet } from '../../../components/sheet'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { ScanCard } from '../../../components/scan-card'
 import { deleteScanFiles, clearRevisions } from '../../../lib/scan-revisions'
@@ -189,21 +191,13 @@ function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }
     syncQuietly()
   }
 
-  function nyttSkann() {
-    if (Platform.OS !== 'ios') {
-      addScan(orderId, 'planlegging', scans.length + 1)
-      return
-    }
-    const valg = scanKinds.map(k => scanKindLabel[k])
-    ActionSheetIOS.showActionSheetWithOptions(
-      { title: 'Hva skal skannes?', options: [...valg, 'Avbryt'], cancelButtonIndex: valg.length },
-      idx => {
-        if (idx < valg.length) {
-          const kind = scanKinds[idx]
-          addScan(orderId, kind, scans.filter(s => s.kind === kind).length + 1)
-        }
-      },
-    )
+  // Ampex-ark, ikke iOS-ark: systemarket finnes ikke på Android, og der falt
+  // valget bort helt — du fikk «planlegging» uten å ha bedt om det.
+  const [velgerType, setVelgerType] = useState(false)
+
+  function velgType(kind: ScanKind) {
+    setVelgerType(false)
+    addScan(orderId, kind, scans.filter(s => s.kind === kind).length + 1)
   }
 
   return (
@@ -257,9 +251,18 @@ function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }
         </ScrollView>
       )}
 
+      <ChoiceSheet<ScanKind>
+        synlig={velgerType}
+        tittel="Hva skal skannes?"
+        forklaring="Planlegging er for å måle opp før jobben. Dokumentasjon er for å vise hvordan det ble."
+        valg={scanKinds.map(k => ({ verdi: k, etikett: scanKindLabel[k] }))}
+        onVelg={velgType}
+        onAvbryt={() => setVelgerType(false)}
+      />
+
       <Pressable
         haptic="medium"
-        onPress={nyttSkann}
+        onPress={() => setVelgerType(true)}
         style={{
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
           backgroundColor: colors.brand,
@@ -270,6 +273,35 @@ function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }
         <Text style={[t.headline, { color: '#fff' }]}>Start skanning</Text>
       </Pressable>
     </View>
+  )
+}
+
+/**
+ * «Legg til» i en seksjonstittel.
+ *
+ * Var en 13 px tekstlenke i kobber. To feil i én: kobber på mørk grunn er
+ * appens SVAKESTE kontrast, og treffflaten var teksten selv — det er under
+ * halvparten av de 44 punktene en finger med hanske trenger. En knapp som er
+ * vanskelig å treffe leses som en knapp man ikke skal trykke på.
+ */
+function LeggTilKnapp({ tekst, onPress }: { tekst: string; onPress: () => void }) {
+  return (
+    <Pressable
+      haptic="light"
+      pressScale={0.94}
+      hitSlop={8}
+      onPress={onPress}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+        height: 34, paddingLeft: spacing.sm + 2, paddingRight: spacing.md,
+        borderRadius: radius.pill,
+        backgroundColor: colors.toolRaisedStrong,
+        borderWidth: 1, borderColor: colors.toolBorder,
+      }}
+    >
+      <Plus size={15} color={colors.toolLabel} strokeWidth={2.4} />
+      <Text style={[t.footnote, { color: colors.toolLabel, fontWeight: '600' }]}>{tekst}</Text>
+    </Pressable>
   )
 }
 
@@ -575,6 +607,8 @@ export default function OrderDetailScreen() {
     Linking.openURL(Platform.OS === 'android' ? `geo:0,0?q=${q}` : `https://maps.apple.com/?daddr=${q}&dirflg=d`)
   }
 
+  const [velgerSkjema, setVelgerSkjema] = useState(false)
+
   /**
    * Både Ampex-malene og firmaets EGNE — også de som nettopp ble importert fra
    * en PDF. Før kunne bare Ampex-malene legges på en ordre fra appen; et
@@ -588,22 +622,18 @@ export default function OrderDetailScreen() {
   const startedTemplates = alleMaler.filter(tpl => docByTemplate.has(tpl.id))
   const remainingTemplates = alleMaler.filter(tpl => !docByTemplate.has(tpl.id))
 
-  // Dokumentasjon viser kun faktisk lagt-til skjema — «Legg til» velger blant de resterende.
+  // Dokumentasjon viser kun faktisk lagt-til skjema — «Legg til» velger blant de
+  // resterende. Valget står i Ampex-arket, ikke i iOS-arket: systemarket finnes
+  // ikke på Android, og der åpnet appen bare det FØRSTE skjemaet i lista uten å
+  // spørre. Malen din het ikke det du trodde du valgte.
   function addDocumentation() {
     if (!order || remainingTemplates.length === 0) return
-    if (Platform.OS !== 'ios') {
-      router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: remainingTemplates[0].id } })
-      return
-    }
-    const options = [...remainingTemplates.map(tpl => tpl.name), 'Avbryt']
-    ActionSheetIOS.showActionSheetWithOptions(
-      { title: 'Legg til dokumentasjon', options, cancelButtonIndex: options.length - 1 },
-      idx => {
-        if (idx < remainingTemplates.length) {
-          router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: remainingTemplates[idx].id } })
-        }
-      },
-    )
+    setVelgerSkjema(true)
+  }
+
+  function velgSkjema(templateId: string) {
+    setVelgerSkjema(false)
+    if (order) router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId } })
   }
 
   if (!order) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
@@ -650,7 +680,15 @@ export default function OrderDetailScreen() {
      * snudd: kontrasten går nå riktig vei, og «arket»-følelsen er borte fordi
      * det ikke finnes noe ark igjen.
      */
-    <View style={{ flex: 1, backgroundColor: colors.cta }}>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+      <ChoiceSheet<string>
+        synlig={velgerSkjema}
+        tittel="Legg til dokumentasjon"
+        forklaring="Skjemaet legges på ordren og kan fylles ut nå eller senere."
+        valg={remainingTemplates.map(tpl => ({ verdi: tpl.id, etikett: tpl.name }))}
+        onVelg={velgSkjema}
+        onAvbryt={() => setVelgerSkjema(false)}
+      />
       {/*
         LYS I ROMMET. En flat mørk flate ser billig ut — ekte mørke grensesnitt
         har en lyskilde. To lag, begge uten trykkflate:
@@ -721,7 +759,7 @@ export default function OrderDetailScreen() {
               >
                 <ChevronLeft size={sizes.icon} color={colors.toolLabel} strokeWidth={2.2} />
               </Pressable>
-              <AmpexMarkButton tone="light" />
+              <AmpexMarkButton />
             </View>
 
             <View style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: spacing.lg }}>
@@ -856,13 +894,10 @@ export default function OrderDetailScreen() {
             <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.toolTertiary, flex: 1 }]}>
               {materials.length > 0 ? `Materiell · ${materials.length}` : 'Materiell'}
             </Text>
-            <Pressable
-              hitSlop={10}
-              haptic="light"
+            <LeggTilKnapp
+              tekst="Legg til"
               onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
-            >
-              <Text style={[t.footnote, { color: colors.brand, fontWeight: '700' }]}>Legg til</Text>
-            </Pressable>
+            />
           </View>
           {materials.length === 0 ? (
             <Text style={[t.footnote, { color: colors.toolSecondary, marginHorizontal: spacing.screen + spacing.xs }]}>
@@ -914,9 +949,7 @@ export default function OrderDetailScreen() {
               Dokumentasjon
             </Text>
             {remainingTemplates.length > 0 && (
-              <Pressable hitSlop={10} haptic="light" onPress={addDocumentation}>
-                <Text style={[t.footnote, { color: colors.brand, fontWeight: '700' }]}>Legg til</Text>
-              </Pressable>
+              <LeggTilKnapp tekst="Legg til" onPress={addDocumentation} />
             )}
           </View>
           {startedTemplates.length === 0 ? (
@@ -1113,7 +1146,7 @@ export default function OrderDetailScreen() {
           for korrigering; ingen funksjonalitet er fjernet, bare rangert.
         */}
         <View style={{ marginBottom: spacing.screen }}>
-          <SectionHeader tone="light">Status</SectionHeader>
+          <SectionHeader>Status</SectionHeader>
           <View style={{ marginHorizontal: spacing.screen, gap: spacing.sm }}>
             {/* Hovedhandlingen er flyttet til den forankrede linja nederst.
                 Her ligger bare korrigering — å hoppe tilbake når noe ble
@@ -1144,7 +1177,7 @@ export default function OrderDetailScreen() {
 
         {/* Detaljer — metadata nederst, minst viktig */}
         <View>
-          <SectionHeader tone="light">Detaljer</SectionHeader>
+          <SectionHeader>Detaljer</SectionHeader>
           <ToolCard>
             <MetaRow label="Ordrenummer" value={order.orderNumber ? `#${order.orderNumber}` : 'Tildeles ved synk'} />
             <MetaRow label="Opprettet" value={formatDateTime(order.createdAt) ?? '–'} />

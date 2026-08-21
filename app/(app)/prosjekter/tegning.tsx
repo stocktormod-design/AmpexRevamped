@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView, ActivityIndicator, Dimensions } from 'react-native'
+import { View, ScrollView, ActivityIndicator, Dimensions } from 'react-native'
+import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Pdf from 'react-native-pdf'
 import * as DocumentPicker from 'expo-document-picker'
@@ -11,13 +12,16 @@ import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Drawing, disciplineLabel } from '../../../lib/db/models/drawing'
 import { uploadDrawingPdf, getLocalPdf } from '../../../lib/drawings-storage'
-import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, shadows, paperType as t } from '../../../lib/theme'
+import { usePapirStatuslinje } from '../../../components/tool-surface'
 
 // Forma-lys arbeidsflate — matcher editoren
 const WORKSPACE = '#E7E7EC'
 const PANEL = 'rgba(252,252,253,0.96)'
 
 export default function TegningViewer() {
+  // Mørk klokke og batteri: dette er papir, ikke brun grunn.
+  usePapirStatuslinje()
   const insets = useSafeAreaInsets()
   const { drawingId } = useLocalSearchParams<{ drawingId: string }>()
   const [drawing, setDrawing] = useState<Drawing | null>(null)
@@ -86,26 +90,26 @@ export default function TegningViewer() {
           trustAllCerts={false}
           spacing={12}
           maxScale={6}
-          renderActivityIndicator={() => <ActivityIndicator color={colors.secondaryLabel} />}
+          renderActivityIndicator={() => <ActivityIndicator color={colors.paperSecondary} />}
         />
       ) : (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl }}>
           {busy ? (
-            <ActivityIndicator color={colors.secondaryLabel} />
+            <ActivityIndicator color={colors.paperSecondary} />
           ) : (
             <>
-              <View style={{ width: 64, height: 64, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-                <FileText size={30} color={colors.secondaryLabel} strokeWidth={1.6} />
+              <View style={{ width: 64, height: 64, borderRadius: radius.pill, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
+                <FileText size={30} color={colors.paperSecondary} strokeWidth={1.6} />
               </View>
-              <Text style={[t.body, { color: colors.secondaryLabel, marginTop: spacing.lg, textAlign: 'center' }]}>
+              <Text style={[t.body, { color: colors.paperSecondary, marginTop: spacing.lg, textAlign: 'center' }]}>
                 Ingen PDF lastet opp ennå
               </Text>
               <Pressable
                 haptic="medium" onPress={pickAndUpload}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.pill, backgroundColor: colors.cta }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.pill, backgroundColor: colors.brand }}
               >
-                <Upload size={sizes.icon - 2} color={colors.ctaLabel} strokeWidth={sizes.lucideStroke} />
-                <Text style={[t.headline, { color: colors.ctaLabel }]}>Legg til PDF</Text>
+                <Upload size={sizes.icon - 2} color={colors.brandLabel} strokeWidth={sizes.lucideStroke} />
+                <Text style={[t.headline, { color: colors.brandLabel }]}>Legg til PDF</Text>
               </Pressable>
             </>
           )}
@@ -116,8 +120,8 @@ export default function TegningViewer() {
       <View style={{ position: 'absolute', top: insets.top + spacing.sm, left: spacing.screen, right: spacing.screen, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }} pointerEvents="box-none">
         <View style={[panel, { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: 5, paddingRight: spacing.md, height: 44, borderRadius: radius.pill, maxWidth: '80%' }]}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
-            style={{ width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+            style={{ width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={sizes.icon} color={colors.paperLabel} strokeWidth={2.2} />
           </Pressable>
           <View style={{ flexShrink: 1 }}>
             <Text style={[t.subhead, { fontWeight: '700' }]} numberOfLines={1}>{drawing.name}</Text>
@@ -129,7 +133,7 @@ export default function TegningViewer() {
         {localUri && (
           <Pressable onPress={() => router.push({ pathname: '/(app)/prosjekter/tegning-edit', params: { drawingId: drawing.id } })} pressScale={0.92}
             style={[panel, { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' }]}>
-            <Pencil size={sizes.icon - 1} color={colors.label} strokeWidth={2.1} />
+            <Pencil size={sizes.icon - 1} color={colors.paperLabel} strokeWidth={2.1} />
           </Pressable>
         )}
       </View>
@@ -146,13 +150,13 @@ export default function TegningViewer() {
                   onPress={() => router.setParams({ drawingId: d.id })}
                   style={[panel, {
                     paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.lg,
-                    backgroundColor: active ? colors.label : PANEL, borderColor: active ? colors.label : 'rgba(0,0,0,0.08)',
+                    backgroundColor: active ? colors.paperLabel : PANEL, borderColor: active ? colors.paperLabel : 'rgba(0,0,0,0.08)',
                   }]}
                 >
-                  <Text style={[t.footnote, { fontWeight: '700', color: active ? '#fff' : colors.label }]} numberOfLines={1}>
+                  <Text style={[t.footnote, { fontWeight: '700', color: active ? '#fff' : colors.paperLabel }]} numberOfLines={1}>
                     {d.name}
                   </Text>
-                  <Text style={[t.caption, { color: active ? 'rgba(255,255,255,0.6)' : colors.tertiaryLabel }]} numberOfLines={1}>
+                  <Text style={[t.caption, { color: active ? 'rgba(255,255,255,0.6)' : colors.paperTertiary }]} numberOfLines={1}>
                     {disciplineLabel[d.discipline] ?? d.discipline}
                   </Text>
                 </Pressable>

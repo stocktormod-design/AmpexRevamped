@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { View, Text, ScrollView } from 'react-native'
+import { View, ScrollView } from 'react-native'
+import { Text } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import * as Haptics from 'expo-haptics'
 import { ChevronLeft, Check, X, ShieldCheck, AlertTriangle, ChevronRight } from 'lucide-react-native'
 import { Pressable } from '../../components/pressable'
-import { SectionHeader, AmbientBackdrop } from '../../components/ui'
+import { SectionHeader } from '../../components/ui'
+import { ToolGlow } from '../../components/tool-surface'
 import { PromptSheet } from '../../components/sheet'
 import { Order } from '../../lib/db/models/order'
 import { useFakturagrunnlag } from '../../lib/order-billing'
@@ -151,7 +153,7 @@ export default function Godkjenning() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <AmbientBackdrop height={360} />
+      <ToolGlow height={360} />
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.sm,

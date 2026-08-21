@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, ActivityIndicator, Alert } from 'react-native'
+import { View, ActivityIndicator, Alert } from 'react-native'
+import { Text } from './text'
 import { Archive, Check, ShieldAlert } from 'lucide-react-native'
 import { Pressable } from './pressable'
 import { ListCard } from './ui'

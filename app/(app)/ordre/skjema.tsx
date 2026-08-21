@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import * as Haptics from 'expo-haptics'
@@ -24,7 +25,8 @@ import { FormValues, FormPrefill, type FormTemplate } from '../../../lib/forms/t
 import { visibleSections, pruneHidden } from '../../../lib/forms/visibility'
 import { findUnfilledRequired } from '../../../lib/forms/gap-check'
 import { formatDateTime } from '../../../lib/format'
-import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, paperType as t } from '../../../lib/theme'
+import { usePapirStatuslinje } from '../../../components/tool-surface'
 
 function prefillValue(kind: FormPrefill, order: Order): string {
   switch (kind) {
@@ -37,6 +39,8 @@ function prefillValue(kind: FormPrefill, order: Order): string {
 }
 
 export default function SkjemaScreen() {
+  // Mørk klokke og batteri: dette er papir, ikke brun grunn.
+  usePapirStatuslinje()
   const insets = useSafeAreaInsets()
   const { orderId, templateId } = useLocalSearchParams<{ orderId: string; templateId: string }>()
   // Asynkron oppslag: malen kan være bundlet ('ampex.*') ELLER firmaets egen
@@ -256,11 +260,11 @@ export default function SkjemaScreen() {
     syncQuietly()
   }
 
-  if (!template) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
+  if (!template) return <View style={{ flex: 1, backgroundColor: colors.paperCanvas }} />
   const readOnly = status === 'fullfort'
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.paperCanvas }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.sm,
@@ -276,12 +280,12 @@ export default function SkjemaScreen() {
               pressScale={0.92}
               style={{
                 width: 36, height: 36, borderRadius: radius.pill,
-                backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: colors.paperBg, alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+              <ChevronLeft size={sizes.icon} color={colors.paperLabel} strokeWidth={2.2} />
             </Pressable>
-            {!readOnly && <AmpexMarkButton />}
+            {!readOnly && <AmpexMarkButton tone="papir" />}
           </View>
           <Text style={[t.title1, { marginTop: spacing.lg }]}>{template.name}</Text>
           <Text style={[t.footnote, { marginTop: spacing.xs }]}>{template.source}</Text>
@@ -299,7 +303,7 @@ export default function SkjemaScreen() {
 
         {!!template.reviewNote && (
           <View style={{
-            backgroundColor: colors.fillPressed, borderRadius: radius.md,
+            backgroundColor: colors.paperFillPressed, borderRadius: radius.md,
             marginHorizontal: spacing.screen, marginBottom: spacing.screen,
             paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
           }}>
@@ -309,10 +313,10 @@ export default function SkjemaScreen() {
 
         {ready && visibleSections(template, values).map(section => (
           <View key={section.title} style={{ marginBottom: spacing.screen }}>
-            <SectionHeader>{section.title}</SectionHeader>
-            <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+            <SectionHeader tone="papir">{section.title}</SectionHeader>
+            <View style={{ backgroundColor: colors.paperBg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
               {section.fields.map((f, i) => (
-                <View key={f.key} style={i < section.fields.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator }}>
+                <View key={f.key} style={i < section.fields.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.paperSeparator }}>
                   {aiOrigin[f.key]?.origin === 'ai' && (
                     <View style={{
                       alignSelf: 'flex-start', marginLeft: spacing.lg, marginTop: spacing.sm,
@@ -333,7 +337,7 @@ export default function SkjemaScreen() {
           <View style={{ marginHorizontal: spacing.screen, alignItems: 'center', gap: spacing.md }}>
             <Text style={t.footnote}>{`Fullført ${formatDateTime(completedAt) ?? ''}`}</Text>
             <Pressable onPress={gjenapne} hitSlop={8}>
-              <Text style={[t.subhead, { color: colors.secondaryLabel }]}>Gjenåpne</Text>
+              <Text style={[t.subhead, { color: colors.paperSecondary }]}>Gjenåpne</Text>
             </Pressable>
           </View>
         ) : (
@@ -356,7 +360,7 @@ export default function SkjemaScreen() {
                   {mangler.length > 4 && (
                     <Text style={[t.footnote, { marginTop: 2 }]}>{`· … og ${mangler.length - 4} til`}</Text>
                   )}
-                  <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>
+                  <Text style={[t.caption, { color: colors.paperSecondary, marginTop: spacing.sm }]}>
                     Alt du har skrevet er lagret. Skjemaet kan fullføres når disse er besvart.
                   </Text>
                 </View>
@@ -368,11 +372,11 @@ export default function SkjemaScreen() {
               disabled={mangler.length > 0}
               style={{
                 height: sizes.ctaHeight, borderRadius: radius.xl,
-                backgroundColor: mangler.length > 0 ? colors.fill : colors.cta,
+                backgroundColor: mangler.length > 0 ? colors.paperFill : colors.brand,
                 alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Text style={[t.headline, { color: mangler.length > 0 ? colors.tertiaryLabel : colors.ctaLabel }]}>
+              <Text style={[t.headline, { color: mangler.length > 0 ? colors.paperTertiary : colors.brandLabel }]}>
                 Fullfør og signer
               </Text>
             </Pressable>

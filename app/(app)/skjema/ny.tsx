@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { View, Text, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Pressable } from '../../../components/pressable'
@@ -8,11 +9,14 @@ import { createTemplate } from '../../../lib/forms'
 import { validateFirmSections } from '../../../lib/forms/firm-schema'
 import { FormProblems } from '../../../components/form-problems'
 import type { FormSection } from '../../../lib/db/models/form-template'
-import { colors, spacing, radius, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, paperType as t } from '../../../lib/theme'
+import { usePapirStatuslinje } from '../../../components/tool-surface'
 
 const CATEGORIES = ['Sluttkontroll', 'Risiko / SJA', 'HMS', 'Måleprotokoll', 'Egenkontroll', 'Diverse']
 
 export default function NyttSkjema() {
+  // Mørk klokke og batteri: dette er papir, ikke brun grunn.
+  usePapirStatuslinje()
   const insets = useSafeAreaInsets()
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('Sluttkontroll')
@@ -33,20 +37,20 @@ export default function NyttSkjema() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.canvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.paperCanvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing.lg, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm }}>
-        <Pressable hitSlop={8} onPress={() => router.back()}><Text style={[t.body, { color: colors.secondaryLabel }]}>Avbryt</Text></Pressable>
+        <Pressable hitSlop={8} onPress={() => router.back()}><Text style={[t.body, { color: colors.paperSecondary }]}>Avbryt</Text></Pressable>
         <Text style={t.headline}>Nytt skjema</Text>
         <Pressable hitSlop={8} onPress={create} disabled={!canSave}>
-          <Text style={[t.body, { color: canSave ? colors.brand : colors.tertiaryLabel, fontWeight: '600' }]}>Opprett</Text>
+          <Text style={[t.body, { color: canSave ? colors.brand : colors.paperTertiary, fontWeight: '600' }]}>Opprett</Text>
         </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.screen, paddingBottom: insets.bottom + spacing.xxl }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <TextInput
           value={title} onChangeText={setTitle} autoFocus
-          placeholder="Tittel, f.eks. Sluttkontroll bolig" placeholderTextColor={colors.tertiaryLabel}
-          style={[t.title3, { backgroundColor: colors.bg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
+          placeholder="Tittel, f.eks. Sluttkontroll bolig" placeholderTextColor={colors.paperTertiary}
+          style={[t.title3, { backgroundColor: colors.paperBg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
         />
 
         <Text style={[t.caption, { textTransform: 'uppercase', marginTop: spacing.lg, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>Kategori</Text>
@@ -55,8 +59,8 @@ export default function NyttSkjema() {
             const active = category === c
             return (
               <Pressable key={c} haptic="light" onPress={() => setCategory(c)}
-                style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: active ? colors.label : colors.bg }}>
-                <Text style={[t.subhead, { fontWeight: '600', color: active ? colors.bg : colors.secondaryLabel }]}>{c}</Text>
+                style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: active ? colors.paperLabel : colors.paperBg }}>
+                <Text style={[t.subhead, { fontWeight: '600', color: active ? colors.paperBg : colors.paperSecondary }]}>{c}</Text>
               </Pressable>
             )
           })}

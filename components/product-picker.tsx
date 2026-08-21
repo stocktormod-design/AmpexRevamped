@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { View, Text, TextInput, Image } from 'react-native'
+import { View, Image } from 'react-native'
+import { Text, TextInput } from './text'
 import { Package, Plus, TrendingDown } from 'lucide-react-native'
 import { Pressable } from './pressable'
 import { Product } from '../lib/db/models/product'
 import { useVaresok, formatBeholdning } from '../lib/products'
 import { formatKr, tilOre } from '../lib/invoicing'
-import { colors, spacing, radius, sizes, type as t } from '../lib/theme'
+import { colors, spacing, radius, sizes, type as papirType, toolType } from '../lib/theme'
 
 /**
  * Gjenbrukbart varesøk. Brukes både ved uttak fra lager og ved materiell på
@@ -15,12 +16,23 @@ import { colors, spacing, radius, sizes, type as t } from '../lib/theme'
  * du ikke finner varen er at den ikke finnes ennå, og da skal du ikke måtte
  * scrolle forbi 40 treff for å oppdage det.
  */
-export function ProductPicker({ onVelg, onNy, autoFocus }: {
+export function ProductPicker({ onVelg, onNy, autoFocus, flate = 'verktoy' }: {
   onVelg: (p: Product) => void
   /** Kalles med søketeksten når brukeren vil opprette varen i stedet. */
   onNy?: (sok: string) => void
   autoFocus?: boolean
+  /**
+   * Hvilken flate søket står på. Standard er verktøy (brun grunn), som er der
+   * alle tre bruksstedene ligger i dag — uttak fra lager, materiell på ordre og
+   * linje på tilbud. `papir` finnes for den dagen søket skal stå i et dokument.
+   */
+  flate?: 'papir' | 'verktoy'
 }) {
+  const morkt = flate === 'verktoy'
+  const t = morkt ? toolType : papirType
+  const f = morkt
+    ? { felt: colors.toolRaisedStrong, kort: colors.toolRaised, kant: colors.toolBorder, hint: colors.toolTertiary, ikon: colors.toolSecondary }
+    : { felt: colors.fill, kort: colors.bg, kant: colors.border, hint: colors.tertiaryLabel, ikon: colors.iconMuted }
   const [sok, setSok] = useState('')
   const treff = useVaresok(sok)
   const q = sok.trim()
@@ -31,12 +43,12 @@ export function ProductPicker({ onVelg, onNy, autoFocus }: {
         value={sok}
         onChangeText={setSok}
         placeholder="El-nummer, navn, produsent eller strekkode"
-        placeholderTextColor={colors.tertiaryLabel}
+        placeholderTextColor={f.hint}
         autoFocus={autoFocus}
         autoCorrect={false}
         clearButtonMode="while-editing"
         style={[t.body, {
-          backgroundColor: colors.fill, borderRadius: radius.md,
+          backgroundColor: f.felt, borderRadius: radius.md,
           paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
           marginBottom: spacing.md,
         }]}
@@ -48,8 +60,8 @@ export function ProductPicker({ onVelg, onNy, autoFocus }: {
           style={{
             flexDirection: 'row', alignItems: 'center', gap: spacing.md,
             paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-            backgroundColor: colors.bg, borderRadius: radius.md,
-            borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md,
+            backgroundColor: f.kort, borderRadius: radius.md,
+            borderWidth: 1, borderColor: f.kant, marginBottom: spacing.md,
           }}
         >
           <Plus size={18} color={colors.brand} strokeWidth={sizes.lucideStroke} />
@@ -67,8 +79,8 @@ export function ProductPicker({ onVelg, onNy, autoFocus }: {
         </Text>
       ) : (
         <View style={{
-          backgroundColor: colors.bg, borderRadius: radius.md,
-          borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+          backgroundColor: f.kort, borderRadius: radius.md,
+          borderWidth: 1, borderColor: f.kant, overflow: 'hidden',
         }}>
           {treff.map((x, i) => (
             <Pressable
@@ -79,19 +91,19 @@ export function ProductPicker({ onVelg, onNy, autoFocus }: {
                 flexDirection: 'row', alignItems: 'center', gap: spacing.md,
                 paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
                 borderBottomWidth: i === treff.length - 1 ? 0 : 0.5,
-                borderBottomColor: colors.separator,
+                borderBottomColor: f.kant,
               }}
             >
               {/* Bildet kommer fra grossistens katalog via prisfila. Uten det
                   er raden en tekstlinje, og da er varen vanskelig å kjenne igjen. */}
               <View style={{
                 width: 34, height: 34, borderRadius: radius.sm,
-                backgroundColor: x.product.imageUrl ? colors.brandSoft : colors.fill,
+                backgroundColor: x.product.imageUrl ? colors.brandSoft : f.felt,
                 alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
               }}>
                 {x.product.imageUrl
                   ? <Image source={{ uri: x.product.imageUrl }} style={{ width: 34, height: 34 }} resizeMode="contain" />
-                  : <Package size={17} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
+                  : <Package size={17} color={f.ikon} strokeWidth={sizes.lucideStroke} />}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={t.body} numberOfLines={2}>{x.product.name}</Text>
@@ -122,7 +134,7 @@ export function ProductPicker({ onVelg, onNy, autoFocus }: {
                 {/* Kjenner vi bare listeprisen, er kostnaden — og dermed
                     dekningsbidraget på ordren — ikke til å stole på. */}
                 {x.pris.kunListepriser && (
-                  <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 1 }]}>listepris</Text>
+                  <Text style={[t.caption, { color: f.hint, marginTop: 1 }]}>listepris</Text>
                 )}
               </View>
             </Pressable>

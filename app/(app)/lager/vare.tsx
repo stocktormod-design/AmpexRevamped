@@ -1,4 +1,5 @@
-import { View, Text, ScrollView, Image, Linking } from 'react-native'
+import { View, ScrollView, Image, Linking } from 'react-native'
+import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import {
@@ -6,12 +7,12 @@ import {
   TrendingDown, AlertTriangle,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { SectionHeader, AmbientBackdrop } from '../../../components/ui'
+import { ToolSectionHeader, ToolGlow, useMorkStatuslinje } from '../../../components/tool-surface'
 import { useVare } from '../../../lib/products'
 import { visbareEkstra } from '../../../lib/pricefile/varekort'
 import { formatKr, tilOre } from '../../../lib/invoicing'
 import { formatSince } from '../../../lib/format'
-import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, toolType as t } from '../../../lib/theme'
 
 /** Etikett/verdi-rad. Verdien er valgfri — mangler den, vises ikke raden. */
 function Rad({ etikett, verdi, sist }: { etikett: string; verdi: string | null | undefined; sist?: boolean }) {
@@ -19,9 +20,9 @@ function Rad({ etikett, verdi, sist }: { etikett: string; verdi: string | null |
   return (
     <View style={[
       { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-      !sist && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+      !sist && { borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder },
     ]}>
-      <Text style={[t.subhead, { color: colors.secondaryLabel, width: 132 }]}>{etikett}</Text>
+      <Text style={[t.subhead, { color: colors.toolSecondary, width: 132 }]}>{etikett}</Text>
       <Text style={[t.body, { flex: 1 }]} selectable>{verdi}</Text>
     </View>
   )
@@ -33,7 +34,7 @@ function Lenke({ ikon: Ikon, tittel, url }: { ikon: typeof FileText; tittel: str
     <Pressable haptic="light" onPress={() => Linking.openURL(url)}
       style={{
         flex: 1, alignItems: 'center', gap: spacing.xs,
-        backgroundColor: colors.bg, borderRadius: radius.lg, paddingVertical: spacing.md,
+        backgroundColor: colors.toolRaised, borderRadius: radius.lg, paddingVertical: spacing.md,
       }}>
       <Ikon size={19} color={colors.brand} strokeWidth={2.1} />
       <Text style={[t.caption, { color: colors.brand, fontWeight: '600' }]}>{tittel}</Text>
@@ -53,10 +54,12 @@ function Lenke({ ikon: Ikon, tittel, url }: { ikon: typeof FileText; tittel: str
  */
 export default function Varekort() {
   const insets = useSafeAreaInsets()
+  // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
+  useMorkStatuslinje()
   const { id } = useLocalSearchParams<{ id: string }>()
   const { product: p, priser, pris } = useVare(id)
 
-  if (!p) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
+  if (!p) return <View style={{ flex: 1, backgroundColor: colors.toolBg }} />
 
   const billigste = pris.billigste
   const besparelse = pris.besparelse
@@ -65,17 +68,17 @@ export default function Varekort() {
   const utgaatt = priser.length > 0 && priser.every(x => x.utgaatt)
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <View style={{ flex: 1, backgroundColor: colors.toolBg }}>
       {/* Glass trenger noe å bryte — en flat farge bak glass er usynlig (DESIGN.md). */}
-      <AmbientBackdrop height={420} />
+      <ToolGlow height={420} />
       <ScrollView
         contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
         showsVerticalScrollIndicator={false}
       >
         <View style={{ paddingHorizontal: spacing.screen }}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
-            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.toolRaised, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={sizes.icon} color={colors.toolLabel} strokeWidth={2.2} />
           </Pressable>
 
           {p.imageUrl ? (
@@ -87,10 +90,10 @@ export default function Varekort() {
             </View>
           ) : (
             <View style={{
-              height: 96, backgroundColor: colors.bg, borderRadius: radius.hero,
+              height: 96, backgroundColor: colors.toolRaised, borderRadius: radius.hero,
               marginTop: spacing.lg, alignItems: 'center', justifyContent: 'center',
             }}>
-              <Package size={30} color={colors.tertiaryLabel} strokeWidth={1.8} />
+              <Package size={30} color={colors.toolTertiary} strokeWidth={1.8} />
             </View>
           )}
 
@@ -105,7 +108,7 @@ export default function Varekort() {
           <View style={{
             flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
             marginHorizontal: spacing.screen, marginTop: spacing.lg,
-            backgroundColor: colors.warningSoft, borderRadius: radius.lg, padding: spacing.lg,
+            backgroundColor: colors.warningWash, borderRadius: radius.lg, padding: spacing.lg,
           }}>
             <AlertTriangle size={17} color={colors.warning} strokeWidth={2.2} />
             <Text style={[t.footnote, { flex: 1 }]}>
@@ -131,7 +134,7 @@ export default function Varekort() {
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
             marginHorizontal: spacing.screen, marginTop: spacing.lg,
-            backgroundColor: colors.warningSoft, borderRadius: radius.lg, padding: spacing.md,
+            backgroundColor: colors.warningWash, borderRadius: radius.lg, padding: spacing.md,
           }}>
             <Text style={[t.caption, { color: colors.warning, fontWeight: '700' }]}>DEMO</Text>
             <Text style={[t.footnote, { flex: 1 }]}>
@@ -141,8 +144,8 @@ export default function Varekort() {
         )}
 
         {/* Prisen per grossist — det ingen grossists eget system kan vise. */}
-        <SectionHeader>Pris per grossist</SectionHeader>
-        <View style={[{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }, shadows.card]}>
+        <ToolSectionHeader>Pris per grossist</ToolSectionHeader>
+        <View style={{ backgroundColor: colors.toolRaised, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
           {priser.length === 0 ? (
             <Text style={[t.footnote, { padding: spacing.lg }]}>
               Ingen prisfil importert for denne varen ennå.
@@ -154,8 +157,8 @@ export default function Varekort() {
             return (
               <View key={x.grossist} style={[
                 { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 4 },
-                i < priser.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
-                erBilligst && { backgroundColor: colors.successSoft },
+                i < priser.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder },
+                erBilligst && { backgroundColor: colors.successWash },
               ]}>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
@@ -168,12 +171,12 @@ export default function Varekort() {
                     {/* Listepris er katalogprisen, ikke firmaets. Sies på selve
                         raden, ikke bare i en fotnote — det er tallet som leses. */}
                     {x.erListepris && (
-                      <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: radius.sm, backgroundColor: colors.fill }}>
-                        <Text style={[t.caption, { color: colors.secondaryLabel, fontWeight: '700' }]}>LISTEPRIS</Text>
+                      <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: radius.sm, backgroundColor: colors.toolRaisedStrong }}>
+                        <Text style={[t.caption, { color: colors.toolSecondary, fontWeight: '700' }]}>LISTEPRIS</Text>
                       </View>
                     )}
                   </View>
-                  <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 1 }]}>
+                  <Text style={[t.caption, { color: colors.toolTertiary, marginTop: 1 }]}>
                     {[
                       x.lagerfoert === true ? 'Lagerført' : x.lagerfoert === false ? 'Ikke lagerført' : null,
                       x.salgspakning ? `pakning à ${x.salgspakning}` : null,
@@ -192,7 +195,7 @@ export default function Varekort() {
                   ]}>
                     {formatKr(tilOre(x.nettoPris))}
                   </Text>
-                  <Text style={[t.caption, { color: erBilligst ? colors.success : colors.tertiaryLabel }]}>
+                  <Text style={[t.caption, { color: erBilligst ? colors.success : colors.toolTertiary }]}>
                     {`/ ${p.unit}`}
                   </Text>
                 </View>
@@ -207,7 +210,7 @@ export default function Varekort() {
           <View style={{
             flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
             marginHorizontal: spacing.screen, marginTop: spacing.sm,
-            backgroundColor: colors.warningSoft, borderRadius: radius.lg, padding: spacing.lg,
+            backgroundColor: colors.warningWash, borderRadius: radius.lg, padding: spacing.lg,
           }}>
             <AlertTriangle size={17} color={colors.warning} strokeWidth={2.2} />
             <Text style={[t.footnote, { flex: 1 }]}>
@@ -229,7 +232,7 @@ export default function Varekort() {
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
             marginHorizontal: spacing.screen, marginTop: spacing.sm,
-            backgroundColor: colors.brandSoft, borderRadius: radius.lg, padding: spacing.lg,
+            backgroundColor: colors.brandWash, borderRadius: radius.lg, padding: spacing.lg,
           }}>
             <TrendingDown size={18} color={colors.success} strokeWidth={2.2} />
             <Text style={[t.footnote, { flex: 1 }]}>
@@ -239,8 +242,8 @@ export default function Varekort() {
         )}
 
         {/* Numrene. Alt kan markeres og kopieres — de skal inn i en bestilling. */}
-        <SectionHeader>Identifikasjon</SectionHeader>
-        <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+        <ToolSectionHeader>Identifikasjon</ToolSectionHeader>
+        <View style={{ backgroundColor: colors.toolRaised, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
           <Rad etikett="El-nummer" verdi={p.elnummer} />
           <Rad etikett="EAN" verdi={p.ean} />
           <Rad etikett="NRF" verdi={p.nrf} />
@@ -255,8 +258,8 @@ export default function Varekort() {
           ))}
         </View>
 
-        <SectionHeader>Våre priser</SectionHeader>
-        <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+        <ToolSectionHeader>Våre priser</ToolSectionHeader>
+        <View style={{ backgroundColor: colors.toolRaised, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
           <Rad etikett="Vår kost" verdi={p.costPrice != null ? `${formatKr(tilOre(p.costPrice))} (${p.supplier ?? 'ukjent grossist'})` : null} />
           <Rad etikett="Utsalg eks. mva" verdi={p.unitPrice != null ? formatKr(tilOre(p.unitPrice)) : null} sist />
         </View>

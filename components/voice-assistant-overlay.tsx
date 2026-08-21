@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
+import { Text } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg'
 import Animated, {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { View, Text, TextInput, ScrollView, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 import { X } from 'lucide-react-native'

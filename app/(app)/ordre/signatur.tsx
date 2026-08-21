@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { View, Text, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import * as Haptics from 'expo-haptics'
@@ -16,7 +17,8 @@ import {
 } from '../../../lib/db/models/order-signature'
 import { lagreSignatur, slettSignatur, useSignaturer } from '../../../lib/signatures'
 import { formatDateTime } from '../../../lib/format'
-import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, paperType as t } from '../../../lib/theme'
+import { usePapirStatuslinje } from '../../../components/tool-surface'
 
 const PAD_HOYDE = 200
 
@@ -29,6 +31,8 @@ const PAD_HOYDE = 200
  * strek.
  */
 export default function SignaturScreen() {
+  // Mørk klokke og batteri: dette er papir, ikke brun grunn.
+  usePapirStatuslinje()
   const insets = useSafeAreaInsets()
   const { id, extraId } = useLocalSearchParams<{ id: string; extraId?: string }>()
 
@@ -91,7 +95,7 @@ export default function SignaturScreen() {
   const formaler: SignaturFormal[] = extraId ? ['tillegg'] : ['ferdig', 'overtakelse', 'annet']
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.canvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.paperCanvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.sm,
@@ -102,8 +106,8 @@ export default function SignaturScreen() {
       >
         <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.lg }}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
-            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.paperBg, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={sizes.icon} color={colors.paperLabel} strokeWidth={2.2} />
           </Pressable>
           <Text style={[t.title1, { marginTop: spacing.lg }]}>Signatur</Text>
           <Text style={[t.footnote, { marginTop: spacing.xs }]}>
@@ -122,7 +126,7 @@ export default function SignaturScreen() {
               return (
                 <Pressable key={f} haptic="light" onPress={() => setFormal(f)}
                   style={{
-                    backgroundColor: aktiv ? colors.brandSoft : colors.bg,
+                    backgroundColor: aktiv ? colors.brandSoft : colors.paperBg,
                     borderRadius: radius.lg, padding: spacing.lg,
                     borderWidth: 1, borderColor: aktiv ? colors.brand : 'transparent',
                   }}>
@@ -139,14 +143,14 @@ export default function SignaturScreen() {
           <TextInput
             value={navn} onChangeText={setNavn}
             placeholder="Navn på den som skriver under"
-            placeholderTextColor={colors.tertiaryLabel}
-            style={[t.body, { backgroundColor: colors.bg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
+            placeholderTextColor={colors.paperTertiary}
+            style={[t.body, { backgroundColor: colors.paperBg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
           />
           <TextInput
             value={tittel} onChangeText={setTittel}
             placeholder="Rolle (valgfritt) — f.eks. eier, styreleder, driftsleder"
-            placeholderTextColor={colors.tertiaryLabel}
-            style={[t.body, { backgroundColor: colors.bg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, marginTop: spacing.sm }]}
+            placeholderTextColor={colors.paperTertiary}
+            style={[t.body, { backgroundColor: colors.paperBg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, marginTop: spacing.sm }]}
           />
 
           <Text style={[t.caption, { textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
@@ -159,9 +163,9 @@ export default function SignaturScreen() {
           <TextInput
             value={notat} onChangeText={setNotat} multiline
             placeholder="Merknad (valgfritt) — forbehold eller avtale som ikke står andre steder"
-            placeholderTextColor={colors.tertiaryLabel}
+            placeholderTextColor={colors.paperTertiary}
             style={[t.body, {
-              backgroundColor: colors.bg, borderRadius: radius.lg,
+              backgroundColor: colors.paperBg, borderRadius: radius.lg,
               paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
               marginTop: spacing.lg, minHeight: 72, textAlignVertical: 'top',
             }]}
@@ -170,10 +174,10 @@ export default function SignaturScreen() {
           <Pressable haptic="medium" onPress={lagre} disabled={!kanLagre}
             style={{
               height: sizes.ctaHeight, borderRadius: radius.xl,
-              backgroundColor: kanLagre ? colors.cta : colors.fill,
+              backgroundColor: kanLagre ? colors.brand : colors.paperFill,
               alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg,
             }}>
-            <Text style={[t.headline, { color: kanLagre ? colors.ctaLabel : colors.tertiaryLabel }]}>Lagre signatur</Text>
+            <Text style={[t.headline, { color: kanLagre ? colors.brandLabel : colors.paperTertiary }]}>Lagre signatur</Text>
           </Pressable>
           {!kanLagre && !busy && (
             <Text style={[t.footnote, { textAlign: 'center', marginTop: spacing.sm }]}>
@@ -185,10 +189,10 @@ export default function SignaturScreen() {
         {/* Tidligere signaturer på ordren */}
         {signaturer.length > 0 && (
           <View style={{ marginTop: spacing.xxl }}>
-            <SectionHeader>Signert tidligere</SectionHeader>
+            <SectionHeader tone="papir">Signert tidligere</SectionHeader>
             <View style={{ marginHorizontal: spacing.screen, gap: spacing.sm }}>
               {signaturer.map(s => (
-                <View key={s.id} style={{ backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.lg }}>
+                <View key={s.id} style={{ backgroundColor: colors.paperBg, borderRadius: radius.lg, padding: spacing.lg }}>
                   <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
                     <View style={{ flex: 1 }}>
                       <Text style={t.bodyMedium}>{s.signerName}</Text>
@@ -197,7 +201,7 @@ export default function SignaturScreen() {
                       </Text>
                     </View>
                     <Pressable hitSlop={8} haptic="light" onPress={() => slettSignatur(s)}>
-                      <Trash2 size={16} color={colors.tertiaryLabel} strokeWidth={2} />
+                      <Trash2 size={16} color={colors.paperTertiary} strokeWidth={2} />
                     </Pressable>
                   </View>
                   {bredde > 0 && (

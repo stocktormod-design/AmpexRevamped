@@ -1,9 +1,10 @@
-import { View, Text, TextInput } from 'react-native'
+import { View } from 'react-native'
+import { Text, TextInput } from './text'
 import { Plus, X } from 'lucide-react-native'
 import { Pressable } from './pressable'
 import { Chip } from './ui'
 import { FormField } from '../lib/forms/types'
-import { colors, spacing, radius, sizes, type as t } from '../lib/theme'
+import { colors, spacing, radius, sizes, paperType as t } from '../lib/theme'
 
 /**
  * Ett felt i skjemaet — label over, input/chips under. Delt mellom
@@ -19,7 +20,7 @@ function Label({ field, gap }: { field: FormField; gap: number }) {
     <View style={{ marginBottom: field.help ? spacing.xs : gap }}>
       <Text style={t.footnote}>{field.label}</Text>
       {!!field.help && (
-        <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 2, marginBottom: gap, lineHeight: 16 }]}>
+        <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 2, marginBottom: gap, lineHeight: 16 }]}>
           {field.help}
         </Text>
       )}
@@ -67,18 +68,18 @@ export function FormFieldView({ field, value, onChange, readOnly }: {
     return (
       <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
         {!!field.help && (
-          <Text style={[t.caption, { color: colors.tertiaryLabel, marginBottom: spacing.sm, lineHeight: 16 }]}>{field.help}</Text>
+          <Text style={[t.caption, { color: colors.paperTertiary, marginBottom: spacing.sm, lineHeight: 16 }]}>{field.help}</Text>
         )}
         {rows.map((row, i) => (
           <View key={i} style={{
-            backgroundColor: colors.fill, borderRadius: radius.md,
+            backgroundColor: colors.paperFill, borderRadius: radius.md,
             padding: spacing.md, marginBottom: spacing.sm,
           }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs }}>
               <Text style={t.caption}>{`${field.label} ${i + 1}`}</Text>
               {!readOnly && (
                 <Pressable onPress={() => onChange(rows.filter((_, j) => j !== i))} hitSlop={8}>
-                  <X size={14} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+                  <X size={14} color={colors.paperTertiary} strokeWidth={sizes.lucideStroke} />
                 </Pressable>
               )}
             </View>
@@ -89,8 +90,8 @@ export function FormFieldView({ field, value, onChange, readOnly }: {
                 editable={!readOnly}
                 onChangeText={v => onChange(rows.map((r, j) => j === i ? { ...r, [col.key]: v } : r))}
                 placeholder={col.label}
-                placeholderTextColor={colors.tertiaryLabel}
-                style={[t.subhead, { paddingVertical: spacing.xs + 2, borderBottomWidth: 0.5, borderBottomColor: colors.separator }]}
+                placeholderTextColor={colors.paperTertiary}
+                style={[t.subhead, { paddingVertical: spacing.xs + 2, borderBottomWidth: 0.5, borderBottomColor: colors.paperSeparator }]}
               />
             ))}
           </View>
@@ -100,8 +101,8 @@ export function FormFieldView({ field, value, onChange, readOnly }: {
             onPress={() => onChange([...rows, {}])}
             style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, paddingVertical: spacing.sm }}
           >
-            <Plus size={16} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
-            <Text style={[t.subhead, { color: colors.secondaryLabel }]}>{`Legg til ${field.label.toLowerCase()}`}</Text>
+            <Plus size={16} color={colors.paperSecondary} strokeWidth={sizes.lucideStroke} />
+            <Text style={[t.subhead, { color: colors.paperSecondary }]}>{`Legg til ${field.label.toLowerCase()}`}</Text>
           </Pressable>
         )}
       </View>
@@ -118,13 +119,13 @@ export function FormFieldView({ field, value, onChange, readOnly }: {
             editable={!readOnly}
             onChangeText={onChange}
             placeholder={field.placeholder}
-            placeholderTextColor={colors.tertiaryLabel}
+            placeholderTextColor={colors.paperTertiary}
             // decimal-pad, ikke numeric: måleverdier har komma, og norsk
             // tastatur gir komma her. 'numeric' gir også bokstaver på Android.
             keyboardType="decimal-pad"
             style={[t.body, { flex: 1 }]}
           />
-          {!!field.unit && <Text style={[t.subhead, { color: colors.secondaryLabel }]}>{field.unit}</Text>}
+          {!!field.unit && <Text style={[t.subhead, { color: colors.paperSecondary }]}>{field.unit}</Text>}
         </View>
       </View>
     )
@@ -139,7 +140,7 @@ export function FormFieldView({ field, value, onChange, readOnly }: {
         editable={!readOnly}
         onChangeText={onChange}
         placeholder={field.placeholder}
-        placeholderTextColor={colors.tertiaryLabel}
+        placeholderTextColor={colors.paperTertiary}
         multiline={field.type === 'multiline'}
         style={[t.body, field.type === 'multiline' && { minHeight: 64, textAlignVertical: 'top' }]}
       />

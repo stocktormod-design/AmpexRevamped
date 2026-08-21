@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { View, Text, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import { BlurView } from 'expo-blur'
@@ -17,7 +18,8 @@ import { FormRevision } from '../../../lib/db/models/form-revision'
 import { FormComment } from '../../../lib/db/models/form-comment'
 import { addComment, toggleResolveComment } from '../../../lib/forms'
 import { formatSince } from '../../../lib/format'
-import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, shadows, paperType as t } from '../../../lib/theme'
+import { usePapirStatuslinje } from '../../../components/tool-surface'
 
 type Tab = 'skjema' | 'historikk' | 'diskusjon'
 
@@ -31,6 +33,8 @@ const FIELD_LABEL: Record<FormFieldType, string> = {
 }
 
 export default function SkjemaDetail() {
+  // Mørk klokke og batteri: dette er papir, ikke brun grunn.
+  usePapirStatuslinje()
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [template, setTemplate] = useState<FormTemplate | null>(null)
@@ -81,16 +85,16 @@ export default function SkjemaDetail() {
     await addComment(template, body)
   }
 
-  if (!template) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
+  if (!template) return <View style={{ flex: 1, backgroundColor: colors.paperCanvas }} />
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.canvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.paperCanvas }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Header */}
-      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm, backgroundColor: colors.canvas }}>
+      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm, backgroundColor: colors.paperCanvas }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
-            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.paperBg, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={sizes.icon} color={colors.paperLabel} strokeWidth={2.2} />
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={t.title3} numberOfLines={1}>{template.title}</Text>
@@ -99,8 +103,8 @@ export default function SkjemaDetail() {
           <Pressable
             haptic="light" pressScale={0.94}
             onPress={() => router.push({ pathname: '/(app)/skjema/rediger', params: { id: template.id } })}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 34, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.fill }}>
-            <Pencil size={15} color={colors.label} strokeWidth={2.1} />
+            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 34, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.paperFill }}>
+            <Pencil size={15} color={colors.paperLabel} strokeWidth={2.1} />
             <Text style={[t.subhead, { fontWeight: '600' }]}>Rediger</Text>
           </Pressable>
         </View>
@@ -131,38 +135,38 @@ export default function SkjemaDetail() {
                     {section.title}
                   </Text>
                 )}
-                <View style={[{ backgroundColor: colors.bg, borderRadius: radius.lg }, shadows.card]}>
+                <View style={[{ backgroundColor: colors.paperBg, borderRadius: radius.lg }, shadows.card]}>
                   {section.fields.map((it, i, arr) => {
                     const Icon = FIELD_ICON[it.type] ?? Type
                     return (
                       <View key={it.id} style={[
                         { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-                        i < arr.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+                        i < arr.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.paperSeparator },
                       ]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <View style={{ width: 30, height: 30, borderRadius: radius.sm, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md }}>
-                            <Icon size={16} color={colors.iconMuted} strokeWidth={2} />
+                          <View style={{ width: 30, height: 30, borderRadius: radius.sm, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md }}>
+                            <Icon size={16} color={colors.paperIcon} strokeWidth={2} />
                           </View>
                           <Text style={[t.body, { flex: 1 }]} numberOfLines={2}>{it.label}</Text>
                           {it.required && <Text style={[t.caption, { color: colors.danger }]}>påkrevd</Text>}
-                          <Text style={[t.caption, { color: colors.tertiaryLabel, marginLeft: spacing.sm }]}>{FIELD_LABEL[it.type]}</Text>
+                          <Text style={[t.caption, { color: colors.paperTertiary, marginLeft: spacing.sm }]}>{FIELD_LABEL[it.type]}</Text>
                         </View>
                         {/* Alternativene ER punktet på en klikkliste — uten dem sier
                             raden ingenting om hva montøren faktisk kan svare. */}
                         {it.type === 'choice' && (
-                          <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 4, marginLeft: 30 + spacing.md }]}>
+                          <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 4, marginLeft: 30 + spacing.md }]}>
                             {(it.choices ?? []).filter(Boolean).join(' · ') || 'Ingen alternativer'}
                           </Text>
                         )}
                         {it.type === 'table' && (
-                          <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 4, marginLeft: 30 + spacing.md }]}>
+                          <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 4, marginLeft: 30 + spacing.md }]}>
                             {(it.columns ?? []).map(c => c.label).filter(Boolean).join(' · ') || 'Ingen kolonner'}
                           </Text>
                         )}
                         {!!it.showIf && (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, marginLeft: 30 + spacing.md }}>
-                            <Eye size={12} color={colors.tertiaryLabel} strokeWidth={2} />
-                            <Text style={[t.caption, { color: colors.tertiaryLabel }]} numberOfLines={1}>
+                            <Eye size={12} color={colors.paperTertiary} strokeWidth={2} />
+                            <Text style={[t.caption, { color: colors.paperTertiary }]} numberOfLines={1}>
                               {`Vises når «${byId.get(it.showIf.field)?.label ?? 'et punkt'}» er ${it.showIf.equals.join(' eller ')}`}
                             </Text>
                           </View>
@@ -191,10 +195,10 @@ export default function SkjemaDetail() {
                 <View style={{ width: 28, alignItems: 'center' }}>
                   <View style={{
                     width: 12, height: 12, borderRadius: 6, marginTop: 4,
-                    backgroundColor: newest ? colors.cta : colors.bg,
-                    borderWidth: newest ? 0 : 2, borderColor: colors.separator,
+                    backgroundColor: newest ? colors.brand : colors.paperBg,
+                    borderWidth: newest ? 0 : 2, borderColor: colors.paperSeparator,
                   }} />
-                  {i < revisions.length - 1 && <View style={{ flex: 1, width: 2, backgroundColor: colors.separator, marginVertical: 2 }} />}
+                  {i < revisions.length - 1 && <View style={{ flex: 1, width: 2, backgroundColor: colors.paperSeparator, marginVertical: 2 }} />}
                 </View>
                 <View style={{ flex: 1, paddingBottom: spacing.lg, marginLeft: spacing.sm }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
@@ -204,10 +208,10 @@ export default function SkjemaDetail() {
                         <Text style={[t.caption, { color: colors.success, fontWeight: '700' }]}>GJELDENDE</Text>
                       </View>
                     )}
-                    <Text style={[t.caption, { color: colors.tertiaryLabel, marginLeft: 'auto' }]}>{formatSince(r.createdAt)}</Text>
+                    <Text style={[t.caption, { color: colors.paperTertiary, marginLeft: 'auto' }]}>{formatSince(r.createdAt)}</Text>
                   </View>
-                  <Text style={[t.subhead, { color: colors.secondaryLabel, marginTop: 3 }]}>{r.changeNote || 'Endret'}</Text>
-                  <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 4 }]}>{r.items.length} felt</Text>
+                  <Text style={[t.subhead, { color: colors.paperSecondary, marginTop: 3 }]}>{r.changeNote || 'Endret'}</Text>
+                  <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 4 }]}>{r.items.length} felt</Text>
                 </View>
               </View>
             )
@@ -225,15 +229,15 @@ export default function SkjemaDetail() {
             ) : (
               comments.map(c => (
                 <View key={c.id} style={[
-                  { backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.md + 2, marginBottom: spacing.sm },
+                  { backgroundColor: colors.paperBg, borderRadius: radius.lg, padding: spacing.md + 2, marginBottom: spacing.sm },
                   c.resolved && { opacity: 0.6 },
                 ]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 }}>
-                    <Text style={[t.footnote, { fontWeight: '700', color: colors.label }]}>{c.authorName || 'Ukjent'}</Text>
-                    <View style={{ paddingHorizontal: 5, borderRadius: radius.sm, backgroundColor: colors.fill }}>
-                      <Text style={[t.caption, { color: colors.tertiaryLabel }]}>v{c.version ?? '?'}</Text>
+                    <Text style={[t.footnote, { fontWeight: '700', color: colors.paperLabel }]}>{c.authorName || 'Ukjent'}</Text>
+                    <View style={{ paddingHorizontal: 5, borderRadius: radius.sm, backgroundColor: colors.paperFill }}>
+                      <Text style={[t.caption, { color: colors.paperTertiary }]}>v{c.version ?? '?'}</Text>
                     </View>
-                    <Text style={[t.caption, { color: colors.tertiaryLabel, marginLeft: 'auto' }]}>{formatSince(c.createdAt)}</Text>
+                    <Text style={[t.caption, { color: colors.paperTertiary, marginLeft: 'auto' }]}>{formatSince(c.createdAt)}</Text>
                   </View>
                   <Text style={[t.body]}>{c.body}</Text>
                   <Pressable
@@ -242,8 +246,8 @@ export default function SkjemaDetail() {
                     style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm }}>
                     {c.resolved
                       ? <CheckCircle2 size={15} color={colors.success} strokeWidth={2.2} />
-                      : <Circle size={15} color={colors.tertiaryLabel} strokeWidth={2} />}
-                    <Text style={[t.caption, { color: c.resolved ? colors.success : colors.secondaryLabel, fontWeight: '600' }]}>
+                      : <Circle size={15} color={colors.paperTertiary} strokeWidth={2} />}
+                    <Text style={[t.caption, { color: c.resolved ? colors.success : colors.paperSecondary, fontWeight: '600' }]}>
                       {c.resolved ? `Løst i v${c.resolvedRevision ?? '?'}` : 'Marker løst'}
                     </Text>
                   </Pressable>
@@ -254,19 +258,19 @@ export default function SkjemaDetail() {
 
           {/* Kompose-bar */}
           <BlurView tint="systemChromeMaterialLight" intensity={90}
-            style={{ paddingHorizontal: spacing.screen, paddingTop: spacing.sm, paddingBottom: insets.bottom + spacing.sm, borderTopWidth: 0.5, borderTopColor: colors.separator, backgroundColor: colors.chromeGlass }}>
+            style={{ paddingHorizontal: spacing.screen, paddingTop: spacing.sm, paddingBottom: insets.bottom + spacing.sm, borderTopWidth: 0.5, borderTopColor: colors.paperSeparator, backgroundColor: colors.paperChrome }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm }}>
               <TextInput
                 value={draft} onChangeText={setDraft}
                 placeholder="Spør eller foreslå endring…"
-                placeholderTextColor={colors.tertiaryLabel}
+                placeholderTextColor={colors.paperTertiary}
                 multiline
-                style={[t.body, { flex: 1, maxHeight: 110, minHeight: 40, backgroundColor: colors.fill, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingTop: 10, paddingBottom: 10 }]}
+                style={[t.body, { flex: 1, maxHeight: 110, minHeight: 40, backgroundColor: colors.paperFill, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingTop: 10, paddingBottom: 10 }]}
               />
               <Pressable
                 haptic="medium" onPress={send} disabled={!draft.trim()}
-                style={{ width: 40, height: 40, borderRadius: radius.pill, backgroundColor: draft.trim() ? colors.cta : colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-                <Send size={18} color={draft.trim() ? colors.ctaLabel : colors.tertiaryLabel} strokeWidth={2.1} />
+                style={{ width: 40, height: 40, borderRadius: radius.pill, backgroundColor: draft.trim() ? colors.brand : colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
+                <Send size={18} color={draft.trim() ? colors.brandLabel : colors.paperTertiary} strokeWidth={2.1} />
               </Pressable>
             </View>
           </BlurView>
