@@ -9,6 +9,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { supabase } from '../lib/supabase'
 import { syncQuietly } from '../lib/db/sync'
 import { abonnerPalett, bruk, lagretPalett } from '../lib/palett'
+import { useAmpexFonts } from '../lib/fonts'
+import { colors } from '../lib/theme'
 import { enforceCompanyBoundary } from '../lib/db/company-guard'
 import { seedAktiviteter } from '../lib/activities'
 import { retryPendingAiEnrichment, registerDraftHandler } from '../lib/ai/retry'
@@ -143,6 +145,7 @@ export default function RootLayout() {
   // når paletten byttes — fargene leses ved render, så alt må tegnes på nytt.
   // Slettes sammen med velgeren når én palett er valgt.
   const [nokkel, setNokkel] = useState('naavaerende')
+  const fonterKlare = useAmpexFonts()
   useEffect(() => {
     lagretPalett().then(id => { bruk(id); setNokkel(id) }).catch(() => {})
     return abonnerPalett(id => { bruk(id); setNokkel(id) })
@@ -192,6 +195,11 @@ export default function RootLayout() {
       appState.remove()
     }
   }, [])
+
+  // Vent på fonten før noe tegnes. Uten dette rendres alle titler i
+  // systemfonten først og hopper når serifen lander — og et hopp i typografien
+  // er det aller første brukeren ser.
+  if (!fonterKlare) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }} key={nokkel}>
