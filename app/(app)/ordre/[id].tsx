@@ -405,8 +405,24 @@ export default function OrderDetailScreen() {
     return () => sub.unsubscribe()
   }, [id])
 
+  /**
+   * «Fakturert» kan ALDRI settes herfra.
+   *
+   * Å skrive status direkte hopper over markerFakturert() — som krever faglig
+   * godkjenning, stempler `invoiced_at` på linjene og låser dem mot ny
+   * fakturering. Uten det kan samme arbeid faktureres om igjen.
+   *
+   * Og verre: serveren har en trigger (`krev_faglig_godkjenning`) som avviser
+   * status 'fakturert' uten godkjenning. Siden watermelon_push kjører i én
+   * transaksjon, ville ett slikt trykk blokkert HELE synken — stille, akkurat
+   * som base62-id-ene gjorde. Fakturering skjer på fakturaskjermen, punktum.
+   */
   async function setStatus(status: OrderStatus) {
     if (!order || order.status === status) return
+    if (status === 'fakturert') {
+      router.push({ pathname: '/(app)/ordre/faktura', params: { id } })
+      return
+    }
     await database.write(async () => {
       await order.update(o => { o.status = status })
     })
@@ -454,12 +470,37 @@ export default function OrderDetailScreen() {
     ? orderStatuses[statusIdx + 1]
     : null
 
+  /**
+   * Den ene handlingen. Kopiert fra Jobber og Tradify, og det er ikke
+   * plasseringen som er poenget — det er at det finnes ÉN.
+   *
+   * «Marker som pågår» beskriver en databasekolonne. «Start jobben» beskriver
+   * det montøren gjør. Verbet er hele forskjellen: den ene må oversettes i
+   * hodet, den andre ikke.
+   *
+   * Fakturaklar peker VIDERE i stedet for å endre status, fordi fakturering
+   * krever faglig godkjenning og skjer på fakturaskjermen. Er jobben fakturert,
+   * er det ingen neste handling — og da skal det ikke stå en knapp der.
+   */
+  const hovedhandling: { tekst: string; gjor: () => void } | null =
+    order.status === 'fakturert' ? null
+    : order.status === 'fakturaklar'
+      ? { tekst: 'Til fakturagrunnlaget', gjor: () => router.push({ pathname: '/(app)/ordre/faktura', params: { id } }) }
+      : order.status === 'pagaar'
+        ? { tekst: 'Meld ferdig', gjor: () => setStatus('fakturaklar') }
+        : order.status === 'planlagt'
+          ? { tekst: 'Start jobben', gjor: () => setStatus('pagaar') }
+          : nextStatus
+            ? { tekst: `Marker som ${orderStatusLabel[nextStatus].toLowerCase()}`, gjor: () => setStatus(nextStatus) }
+            : null
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.sm,
-          paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl,
+          // Plass til den forankrede handlingen — ellers skjuler den siste rad.
+          paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl + (hovedhandling ? 72 : 0),
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -603,8 +644,24 @@ export default function OrderDetailScreen() {
                 </View>
               )}
             </View>
+            {/* Kun de siste fire. En jobb kan ha tjue linjer materiell, og
+                tjue rader her dyttet dokumentasjonen og resten av skjermen ut
+                av syne — det var halve grunnen til at siden føltes uendelig.
+                De SISTE, ikke de første: det du nettopp førte er det du vil
+                se at kom med. */}
             <View style={{ paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, gap: spacing.xs }}>
-              {materials.map(m => <MaterialRow key={m.id} material={m} />)}
+              {materials.slice(-4).map(m => <MaterialRow key={m.id} material={m} />)}
+              {materials.length > 4 && (
+                <Pressable
+                  haptic="light"
+                  onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
+                  style={{ alignItems: 'center', paddingVertical: spacing.sm }}
+                >
+                  <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>
+                    {`Vis alle ${materials.length}`}
+                  </Text>
+                </Pressable>
+              )}
               <Pressable
                 haptic="medium"
                 onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
@@ -784,21 +841,9 @@ export default function OrderDetailScreen() {
         <View style={{ marginBottom: spacing.screen }}>
           <SectionHeader>Status</SectionHeader>
           <View style={{ marginHorizontal: spacing.screen, gap: spacing.sm }}>
-            {nextStatus && (
-              <Pressable
-                haptic="medium"
-                onPress={() => setStatus(nextStatus)}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-                  height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.label,
-                }}
-              >
-                <Check size={18} color="#fff" strokeWidth={2.4} />
-                <Text style={[t.headline, { color: '#fff' }]}>
-                  {`Marker som ${orderStatusLabel[nextStatus].toLowerCase()}`}
-                </Text>
-              </Pressable>
-            )}
+            {/* Hovedhandlingen er flyttet til den forankrede linja nederst.
+                Her ligger bare korrigering — å hoppe tilbake når noe ble
+                markert feil. */}
             <Pressable
               haptic="light"
               onPress={() => setStatusOpen(o => !o)}
@@ -833,6 +878,39 @@ export default function OrderDetailScreen() {
           </ListCard>
         </View>
       </ScrollView>
+
+      {/*
+        Én forankret hovedhandling — mønsteret fra Jobber og Tradify.
+
+        Poenget er ikke at knappen er festet nederst. Poenget er at det finnes
+        ÉN. Før konkurrerte fem kort med lik vekt om oppmerksomheten, og
+        statusknappen — det eneste steget som faktisk flytter jobben framover —
+        lå nederst mellom «Endre status» og metadata.
+
+        Den ligger OVER tabbaren og under innholdet, så den følger med uansett
+        hvor langt ned du har rullet. En montør med hansker skal ikke lete.
+      */}
+      {hovedhandling && (
+        <View style={{
+          position: 'absolute', left: 0, right: 0, bottom: 0,
+          paddingHorizontal: spacing.screen,
+          paddingBottom: sizes.tabBar + insets.bottom + spacing.sm,
+          paddingTop: spacing.sm,
+        }}>
+          <Pressable
+            haptic="medium"
+            onPress={hovedhandling.gjor}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+              height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.cta,
+              shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+            }}
+          >
+            <Check size={19} color={colors.ctaLabel} strokeWidth={2.4} />
+            <Text style={[t.headline, { color: colors.ctaLabel }]}>{hovedhandling.tekst}</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   )
 }
