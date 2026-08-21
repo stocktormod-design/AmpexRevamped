@@ -8,7 +8,7 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import {
   ChevronLeft, Phone, MapPin, FileText, Check, ChevronRight, Plus, Package, Navigation, Trash2,
   Receipt, UserPlus, Clock, Users, FilePlus2,
-  PenLine, Box,
+  PenLine, Box, ChevronDown,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { AvtaltPrisKort } from '../../../components/avtalt-pris-kort'
@@ -501,6 +501,7 @@ export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const [order, setOrder] = useState<Order | null>(null)
   const [statusOpen, setStatusOpen] = useState(false)
+  const [kontorAapen, setKontorAapen] = useState(false)
   const docs = useOrderDocuments(id ?? '')
   const materials = useOrderMaterials(id ?? '')
   const scans = useOrderScans(id ?? '')
@@ -972,111 +973,139 @@ export default function OrderDetailScreen() {
           <ScanSection orderId={order.id} scans={scans} />
         </View>
 
-        {/* Når jobben er ferdig. Signaturen er en avslutningshandling — den skal
-            tas foran kunden når arbeidet er gjort, ikke ligge og lyse mens du
-            fortsatt drar kabel. */}
-        <View style={{ marginBottom: spacing.screen }}>
-          <SectionHeader tone="light">Når jobben er ferdig</SectionHeader>
-          <ToolCard>
-            <Rad
-              ikon={<PenLine size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
-              tittel="Kundesignatur"
-              under={signaturer.length === 0 ? 'Bevis på at arbeidet er godtatt' : undefined}
-              verdi={signaturer.length > 0 ? String(signaturer.length) : '—'}
-              onPress={() => router.push({ pathname: '/(app)/ordre/signatur', params: { id } })}
-              forst
-            />
-            {/* Tilleggsarbeid vises KUN når ordren har en avtalt pris.
-                På løpende regning er ekstra arbeid bare flere timer og mer
-                materiell — da er dette et unødvendig begrep i veien. Er prisen
-                avtalt, er det motsatt: timer og materiell utover avtalen blir
-                slukt av fastprisen og aldri fakturert, med mindre de føres som
-                et tillegg kunden har godkjent. */}
-            {!!order.quoteId && (
+        {/* TILLEGGSARBEID hører til i FELT: det registreres på stedet, i det
+            kunden ber om noe utenfor avtalen. Vises kun når ordren HAR en
+            avtalt pris — på løpende regning er ekstra arbeid bare flere timer
+            og mer materiell, og begrepet står bare i veien. */}
+        {!!order.quoteId && (
+          <View style={{ marginBottom: spacing.lg }}>
+            <ToolCard>
               <Rad
-                ikon={<FilePlus2 size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
+                ikon={<FilePlus2 size={18} color={colors.brand} strokeWidth={sizes.lucideStroke} />}
                 tittel="Tilleggsarbeid"
                 under={tillegg.ventende > 0 ? `${tillegg.ventende} venter på godkjenning` : 'Arbeid utenfor den avtalte prisen'}
                 underVarsel={tillegg.ventende > 0}
                 verdi={tillegg.total > 0 ? String(tillegg.total) : '—'}
                 onPress={() => router.push({ pathname: '/(app)/ordre/tillegg', params: { id } })}
+                forst
+                sist
               />
-            )}
-            <Rad
-              ikon={<Users size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
-              tittel="Deltakere"
-              verdi={antallMedlemmer > 0 ? String(antallMedlemmer) : '—'}
-              onPress={() => router.push({ pathname: '/(app)/ordre/deltakere', params: { id } })}
-              sist
-            />
-          </ToolCard>
-        </View>
-
-        {/* Kom ordren fra et tilbud, er den avtalte prisen det viktigste tallet på
-            skjermen — den overstyrer alt fakturagrunnlaget regner ut. */}
-        {!!order.quoteId && (
-          <View style={{ marginBottom: spacing.screen }}>
-            <AvtaltPrisKort quoteId={order.quoteId} />
+            </ToolCard>
           </View>
         )}
-        {/*
-          Fakturagrunnlag. Flyttet NED hit: det er et kontorspørsmål, ikke et
-          feltspørsmål, og det sto tidligere over både materiell og
-          dokumentasjon. Men det skal fortsatt stå på ordren og ikke bare på
-          desktop — mangler (vare uten pris, ordre uten kunde) må oppdages
-          mens montøren fortsatt er på stedet og kan rette dem.
-        */}
-        <View style={{ marginBottom: spacing.screen }}>
-          <ToolCard>
-            <Pressable
-              onPress={() => router.push({ pathname: '/(app)/ordre/faktura', params: { id } })}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-              }}
-            >
-              <Receipt size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-              <View style={{ flex: 1 }}>
-                <Text style={t.headline}>Fakturagrunnlag</Text>
-                <Text style={[t.footnote, { marginTop: 1 }]}>
-                  {!grunnlag ? 'Regner ut …'
-                    : grunnlag.linjer.length === 0 ? 'Ingenting å fakturere ennå'
-                    : `${grunnlag.linjer.length} linjer${grunnlag.utelatt.length ? ` · ${grunnlag.utelatt.length} utelatt` : ''}`}
-                </Text>
-              </View>
-              {!!grunnlag && grunnlag.linjer.length > 0 && (
-                <Text style={[t.bodyMedium, { fontVariant: ['tabular-nums'] }]}>{formatKr(grunnlag.bruttoOre)}</Text>
-              )}
-              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-            </Pressable>
-            {/* Kunde uten ID stopper fakturaen i regnskapet. Si det her, ikke først til slutt. */}
-            {!order.customerId && (
-              <Pressable
-                onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                  paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-                  borderTopWidth: 0.5, borderTopColor: colors.separator,
-                }}
-              >
-                <UserPlus size={18} color={colors.warning} strokeWidth={sizes.lucideStroke} />
-                <Text style={[t.subhead, { flex: 1, color: colors.secondaryLabel }]}>
-                  Ordren mangler kunde i registeret
-                </Text>
-                <Text style={[t.subhead, { color: colors.brand, fontWeight: '600' }]}>Velg</Text>
-              </Pressable>
-            )}
-          </ToolCard>
-        </View>
-        {/* Faglig godkjenning står OVER fakturagrunnlaget: er ordren sendt
-            tilbake, er summen under uinteressant til det er rettet. */}
+
+        {/* Ble ordren sendt tilbake av faglig ansvarlig, må montøren se det —
+            det er en beskjed til FELTET, ikke en kontoroppgave. */}
         {godkjenninger.length > 0 && (
-          <View style={{ marginBottom: spacing.screen }}>
+          <View style={{ marginBottom: spacing.lg }}>
             <GodkjenningKort godkjenninger={godkjenninger} grunnlag={godkjenningsgrunnlag} />
           </View>
         )}
 
+        {/*
+          ── KONTOR ──────────────────────────────────────────────────────────
+          Kundesignatur, fakturagrunnlag og fakturasending gjøres på kontoret,
+          i desktop-appen. På telefonen er de ikke feil — de er i veien. Fire
+          rader montøren aldri trykker på, mellom de tre han bruker hver dag.
 
+          De er ikke fjernet, de er lagt bak ett trykk. Å amputere en funksjon
+          fordi den er sjelden er like galt som å la den ligge øverst fordi den
+          finnes.
+        */}
+        <View style={{ marginBottom: spacing.screen }}>
+          <Pressable
+            haptic="light"
+            onPress={() => setKontorAapen(o => !o)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+              marginHorizontal: spacing.screen + spacing.xs, paddingVertical: spacing.sm,
+            }}
+          >
+            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.toolTertiary, flex: 1 }]}>
+              Kontor
+            </Text>
+            <Text style={[t.footnote, { color: colors.toolTertiary }]}>
+              {kontorAapen ? 'Skjul' : 'Vis'}
+            </Text>
+            {kontorAapen
+              ? <ChevronDown size={16} color={colors.toolTertiary} strokeWidth={2} />
+              : <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={2} />}
+          </Pressable>
+
+          {kontorAapen && (
+            <>
+              {!!order.quoteId && (
+                <View style={{ marginBottom: spacing.sm }}>
+                  <AvtaltPrisKort quoteId={order.quoteId} />
+                </View>
+              )}
+              <ToolCard>
+                <Rad
+                  ikon={<Receipt size={18} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />}
+                  tittel="Fakturagrunnlag"
+                  under={
+                    !grunnlag ? 'Regner ut …'
+                      : grunnlag.linjer.length === 0 ? 'Ingenting å fakturere ennå'
+                      : `${grunnlag.linjer.length} linjer${grunnlag.utelatt.length ? ` · ${grunnlag.utelatt.length} utelatt` : ''}`
+                  }
+                  verdi={grunnlag && grunnlag.linjer.length > 0 ? formatKr(grunnlag.bruttoOre) : '—'}
+                  sterkVerdi
+                  onPress={() => router.push({ pathname: '/(app)/ordre/faktura', params: { id } })}
+                  forst
+                />
+                <Rad
+                  ikon={<PenLine size={18} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />}
+                  tittel="Kundesignatur"
+                  under={signaturer.length === 0 ? 'Bevis på at arbeidet er godtatt' : undefined}
+                  verdi={signaturer.length > 0 ? String(signaturer.length) : '—'}
+                  onPress={() => router.push({ pathname: '/(app)/ordre/signatur', params: { id } })}
+                />
+                <Rad
+                  ikon={<Users size={18} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />}
+                  tittel="Deltakere"
+                  verdi={antallMedlemmer > 0 ? String(antallMedlemmer) : '—'}
+                  onPress={() => router.push({ pathname: '/(app)/ordre/deltakere', params: { id } })}
+                  sist={!!order.customerId}
+                />
+                {/* Kunde uten ID stopper fakturaen i regnskapet. Den advarselen
+                    hører til her, sammen med fakturagrunnlaget — men den må ikke
+                    ligge SKJULT, så den vises også når kontor er lukket (under). */}
+                {!order.customerId && (
+                  <Rad
+                    ikon={<UserPlus size={18} color={colors.warning} strokeWidth={sizes.lucideStroke} />}
+                    tittel="Mangler kunde"
+                    under="Regnskapet trenger en kunde med ID"
+                    underVarsel
+                    verdi="Velg"
+                    onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
+                    sist
+                  />
+                )}
+              </ToolCard>
+            </>
+          )}
+
+          {/* Én ting slipper ALDRI å bli skjult: mangler ordren kunde, kan den
+              ikke faktureres — og det må oppdages mens montøren står på stedet
+              og kan spørre hvem regningen skal til. */}
+          {!kontorAapen && !order.customerId && (
+            <Pressable
+              haptic="light"
+              onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+                marginHorizontal: spacing.screen, paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+                borderRadius: radius.md, borderWidth: 1, borderColor: colors.warning + '55',
+              }}
+            >
+              <UserPlus size={17} color={colors.warning} strokeWidth={2.1} />
+              <Text style={[t.footnote, { flex: 1, color: colors.toolSecondary }]}>
+                Ordren mangler kunde i registeret
+              </Text>
+              <Text style={[t.footnote, { color: colors.brand, fontWeight: '700' }]}>Velg</Text>
+            </Pressable>
+          )}
+        </View>
         {/*
           Status var seks likeverdige chips — en editor, ikke en handling. Flyten er
           lineær (mottatt → planlagt → pågår → fakturaklar → fakturert), så neste steg
