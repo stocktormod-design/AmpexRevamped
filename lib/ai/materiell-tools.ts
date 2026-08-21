@@ -161,7 +161,9 @@ export async function leggTilMateriellVerktoy(
       m.productId = p.id
       m.unitPrice = p.unitPrice
       m.costPrice = p.costPrice
-      m.vatType = p.vatType
+      // Samme fallback som kurven (lib/cart.ts). Uten den kunne stemmeveien
+      // lage en linje uten mva-type der knappeveien ikke kan.
+      m.vatType = p.vatType ?? 'hoy'
     })
   })
   syncQuietly()

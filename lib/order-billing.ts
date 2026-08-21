@@ -10,7 +10,7 @@ import { TimeEntry } from './db/models/time-entry'
 import { OrderApproval } from './db/models/order-approval'
 import { syncQuietly } from './db/sync'
 import {
-  byggFakturagrunnlag, type Fakturagrunnlag, type GrunnlagValg,
+  byggFakturagrunnlag, sisteFakturarunde, type Fakturagrunnlag, type GrunnlagValg,
   type MateriellInn, type TilleggInn, type TimeInn,
 } from './invoicing'
 
@@ -29,6 +29,7 @@ function tilMateriellInn(m: OrderMaterial): MateriellInn {
     enhetsprisKr: m.unitPrice,
     kostprisKr: m.costPrice,
     mvaType: m.vatType,
+    rabattProsent: m.discountPercent,
     fakturerbar: m.billable,
     fakturertTid: m.invoicedAt?.getTime() ?? null,
   }
@@ -75,7 +76,7 @@ export function useFakturagrunnlag(orderId: string, valg: GrunnlagValg = {}): Fa
     if (!orderId) return
     const materiell$ = database.get<OrderMaterial>('order_materials')
       .query(Q.where('order_id', orderId), Q.sortBy('created_at', Q.asc))
-      .observeWithColumns(['quantity', 'unit_price', 'cost_price', 'billable', 'invoiced_at', 'description'])
+      .observeWithColumns(['quantity', 'unit_price', 'discount_percent', 'cost_price', 'billable', 'invoiced_at', 'description'])
     const timer$ = database.get<TimeEntry>('time_entries')
       .query(Q.where('order_id', orderId), Q.sortBy('date', Q.asc))
       .observeWithColumns(['hours', 'activity_id', 'billable', 'invoiced_at', 'note'])
@@ -177,7 +178,15 @@ export async function markerFakturert(
   syncQuietly()
 }
 
-/** Angrer merkingen. Finnes fordi et utkast kan slettes i regnskapet. */
+/**
+ * Angrer SISTE fakturering. Finnes fordi et utkast kan slettes i regnskapet.
+ *
+ * Kun siste runde — ikke alt. En ordre kan faktureres flere ganger etter hvert
+ * som det kommer på mer arbeid (linjer som alt er fakturert utelates fra neste
+ * grunnlag). Tømte vi `invoiced_at` på alle linjene, ble forrige fakturas
+ * linjer ufakturerte igjen og havnet på neste faktura — kunden betaler to
+ * ganger for samme jobb, og ingenting i appen ville sagt fra.
+ */
 export async function angreFakturert(order: Order): Promise<void> {
   await database.write(async () => {
     const [materiell, timer, tillegg] = await Promise.all([
@@ -185,13 +194,25 @@ export async function angreFakturert(order: Order): Promise<void> {
       database.get<TimeEntry>('time_entries').query(Q.where('order_id', order.id)).fetch(),
       database.get<OrderExtra>('order_extras').query(Q.where('order_id', order.id)).fetch(),
     ])
+    // Runden bestemmes på tvers av ALLE tre linjetypene: én fakturering ga dem
+    // samme tidsstempel, og de skal angres sammen.
+    const alle = [
+      ...materiell.map(m => ({ rad: m as { invoicedAt: Date | null }, fakturertTid: m.invoicedAt?.getTime() ?? null })),
+      ...timer.map(t => ({ rad: t as { invoicedAt: Date | null }, fakturertTid: t.invoicedAt?.getTime() ?? null })),
+      ...tillegg.map(x => ({ rad: x as { invoicedAt: Date | null }, fakturertTid: x.invoicedAt?.getTime() ?? null })),
+    ]
+    const { runde, forrigeTid } = sisteFakturarunde(alle)
+    const iRunden = new Set(runde.map(r => r.rad))
+
     await database.batch(
-      ...materiell.filter(m => m.invoicedAt).map(m => m.prepareUpdate(x => { x.invoicedAt = null })),
-      ...timer.filter(t => t.invoicedAt).map(t => t.prepareUpdate(x => { x.invoicedAt = null })),
-      ...tillegg.filter(x => x.invoicedAt).map(x => x.prepareUpdate(y => { y.invoicedAt = null })),
+      ...materiell.filter(m => iRunden.has(m)).map(m => m.prepareUpdate(x => { x.invoicedAt = null })),
+      ...timer.filter(t => iRunden.has(t)).map(t => t.prepareUpdate(x => { x.invoicedAt = null })),
+      ...tillegg.filter(x => iRunden.has(x)).map(x => x.prepareUpdate(y => { y.invoicedAt = null })),
       order.prepareUpdate(o => {
         o.status = 'fakturaklar'
-        o.invoicedAt = null
+        // Finnes en tidligere runde, var ordren fakturert DA — og det skal ikke
+        // viskes bort fordi den siste ble angret.
+        o.invoicedAt = forrigeTid === null ? null : new Date(forrigeTid)
         o.invoiceExternalId = null
       }),
     )

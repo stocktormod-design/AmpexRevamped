@@ -20,6 +20,8 @@ export class OrderMaterial extends Model {
    * en ordre som allerede er utført skal ikke endre beløp av seg selv.
    */
   @field('unit_price') unitPrice: number | null
+  /** Rabatt avtalt i tilbudet. Følger med når tilbudet blir ordre. */
+  @field('discount_percent') discountPercent: number | null
   @field('cost_price') costPrice: number | null
   @text('vat_type') vatType: string | null
   /** null = ja. Eksplisitt false for garanti/omlevering. */

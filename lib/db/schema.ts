@@ -4,7 +4,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 30,
+  version: 31,
   tables: [
     tableSchema({
       name: 'product_prices',
@@ -486,6 +486,7 @@ export const schema = appSchema({
         { name: 'unit', type: 'string' }, // stk|m|pk …
         { name: 'product_id', type: 'string', isOptional: true, isIndexed: true }, // null når fritekst
         { name: 'unit_price', type: 'number', isOptional: true }, // snapshot ved registrering — prisen kan endres senere
+        { name: 'discount_percent', type: 'number', isOptional: true }, // avtalt i tilbudet, følger med ved aksept
         { name: 'cost_price', type: 'number', isOptional: true },
         { name: 'vat_type', type: 'string', isOptional: true },
         { name: 'billable', type: 'boolean', isOptional: true }, // null = ja

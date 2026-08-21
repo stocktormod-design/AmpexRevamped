@@ -660,6 +660,65 @@ den flyttes uendret til Ampex Desktop når den finnes.
     overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
     så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
 
+### Andre runde gjennomgang: pengeveien, lageret og godkjenningen
+
+Samme sporing som på skjemaene, nå på resten. Fire nye brudd, alle av samme
+slag: en regel som finnes ett sted og ikke virker det andre.
+
+**1. «Angre fakturert» angret ALLE fakturaer, ikke bare den siste.**
+Delfakturering er designet inn — en linje som alt er fakturert utelates fra
+neste grunnlag, så en ordre kan faktureres flere ganger etter hvert som det
+kommer på mer arbeid. Men angreknappen tømte `invoiced_at` på HVER linje på
+ordren. Etter faktura nummer to ville forrige fakturas linjer bli ufakturerte
+igjen og havne på neste faktura. **Kunden betaler to ganger for samme jobb**, og
+ingenting i appen sier fra. Nå angres kun runden — den kjennes igjen på
+tidsstempelet, som er likt for alle linjer i én fakturering.
+
+**2. Rabatt fra tilbudet forsvant når tilbudet ble ordre.** `quote_lines` har
+`discount_percent`, `order_materials` hadde det ikke. Et akseptert tilbud med
+20 % rabatt ble fakturert til full pris. Rabattfeltet er fullt implementert i
+tilbudsskjermen («− X kr»), så dette var ikke teoretisk.
+Skjema v31 + serverkolonne. Rundingsregelen (`linjeNettoOre` — én avrunding,
+etter rabatten) er flyttet til `lib/invoicing.ts` og BRUKES nå av begge: to
+kopier av samme regel er nettopp slik tilbudet og fakturaen ender ett øre fra
+hverandre. Rabatten vises på linja, i delingsteksten og i arkivpakken — uten
+den ganger ikke antall × enhetspris opp til beløpet, og en montør som ser to
+tall som ikke stemmer stoler ikke på noen av dem.
+
+**3. Godkjenningskøen forsvant uten nett.** `useKanGodkjenne` kalte
+`supabase.rpc('kan_godkjenne_faglig')` rått fra skjermen — i strid med regel 2.
+Uten nett kom det ikke noe svar, flagget ble stående false, og hele køen
+forsvant fra «Meg». Faglig ansvarlig i en kjeller ville sett en app som sa at
+ingenting ventet på ham. Nå brukes siste kjente svar med én gang; et FEILET
+oppslag overskriver aldri et kjent svar, for «vet ikke» er ikke «nei». Trygt
+fordi sperren ligger i databasen (`krev_faglig_godkjenning` + RLS) — flagget
+styrer kun hva som vises.
+
+**4. Å slette en materiallinje ga ikke varen tilbake.** Et uttak fra bilen
+finnes som TO rader: `stock_movements` (varen er fysisk ute) og
+`order_materials` (den skal på fakturaen). Sveip-slett fjernet bare den siste,
+så beholdningen ble stående for lav for alltid — uten spor, og uten at noen
+kunne se hvorfor bilen manglet ti downlights.
+De to utfallene er fysisk forskjellige og bare mennesket vet hvilket som
+gjelder, så nå spør vi: *«Lagt tilbake på lager»* sletter uttaket, *«Fortsatt
+ute — bare ikke her»* løsner det fra ordren og legger det tilbake i kurven.
+
+**Det som HOLDT, og som er verdt å vite holder:**
+
+- Synken: 28 tabeller, **null** kolonneavvik mellom klient og server
+- Fakturaskjermen advarer allerede om manglende kunde, med «Velg kunde»
+- AI-verktøyene sjekker medlemskap på ordren før de skriver
+- Prissnapshot tas overalt materiell opprettes (kurv, tilbudsaksept, AI)
+- Uttak via stemme løser opp lokasjon og advarer om negativ beholdning
+- Tilbud ↔ ordre er koblet begge veier ved aksept
+- Fakturering krever faglig godkjenning, håndhevet av en databasetrigger
+
+Én liten justering på veien: stemmeveien kunne lage en materiallinje uten
+mva-type der kurven ikke kunne (`p.vatType` mot `p.vatType ?? 'hoy'`).
+
+**Verifisert på ekte data:** appen bygget (0 feil), migrert v30 → v31,
+`discount_percent` på plass, null gamle id-er, synkhelsa uendret.
+
 ### Det største hullet: ingenting forlater appen som et dokument
 
 Sjekket 21. august, og det er verdt å skrive tydelig: **Ampex produserer ikke én

@@ -41,6 +41,12 @@ export type ArkivLinje = {
   enhet: string
   elnummer?: string | null
   enhetspris?: number | null
+  /**
+   * Avtalt rabatt. Uten den ganger ikke antall × enhetspris opp til det kunden
+   * faktisk betalte, og en pakke som skal avgjøre en tvist om nettopp beløpet
+   * ville pekt på feil tall.
+   */
+  rabattProsent?: number | null
 }
 
 export type ArkivTime = {

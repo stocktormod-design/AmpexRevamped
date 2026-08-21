@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS } from 'react-native'
+import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS, Alert } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
@@ -21,6 +21,7 @@ import { ScanCard } from '../../../components/scan-card'
 import { deleteScanFiles, clearRevisions } from '../../../lib/scan-revisions'
 import { AddressMap } from '../../../components/address-map'
 import { database } from '../../../lib/db'
+import { slettMateriell, uttakForMateriell } from '../../../lib/cart'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Order, orderStatuses, orderStatusLabel, type OrderStatus } from '../../../lib/db/models/order'
 import { OrderDocument } from '../../../lib/db/models/order-document'
@@ -226,9 +227,29 @@ function formatQty(n: number) {
  * Langtrykk beholdt som fallback for den som ikke får sveipet til å ta.
  */
 function MaterialRow({ material }: { material: OrderMaterial }) {
+  /**
+   * Kom linja fra et lageruttak, finnes den samme varen som TO rader: uttaket
+   * (bilen er tommere) og materiallinja (fakturaen). Sletter vi bare den siste,
+   * blir beholdningen stående for lav for alltid, uten spor.
+   *
+   * Bare mennesket vet hvilket av de to utfallene som gjelder, så vi gjetter
+   * ikke — vi spør, med ord som beskriver virkeligheten og ikke datamodellen.
+   */
   async function remove() {
-    await database.write(async () => { await material.markAsDeleted() })
-    syncQuietly()
+    const uttak = await uttakForMateriell(material)
+    if (uttak.length === 0) {
+      await slettMateriell(material, 'beholdt')
+      return
+    }
+    Alert.alert(
+      'Fjern materiellet',
+      'Varen ble tatt ut av lageret. Hva skjedde med den?',
+      [
+        { text: 'Avbryt', style: 'cancel' },
+        { text: 'Lagt tilbake på lager', onPress: () => { void slettMateriell(material, 'tilbake') } },
+        { text: 'Fortsatt ute — bare ikke her', onPress: () => { void slettMateriell(material, 'beholdt') } },
+      ],
+    )
   }
   return (
     <ReanimatedSwipeable

@@ -327,8 +327,11 @@ export async function registrerSvar(quote: Quote, svar: SvarInput): Promise<stri
         m.unit = l.unit ?? 'stk'
         m.elnummer = l.elnummer
         m.productId = l.productId
-        // Prisen kunden ble lovet, ikke dagens pris.
+        // Prisen kunden ble lovet, ikke dagens pris — OG rabatten hun ble
+        // lovet. Uten rabatten ble ordren fakturert til full pris, og kunden
+        // fikk regning på noe annet enn det hun sa ja til.
         m.unitPrice = l.unitPrice
+        m.discountPercent = l.discountPercent
         m.costPrice = l.costPrice
         m.vatType = l.vatType
       })

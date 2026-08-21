@@ -17,9 +17,14 @@
  *      Det er det eneste tidspunktet tallet kan endre noe.
  */
 import {
-  fraOre, linjebelopOre, mvaBelopOre, somMvaType, tilOre,
+  fraOre, linjebelopOre, linjeNettoOre, mvaBelopOre, somMvaType, somRabatt, tilOre,
   type MvaType,
 } from './invoicing'
+
+// Rabattregelen bor i lib/invoicing.ts sammen med resten av pengematematikken —
+// tilbudet og fakturaen MÅ runde likt, ellers spriker det kunden ble lovet fra
+// det kunden får. Re-eksporteres her fordi tilbudslaget er der de brukes.
+export { linjeNettoOre, somRabatt }
 
 export type TilbudslinjeArt =
   | 'materiell' // vare, evt. fra varekartoteket
@@ -73,22 +78,6 @@ export type Tilbudssum = {
 }
 
 /** 0 utenfor 0–100, ellers verdien. En «rabatt» på 150 % er alltid en tastefeil. */
-export function somRabatt(v: number | null | undefined): number {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return 0
-  if (v <= 0) return 0
-  return v > 100 ? 100 : v
-}
-
-/**
- * Nettobeløp for én linje. Avrunding skjer ÉN gang, etter rabatten — ikke
- * først på linjebeløpet og så på rabatten. To avrundinger på samme linje gir
- * et øre som ikke stemmer med det kunden kan regne ut selv av tallene på arket.
- */
-export function linjeNettoOre(antall: number, enhetsprisOre: number, rabattProsent: number): number {
-  const rabatt = somRabatt(rabattProsent)
-  return Math.round(antall * enhetsprisOre * (1 - rabatt / 100))
-}
-
 function normaliser(l: TilbudslinjeInn): Tilbudslinje {
   const mva = somMvaType(l.mvaType)
   if (l.art === 'tekst') {
