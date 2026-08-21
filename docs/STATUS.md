@@ -660,6 +660,65 @@ den flyttes uendret til Ampex Desktop når den finnes.
     overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
     så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
 
+### Gjennomgang: snakker delene sammen? — fire brudd funnet 21. august
+
+Skjemaimporten gjorde det verdt å spore ÉN mal gjennom hvert sted den skal
+virke: rendering, gap-check, Live-assistenten, faglig godkjenning, arkiv og
+synk. Fire steder gjorde de ikke det.
+
+**1. «Fullfør og signer» brydde seg ikke om påkrevde felt.** Det verste.
+`findUnfilledRequired` fantes, var selvtestet og ble brukt av AI-en — men ikke
+av knappen som avgjør om et dokument er ferdig. En sluttkontroll kunne merkes
+fullført med hvert eneste påkrevde punkt blankt, telles som dokumentasjon i den
+faglige godkjenningen, og fryses i arkivet med `null` på alt. Hele
+påkrevd-maskineriet var pynt i den ene flaten der det betyr noe.
+Nå: knappen er sperret, og de manglende punktene NAVNGIS. «Noe mangler» sender
+montøren på leting gjennom førti punkt — og da fyller de bare noe.
+
+**2. AI-en kunne skrive tekst i en tabell.** En tabell lagres som rader.
+`components/form-field-view.tsx` faller tilbake til tom liste når verdien ikke
+er en liste — så skjemaet så komplett ut, montøren signerte, og svaret fantes
+ingen steder. Stille tap av dokumentasjon.
+gap-check og voice-fill hadde dessuten HVER SIN regel for hva AI-en fikk fylle,
+og de var ulike: innholdet i et dokument avhang av hvilken knapp som ble trykt.
+Regelen ligger nå ett sted (`lib/forms/ai-fill-rules.ts`) og er selvtestet.
+De to flatene skiller seg fortsatt på ett punkt, med vilje: Live-assistenten
+FÅR se tabellene, fordi lista dens også er en statusrapport — utelot vi
+kursfortegnelsen ville den sagt «skjemaet er ferdig» om et skjema som ikke var
+det. Den kan si fra, men ikke skrive.
+
+**3. Arkivpakken kunne ikke leses uten appen.** Dokumentene bar `mal`-id og en
+nøkkel/verdi-tabell — ingen spørsmål. For en Ampex-mal går det an å slå opp,
+men for et IMPORTERT firmaskjema finnes ordlyden kun i
+`form_template_revisions`. En pakke som trenger databasen for å gi mening er en
+peker til et arkiv, ikke et arkiv. **«12» er ikke et bevis. «Målt
+isolasjonsresistans: 12 MΩ» er det.**
+Pakken bærer nå spørsmål, enhet og alternativer, hentet fra den malversjonen
+dokumentet FAKTISK ble fylt mot (`resolveTemplateAt`) — bruker man gjeldende
+versjon, får frosne svar nye spørsmål når malen revideres, og da lyver arkivet
+troverdig. Ubesvarte punkt tas med (at noe ikke ble besvart er også
+dokumentasjon), og svar uten spørsmål havner i `uplasserteSvar` — ingen svar
+skal noensinne falle ut, heller ikke ett vi ikke lenger vet spørsmålet til.
+Formatet gikk 1 → 2. Gjort nå fordi det fantes **null** frosne pakker; etter
+den første er formatet i praksis uforanderlig, siden en gammel pakke ikke kan
+skrives om uten at hashen ryker.
+
+**4. Assistenten kalte alle Ampex-maler «Ukjent skjema».** Malnavn ble slått opp
+kun i `form_templates`, som bare inneholder firmaets egne. Spurte du «hva er
+dokumentert på ordre 42?», kom hver sluttkontroll og samsvarserklæring tilbake
+uten navn — mens importerte skjemaer virket. To malkilder, ett oppslag.
+
+**Det som HOLDT:** synken dekker `form_templates`, `form_template_revisions`,
+`form_comments` og `order_documents` (28 tabeller totalt), server- og
+klientkolonner stemmer, `order_documents.template_id` er `text` og tar både
+`ampex.*` og uuid, importerte maler publiseres rett inn i AI-ens malkatalog, og
+rendereren håndterer alle åtte felttyper.
+
+**Kjent og bevisst:** `photo`-felt i et importert skjema vises som et notat
+(«bilde legges til i appen») fordi bildeopplasting ikke er bygget ennå. Et
+påkrevd bildefelt blir dermed ikke påkrevd. Det står her fordi det er en ekte
+begrensning, ikke fordi det er greit.
+
 ### Skjemaimport: firmaets eget skjema inn på ett minutt
 
 Bygget 21. august. `Skjema → Importer` tar en **PDF eller et bilde** og gjør det

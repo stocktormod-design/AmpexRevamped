@@ -12,7 +12,7 @@
  *      uansett hvem som fryser den, når, og i hvilken tidssone.
  */
 import { sha256Hex, utf8Bytes } from '../lib/archive/sha256'
-import { byggPakke, arkivNokkel, type Arkivinnhold } from '../lib/archive/bundle'
+import { byggPakke, arkivNokkel, byggDokumentpunkter, type Arkivinnhold } from '../lib/archive/bundle'
 
 let feil = 0
 function sjekk(navn: string, faktisk: unknown, forventet: unknown) {
@@ -59,7 +59,11 @@ const innhold = (): Arkivinnhold => ({
   materiell: [{ beskrivelse: 'PFXP 3G2,5', antall: 40, enhet: 'm', elnummer: '1451025', enhetspris: 24.9 }],
   timer: [{ dato: new Date(Date.UTC(2026, 7, 19)), timer: 7.5, person: 'Tormod', aktivitet: 'Montasje' }],
   tillegg: [],
-  dokumenter: [{ mal: 'ampex.samsvar', malversjon: 1, status: 'fullfort', verdier: { norm: 'NEK 400:2022' } }],
+  dokumenter: [{
+    mal: 'ampex.samsvar', malnavn: 'Samsvarserklæring', malversjon: 1, malversjonLest: 1, status: 'fullfort',
+    punkter: [{ nokkel: 'norm', sporsmal: 'Anlegget er utført etter', type: 'text', svar: 'NEK 400:2022' }],
+    uplasserteSvar: {},
+  }],
   signaturer: [{ formaal: 'ferdig', signertAv: 'Kari Nordmann', signertTid: new Date(Date.UTC(2026, 7, 20)), strok: [] }],
   godkjenninger: [{ beslutning: 'godkjent', godkjenner: 'Far', besluttetTid: new Date(Date.UTC(2026, 7, 20, 15)) }],
   vedlegg: ['scans/abc.glb'],
@@ -86,10 +90,42 @@ endret2.materiell[0].enhetspris = 25
 sjekk('en endret pris gir ny hash', byggPakke(endret2).sha256 !== a.sha256, true)
 
 sjekk('datoer skrives som ISO i UTC', a.json.includes('"fakturert":"2026-08-20T14:30:00.000Z"'), true)
-sjekk('formatversjonen er med i pakken', a.json.includes('"format":1'), true)
+sjekk('formatversjonen er med i pakken', a.json.includes('"format":2'), true)
 sjekk('telleverket stemmer', a.innhold,
   { materiell: 1, timer: 1, tillegg: 0, dokumenter: 1, signaturer: 1, vedlegg: 1 })
 sjekk('bytes er UTF-8-lengden, ikke antall tegn', a.bytes >= a.json.length, true)
+
+/* ── Dokumentene må kunne leses uten appen ───────────────────────────────── */
+
+// Grunnen dette finnes: et FIRMASKJEMA er importert eller skrevet av kunden, og
+// ordlyden finnes kun i form_template_revisions. En pakke med bare nøkler og
+// svar krever databasen for å gi mening — da er den en peker til et arkiv, ikke
+// et arkiv. «12» er ikke et bevis. «Målt isolasjonsresistans: 12 MΩ» er det.
+
+const felter = [
+  { key: 'jording', label: 'Jording kontrollert', type: 'choice', choices: ['Ja', 'Nei', 'Ikke aktuelt'] },
+  { key: 'isolasjon', label: 'Målt isolasjonsresistans', type: 'number', unit: 'MΩ' },
+  { key: 'ubesvart', label: 'Sluttkontroll utført av', type: 'text' },
+  { key: 'erklaering', label: 'Anlegget er utført i henhold til NEK 400.', type: 'info' },
+]
+const d = byggDokumentpunkter(felter, { jording: 'Ja', isolasjon: '12', fjernet_i_v3: 'Var besvart' })
+
+sjekk('spørsmålet følger med svaret', d.punkter[0].sporsmal, 'Jording kontrollert')
+sjekk('alternativene er med — «Nei» uten dem er uten kontekst', d.punkter[0].alternativer, ['Ja', 'Nei', 'Ikke aktuelt'])
+sjekk('enheten er med — et tall uten benevning beviser ingenting', d.punkter[1].enhet, 'MΩ')
+sjekk('ubesvart punkt tas MED, med null', d.punkter[2].svar, null)
+sjekk('info-tekst er ikke et spørsmål og utelates', d.punkter.length, 3)
+// Det viktigste: ingen svar skal noensinne falle ut, heller ikke ett vi ikke
+// lenger vet spørsmålet til.
+sjekk('svar uten spørsmål bevares', d.uplasserteSvar, { fjernet_i_v3: 'Var besvart' })
+
+const tomt = byggDokumentpunkter([], { alt: 'blir uplassert' })
+sjekk('mistet mal: alle svar bevares', tomt.uplasserteSvar, { alt: 'blir uplassert' })
+sjekk('mistet mal: ingen oppdiktede punkter', tomt.punkter.length, 0)
+
+const igjen = byggDokumentpunkter(felter, { jording: 'Ja', isolasjon: '12', fjernet_i_v3: 'Var besvart' })
+sjekk('samme inndata gir samme punkter — pakken må være deterministisk',
+  JSON.stringify(igjen), JSON.stringify(d))
 
 /* ── Nøkkelen ────────────────────────────────────────────────────────────── */
 

@@ -6,6 +6,7 @@ import { OrderDocument } from '../db/models/order-document'
 import { resolveTemplate } from './resolve'
 import type { FormField, FormTemplate, FormValues } from './types'
 import { isFieldVisible, visibleFields } from './visibility'
+import { aiKanFylle } from './ai-fill-rules'
 import { callAiVoice } from '../ai/gemini-client'
 import { audioSegmentPath, saveDraftMeta, type VoiceDraftSession } from '../ai/voice-drafts'
 
@@ -46,6 +47,7 @@ export function findUnfilledRequired(template: FormTemplate, values: FormValues)
 function isValidExtractedField(template: FormTemplate, e: GapCheckExtractedField, after: FormValues): boolean {
   const field = template.sections.flatMap(s => s.fields).find(f => f.key === e.key)
   if (!field) return false
+  if (!aiKanFylle(field.type)) return false
   if (!isFieldVisible(field, after)) return false
   if (field.type === 'choice') return (field.choices ?? []).includes(e.value)
   return true
@@ -114,11 +116,16 @@ export async function runGapCheck(draft: VoiceDraftSession): Promise<{ ok: true;
       // Kun felt som faktisk vises nå: skjulte punkt skal modellen verken se
       // eller kunne fylle. Blir de synlige av et svar i samme opptak, fanges de
       // opp av neste runde (MAX_GAP_CHECK_ROUNDS).
+      // Tabeller og info-punkt holdes UTE av lista modellen ser. Å vise den et
+      // felt den ikke får fylle er å invitere til et svar vi må kaste — og til
+      // et oppfølgingsspørsmål montøren aldri kan besvare med stemmen.
       fields: visibleFields(template, currentValues)
-        .filter(f => f.type !== 'info')
+        .filter(f => aiKanFylle(f.type))
         .map(f => ({ key: f.key, label: f.label, type: f.type, choices: f.choices, unit: f.unit, help: f.help, required: !!f.required })),
       currentValues,
-      stillUnfilledKeys: findUnfilledRequired(template, currentValues).map(f => f.key),
+      stillUnfilledKeys: findUnfilledRequired(template, currentValues)
+        .filter(f => aiKanFylle(f.type))
+        .map(f => f.key),
     }
 
     const result = await callAiVoice({

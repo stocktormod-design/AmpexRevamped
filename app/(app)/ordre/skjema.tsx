@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import * as Haptics from 'expo-haptics'
 import { Q } from '@nozbe/watermelondb'
-import { ChevronLeft } from 'lucide-react-native'
+import { ChevronLeft, AlertTriangle } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { SectionHeader } from '../../../components/ui'
 import { FormFieldView } from '../../../components/form-field-view'
@@ -22,6 +22,7 @@ import { getTemplate } from '../../../lib/forms/templates'
 import { resolveTemplate } from '../../../lib/forms/resolve'
 import { FormValues, FormPrefill, type FormTemplate } from '../../../lib/forms/types'
 import { visibleSections, pruneHidden } from '../../../lib/forms/visibility'
+import { findUnfilledRequired } from '../../../lib/forms/gap-check'
 import { formatDateTime } from '../../../lib/format'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
@@ -221,7 +222,23 @@ export default function SkjemaScreen() {
     beginSession()
   }
 
+  // Skjulte punkt teller ikke: avviksbeskrivelsen er ikke «manglende» når det
+  // ikke er meldt noe avvik. Det er samme regel AI-en bruker (lib/forms/gap-check.ts).
+  const mangler = useMemo(
+    () => (template ? findUnfilledRequired(template, values) : []),
+    [template, values],
+  )
+
   async function fullfor() {
+    // Porten. `findUnfilledRequired` fantes, var selvtestet og ble brukt av
+    // AI-en — men IKKE av knappen som avgjør om dokumentet er ferdig. Uten den
+    // kunne en sluttkontroll merkes «Fullført og signert» med hvert eneste
+    // påkrevde punkt blankt, telles som dokumentasjon i den faglige
+    // godkjenningen, og fryses i arkivet med null på alt.
+    if (mangler.length > 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+      return
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current)
     const { data } = await supabase.auth.getSession()
     const now = new Date()
@@ -320,16 +337,46 @@ export default function SkjemaScreen() {
             </Pressable>
           </View>
         ) : (
-          <Pressable
-            haptic="medium"
-            onPress={fullfor}
-            style={{
-              height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.cta,
-              alignItems: 'center', justifyContent: 'center', marginHorizontal: spacing.screen,
-            }}
-          >
-            <Text style={[t.headline, { color: colors.ctaLabel }]}>Fullfør og signer</Text>
-          </Pressable>
+          <View style={{ marginHorizontal: spacing.screen }}>
+            {mangler.length > 0 && (
+              <View style={{
+                flexDirection: 'row', gap: spacing.sm, backgroundColor: colors.warningSoft,
+                borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md,
+              }}>
+                <AlertTriangle size={15} color={colors.warning} strokeWidth={2.2} style={{ marginTop: 1 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[t.footnote, { color: colors.warning, fontWeight: '700' }]}>
+                    {mangler.length === 1 ? 'Ett påkrevd punkt gjenstår' : `${mangler.length} påkrevde punkt gjenstår`}
+                  </Text>
+                  {/* Navngi dem. «Noe mangler» sender montøren på leting gjennom
+                      et skjema på førti punkt — og da fyller de bare noe. */}
+                  {mangler.slice(0, 4).map(f => (
+                    <Text key={f.key} style={[t.footnote, { marginTop: 2, lineHeight: 18 }]}>{`· ${f.label}`}</Text>
+                  ))}
+                  {mangler.length > 4 && (
+                    <Text style={[t.footnote, { marginTop: 2 }]}>{`· … og ${mangler.length - 4} til`}</Text>
+                  )}
+                  <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>
+                    Alt du har skrevet er lagret. Skjemaet kan fullføres når disse er besvart.
+                  </Text>
+                </View>
+              </View>
+            )}
+            <Pressable
+              haptic="medium"
+              onPress={fullfor}
+              disabled={mangler.length > 0}
+              style={{
+                height: sizes.ctaHeight, borderRadius: radius.xl,
+                backgroundColor: mangler.length > 0 ? colors.fill : colors.cta,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={[t.headline, { color: mangler.length > 0 ? colors.tertiaryLabel : colors.ctaLabel }]}>
+                Fullfør og signer
+              </Text>
+            </Pressable>
+          </View>
         ))}
       </ScrollView>
 
