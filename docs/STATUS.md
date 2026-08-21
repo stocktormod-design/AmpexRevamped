@@ -660,36 +660,6 @@ den flyttes uendret til Ampex Desktop når den finnes.
     overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
     så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
 
-### Klokka går av seg selv
-
-Undersøkte hvordan Jobber, Housecall Pro og Tradify er bygget. Konklusjonen på
-NAVIGASJON var å la være: Jobbers fem faner (Home, Schedule, Timesheet, Search,
-Messages) løser at appen må betjenes for hånd. Når AI-en gjør mesteparten,
-trenger du færre steder, ikke flere.
-
-Men ÉN ting derfra er verdt å ta: hos Jobber trykker du «Start Timer» og
-«Complete Visit», og timene registreres uten at noen taster noe. Vi hadde
-allerede knappene — «Start jobben» og «Meld ferdig» — de klammet bare ikke
-klokka. Nå gjør de det.
-
-**Tiden lagres ALDRI av seg selv.** Mellom start og ferdig ligger kjøring,
-pauser og en telefon fra en annen kunde. Et tall som havner på fakturaen uten
-at noen så det er verre enn ingen tall. Den foreslås: «Du startet jobben for
-3 t 15 min siden. Skal de føres?» — før, juster, eller la være.
-
-Tre valg som er verdt å vite om:
-
-- **Starten ligger LOKALT, ikke på ordren.** Det er DIN klokke. Er dere tre på
-  jobben, har dere tre forskjellige starttidspunkt, og en `started_at` på
-  ordreraden ville sagt at den siste som trykket startet for alle.
-- **Kvarter, ikke desimaler.** Ingen fører «2,37 t». Og aldri null: et kort
-  besøk som blir null timer forsvinner fra fakturaen, og montøren har vært der.
-- **Ingen bakgrunnstimer, ingen polling** (regel 8). Ett tidsstempel lagres,
-  differansen regnes ut når du melder ferdig. Klokka «går» ikke — den huskes.
-
-Selvtestet (`npm run verify:klokke`): avrundingen treffer nærmeste kvarter i
-begge retninger, og seks minutter blir aldri null.
-
 ### Telefonen er felt, desktop er kontor
 
 SpeedyCraft-skjermbildet avgjorde rekkefølgen. Deres ordre er Timer →
