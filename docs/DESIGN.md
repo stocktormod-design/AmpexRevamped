@@ -44,10 +44,17 @@ Da leser øyet listepunkter med avhukingsbokser, uansett hvor pen beigen er.
 En skjerm som beskriver noe SAMMENSATT — en jobb, et prosjekt — skal deles i
 soner med ulik vekt, ikke i like kort:
 
-1. **Et mørkt hode.** `colors.cta` mot `brandSoft`-tekst, full bredde, avrundet
-   bare nedad. Det gir skjermen et anker og sier «dette er en jobb», ikke «dette
-   er et ark». Det viktigste — kunde, adresse, kart — bor HER, ikke i et hvitt
-   kort under.
+1. **Mørk grunn, lyse kort — HELE veien.** Første forsøk hadde mørkt hode over
+   beige grunn, og det ble halvt om halvt: to konkurrerende bakgrunner med en
+   søm midt på skjermen. En detaljskjerm som skal ha vekt tar `colors.cta` som
+   grunn for hele siden, og lar de lyse kortene flyte på den. Samme modell som
+   ellers (tonet grunn + kort som løftes), bare snudd — og «ark»-følelsen er
+   borte fordi det ikke finnes noe ark igjen.
+   Det viktigste — kunde, adresse, kart — bor rett på grunnen, ikke i et kort.
+
+   Følgene må tas med: `SectionHeader tone="light"`, `StatusBar style="light"`,
+   og hovedknappen kan ikke være `cta` på `cta` — den blir `brandSoft` med mørk
+   skrift, som er den sterkeste kontrasten paletten har.
 2. **Ett stort tall.** Én bred stripe der tallet står i `type.display`. Annen
    høyde og annen typografi enn alt annet på siden.
 3. **Fliser side om side.** To like ting ved siden av hverandre er et

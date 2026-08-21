@@ -35,13 +35,14 @@ export function AmbientBackdrop({ scrollY, height = 460 }: { scrollY?: SharedVal
 }
 
 /** Seksjonsoverskrift: eyebrow-caps med bred tracking — Ampex-rytmen, ikke Settings */
-export function SectionHeader({ children }: { children: string }) {
+/** `tone="light"` for skjermer med mørk grunn (ordredetaljen). */
+export function SectionHeader({ children, tone = 'default' }: { children: string; tone?: 'default' | 'light' }) {
   return (
     <Text style={[t.eyebrow, {
       textTransform: 'uppercase',
       marginHorizontal: spacing.screen + spacing.lg,
       marginBottom: spacing.sm - 1,
-    }]}>
+    }, tone === 'light' && { color: 'rgba(251,247,240,0.55)' }]}>
       {children}
     </Text>
   )
