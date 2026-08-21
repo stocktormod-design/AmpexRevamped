@@ -660,6 +660,42 @@ den flyttes uendret til Ampex Desktop når den finnes.
     overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
     så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
 
+### Det største hullet: ingenting forlater appen som et dokument
+
+Sjekket 21. august, og det er verdt å skrive tydelig: **Ampex produserer ikke én
+PDF.** `react-native-pdf` finnes, men bare for å VISE tegninger. Ingen
+`expo-print`, ingen deling av fil, ingen e-post.
+
+Konsekvensen i praksis:
+
+| Det kunden skal få | Hva som skjer i dag |
+|--------------------|---------------------|
+| Sluttkontroll / samsvarserklæring | Finnes kun inne i appen |
+| Tilbud | «Marker som sendt» — en statusendring, ingen forsendelse |
+| Fakturagrunnlag | `Share.share({ message: tekst })` — ren tekst i en meldingsapp |
+
+I dette faget ER dokumentet leveransen. En sluttkontroll kunden ikke kan få
+utlevert, er ikke dokumentasjon for kunden — den er en notis hos oss. Og et
+tilbud man ikke kan sende, er ikke et tilbud.
+
+Dette er også det som gjør arkivet halvferdig: pakken er nå selvforklarende
+(format 2), men det finnes ingen vei fra den til noe et menneske kan åpne.
+
+**Merk at grunnlaget er på plass:** skjemamotoren kjenner alle felttyper,
+signaturen har strøk og tidsstempel, arkivpakken bærer spørsmål og svar. Det som
+mangler er gjengivelsen — HTML → PDF → del/arkiver. Én modul, ikke et lag.
+
+### Påminnelser påminner ikke
+
+`reminders` finnes som tabell, assistenten kan opprette dem, og de leses opp når
+en samtale starter. Men **ingenting varsler**. Ingen `expo-notifications`, ingen
+planlagt lokal varsling. Setter fattern en påminnelse, hører han om den kun hvis
+han tilfeldigvis starter en stemmeøkt.
+
+Push-entitlementen er strippet med vilje (`plugins/with-no-push-entitlement.js`),
+men det gjelder APNs. **Lokale varsler krever den ikke** — dette er ikke blokkert
+av noe.
+
 ### Gjennomgang: snakker delene sammen? — fire brudd funnet 21. august
 
 Skjemaimporten gjorde det verdt å spore ÉN mal gjennom hvert sted den skal
