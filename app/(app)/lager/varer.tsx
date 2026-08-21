@@ -505,7 +505,7 @@ export default function Varekartotek() {
       <PromptSheet
         synlig={nyVare}
         tittel={`Ny vare · EL ${ukjentElnummer ?? ''}`}
-        forklaring="Skriv navnet slik du vil finne den igjen. Prisfila retter det senere hvis den har et annet."
+        forklaring="Prisfila retter navnet senere hvis den har et annet."
         plassholder="F.eks. Jordfeilautomat 16A"
         knapp="Legg inn"
         onSvar={async navn => {
