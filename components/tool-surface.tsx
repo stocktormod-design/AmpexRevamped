@@ -1,6 +1,8 @@
+import { useCallback } from 'react'
 import { View, Text } from 'react-native'
+import { useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
-import { StatusBar } from 'expo-status-bar'
+import { setStatusBarStyle } from 'expo-status-bar'
 import { Pressable } from './pressable'
 import { colors, spacing, radius, type as t } from '../lib/theme'
 
@@ -21,11 +23,27 @@ import { colors, spacing, radius, type as t } from '../lib/theme'
  * neste skjerm ikke finner opp sine egne verdier igjen.
  */
 
+/**
+ * Lys statuslinje mens skjermen er i fokus — og MØRK igjen når du forlater den.
+ *
+ * `<StatusBar>` setter stilen ved mount og gjenoppretter ingenting ved unmount.
+ * Uten dette blir klokke og batteri hvite på kremet bakgrunn i det du åpner et
+ * skjema fra en mørk skjerm — usynlige, og umulig å spore tilbake til hvor det
+ * ble satt. Å legge `<StatusBar style="dark" />` i alle de 32 papirskjermene
+ * ville vært å rette symptomet 32 ganger.
+ */
+export function useMorkStatuslinje() {
+  useFocusEffect(useCallback(() => {
+    setStatusBarStyle('light')
+    return () => setStatusBarStyle('dark')
+  }, []))
+}
+
 /** Mørk sidegrunn med lyskilde. En flat mørk flate ser billig ut. */
 export function ToolScreen({ children }: { children: React.ReactNode }) {
+  useMorkStatuslinje()
   return (
     <View style={{ flex: 1, backgroundColor: colors.toolBg }}>
-      <StatusBar style="light" />
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 420 }}>
         <LinearGradient
           colors={['rgba(169,124,79,0.20)', 'rgba(169,124,79,0.045)', 'rgba(0,0,0,0)']}

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS, Alert, StyleSheet } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
-import { StatusBar } from 'expo-status-bar'
 import { LinearGradient } from 'expo-linear-gradient'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { Q } from '@nozbe/watermelondb'
@@ -19,7 +18,7 @@ import { useGodkjenninger, useGrunnlag } from '../../../lib/approvals'
 import { GodkjenningKort } from '../../../components/godkjenning-kort'
 import { ArkivKort } from '../../../components/arkiv-kort'
 import { SectionHeader, Chip } from '../../../components/ui'
-import { ToolCard } from '../../../components/tool-surface'
+import { ToolCard, useMorkStatuslinje } from '../../../components/tool-surface'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { ScanCard } from '../../../components/scan-card'
 import { deleteScanFiles, clearRevisions } from '../../../lib/scan-revisions'
@@ -498,6 +497,7 @@ function MetaRow({ label, value, last }: { label: string; value: string; last?: 
 }
 
 export default function OrderDetailScreen() {
+  useMorkStatuslinje()
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [order, setOrder] = useState<Order | null>(null)
@@ -651,7 +651,6 @@ export default function OrderDetailScreen() {
      * det ikke finnes noe ark igjen.
      */
     <View style={{ flex: 1, backgroundColor: colors.cta }}>
-      <StatusBar style="light" />
       {/*
         LYS I ROMMET. En flat mørk flate ser billig ut — ekte mørke grensesnitt
         har en lyskilde. To lag, begge uten trykkflate:
@@ -1134,15 +1133,17 @@ export default function OrderDetailScreen() {
             onPress={hovedhandling.gjor}
             style={{
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-              // Mørk knapp på mørk grunn forsvinner. Kremet flate med mørk
-              // skrift er den sterkeste kontrasten paletten har — og da leses
-              // den som DEN ene handlingen, ikke som enda et element.
-              height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.brandSoft,
+              // KOBBER, ikke kremet. På lyse skjermer er hovedknappen den mørke
+              // brune; på mørke kan den ikke være det, og kremet flyter når
+              // tabbaren under er brun. Kobber er samme familie, og det ENE
+              // stedet i appen fargen brukes som flate og ikke som aksent —
+              // derfor leses den umiddelbart som handlingen.
+              height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.brand,
               shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
             }}
           >
-            <Check size={19} color={colors.label} strokeWidth={2.4} />
-            <Text style={[t.headline, { color: colors.label }]}>{hovedhandling.tekst}</Text>
+            <Check size={19} color="#fff" strokeWidth={2.4} />
+            <Text style={[t.headline, { color: '#fff' }]}>{hovedhandling.tekst}</Text>
           </Pressable>
         </View>
       )}
