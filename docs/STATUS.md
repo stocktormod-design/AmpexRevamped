@@ -660,6 +660,45 @@ den flyttes uendret til Ampex Desktop når den finnes.
     overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
     så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
 
+### Jobber-mønsteret: én forankret hovedhandling
+
+Det Jobber og Tradify gjør som vi ikke gjorde: **hver skjerm har ÉN handling.**
+Hos oss konkurrerte fem kort med lik vekt, og statusknappen — det eneste steget
+som faktisk flytter jobben framover — lå nederst mellom «Endre status» og
+metadata.
+
+Nå ligger den forankret nederst, over tabbaren, alltid synlig uansett hvor
+langt ned du har rullet. En montør med hansker skal ikke lete.
+
+**Verbet er halve poenget.** «Marker som pågår» beskriver en databasekolonne.
+«Start jobben» beskriver det montøren gjør. Den ene må oversettes i hodet, den
+andre ikke.
+
+| Status | Handlingen |
+|--------|-----------|
+| mottatt | Marker som planlagt |
+| planlagt | **Start jobben** |
+| pågår | **Meld ferdig** |
+| fakturaklar | **Til fakturagrunnlaget** (peker videre — fakturering krever godkjenning) |
+| fakturert | ingen — jobben er ferdig, og da skal det ikke stå en knapp der |
+
+Materiell-lista kappes til de fire SISTE med «Vis alle N» under. En jobb kan ha
+tjue linjer, og tjue rader dyttet dokumentasjonen ut av syne — halve grunnen
+til at siden føltes uendelig. De siste, ikke de første: det du nettopp førte er
+det du vil se at kom med.
+
+### Femte brudd: statuslista kunne sette «fakturert» direkte
+
+Funnet under omleggingen. `setStatus` skrev status rått, og «Fakturert» lå som
+en likeverdig chip. Ett trykk der hoppet over `markerFakturert()` — som krever
+faglig godkjenning, stempler `invoiced_at` på linjene og låser dem mot ny
+fakturering. Uten det kan samme arbeid faktureres om igjen.
+
+Og verre: serveren har en trigger (`krev_faglig_godkjenning`) som avviser
+status `fakturert` uten godkjenning. Siden `watermelon_push` kjører i én
+transaksjon, ville ett slikt trykk **blokkert hele synken** — stille, akkurat
+som base62-id-ene gjorde. Nå sender chippen deg til fakturaskjermen i stedet.
+
 ### Ordreskjermen lagt om — feltarbeid først, kontor sist
 
 Kritikken var berettiget: deltakerliste, tilleggsarbeid, kundesignatur OG
