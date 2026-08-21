@@ -205,7 +205,7 @@ export default function Godkjenning() {
       <PromptSheet
         synlig={!!avvis}
         tittel="Hvorfor sendes den tilbake?"
-        forklaring="Begrunnelsen er det montøren har å gå etter. Ordren settes tilbake til pågår."
+        forklaring="Ordren settes tilbake til pågår."
         plassholder="F.eks. mangler sluttkontroll på kurs 4"
         knapp="Send tilbake"
         onSvar={async grunn => {
