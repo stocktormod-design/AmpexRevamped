@@ -5,7 +5,7 @@ import { router } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import { Plus, ChevronRight, Inbox, FileText, Map, List } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { Chip, GlassCard, AmbientBackdrop } from '../../../components/ui'
+import { ToolScreen, ToolChip } from '../../../components/tool-surface'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { OrdreKart, kartStottes } from '../../../components/ordre-kart'
 import { database } from '../../../lib/db'
@@ -43,33 +43,48 @@ function OrderRow({ order, first, last }: { order: Order; first: boolean; last: 
     <Pressable
       onPress={() => router.push(`/(app)/ordre/${order.id}`)}
       style={{
-        backgroundColor: colors.cardGlassStrong,
+        backgroundColor: colors.toolRaised,
         marginHorizontal: spacing.screen,
         paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.md + 2,
+        paddingVertical: spacing.md + 3,
         flexDirection: 'row',
         alignItems: 'center',
-        borderTopLeftRadius: first ? radius.hero : 0,
-        borderTopRightRadius: first ? radius.hero : 0,
-        borderBottomLeftRadius: last ? radius.hero : 0,
-        borderBottomRightRadius: last ? radius.hero : 0,
+        // Hårlinje MELLOM radene, ikke rundt hver. Rader som er separate kort
+        // leses som løse lapper; én sammenhengende flate leses som en liste.
+        borderTopWidth: first ? 1 : 0,
+        borderBottomWidth: 1,
+        borderLeftWidth: 1,
+        borderRightWidth: 1,
+        borderColor: colors.toolBorder,
+        borderTopLeftRadius: first ? radius.lg : 0,
+        borderTopRightRadius: first ? radius.lg : 0,
+        borderBottomLeftRadius: last ? radius.lg : 0,
+        borderBottomRightRadius: last ? radius.lg : 0,
       }}
     >
+      {/* Statusen som en smal kobberstrek, ikke som ord til høyre. Den leses
+          før teksten og tar null plass. */}
+      <View style={{
+        width: 3, height: 30, borderRadius: 2, marginRight: spacing.md,
+        backgroundColor: order.status === 'pagaar' ? colors.brand : colors.toolBorder,
+      }} />
       <View style={{ flex: 1, marginRight: spacing.md }}>
-        <Text style={t.bodyMedium} numberOfLines={1}>{order.title}</Text>
-        <Text style={[t.footnote, { marginTop: 2 }]} numberOfLines={1}>
+        <Text style={[t.bodyMedium, { color: colors.toolLabel }]} numberOfLines={1}>{order.title}</Text>
+        <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 2 }]} numberOfLines={1}>
           {[order.customerName, order.address].filter(Boolean).join(' · ')}
         </Text>
       </View>
       <View style={{ alignItems: 'flex-end', marginRight: spacing.sm }}>
-        <Text style={t.caption}>{orderStatusLabel[order.status] ?? order.status}</Text>
+        <Text style={[t.caption, { color: colors.toolSecondary }]}>
+          {orderStatusLabel[order.status] ?? order.status}
+        </Text>
         {!!order.scheduledAt && (
-          <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 2 }]}>
+          <Text style={[t.caption, { color: colors.toolTertiary, marginTop: 2, fontVariant: ['tabular-nums'] }]}>
             {formatTime(order.scheduledAt)}
           </Text>
         )}
       </View>
-      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+      <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
     </Pressable>
   )
 }
@@ -86,7 +101,7 @@ export default function OrdreScreen() {
   // på klokkeslett skjuler at to av dem ligger i samme gate.
   if (kart && kartStottes) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+      <ToolScreen>
         <OrdreKart
           orders={orders}
           onVelg={o => router.push({ pathname: '/(app)/ordre/[id]', params: { id: o.id } })}
@@ -104,13 +119,12 @@ export default function OrdreScreen() {
           <List size={15} color={colors.label} strokeWidth={2.1} />
           <Text style={[t.subhead, { fontWeight: '600' }]}>Liste</Text>
         </Pressable>
-      </View>
+      </ToolScreen>
     )
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <AmbientBackdrop height={340} />
+    <ToolScreen>
       <FlatList
         data={orders}
         keyExtractor={o => o.id}
@@ -125,7 +139,7 @@ export default function OrdreScreen() {
               flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
               paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
             }}>
-              <Text style={t.display}>Ordre</Text>
+              <Text style={[t.display, { color: colors.toolLabel }]}>Ordre</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
                 <AmpexMarkButton />
                 {kartStottes && (
@@ -135,10 +149,11 @@ export default function OrdreScreen() {
                     onPress={() => setKart(true)}
                     style={{
                       width: 36, height: 36, borderRadius: radius.pill,
-                      alignItems: 'center', justifyContent: 'center', backgroundColor: colors.fill,
+                      alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder,
                     }}
                   >
-                    <Map size={16} color={colors.label} strokeWidth={2.1} />
+                    <Map size={16} color={colors.toolLabel} strokeWidth={2.1} />
                   </Pressable>
                 )}
                 {/* Tilbudet er steget FØR ordren — derfor står inngangen her, ved
@@ -150,11 +165,11 @@ export default function OrdreScreen() {
                   style={{
                     flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
                     height: 36, paddingHorizontal: spacing.md, borderRadius: radius.pill,
-                    backgroundColor: colors.fill,
+                    backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder,
                   }}
                 >
-                  <FileText size={15} color={colors.label} strokeWidth={2.1} />
-                  <Text style={[t.subhead, { fontWeight: '600' }]}>Tilbud</Text>
+                  <FileText size={15} color={colors.toolLabel} strokeWidth={2.1} />
+                  <Text style={[t.subhead, { fontWeight: '600', color: colors.toolLabel }]}>Tilbud</Text>
                 </Pressable>
                 <Pressable
                   haptic="medium"
@@ -176,34 +191,31 @@ export default function OrdreScreen() {
               style={{ marginBottom: spacing.lg }}
             >
               {filters.map(f => (
-                <Chip key={f.key} label={f.label} selected={filter === f.key} onPress={() => setFilter(f.key)} />
+                <ToolChip key={f.key} label={f.label} selected={filter === f.key} onPress={() => setFilter(f.key)} />
               ))}
             </ScrollView>
           </>
         }
-        ItemSeparatorComponent={() => (
-          <View style={{ backgroundColor: colors.cardGlassStrong, marginHorizontal: spacing.screen }}>
-            <View style={{ height: 0.5, backgroundColor: colors.separator, marginLeft: spacing.lg }} />
-          </View>
-        )}
+        ItemSeparatorComponent={null}
         renderItem={({ item, index }) => (
           <OrderRow order={item} first={index === 0} last={index === orders.length - 1} />
         )}
         ListEmptyComponent={
-          <GlassCard>
-            <View style={{ alignItems: 'center', paddingVertical: spacing.md }}>
-              <View style={{
-                width: sizes.iconChip + 8, height: sizes.iconChip + 8, borderRadius: radius.pill,
-                backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Inbox size={sizes.iconLg} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
-              </View>
-              <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen ordre her</Text>
-              <Text style={[t.footnote, { marginTop: spacing.xs }]}>Prøv et annet filter, eller opprett en ny.</Text>
+          <View style={{ alignItems: 'center', paddingTop: spacing.xxl, paddingHorizontal: spacing.xxl }}>
+            <View style={{
+              width: sizes.iconChip + 8, height: sizes.iconChip + 8, borderRadius: radius.md,
+              backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Inbox size={sizes.iconLg} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />
             </View>
-          </GlassCard>
+            <Text style={[t.headline, { color: colors.toolLabel, marginTop: spacing.md }]}>Ingen ordre her</Text>
+            <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: spacing.xs, textAlign: 'center' }]}>
+              Prøv et annet filter, eller opprett en ny.
+            </Text>
+          </View>
         }
       />
-    </View>
+    </ToolScreen>
   )
 }
