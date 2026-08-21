@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS, Alert } from 'react-native'
+import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS, Alert, StyleSheet } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
@@ -10,7 +10,7 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import {
   ChevronLeft, Phone, MapPin, FileText, Check, ChevronRight, Plus, Package, Navigation, Trash2,
   Receipt, UserPlus, Clock, Users, FilePlus2,
-  PenLine,
+  PenLine, Box,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { AvtaltPrisKort } from '../../../components/avtalt-pris-kort'
@@ -18,7 +18,8 @@ import { useSignaturer } from '../../../lib/signatures'
 import { useGodkjenninger, useGrunnlag } from '../../../lib/approvals'
 import { GodkjenningKort } from '../../../components/godkjenning-kort'
 import { ArkivKort } from '../../../components/arkiv-kort'
-import { CreamCard, ListCard, SectionHeader, Chip } from '../../../components/ui'
+import { SectionHeader, Chip } from '../../../components/ui'
+import { ToolCard } from '../../../components/tool-surface'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { ScanCard } from '../../../components/scan-card'
 import { deleteScanFiles, clearRevisions } from '../../../lib/scan-revisions'
@@ -171,92 +172,105 @@ const scanHints: Record<ScanKind, string> = {
 }
 
 /**
- * LiDAR — ÉN seksjon med segmentvalg, ikke to parallelle.
- * To fulle grupper (hver med egen overskrift, legg-til-knapp og hint) sto alltid
- * synlige, også på serviceordrer der ingen av dem brukes — det var den største
- * enkeltposten av tom skjerm på siden. Antallet står på det uvalgte segmentet, så
- * innhold på den andre typen aldri blir usynlig.
+ * LiDAR — et PRODUKT, ikke en fane.
+ *
+ * Før: to chips som så ut som et filter, og under dem en liste med kort. Da
+ * leses funksjonen som en innstilling — noe du bytter mellom — i stedet for det
+ * den er: at telefonen din måler opp et rom i tre dimensjoner.
+ *
+ * Nå er det én bred, mørk flate med kobberkant og et eget språk. Skannene
+ * ligger som miniatyrer i en vannrett rulle, og handlingen står som ÉN knapp
+ * med et verb. Typen (planlegging eller dokumentasjon) velges når du skanner,
+ * ikke som en fane du må forstå på forhånd.
  */
 function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }) {
-  const [kind, setKind] = useState<ScanKind>('planlegging')
-  const mine = scans.filter(s => s.kind === kind)
   async function removeScan(s: OrderScan) {
     if (s.scanPath) await deleteScanFiles(s.scanPath)
     await clearRevisions(s.id)
     await database.write(async () => s.markAsDeleted())
     syncQuietly()
   }
+
+  function nyttSkann() {
+    if (Platform.OS !== 'ios') {
+      addScan(orderId, 'planlegging', scans.length + 1)
+      return
+    }
+    const valg = scanKinds.map(k => scanKindLabel[k])
+    ActionSheetIOS.showActionSheetWithOptions(
+      { title: 'Hva skal skannes?', options: [...valg, 'Avbryt'], cancelButtonIndex: valg.length },
+      idx => {
+        if (idx < valg.length) {
+          const kind = scanKinds[idx]
+          addScan(orderId, kind, scans.filter(s => s.kind === kind).length + 1)
+        }
+      },
+    )
+  }
+
   return (
-    /*
-     * LiDAR er VERKTØY, ikke papirarbeid — og skal se ut som det.
-     *
-     * En egen mørk sone bryter den jevne hvite kolonnen én gang til, og sier
-     * uten ord at dette er en annen slags handling enn å føre timer. Før var
-     * det bare enda et hvitt kort i rekka, og det var nettopp jevnheten som
-     * fikk skjermen til å lese som en huke-av-liste.
-     */
-    /* Et NEDSENKET felt, ikke enda et kort. Grunnen er alt mørk, så en mørk
-       blokk til ville blitt grøt — en svak lys film leses i stedet som noe som
-       ligger under overflaten. Fortsatt verktøy, ikke papir. */
     <View style={{
       marginBottom: spacing.screen, marginHorizontal: spacing.screen,
-      backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: radius.xl,
-      borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)',
-      paddingVertical: spacing.lg, paddingHorizontal: spacing.md,
+      backgroundColor: 'rgba(169,124,79,0.10)',
+      borderRadius: radius.xl,
+      borderWidth: 1, borderColor: 'rgba(169,124,79,0.30)',
+      overflow: 'hidden',
     }}>
-      <Text style={[t.caption, {
-        textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700',
-        color: 'rgba(255,255,255,0.55)', marginLeft: spacing.sm, marginBottom: spacing.md,
-      }]}>
-        LiDAR
-      </Text>
-      <View style={{ flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.sm, marginBottom: spacing.sm + 2 }}>
-        {scanKinds.map(k => {
-          const n = scans.filter(s => s.kind === k).length
-          return (
-            <Chip
-              key={k}
-              label={n > 0 ? `${scanKindLabel[k]} · ${n}` : scanKindLabel[k]}
-              selected={kind === k}
-              onPress={() => setKind(k)}
-            />
-          )
-        })}
-      </View>
-      <View style={{ marginHorizontal: spacing.sm, gap: spacing.sm }}>
-        {mine.map(s => (
-          <ScanCard
-            key={s.id}
-            title={s.title}
-            meta={`LiDAR · ${scanKindLabel[kind]}`}
-            scanPath={s.scanPath}
-            revisionKey={s.id}
-            onOpen={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[kind], title: s.title, ...(s.scanPath ? { viewPath: s.scanPath } : {}) } })}
-            onScan={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[kind], title: s.title, viewPath: '' } })}
-            onOpenRevision={rev => router.push({ pathname: '/(app)/skann', params: { viewPath: rev.path, title: `${s.title} · ${new Date(rev.ts).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` } })}
-            onDelete={() => removeScan(s)}
-          />
-        ))}
-        <Pressable
-          haptic="light"
-          onPress={() => addScan(orderId, kind, mine.length + 1)}
-          style={{
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-            backgroundColor: 'rgba(255,255,255,0.10)', borderRadius: radius.lg,
-            paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-          }}
-        >
-          <Plus size={sizes.icon - 3} color="rgba(255,255,255,0.75)" strokeWidth={2.4} />
-          <Text style={[t.subhead, { color: 'rgba(255,255,255,0.75)', fontWeight: '600' }]}>
-            {`Nytt ${scanKindLabel[kind].toLowerCase()}-skann`}
-          </Text>
-        </Pressable>
-      </View>
-      {mine.length === 0 && (
-        <Text style={[t.footnote, { marginHorizontal: spacing.screen + spacing.lg, marginTop: spacing.sm }]}>
-          {scanHints[kind]}
+      <View style={{ padding: spacing.lg, paddingBottom: scans.length > 0 ? spacing.md : spacing.lg }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <Box size={18} color={colors.brand} strokeWidth={2.1} />
+          <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.brand, flex: 1 }]}>3D-skann</Text>
+          {scans.length > 0 && (
+            <Text style={[t.caption, { color: colors.toolTertiary, fontVariant: ['tabular-nums'] }]}>
+              {String(scans.length)}
+            </Text>
+          )}
+        </View>
+        <Text style={[t.title3, { color: colors.toolLabel, marginTop: spacing.sm }]}>
+          {scans.length > 0 ? 'Rommet er målt opp' : 'Mål opp rommet med telefonen'}
         </Text>
+        <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 2, lineHeight: 18 }]}>
+          {scans.length > 0
+            ? 'Ta et nytt skann når noe er endret — begge versjonene beholdes.'
+            : 'LiDAR gir mål, plassering og dokumentasjon av som-bygget, uten målebånd.'}
+        </Text>
+      </View>
+
+      {scans.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm }}
+        >
+          {scans.map(s => (
+            <View key={s.id} style={{ width: 190 }}>
+              <ScanCard
+                title={s.title}
+                meta={scanKindLabel[s.kind]}
+                scanPath={s.scanPath}
+                revisionKey={s.id}
+                onOpen={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind], title: s.title, ...(s.scanPath ? { viewPath: s.scanPath } : {}) } })}
+                onScan={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind], title: s.title, viewPath: '' } })}
+                onOpenRevision={rev => router.push({ pathname: '/(app)/skann', params: { viewPath: rev.path, title: `${s.title} · ${new Date(rev.ts).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` } })}
+                onDelete={() => removeScan(s)}
+              />
+            </View>
+          ))}
+        </ScrollView>
       )}
+
+      <Pressable
+        haptic="medium"
+        onPress={nyttSkann}
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+          backgroundColor: colors.brand,
+          paddingVertical: spacing.md + 2,
+        }}
+      >
+        <Box size={17} color="#fff" strokeWidth={2.3} />
+        <Text style={[t.headline, { color: '#fff' }]}>Start skanning</Text>
+      </Pressable>
     </View>
   )
 }
@@ -296,20 +310,22 @@ function Rad({ ikon, tittel, under, underVarsel, verdi, sterkVerdi, onPress, for
       style={{
         flexDirection: 'row', alignItems: 'center', gap: spacing.md,
         paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-        ...(forst ? {} : { borderTopWidth: 0.5, borderTopColor: colors.separator }),
+        ...(forst ? {} : { borderTopWidth: 1, borderTopColor: colors.toolBorder }),
       }}
     >
       {ikon}
       <View style={{ flex: 1 }}>
-        <Text style={t.headline}>{tittel}</Text>
+        <Text style={[t.headline, { color: colors.toolLabel }]}>{tittel}</Text>
         {!!under && (
-          <Text style={[t.footnote, { marginTop: 1 }, underVarsel && { color: colors.warning }]}>{under}</Text>
+          <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 1 }, underVarsel && { color: colors.warning }]}>
+            {under}
+          </Text>
         )}
       </View>
-      <Text style={[t.bodyMedium, { color: sterkVerdi ? colors.label : colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>
+      <Text style={[t.bodyMedium, { color: sterkVerdi ? colors.toolLabel : colors.toolSecondary, fontVariant: ['tabular-nums'] }]}>
         {verdi}
       </Text>
-      <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+      <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
     </Pressable>
   )
 }
@@ -473,10 +489,10 @@ function MetaRow({ label, value, last }: { label: string; value: string; last?: 
   return (
     <View style={[
       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-      !last && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+      !last && { borderBottomWidth: 1, borderBottomColor: colors.toolBorder },
     ]}>
-      <Text style={t.body}>{label}</Text>
-      <Text style={[t.body, { color: colors.secondaryLabel }]}>{value}</Text>
+      <Text style={[t.body, { color: colors.toolSecondary }]}>{label}</Text>
+      <Text style={[t.body, { color: colors.toolLabel, fontVariant: ['tabular-nums'] }]}>{value}</Text>
     </View>
   )
 }
@@ -672,65 +688,71 @@ export default function OrderDetailScreen() {
           her inne, så det hvite kortet de lå i forsvinner helt — én ting mindre
           i kolonnen, og den viktigste informasjonen får mest vekt.
         */}
-        <View style={{ paddingTop: insets.top + spacing.sm, paddingBottom: spacing.lg }}>
-          <View style={{ paddingHorizontal: spacing.screen }}>
+        {/*
+          ── HERO ────────────────────────────────────────────────────────────
+          Ikke et kort med et lite kart i. Stedet ER jobben, så kartet ligger
+          full bredde bak tittelen med en mørk gradient over — og teksten står
+          oppå. Det gir skjermen en topp med vekt i stedet for en overskrift på
+          en flate.
+
+          Uten adresse faller den tilbake til ren mørk grunn med kobbergløden.
+          Ingen tom kartboks.
+        */}
+        <View style={{ height: order.address ? 300 : 200 }}>
+          {!!order.address && (
+            <View style={StyleSheet.absoluteFill}>
+              <AddressMap address={order.address} onPress={naviger} height={300} chrome={false} />
+              <LinearGradient
+                colors={['rgba(33,28,21,0.35)', 'rgba(33,28,21,0.72)', colors.toolBg]}
+                locations={[0, 0.55, 1]}
+                style={StyleSheet.absoluteFill}
+              />
+            </View>
+          )}
+
+          <View style={{ flex: 1, paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Pressable
                 onPress={() => router.back()}
                 pressScale={0.92}
                 style={{
                   width: 36, height: 36, borderRadius: radius.pill,
-                  backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center',
                 }}
               >
-                <ChevronLeft size={sizes.icon} color={colors.brandSoft} strokeWidth={2.2} />
+                <ChevronLeft size={sizes.icon} color={colors.toolLabel} strokeWidth={2.2} />
               </Pressable>
               <AmpexMarkButton tone="light" />
             </View>
 
-            {/* Status som STRIPE, ikke prikk. Full bredde, egen farge — den
-                svarer på «hvor er denne jobben nå» før noe annet leses. */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg }}>
-              <View style={{ height: 3, width: 26, borderRadius: 2, backgroundColor: colors.brand }} />
-              <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.brand }]}>
-                {orderStatusLabel[order.status] ?? order.status}
-              </Text>
-              {!!order.orderNumber && (
-                <Text style={[t.eyebrow, { color: 'rgba(251,247,240,0.45)' }]}>{`#${order.orderNumber}`}</Text>
-              )}
-            </View>
+            <View style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: spacing.lg }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <View style={{ height: 3, width: 26, borderRadius: 2, backgroundColor: colors.brand }} />
+                <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.brand }]}>
+                  {orderStatusLabel[order.status] ?? order.status}
+                </Text>
+                {!!order.orderNumber && (
+                  <Text style={[t.eyebrow, { color: colors.toolTertiary }]}>{`#${order.orderNumber}`}</Text>
+                )}
+                {!!when && <Text style={[t.eyebrow, { color: colors.toolTertiary }]}>{when}</Text>}
+              </View>
 
-            <Text style={[t.title1, { color: colors.brandSoft, marginTop: spacing.sm }]}>{order.title}</Text>
-            {!!order.description && (
-              <Text style={[t.subhead, { color: 'rgba(251,247,240,0.60)', marginTop: spacing.sm }]}>
-                {order.description}
+              <Text style={[t.display, { color: colors.toolLabel, marginTop: spacing.sm }]} numberOfLines={2}>
+                {order.title}
               </Text>
-            )}
-            {!!when && (
-              <Text style={[t.footnote, { color: 'rgba(251,247,240,0.60)', marginTop: spacing.sm }]}>{when}</Text>
-            )}
-          </View>
 
-          {/* Kunde + adresse + kart — inne i hodet, ikke i et eget kort. */}
-          {(order.customerName || order.customerPhone || order.address) && (
-            <View style={{ marginTop: spacing.lg, paddingHorizontal: spacing.screen }}>
-              {(order.customerName || order.customerPhone) && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                  <View style={{
-                    width: 40, height: 40, borderRadius: radius.pill,
-                    backgroundColor: 'rgba(255,255,255,0.12)',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Text style={[t.subhead, { color: colors.brandSoft, fontWeight: '700' }]}>
-                      {initials(order.customerName ?? order.customerPhone ?? '')}
-                    </Text>
-                  </View>
+              {/* Kunde og adresse på én linje, med handlingene som runde knapper.
+                  Før var dette et eget hvitt kort — ett kort mindre i kolonnen. */}
+              {(order.customerName || order.address) && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
                   <View style={{ flex: 1 }}>
                     {!!order.customerName && (
-                      <Text style={[t.headline, { color: colors.brandSoft }]} numberOfLines={1}>{order.customerName}</Text>
+                      <Text style={[t.subhead, { color: colors.toolLabel, fontWeight: '600' }]} numberOfLines={1}>
+                        {order.customerName}
+                      </Text>
                     )}
                     {!!order.address && (
-                      <Text style={[t.footnote, { color: 'rgba(251,247,240,0.55)', marginTop: 1 }]} numberOfLines={1}>
+                      <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 1 }]} numberOfLines={1}>
                         {order.address}
                       </Text>
                     )}
@@ -746,23 +768,17 @@ export default function OrderDetailScreen() {
                   {!!order.address && (
                     <Pressable haptic="medium" onPress={naviger} style={{
                       width: 40, height: 40, borderRadius: radius.pill,
-                      backgroundColor: 'rgba(255,255,255,0.12)',
+                      backgroundColor: 'rgba(255,255,255,0.14)',
                       alignItems: 'center', justifyContent: 'center',
                     }}>
-                      <Navigation size={17} color={colors.brandSoft} strokeWidth={2.1} />
+                      <Navigation size={17} color={colors.toolLabel} strokeWidth={2.1} />
                     </Pressable>
                   )}
                 </View>
               )}
-              {!!order.address && (
-                <Pressable onPress={naviger} style={{ marginTop: spacing.md, borderRadius: radius.lg, overflow: 'hidden' }}>
-                  <AddressMap address={order.address} onPress={naviger} />
-                </Pressable>
-              )}
             </View>
-          )}
+          </View>
         </View>
-
         <View style={{ height: spacing.screen }} />
 
         {/* Arkivet står øverst når jobben er ferdig — da er det det eneste som
@@ -774,136 +790,181 @@ export default function OrderDetailScreen() {
         )}
 
         {/*
-          ── Rekkefølgen på denne skjermen ──────────────────────────────────
-          Montøren står i et sikringsskap med hansker på. Det han trenger er,
-          i denne rekkefølgen: HVOR er jeg, HVA gjør jeg, hva BRUKTE jeg, hva
-          må DOKUMENTERES. Alt det andre — signatur, tillegg, fakturagrunnlag,
-          godkjenning — hører til når jobben er ferdig, eller hjemme på PC-en.
+          ── SONER, IKKE KORT I KOLONNE ──────────────────────────────────────
+          Forrige forsøk ble et instrumentpanel: to like fliser side om side med
+          hvert sitt tall. Det er fortsatt like kort i kolonne, bare snudd 90°.
 
-          Før lå deltakerliste, tilleggsarbeid, kundesignatur OG fakturagrunnlag
-          over materiell og dokumentasjon. Fire kontoroppgaver foran de tre
-          tingene jobben faktisk består av.
+          Nå har hver sone sin egen FORM, fordi de er forskjellige ting:
+
+            TIMER          én bred stripe, ett stort tall. Kort og horisontal.
+            MATERIELL      vannrett rulle av det som faktisk er ført. Ruller.
+            DOKUMENTASJON  loddrette rader som VISER skjemaene og tilstanden
+                           deres. «2/3» sa hvor mange; dette sier hvilke.
+            LIDAR          full bredde, med bilde. Et produkt, ikke en fane.
+
+          Ingen av dem kan forveksles med en annen på avstand. Det er testen.
         */}
-
-        {/*
-          ── «På jobben» er én sone, ikke tre like kort ─────────────────────
-          Kritikken var at alt var like høyt, like hvitt og stablet i én jevn
-          kolonne med «+ Legg til» under hvert — samme rytme som en handleapp.
-
-          Tre grep bryter den:
-            · TIMER er en bred stripe med tallet i displaystørrelse. Annen
-              høyde, annen typografi, ingenting annet ser slik ut.
-            · MATERIELL og DOKUMENTASJON står SIDE OM SIDE. To fliser i én rad
-              er ikke en liste — det er et instrumentpanel.
-            · Pluss-knappene er borte fra kolonnen. Å legge til ligger nå i
-              flisas hjørne, som en handling på tingen, ikke en ny linje under
-              den.
-        */}
-        {/* Bevegelse. Skjermen hadde NULL animasjon — den bare sto der.
-            Innfelling i rekkefølge gjør at øyet får en leserekkefølge servert i
-            stedet for å måtte finne den selv, og det er halve forskjellen på
-            «funker» og «føles laget». Kun transform og opacity, på UI-tråden
-            (regel 8). */}
-        <Animated.View entering={FadeInDown.springify().damping(18).delay(60)} style={{ marginBottom: spacing.screen }}>
-          <SectionHeader tone="light">På jobben</SectionHeader>
-
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(60)} style={{ marginBottom: spacing.lg }}>
           <Pressable
             haptic="light"
             onPress={() => router.push({ pathname: '/(app)/ordre/timer', params: { id } })}
             style={{
               marginHorizontal: spacing.screen,
-              backgroundColor: colors.bg, borderRadius: radius.xl,
-              paddingHorizontal: spacing.lg, paddingVertical: spacing.lg,
+              backgroundColor: colors.toolRaised,
+              borderWidth: 1, borderColor: colors.toolBorder,
+              borderRadius: radius.lg,
+              paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
               flexDirection: 'row', alignItems: 'center', gap: spacing.md,
             }}
           >
-            <View style={{
-              width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.brandWash,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Clock size={20} color={colors.brand} strokeWidth={2.1} />
-            </View>
-            {/* Det store tallet er riktig NÅR det er noe å vise. Et fett «0 t»
-                er mye plass til ingenting — da sier vi heller hva du skal gjøre.
-                En tom tilstand er en invitasjon, ikke et null. */}
+            <Clock size={19} color={colors.brand} strokeWidth={2.1} />
             <View style={{ flex: 1 }}>
-              <Text style={[t.caption, { textTransform: 'uppercase', color: colors.secondaryLabel }]}>
-                {timer > 0 ? 'Timer ført' : 'Timeføring'}
-              </Text>
+              <Text style={[t.caption, { textTransform: 'uppercase', color: colors.toolTertiary }]}>Timer</Text>
               {timer > 0 ? (
-                <Text style={[t.display, { marginTop: 1 }]}>
+                <Text style={[t.title1, { color: colors.toolLabel, marginTop: 1 }]}>
                   {`${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t`}
                 </Text>
               ) : (
-                <Text style={[t.title3, { marginTop: 2, color: colors.brand }]}>Før første time</Text>
+                <Text style={[t.title3, { color: colors.brand, marginTop: 2 }]}>Før første time</Text>
               )}
             </View>
-            <ChevronRight size={20} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
           </Pressable>
+        </Animated.View>
 
-          <View style={{ flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.screen, marginTop: spacing.sm }}>
-            <Flis
-              ikon={<Package size={20} color={colors.brand} strokeWidth={2.1} />}
-              etikett="Materiell"
-              tall={materials.length > 0 ? String(materials.length) : ''}
-              tom={materials.length === 0 ? 'Skann eller søk' : undefined}
-              under={materials.length > 0 ? sisteMateriell : 'Ingenting ført ennå'}
+        {/* MATERIELL — vannrett. Det du førte sist ligger først, og lista ruller
+            i stedet for å vokse nedover og dytte alt annet ut av syne. */}
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(110)} style={{ marginBottom: spacing.lg }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.sm,
+          }}>
+            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.toolTertiary, flex: 1 }]}>
+              {materials.length > 0 ? `Materiell · ${materials.length}` : 'Materiell'}
+            </Text>
+            <Pressable
+              hitSlop={10}
+              haptic="light"
               onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
-              paaLegg={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
-            />
-            {/* Trykk åpner det ELDSTE påbegynte skjemaet — det er nesten alltid
-                det du var i gang med. Er ingenting påbegynt, går pluss og trykk
-                til samme sted: velg hvilket skjema. */}
-            <Flis
-              ikon={<FileText size={20} color={allDocsDone ? colors.slate : colors.brand} strokeWidth={2.1} />}
-              etikett="Dokumentasjon"
-              tall={docs.length === 0 ? '' : `${docsDone}/${docs.length}`}
-              tom={docs.length === 0 ? 'Velg skjema' : undefined}
-              under={
-                docs.length === 0 ? 'Ingen lagt til ennå'
-                : allDocsDone ? 'Alt fullført'
-                : `${docs.length - docsDone} gjenstår`
-              }
-              onPress={() => {
-                const forste = startedTemplates[0]
-                if (forste) {
-                  router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: forste.id } })
-                } else {
-                  addDocumentation()
-                }
-              }}
-              paaLegg={remainingTemplates.length > 0 ? addDocumentation : undefined}
-            />
+            >
+              <Text style={[t.footnote, { color: colors.brand, fontWeight: '700' }]}>Legg til</Text>
+            </Pressable>
           </View>
-
-          {/* De siste materiellinjene, uten kortkrom og uten pluss-knapp under.
-              Sveip til venstre for å fjerne — samme som før. */}
-          {materials.length > 0 && (
-            <View style={{ marginHorizontal: spacing.screen, marginTop: spacing.sm, gap: spacing.xs }}>
-              {materials.slice(-3).map(m => <MaterialRow key={m.id} material={m} />)}
-              {materials.length > 3 && (
-                <Pressable
-                  haptic="light"
-                  onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
-                  style={{ alignItems: 'center', paddingVertical: spacing.sm }}
+          {materials.length === 0 ? (
+            <Text style={[t.footnote, { color: colors.toolSecondary, marginHorizontal: spacing.screen + spacing.xs }]}>
+              Ingenting ført. Skann en vare eller søk den opp.
+            </Text>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: spacing.screen, gap: spacing.sm }}
+            >
+              {[...materials].reverse().map(m => (
+                <View
+                  key={m.id}
+                  style={{
+                    minWidth: 132, maxWidth: 190,
+                    backgroundColor: colors.toolRaised,
+                    borderWidth: 1, borderColor: colors.toolBorder,
+                    borderRadius: radius.md,
+                    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+                  }}
                 >
-                  <Text style={[t.footnote, { color: 'rgba(251,247,240,0.55)', fontWeight: '600' }]}>
-                    {`Vis alle ${materials.length}`}
+                  <Text style={[t.footnote, { color: colors.brand, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
+                    {`${formatQty(m.quantity)} ${m.unit}`}
                   </Text>
-                </Pressable>
-              )}
+                  <Text style={[t.subhead, { color: colors.toolLabel, marginTop: 2 }]} numberOfLines={2}>
+                    {m.description}
+                  </Text>
+                  {!!m.elnummer && (
+                    <Text style={[t.caption, { color: colors.toolTertiary, marginTop: 2, fontVariant: ['tabular-nums'] }]}>
+                      {`EL ${m.elnummer}`}
+                    </Text>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </Animated.View>
+
+        {/* DOKUMENTASJON — VISES, ikke telles. «2/3» sa hvor mange skjemaer det
+            var; dette sier hvilke, og hvor langt hvert av dem er kommet. Det er
+            forskjellen på et tall og et svar. */}
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(160)} style={{ marginBottom: spacing.lg }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.sm,
+          }}>
+            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.toolTertiary, flex: 1 }]}>
+              Dokumentasjon
+            </Text>
+            {remainingTemplates.length > 0 && (
+              <Pressable hitSlop={10} haptic="light" onPress={addDocumentation}>
+                <Text style={[t.footnote, { color: colors.brand, fontWeight: '700' }]}>Legg til</Text>
+              </Pressable>
+            )}
+          </View>
+          {startedTemplates.length === 0 ? (
+            <Pressable
+              haptic="light"
+              onPress={addDocumentation}
+              style={{
+                marginHorizontal: spacing.screen, borderRadius: radius.lg,
+                borderWidth: 1, borderColor: colors.toolBorder, borderStyle: 'dashed',
+                paddingVertical: spacing.lg, alignItems: 'center',
+              }}
+            >
+              <Text style={[t.subhead, { color: colors.toolSecondary }]}>Velg skjemaene jobben trenger</Text>
+            </Pressable>
+          ) : (
+            <View style={{ marginHorizontal: spacing.screen }}>
+              {startedTemplates.map((tpl, i) => {
+                const doc = docByTemplate.get(tpl.id)
+                const fullfort = doc?.status === 'fullfort'
+                return (
+                  <Pressable
+                    key={tpl.id}
+                    haptic="light"
+                    onPress={() => router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: tpl.id } })}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                      backgroundColor: colors.toolRaised,
+                      borderWidth: 1, borderColor: colors.toolBorder,
+                      borderTopWidth: i === 0 ? 1 : 0,
+                      borderTopLeftRadius: i === 0 ? radius.lg : 0,
+                      borderTopRightRadius: i === 0 ? radius.lg : 0,
+                      borderBottomLeftRadius: i === startedTemplates.length - 1 ? radius.lg : 0,
+                      borderBottomRightRadius: i === startedTemplates.length - 1 ? radius.lg : 0,
+                      paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+                    }}
+                  >
+                    {fullfort
+                      ? <Check size={17} color={colors.success} strokeWidth={2.6} />
+                      : <FileText size={17} color={colors.toolSecondary} strokeWidth={2} />}
+                    <Text style={[t.body, { flex: 1, color: colors.toolLabel }]} numberOfLines={1}>{tpl.name}</Text>
+                    <Text style={[t.caption, { color: fullfort ? colors.success : colors.brand, fontWeight: '600' }]}>
+                      {fullfort ? 'Fullført' : 'Utkast'}
+                    </Text>
+                    <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
+                  </Pressable>
+                )
+              })}
             </View>
           )}
         </Animated.View>
-        {/* LiDAR — én seksjon, segmentvalg mellom planlegging og dokumentasjon */}
-        <ScanSection orderId={order.id} scans={scans} />
+
+        {/* LIDAR — et PRODUKT, ikke en fane. Se ScanSection. */}
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(210)}>
+          <ScanSection orderId={order.id} scans={scans} />
+        </Animated.View>
 
         {/* Når jobben er ferdig. Signaturen er en avslutningshandling — den skal
             tas foran kunden når arbeidet er gjort, ikke ligge og lyse mens du
             fortsatt drar kabel. */}
         <Animated.View entering={FadeInDown.springify().damping(18).delay(140)} style={{ marginBottom: spacing.screen }}>
           <SectionHeader tone="light">Når jobben er ferdig</SectionHeader>
-          <ListCard>
+          <ToolCard>
             <Rad
               ikon={<PenLine size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
               tittel="Kundesignatur"
@@ -935,7 +996,7 @@ export default function OrderDetailScreen() {
               onPress={() => router.push({ pathname: '/(app)/ordre/deltakere', params: { id } })}
               sist
             />
-          </ListCard>
+          </ToolCard>
         </Animated.View>
 
         {/* Kom ordren fra et tilbud, er den avtalte prisen det viktigste tallet på
@@ -953,7 +1014,7 @@ export default function OrderDetailScreen() {
           mens montøren fortsatt er på stedet og kan rette dem.
         */}
         <View style={{ marginBottom: spacing.screen }}>
-          <ListCard>
+          <ToolCard>
             <Pressable
               onPress={() => router.push({ pathname: '/(app)/ordre/faktura', params: { id } })}
               style={{
@@ -992,7 +1053,7 @@ export default function OrderDetailScreen() {
                 <Text style={[t.subhead, { color: colors.brand, fontWeight: '600' }]}>Velg</Text>
               </Pressable>
             )}
-          </ListCard>
+          </ToolCard>
         </View>
         {/* Faglig godkjenning står OVER fakturagrunnlaget: er ordren sendt
             tilbake, er summen under uinteressant til det er rettet. */}
@@ -1042,11 +1103,11 @@ export default function OrderDetailScreen() {
         {/* Detaljer — metadata nederst, minst viktig */}
         <View>
           <SectionHeader tone="light">Detaljer</SectionHeader>
-          <ListCard>
+          <ToolCard>
             <MetaRow label="Ordrenummer" value={order.orderNumber ? `#${order.orderNumber}` : 'Tildeles ved synk'} />
             <MetaRow label="Opprettet" value={formatDateTime(order.createdAt) ?? '–'} />
             <MetaRow label="Sist endret" value={formatDateTime(order.updatedAt) ?? '–'} last />
-          </ListCard>
+          </ToolCard>
         </View>
       </ScrollView>
 

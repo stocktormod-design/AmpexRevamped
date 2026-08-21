@@ -12,7 +12,14 @@ import { colors, spacing, radius, sizes, type as t } from '../lib/theme'
  * Trykk hvor som helst → onPress (åpner Kart med kjørerute).
  * Rendres ikke før geokodingen har svart — ingen tom kartboks.
  */
-export function AddressMap({ address, onPress }: { address: string; onPress: () => void }) {
+export function AddressMap({ address, onPress, height = 150, chrome = true }: {
+  address: string
+  onPress: () => void
+  /** Hero-bruk: full høyde bak tittelen. */
+  height?: number
+  /** «Kjørevei»-pilla. Av i hero — der ligger navigasjonen som egen knapp. */
+  chrome?: boolean
+}) {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
 
   useEffect(() => {
@@ -27,7 +34,7 @@ export function AddressMap({ address, onPress }: { address: string; onPress: () 
     <Pressable onPress={onPress}>
       <View pointerEvents="none">
         <MapView
-          style={{ height: 150 }}
+          style={{ height }}
           initialRegion={{
             latitude: coords.lat,
             longitude: coords.lng,
@@ -43,6 +50,7 @@ export function AddressMap({ address, onPress }: { address: string; onPress: () 
           <Marker coordinate={{ latitude: coords.lat, longitude: coords.lng }} />
         </MapView>
       </View>
+      {chrome && (
       <BlurView
         tint="light"
         intensity={70}
@@ -58,6 +66,7 @@ export function AddressMap({ address, onPress }: { address: string; onPress: () 
         <Navigation size={12} color={colors.label} strokeWidth={sizes.lucideStroke} />
         <Text style={[t.caption, { color: colors.label, fontWeight: '600' }]}>Kjørevei</Text>
       </BlurView>
+      )}
     </Pressable>
   )
 }
