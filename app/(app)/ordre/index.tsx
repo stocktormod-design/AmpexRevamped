@@ -3,10 +3,11 @@ import { View, Text, FlatList, ScrollView } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { Plus, ChevronRight, Inbox, FileText } from 'lucide-react-native'
+import { Plus, ChevronRight, Inbox, FileText, Map, List } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { Chip, GlassCard, AmbientBackdrop } from '../../../components/ui'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
+import { OrdreKart, kartStottes } from '../../../components/ordre-kart'
 import { database } from '../../../lib/db'
 import { Order, orderStatuses, orderStatusLabel, type OrderStatus } from '../../../lib/db/models/order'
 import { formatTime } from '../../../lib/format'
@@ -76,7 +77,36 @@ function OrderRow({ order, first, last }: { order: Order; first: boolean; last: 
 export default function OrdreScreen() {
   const insets = useSafeAreaInsets()
   const [filter, setFilter] = useState<Filter>('apne')
+  const [kart, setKart] = useState(false)
   const orders = useOrders(filter)
+
+  // Kartet er en VISNING av samme liste, ikke en egen skjerm: filteret over
+  // gjelder begge. Slik gjør Jobber, Housecall Pro og Tradify det, og grunnen
+  // er at rekkefølgen på dagens jobber bestemmes av geografi — en liste sortert
+  // på klokkeslett skjuler at to av dem ligger i samme gate.
+  if (kart && kartStottes) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+        <OrdreKart
+          orders={orders}
+          onVelg={o => router.push({ pathname: '/(app)/ordre/[id]', params: { id: o.id } })}
+        />
+        <Pressable
+          haptic="light"
+          onPress={() => setKart(false)}
+          style={{
+            position: 'absolute', top: insets.top + spacing.md, right: spacing.screen,
+            flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+            height: 36, paddingHorizontal: spacing.md, borderRadius: radius.pill,
+            backgroundColor: colors.bg,
+          }}
+        >
+          <List size={15} color={colors.label} strokeWidth={2.1} />
+          <Text style={[t.subhead, { fontWeight: '600' }]}>Liste</Text>
+        </Pressable>
+      </View>
+    )
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
@@ -98,6 +128,19 @@ export default function OrdreScreen() {
               <Text style={t.display}>Ordre</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
                 <AmpexMarkButton />
+                {kartStottes && (
+                  <Pressable
+                    haptic="light"
+                    pressScale={0.94}
+                    onPress={() => setKart(true)}
+                    style={{
+                      width: 36, height: 36, borderRadius: radius.pill,
+                      alignItems: 'center', justifyContent: 'center', backgroundColor: colors.fill,
+                    }}
+                  >
+                    <Map size={16} color={colors.label} strokeWidth={2.1} />
+                  </Pressable>
+                )}
                 {/* Tilbudet er steget FØR ordren — derfor står inngangen her, ved
                     siden av ordrelista, og ikke gjemt under Meg. */}
                 <Pressable

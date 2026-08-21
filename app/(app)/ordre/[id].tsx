@@ -226,6 +226,48 @@ function formatQty(n: number) {
  * bevegelse i felt gir utilsiktede sveip — og materiell mater fakturagrunnlaget.
  * Langtrykk beholdt som fallback for den som ikke får sveipet til å ta.
  */
+/**
+ * Én rad i et kort: ikon, tittel, valgfri underlinje, verdi, pil.
+ *
+ * Fantes som fire nesten like Pressable-blokker på denne skjermen alene. Det
+ * gjorde det tungvint å FLYTTE en rad — og rekkefølgen er nettopp det som var
+ * feil her.
+ */
+function Rad({ ikon, tittel, under, underVarsel, verdi, sterkVerdi, onPress, forst, sist }: {
+  ikon: React.ReactNode
+  tittel: string
+  under?: string
+  underVarsel?: boolean
+  verdi: string
+  sterkVerdi?: boolean
+  onPress: () => void
+  forst?: boolean
+  sist?: boolean
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+        paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+        ...(forst ? {} : { borderTopWidth: 0.5, borderTopColor: colors.separator }),
+      }}
+    >
+      {ikon}
+      <View style={{ flex: 1 }}>
+        <Text style={t.headline}>{tittel}</Text>
+        {!!under && (
+          <Text style={[t.footnote, { marginTop: 1 }, underVarsel && { color: colors.warning }]}>{under}</Text>
+        )}
+      </View>
+      <Text style={[t.bodyMedium, { color: sterkVerdi ? colors.label : colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>
+        {verdi}
+      </Text>
+      <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+    </Pressable>
+  )
+}
+
 function MaterialRow({ material }: { material: OrderMaterial }) {
   /**
    * Kom linja fra et lageruttak, finnes den samme varen som TO rader: uttaket
@@ -512,87 +554,6 @@ export default function OrderDetailScreen() {
           </View>
         )}
 
-        {/* Timer og bemanning. Ligger rett over fakturagrunnlaget fordi timene
-            er halve beløpet der. */}
-        <View style={{ marginBottom: spacing.screen }}>
-          <ListCard>
-            <Pressable
-              onPress={() => router.push({ pathname: '/(app)/ordre/timer', params: { id } })}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-              }}
-            >
-              <Clock size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-              <Text style={[t.headline, { flex: 1 }]}>Timer</Text>
-              <Text style={[t.bodyMedium, { fontVariant: ['tabular-nums'] }]}>
-                {timer > 0 ? `${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t` : '—'}
-              </Text>
-              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-            </Pressable>
-            <Pressable
-              onPress={() => router.push({ pathname: '/(app)/ordre/deltakere', params: { id } })}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-                borderTopWidth: 0.5, borderTopColor: colors.separator,
-              }}
-            >
-              <Users size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-              <Text style={[t.headline, { flex: 1 }]}>Deltakere</Text>
-              <Text style={[t.bodyMedium, { color: colors.secondaryLabel }]}>
-                {antallMedlemmer > 0 ? String(antallMedlemmer) : '—'}
-              </Text>
-              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-            </Pressable>
-            <Pressable
-              onPress={() => router.push({ pathname: '/(app)/ordre/tillegg', params: { id } })}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-                borderTopWidth: 0.5, borderTopColor: colors.separator,
-              }}
-            >
-              <FilePlus2 size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-              <View style={{ flex: 1 }}>
-                <Text style={t.headline}>Tilleggsarbeid</Text>
-                {tillegg.ventende > 0 && (
-                  <Text style={[t.footnote, { marginTop: 1, color: colors.warning }]}>
-                    {tillegg.ventende} venter på godkjenning
-                  </Text>
-                )}
-              </View>
-              <Text style={[t.bodyMedium, { color: colors.secondaryLabel }]}>
-                {tillegg.total > 0 ? String(tillegg.total) : '—'}
-              </Text>
-              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-            </Pressable>
-            {/* Signaturen står sammen med timer, deltakere og tillegg fordi den
-                hører til det som skjer PÅ jobben — ikke i fakturaskjermen, der
-                den kommer for sent til å hjelpe. */}
-            <Pressable
-              onPress={() => router.push({ pathname: '/(app)/ordre/signatur', params: { id } })}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-                borderTopWidth: 0.5, borderTopColor: colors.separator,
-              }}
-            >
-              <PenLine size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-              <View style={{ flex: 1 }}>
-                <Text style={t.headline}>Kundesignatur</Text>
-                {signaturer.length === 0 && (
-                  <Text style={[t.footnote, { marginTop: 1 }]}>Bevis på at arbeidet er godtatt</Text>
-                )}
-              </View>
-              <Text style={[t.bodyMedium, { color: colors.secondaryLabel }]}>
-                {signaturer.length > 0 ? String(signaturer.length) : '—'}
-              </Text>
-              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-            </Pressable>
-          </ListCard>
-        </View>
-
         {/* Arkivet står øverst når jobben er ferdig — da er det det eneste som
             gjenstår, og det som betyr noe om syv år. */}
         {order.status === 'fakturert' && (
@@ -601,67 +562,30 @@ export default function OrderDetailScreen() {
           </View>
         )}
 
-        {/* Faglig godkjenning står OVER fakturagrunnlaget: er ordren sendt
-            tilbake, er summen under uinteressant til det er rettet. */}
-        {godkjenninger.length > 0 && (
-          <View style={{ marginBottom: spacing.screen }}>
-            <GodkjenningKort godkjenninger={godkjenninger} grunnlag={godkjenningsgrunnlag} />
-          </View>
-        )}
-
-        {/* Kom ordren fra et tilbud, er den avtalte prisen det viktigste tallet på
-            skjermen — den overstyrer alt fakturagrunnlaget regner ut. */}
-        {!!order.quoteId && (
-          <View style={{ marginBottom: spacing.screen }}>
-            <AvtaltPrisKort quoteId={order.quoteId} />
-          </View>
-        )}
-
         {/*
-          Fakturagrunnlag. Ligger over Materiell fordi det er svaret montøren
-          faktisk vil ha — «hva blir dette?» — og fordi mangler (vare uten pris,
-          ordre uten kunde) må oppdages før ordren regnes som ferdig.
+          ── Rekkefølgen på denne skjermen ──────────────────────────────────
+          Montøren står i et sikringsskap med hansker på. Det han trenger er,
+          i denne rekkefølgen: HVOR er jeg, HVA gjør jeg, hva BRUKTE jeg, hva
+          må DOKUMENTERES. Alt det andre — signatur, tillegg, fakturagrunnlag,
+          godkjenning — hører til når jobben er ferdig, eller hjemme på PC-en.
+
+          Før lå deltakerliste, tilleggsarbeid, kundesignatur OG fakturagrunnlag
+          over materiell og dokumentasjon. Fire kontoroppgaver foran de tre
+          tingene jobben faktisk består av.
         */}
+
         <View style={{ marginBottom: spacing.screen }}>
+          <SectionHeader>På jobben</SectionHeader>
           <ListCard>
-            <Pressable
-              onPress={() => router.push({ pathname: '/(app)/ordre/faktura', params: { id } })}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-              }}
-            >
-              <Receipt size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-              <View style={{ flex: 1 }}>
-                <Text style={t.headline}>Fakturagrunnlag</Text>
-                <Text style={[t.footnote, { marginTop: 1 }]}>
-                  {!grunnlag ? 'Regner ut …'
-                    : grunnlag.linjer.length === 0 ? 'Ingenting å fakturere ennå'
-                    : `${grunnlag.linjer.length} linjer${grunnlag.utelatt.length ? ` · ${grunnlag.utelatt.length} utelatt` : ''}`}
-                </Text>
-              </View>
-              {!!grunnlag && grunnlag.linjer.length > 0 && (
-                <Text style={[t.bodyMedium, { fontVariant: ['tabular-nums'] }]}>{formatKr(grunnlag.bruttoOre)}</Text>
-              )}
-              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-            </Pressable>
-            {/* Kunde uten ID stopper fakturaen i regnskapet. Si det her, ikke først til slutt. */}
-            {!order.customerId && (
-              <Pressable
-                onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                  paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-                  borderTopWidth: 0.5, borderTopColor: colors.separator,
-                }}
-              >
-                <UserPlus size={18} color={colors.warning} strokeWidth={sizes.lucideStroke} />
-                <Text style={[t.subhead, { flex: 1, color: colors.secondaryLabel }]}>
-                  Ordren mangler kunde i registeret
-                </Text>
-                <Text style={[t.subhead, { color: colors.brand, fontWeight: '600' }]}>Velg</Text>
-              </Pressable>
-            )}
+            <Rad
+              ikon={<Clock size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
+              tittel="Timer"
+              verdi={timer > 0 ? `${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t` : '—'}
+              sterkVerdi
+              onPress={() => router.push({ pathname: '/(app)/ordre/timer', params: { id } })}
+              forst
+              sist
+            />
           </ListCard>
         </View>
 
@@ -695,7 +619,6 @@ export default function OrderDetailScreen() {
             </View>
           </ListCard>
         </View>
-
         {/* Dokumentasjon — viser kun faktisk påbegynt/fullført skjema, ikke alle malene */}
         <View style={{ marginBottom: spacing.screen }}>
           <ListCard>
@@ -744,9 +667,113 @@ export default function OrderDetailScreen() {
             </View>
           </ListCard>
         </View>
-
         {/* LiDAR — én seksjon, segmentvalg mellom planlegging og dokumentasjon */}
         <ScanSection orderId={order.id} scans={scans} />
+
+        {/* Når jobben er ferdig. Signaturen er en avslutningshandling — den skal
+            tas foran kunden når arbeidet er gjort, ikke ligge og lyse mens du
+            fortsatt drar kabel. */}
+        <View style={{ marginBottom: spacing.screen }}>
+          <SectionHeader>Når jobben er ferdig</SectionHeader>
+          <ListCard>
+            <Rad
+              ikon={<PenLine size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
+              tittel="Kundesignatur"
+              under={signaturer.length === 0 ? 'Bevis på at arbeidet er godtatt' : undefined}
+              verdi={signaturer.length > 0 ? String(signaturer.length) : '—'}
+              onPress={() => router.push({ pathname: '/(app)/ordre/signatur', params: { id } })}
+              forst
+            />
+            {/* Tilleggsarbeid vises KUN når ordren har en avtalt pris.
+                På løpende regning er ekstra arbeid bare flere timer og mer
+                materiell — da er dette et unødvendig begrep i veien. Er prisen
+                avtalt, er det motsatt: timer og materiell utover avtalen blir
+                slukt av fastprisen og aldri fakturert, med mindre de føres som
+                et tillegg kunden har godkjent. */}
+            {!!order.quoteId && (
+              <Rad
+                ikon={<FilePlus2 size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
+                tittel="Tilleggsarbeid"
+                under={tillegg.ventende > 0 ? `${tillegg.ventende} venter på godkjenning` : 'Arbeid utenfor den avtalte prisen'}
+                underVarsel={tillegg.ventende > 0}
+                verdi={tillegg.total > 0 ? String(tillegg.total) : '—'}
+                onPress={() => router.push({ pathname: '/(app)/ordre/tillegg', params: { id } })}
+              />
+            )}
+            <Rad
+              ikon={<Users size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />}
+              tittel="Deltakere"
+              verdi={antallMedlemmer > 0 ? String(antallMedlemmer) : '—'}
+              onPress={() => router.push({ pathname: '/(app)/ordre/deltakere', params: { id } })}
+              sist
+            />
+          </ListCard>
+        </View>
+
+        {/* Kom ordren fra et tilbud, er den avtalte prisen det viktigste tallet på
+            skjermen — den overstyrer alt fakturagrunnlaget regner ut. */}
+        {!!order.quoteId && (
+          <View style={{ marginBottom: spacing.screen }}>
+            <AvtaltPrisKort quoteId={order.quoteId} />
+          </View>
+        )}
+        {/*
+          Fakturagrunnlag. Flyttet NED hit: det er et kontorspørsmål, ikke et
+          feltspørsmål, og det sto tidligere over både materiell og
+          dokumentasjon. Men det skal fortsatt stå på ordren og ikke bare på
+          desktop — mangler (vare uten pris, ordre uten kunde) må oppdages
+          mens montøren fortsatt er på stedet og kan rette dem.
+        */}
+        <View style={{ marginBottom: spacing.screen }}>
+          <ListCard>
+            <Pressable
+              onPress={() => router.push({ pathname: '/(app)/ordre/faktura', params: { id } })}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+              }}
+            >
+              <Receipt size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+              <View style={{ flex: 1 }}>
+                <Text style={t.headline}>Fakturagrunnlag</Text>
+                <Text style={[t.footnote, { marginTop: 1 }]}>
+                  {!grunnlag ? 'Regner ut …'
+                    : grunnlag.linjer.length === 0 ? 'Ingenting å fakturere ennå'
+                    : `${grunnlag.linjer.length} linjer${grunnlag.utelatt.length ? ` · ${grunnlag.utelatt.length} utelatt` : ''}`}
+                </Text>
+              </View>
+              {!!grunnlag && grunnlag.linjer.length > 0 && (
+                <Text style={[t.bodyMedium, { fontVariant: ['tabular-nums'] }]}>{formatKr(grunnlag.bruttoOre)}</Text>
+              )}
+              <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
+            {/* Kunde uten ID stopper fakturaen i regnskapet. Si det her, ikke først til slutt. */}
+            {!order.customerId && (
+              <Pressable
+                onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                  paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+                  borderTopWidth: 0.5, borderTopColor: colors.separator,
+                }}
+              >
+                <UserPlus size={18} color={colors.warning} strokeWidth={sizes.lucideStroke} />
+                <Text style={[t.subhead, { flex: 1, color: colors.secondaryLabel }]}>
+                  Ordren mangler kunde i registeret
+                </Text>
+                <Text style={[t.subhead, { color: colors.brand, fontWeight: '600' }]}>Velg</Text>
+              </Pressable>
+            )}
+          </ListCard>
+        </View>
+        {/* Faglig godkjenning står OVER fakturagrunnlaget: er ordren sendt
+            tilbake, er summen under uinteressant til det er rettet. */}
+        {godkjenninger.length > 0 && (
+          <View style={{ marginBottom: spacing.screen }}>
+            <GodkjenningKort godkjenninger={godkjenninger} grunnlag={godkjenningsgrunnlag} />
+          </View>
+        )}
+
 
         {/*
           Status var seks likeverdige chips — en editor, ikke en handling. Flyten er
