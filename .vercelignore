@@ -1,0 +1,27 @@
+# Vercel bygger BARE desktop/. Montørappen er en Expo-app som verken kan eller
+# skal bygges her, og den er stor — uten denne fila lastes hundrevis av MB opp
+# for å produsere en mappe med statiske filer.
+#
+# `lib/` er IKKE med i lista, og det er hele poenget: desktop importerer den
+# delte logikken med `@delt/…`, og uten den mappa faller bygget.
+
+app/
+modules/
+plugins/
+scripts/
+worker/
+supabase/
+assets/
+ios/
+android/
+.expo/
+docs/
+tools/
+
+node_modules
+desktop/node_modules
+desktop/dist
+desktop/src-tauri/target
+
+*.log
+.tmp/

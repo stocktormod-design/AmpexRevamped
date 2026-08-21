@@ -1,6 +1,11 @@
 # Ampex Desktop og migrering fra SpeedyCraft
 
-Status 2026-08-18: planlegging. Pool Exe er så vidt begynt på Windows-PC-en.
+Status 2026-08-21: **skallet står og første ekte rute virker.** `desktop/` er
+Tauri v2 + React + TS, med prisfil-import og varekartotek. Pool Exe er så vidt
+begynt på Windows-PC-en; SpeedyCraft-importen er fortsatt planlegging.
+
+Se `desktop/README.md` for hvordan den kjøres, og avsnittet «Hva som står nå»
+nederst for hva som faktisk er bygget.
 
 ## Innsikten: kontor-PC-en skal gjøre tre jobber, og én installer bærer alle
 
@@ -196,7 +201,8 @@ kontorutsikt, ikke bedriften.
 |-----|---------|
 | Skjemakartlegging | Krever en ekte `speedycraft`-base å kjøre oppdagelsessteget mot |
 | `SCImpExpCOM`-vurdering | Dokumentasjonen ligger bak Devincos partnerportal (403 utenfra) |
-| Valg av desktop-stack | Ikke bestemt. Pool Exe er Python i dag; Ampex Desktop trenger UI |
+| ~~Valg av desktop-stack~~ | **Løst 18. august, bygget 21. august.** Tauri v2 + React + TS |
+| Rust-siden av Tauri | `rustup` er ikke installert på maskinen. `src-tauri/` er skrevet, ikke kompilert |
 
 ### Stack: Tauri v2 + React + TypeScript — BESLUTTET 2026-08-18
 
@@ -259,3 +265,54 @@ Tette datamengder trenger virtualiserte tabeller (TanStack Virtual),
 tastaturnavigasjon og flerrutelayout. WebView2 håndterer det fint — «native
 følelse» på desktop handler mer om tastatur, fokus og tetthet enn om
 widget-teknologi.
+
+
+---
+
+## Hva som står nå (21. august)
+
+`desktop/` er en kjørende Vite-app med to ruter, verifisert med `tsc --noEmit`
+og `vite build`. Rust-delen er skrevet, men ikke kompilert: `rustup` mangler på
+maskinen, så `npm run tauri dev` er uprøvd.
+
+### Prisfil-import — ferdig
+
+Tre steg, med vilje adskilt: **les fila** (lokalt, uten nett — avvikslista sier
+med én gang om noe er tolket feil), **regn ut** (henter alt vi har på de samme
+el-numrene og viser hva importen VIL gjøre), **skriv**. Steg to er sitt eget
+trykk fordi det koster nett: femti tusen linjer blir mange oppslag, og å bruke
+tid uten å ha sagt fra er verre enn ett trykk til.
+
+Regningen ligger i `lib/pricefile/plan.ts` — altså i den DELTE lib-en, ikke i
+desktop — og har selvtest med 40 påstander (`npm run verify:prisfil-plan`).
+Skrivingen ligger i `desktop/src/lib/prisfil-lager.ts` og har ingen, fordi den
+ikke inneholder regning. Delingen går akkurat der av den grunnen.
+
+Reglene er de samme som i montørappens import, og de er ikke kosmetiske:
+
+- Én rad per (vare, grossist). Prisen lå tidligere som én kolonne på varen, og
+  da forsvant Onninens pris i det Solar ble importert.
+- `products.cost_price` er den BILLIGSTE kjente prisen, ikke prisen i fila.
+- **En listepris slår aldri en ekte nettopris**, uansett beløp. Selvtesten har
+  denne som eget punkt: 20,50 i listepris skal tape mot 25,00 i nettopris.
+- Utsalgsprisen røres ikke uten at noen har bedt om et påslag.
+- Upsert, aldri insert. Samme fil kan kjøres om igjen uten å duplisere noe —
+  samme krav som SpeedyCraft-migreringen stiller lenger opp i dette dokumentet,
+  av samme grunn.
+
+Én ting ble avdekket underveis og er verdt å vite: **EAN-varer importeres ikke.**
+`tilVarekort()` godtar EAN som nøkkel, men `elnummer()`-vakten i begge importene
+slipper bare varemerke 1 gjennom, så en EAN-vare telles som «uten el-nummer».
+Det er montørappens oppførsel fra før, og desktop følger den bevisst. Skal det
+endres, må begge endres, og det er en egen beslutning.
+
+### Varer — ferdig nok
+
+Varekartoteket med søk mot `search_text` (samme kolonne montørappens varesøk
+bruker), kostpris, utsalg, og hvor mange grossister vi har pris fra.
+
+### Neste
+
+Ordresystemet er den store kontorjobben som gjenstår. Poolnodens klientside —
+innmeldingskode, køing, køposisjon — hører også her og ikke i montørappen, se
+`docs/STATUS.md`.
