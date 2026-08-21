@@ -34,6 +34,53 @@ som iOS Innstillinger. Se «Overflate» under for det som skiller de to.
 7. **Safe areas** alltid via `useSafeAreaInsets` — aldri hardkodede toppmarger.
 8. **Skeleton/placeholder** ved lasting — aldri spinner alene på en tom skjerm.
 
+## To slags skjermer: verktøy og papir
+
+Den varme kremfargen ligger i **nøyaktig samme familie som lese- og notatapper**
+— Kindle sepia `#FBF0D9`, Apple Notes `#FFFBED`, Goodreads `#F4F1EA`, Panera
+`#F4EFE1`. Derfor leste hver skjerm som en notatblokk: paletten sier «dokument»,
+fordi det er det alle andre bruker den til.
+
+Fargen er ikke feil. Den hadde bare ingen jobb. Nå har den én:
+
+| | Grunn | Hvilke skjermer |
+|---|---|---|
+| **Verktøy** | `toolBg` mørk | Ordre, lager, prosjekter, lister, kart |
+| **Papir** | `canvas` kremet | Skjema, tilbud, arkiv, fakturagrunnlag |
+
+Skiftet betyr noe: det forteller deg at du har gått fra å JOBBE til å
+DOKUMENTERE. `components/tool-surface.tsx` er rammen — bruk `ToolScreen`,
+`ToolCard`, `ToolChip` og `ToolSectionHeader`, ikke egne verdier.
+
+**Dybde lages med VERDI, ikke med skygge.** En lysere flate leses som nærmere.
+Det er slik mørke grensesnitt faktisk bygges — og det fjerner samtidig den
+diffuse skyggen som lå på absolutt alt.
+
+## Radius med mening
+
+At alt har samme hjørne er et av de tydeligste tegnene på et grensesnitt ingen
+har tatt et valg i. Skalaen skal brukes slik:
+
+| Token | Til |
+|-------|-----|
+| `sm` 8 | inputfelt, små merker |
+| `md` 10 | rader i en liste, ikonfliser |
+| `lg` 12 | paneler og kort |
+| `xl` 14 | ÉN flate per skjerm — den som er hovedsaken |
+| `hero` 24 | store, isolerte kort (tilbudskort, arkivkort) |
+| `pill` | kun chips og runde knapper |
+
+## Kjennetegnene vi IKKE skal ha
+
+Målt mot lista over hva som avslører maskingenerert design. Ampex var skyldig i
+tre av dem, og alle tre er rettet eller under retting:
+
+- ~~systemfont uten personlighet på alt~~ → serif på display (`lib/fonts.ts`)
+- ~~lik hjørneradius overalt~~ → skalaen over
+- ~~myk skygge på 0.08 over hele appen~~ → hårlinje og verdi på mørke flater
+- lilla gradient-orber — har aldri vært her
+- hvitt/lysegrått uten standpunkt — brunt og kobber ER et standpunkt
+
 ## Soner, ikke kort på kort på kort
 
 Den skarpeste kritikken skjermene har fått: **«det ser ut som en handleliste.»**
