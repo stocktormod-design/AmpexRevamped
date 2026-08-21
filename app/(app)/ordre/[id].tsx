@@ -23,7 +23,9 @@ import { ScanCard } from '../../../components/scan-card'
 import { deleteScanFiles, clearRevisions } from '../../../lib/scan-revisions'
 import { AddressMap } from '../../../components/address-map'
 import { database } from '../../../lib/db'
+import { supabase } from '../../../lib/supabase'
 import { slettMateriell, uttakForMateriell } from '../../../lib/cart'
+import { glemKlokke, startKlokke, stoppKlokke, timerTekst } from '../../../lib/order-clock'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Order, orderStatuses, orderStatusLabel, type OrderStatus } from '../../../lib/db/models/order'
 import { OrderDocument } from '../../../lib/db/models/order-document'
@@ -552,12 +554,67 @@ export default function OrderDetailScreen() {
    * transaksjon, ville ett slikt trykk blokkert HELE synken — stille, akkurat
    * som base62-id-ene gjorde. Fakturering skjer på fakturaskjermen, punktum.
    */
+  /**
+   * «Start jobben» og «Meld ferdig» klammer klokka.
+   *
+   * Timeføring er den kjedeligste daglige oppgaven, og den eneste som direkte
+   * avgjør hva firmaet får betalt. Nå føres den av seg selv — men den LAGRES
+   * aldri av seg selv: mellom start og ferdig ligger kjøring, pauser og en
+   * telefon fra en annen kunde. Et tall som havner på fakturaen uten at noen så
+   * det, er verre enn ingen tall. Derfor foreslås det, og du bekrefter.
+   */
+  async function startJobben() {
+    if (!order) return
+    await startKlokke(order.id)
+    await setStatus('pagaar')
+  }
+
+  async function meldFerdig() {
+    if (!order) return
+    const timerGaatt = await stoppKlokke(order.id)
+    await setStatus('fakturaklar')
+    if (timerGaatt === null) return
+    Alert.alert(
+      'Før timene?',
+      `Du startet jobben for ${timerTekst(timerGaatt)} siden. Skal de føres på ordren?`,
+      [
+        { text: 'Ikke nå', style: 'cancel' },
+        {
+          text: 'Juster',
+          onPress: () => router.push({ pathname: '/(app)/ordre/timer', params: { id, forslag: String(timerGaatt) } }),
+        },
+        { text: `Før ${timerTekst(timerGaatt)}`, onPress: () => { void foerTimer(timerGaatt) } },
+      ],
+    )
+  }
+
+  async function foerTimer(timerTall: number) {
+    if (!order) return
+    const { data } = await supabase.auth.getUser()
+    const bruker = data.user
+    if (!bruker) return
+    const navn = (bruker.user_metadata?.full_name as string | undefined) || bruker.email?.split('@')[0] || 'Meg'
+    await database.write(async () => {
+      await database.get<TimeEntry>('time_entries').create(e => {
+        e.orderId = order.id
+        e.userId = bruker.id
+        e.userName = navn
+        e.date = new Date()
+        e.hours = timerTall
+        e.note = null
+        e.activityId = null
+      })
+    })
+    syncQuietly()
+  }
+
   async function setStatus(status: OrderStatus) {
     if (!order || order.status === status) return
     if (status === 'fakturert') {
       router.push({ pathname: '/(app)/ordre/faktura', params: { id } })
       return
     }
+    if (status !== 'pagaar') await glemKlokke(order.id)
     await database.write(async () => {
       await order.update(o => { o.status = status })
     })
@@ -632,9 +689,9 @@ export default function OrderDetailScreen() {
     : order.status === 'fakturaklar'
       ? { tekst: 'Til fakturagrunnlaget', gjor: () => router.push({ pathname: '/(app)/ordre/faktura', params: { id } }) }
       : order.status === 'pagaar'
-        ? { tekst: 'Meld ferdig', gjor: () => setStatus('fakturaklar') }
+        ? { tekst: 'Meld ferdig', gjor: meldFerdig }
         : order.status === 'planlagt'
-          ? { tekst: 'Start jobben', gjor: () => setStatus('pagaar') }
+          ? { tekst: 'Start jobben', gjor: startJobben }
           : nextStatus
             ? { tekst: `Marker som ${orderStatusLabel[nextStatus].toLowerCase()}`, gjor: () => setStatus(nextStatus) }
             : null

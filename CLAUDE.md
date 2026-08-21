@@ -41,6 +41,7 @@ npm run verify:approvals  selvtest av faglig godkjenning (snapshot, avslag)
 npm run verify:arkiv      selvtest av arkivpakken (SHA-256, determinisme, frister)
 npm run verify:id-repair  selvtest av id-reparasjonen (kjører SQL-en mot ekte SQLite)
 npm run verify:form-import selvtest av skjemaimporten (opprydding av modellsvar)
+npm run verify:klokke     selvtest av ordreklokka (kvarter, aldri null timer)
 ```
 
 Selvtestene er kjørbare skript med harde påstander, ikke en testrunner. Ny ren
