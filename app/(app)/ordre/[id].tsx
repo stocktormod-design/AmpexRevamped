@@ -3,7 +3,6 @@ import { View, Text, ScrollView, Linking, Platform, ActionSheetIOS, Alert, Style
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
-import Animated, { FadeInDown } from 'react-native-reanimated'
 import { Q } from '@nozbe/watermelondb'
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable'
 import {
@@ -789,6 +788,21 @@ export default function OrderDetailScreen() {
         )}
 
         {/*
+          ── INGEN INNFELLING HER ───────────────────────────────────────────
+          Sonene falt inn i rekkefølge med FadeInDown. Det så bra ut i teorien
+          og hakket i praksis, av to grunner:
+
+            · Push-overgangen ER inngangen. Innhold som beveger seg ETTER at
+              skjermen har glidd inn er dobbel bevegelse — øyet ser noe som
+              fortsatt setter seg mens det allerede har begynt å lese.
+            · Kartet i hero initialiseres i nøyaktig samme øyeblikk. MapView
+              koster rammer ved oppstart, og da har vi ingen å gi bort til
+              pynt.
+
+          Bevegelse må gjøre en jobb. Trykk-respons og overganger gjør det;
+          innhold som glir på plass ved åpning gjør det ikke.
+        */}
+        {/*
           ── SONER, IKKE KORT I KOLONNE ──────────────────────────────────────
           Forrige forsøk ble et instrumentpanel: to like fliser side om side med
           hvert sitt tall. Det er fortsatt like kort i kolonne, bare snudd 90°.
@@ -803,7 +817,7 @@ export default function OrderDetailScreen() {
 
           Ingen av dem kan forveksles med en annen på avstand. Det er testen.
         */}
-        <Animated.View entering={FadeInDown.springify().damping(18).delay(60)} style={{ marginBottom: spacing.lg }}>
+        <View style={{ marginBottom: spacing.lg }}>
           <Pressable
             haptic="light"
             onPress={() => router.push({ pathname: '/(app)/ordre/timer', params: { id } })}
@@ -829,11 +843,11 @@ export default function OrderDetailScreen() {
             </View>
             <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
           </Pressable>
-        </Animated.View>
+        </View>
 
         {/* MATERIELL — vannrett. Det du førte sist ligger først, og lista ruller
             i stedet for å vokse nedover og dytte alt annet ut av syne. */}
-        <Animated.View entering={FadeInDown.springify().damping(18).delay(110)} style={{ marginBottom: spacing.lg }}>
+        <View style={{ marginBottom: spacing.lg }}>
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.sm,
@@ -885,12 +899,12 @@ export default function OrderDetailScreen() {
               ))}
             </ScrollView>
           )}
-        </Animated.View>
+        </View>
 
         {/* DOKUMENTASJON — VISES, ikke telles. «2/3» sa hvor mange skjemaer det
             var; dette sier hvilke, og hvor langt hvert av dem er kommet. Det er
             forskjellen på et tall og et svar. */}
-        <Animated.View entering={FadeInDown.springify().damping(18).delay(160)} style={{ marginBottom: spacing.lg }}>
+        <View style={{ marginBottom: spacing.lg }}>
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.sm,
@@ -951,17 +965,17 @@ export default function OrderDetailScreen() {
               })}
             </View>
           )}
-        </Animated.View>
+        </View>
 
         {/* LIDAR — et PRODUKT, ikke en fane. Se ScanSection. */}
-        <Animated.View entering={FadeInDown.springify().damping(18).delay(210)}>
+        <View>
           <ScanSection orderId={order.id} scans={scans} />
-        </Animated.View>
+        </View>
 
         {/* Når jobben er ferdig. Signaturen er en avslutningshandling — den skal
             tas foran kunden når arbeidet er gjort, ikke ligge og lyse mens du
             fortsatt drar kabel. */}
-        <Animated.View entering={FadeInDown.springify().damping(18).delay(140)} style={{ marginBottom: spacing.screen }}>
+        <View style={{ marginBottom: spacing.screen }}>
           <SectionHeader tone="light">Når jobben er ferdig</SectionHeader>
           <ToolCard>
             <Rad
@@ -996,7 +1010,7 @@ export default function OrderDetailScreen() {
               sist
             />
           </ToolCard>
-        </Animated.View>
+        </View>
 
         {/* Kom ordren fra et tilbud, er den avtalte prisen det viktigste tallet på
             skjermen — den overstyrer alt fakturagrunnlaget regner ut. */}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { View, Text } from 'react-native'
+import { InteractionManager, View, Text } from 'react-native'
 import MapView, { Marker } from 'react-native-maps'
 import { BlurView } from 'expo-blur'
 import { Navigation } from 'lucide-react-native'
@@ -21,14 +21,22 @@ export function AddressMap({ address, onPress, height = 150, chrome = true }: {
   chrome?: boolean
 }) {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
+  // MapView koster rammer ved oppstart. Monteres den midt i en push-overgang,
+  // hakker overgangen — og det er overgangen brukeren ser, ikke kartet. Vi
+  // venter til navigasjonen har satt seg; kartet kommer et øyeblikk etter, og
+  // ingen legger merke til DET.
+  const [ferdigNavigert, setFerdigNavigert] = useState(false)
 
   useEffect(() => {
     let mounted = true
     geocodeAddress(address).then(c => { if (mounted) setCoords(c) })
-    return () => { mounted = false }
+    const oppgave = InteractionManager.runAfterInteractions(() => {
+      if (mounted) setFerdigNavigert(true)
+    })
+    return () => { mounted = false; oppgave.cancel() }
   }, [address])
 
-  if (!coords) return null
+  if (!coords || !ferdigNavigert) return null
 
   return (
     <Pressable onPress={onPress}>

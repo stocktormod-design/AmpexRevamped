@@ -166,6 +166,16 @@ Samme innhold og flyt som før — kun materialene endrer seg.
 
 ## Bevegelse
 
+**Ikke innfelling på detaljskjermer.** Push-overgangen ER inngangen; innhold
+som beveger seg etter at skjermen har glidd inn er dobbel bevegelse, og øyet
+ser noe som fortsatt setter seg mens det allerede leser. På ordreskjermen kom
+det i tillegg samtidig med at MapView initialiserte — og da finnes det ingen
+rammer å gi bort til pynt.
+
+Bevegelse må gjøre en jobb: trykk-respons, overganger, verdier som endrer seg.
+Innhold som glir på plass ved åpning gjør ingen.
+
+
 - Springs (`springs.*`), aldri duration+easing.
 - Animer kun `transform` og `opacity` (GPU-billig, 120Hz, batterivennlig).
 - Haptikk: `light` på rader/knapper, `medium` på primær-CTA,
