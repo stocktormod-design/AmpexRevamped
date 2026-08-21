@@ -660,6 +660,30 @@ den flyttes uendret til Ampex Desktop når den finnes.
     overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
     så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
 
+### Telefonen er felt, desktop er kontor
+
+SpeedyCraft-skjermbildet avgjorde rekkefølgen. Deres ordre er Timer →
+Produkter → Skjema → Vedlegg, og det er riktig: **flyten på en ordre er
+timeføring og materiell**, ikke fakturering.
+
+Delingen som nå gjelder:
+
+| Telefon (felt) | Desktop (kontor) |
+|----------------|------------------|
+| Timer, materiell, dokumentasjon, 3D-skann | Kundesignatur |
+| Tilleggsarbeid (når prisen er avtalt) | Fakturagrunnlag og fakturasending |
+| Beskjed fra faglig ansvarlig ved avslag | Deltakerliste, avtalt pris |
+
+Kontorsakene er **ikke fjernet — de er lagt bak ett trykk** under «Kontor». Å
+amputere en funksjon fordi den er sjelden er like galt som å la den ligge
+øverst fordi den finnes. Men fire rader montøren aldri trykker på, midt blant
+de tre han bruker hver dag, er akkurat den slags rot SpeedyCraft-skjermen viser
+for mye av.
+
+**Ett unntak slipper aldri å bli skjult:** mangler ordren kunde, kan den ikke
+faktureres — og det må oppdages mens montøren står på stedet og kan spørre hvem
+regningen skal til. Den advarselen vises også når «Kontor» er lukket.
+
 ### Jobber-mønsteret: én forankret hovedhandling
 
 Det Jobber og Tradify gjør som vi ikke gjorde: **hver skjerm har ÉN handling.**
