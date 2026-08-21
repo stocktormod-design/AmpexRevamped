@@ -95,14 +95,12 @@ function Foering({ entry, aktivitet, kanSlette }: {
 }
 
 export default function TimerScreen() {
-  // `forslag` kommer fra klokka når du melder ferdig (lib/order-clock.ts) —
-  // feltet er forhåndsutfylt, men ikke lagret. Du justerer og bekrefter.
-  const { id, forslag } = useLocalSearchParams<{ id: string; forslag?: string }>()
+  const { id } = useLocalSearchParams<{ id: string }>()
   const insets = useSafeAreaInsets()
   const aktiviteter = useAktiviteter()
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [valgtAktivitet, setValgtAktivitet] = useState<string | null>(null)
-  const [timer, setTimer] = useState(() => (forslag ? forslag.replace('.', ',') : ''))
+  const [timer, setTimer] = useState('')
   const [notat, setNotat] = useState('')
   const [dato, setDato] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })
   const [lagrer, setLagrer] = useState(false)
