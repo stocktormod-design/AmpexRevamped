@@ -196,13 +196,8 @@ export default function RootLayout() {
     }
   }, [])
 
-  // Vent på fonten før noe tegnes. Uten dette rendres alle titler i
-  // systemfonten først og hopper når serifen lander — og et hopp i typografien
-  // er det aller første brukeren ser.
-  if (!fonterKlare) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
-
   return (
-    <GestureHandlerRootView style={{ flex: 1 }} key={nokkel}>
+    <GestureHandlerRootView style={{ flex: 1 }} key={`${nokkel}-${fonterKlare}`}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <VoiceSessionProvider>
