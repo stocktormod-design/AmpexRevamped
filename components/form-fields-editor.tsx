@@ -3,7 +3,7 @@ import { View, Text, TextInput } from 'react-native'
 import Animated, { LinearTransition } from 'react-native-reanimated'
 import {
   Plus, Trash2, SquareCheck, Type, Hash, Camera, AlignLeft, List, Table2, Info,
-  ChevronDown, ChevronRight, X, Eye,
+  ChevronDown, ChevronRight, X, Eye, AlertTriangle,
 } from 'lucide-react-native'
 import { Pressable } from './pressable'
 import { ChoiceSheet, type Valg } from './sheet'
@@ -106,10 +106,13 @@ function StringListEditor({ values, onChange, addLabel, placeholder }: {
 
 /* ── Ett felt ─────────────────────────────────────────────────────────── */
 
-function FieldCard({ field, candidates, onChange, onRemove }: {
+function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
   field: FormField
   /** Felt som kan betinges på — kun valg-felt som kommer FØR dette i malen */
   candidates: FormField[]
+  /** Én setning om hvorfor punktet er usikkert (skjemaimport). Vises PÅ punktet,
+      ikke i en liste på toppen — den som skal rette noe skal ikke måtte lete. */
+  flagg?: string
   onChange: (patch: Partial<FormField>) => void
   onRemove: () => void
 }) {
@@ -135,7 +138,10 @@ function FieldCard({ field, candidates, onChange, onRemove }: {
   }
 
   return (
-    <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.sm + 2, marginBottom: spacing.sm }}>
+    <View style={[
+      { backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.sm + 2, marginBottom: spacing.sm },
+      !!flagg && { borderWidth: 1, borderColor: colors.warning },
+    ]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
         <Pressable haptic="light" onPress={() => setTypeSheet(true)}
           style={{ width: 34, height: 34, borderRadius: radius.md, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
@@ -156,6 +162,13 @@ function FieldCard({ field, candidates, onChange, onRemove }: {
           <Trash2 size={18} color={colors.tertiaryLabel} strokeWidth={2} />
         </Pressable>
       </View>
+
+      {!!flagg && (
+        <View style={{ flexDirection: 'row', gap: spacing.xs + 2, marginTop: spacing.sm, marginLeft: 34 + spacing.sm }}>
+          <AlertTriangle size={13} color={colors.warning} strokeWidth={2.2} style={{ marginTop: 2 }} />
+          <Text style={[t.caption, { flex: 1, color: colors.warning, lineHeight: 17 }]}>{flagg}</Text>
+        </View>
+      )}
 
       {/* Sammendragslinje når kortet er lukket */}
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm, marginLeft: 34 + spacing.sm }}>
@@ -301,8 +314,10 @@ function FieldCard({ field, candidates, onChange, onRemove }: {
  * fjerner sykluser uten en syklustest, og det er dessuten den eneste formen
  * som gir mening å lese ovenfra og ned.
  */
-export function SectionsEditor({ sections, onChange }: {
+export function SectionsEditor({ sections, flagg, onChange }: {
   sections: FormSection[]
+  /** id → hvorfor punktet er usikkert. Brukes av skjemaimporten. */
+  flagg?: Record<string, string>
   onChange: (sections: FormSection[]) => void
 }) {
   function patchSection(sid: string, patch: Partial<FormSection>) {
@@ -342,6 +357,7 @@ export function SectionsEditor({ sections, onChange }: {
                 <FieldCard
                   key={f.id}
                   field={f}
+                  flagg={flagg?.[f.id]}
                   candidates={before.filter(c => conditionOptions(c).length > 0)}
                   onChange={patch => patchField(section.id, f.id, patch)}
                   onRemove={() => {

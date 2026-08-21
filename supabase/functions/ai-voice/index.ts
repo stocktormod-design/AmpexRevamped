@@ -14,7 +14,7 @@
 import '@supabase/functions-js/edge-runtime.d.ts'
 import { withSupabase } from 'npm:@supabase/server'
 
-type Mode = 'gap_check' | 'order_lookup' | 'project_status' | 'classify_intent' | 'live_token'
+type Mode = 'gap_check' | 'order_lookup' | 'project_status' | 'classify_intent' | 'live_token' | 'form_import'
 
 type AiVoiceRequest = {
   mode: Mode
@@ -24,6 +24,8 @@ type AiVoiceRequest = {
   context?: unknown
   /** live_token: be om et token UTEN lås, etter at en låst økt ble avvist ved setup. */
   ulaast?: boolean
+  /** form_import: PDF eller bilde av firmaets eget skjema. */
+  dokument?: { base64: string; mimeType: string }
 }
 
 type GeminiSpec = {
@@ -37,6 +39,19 @@ const GEMINI_LIVE_MODEL = Deno.env.get('GEMINI_LIVE_MODEL') ?? 'gemini-3.1-flash
 // Kvinnelige kandidater: Kore (fast/klar), Aoede (lett), Leda (ung), Zephyr (lys). Mannlige: Charon, Orus, Fenrir, Puck.
 const GEMINI_LIVE_VOICE = Deno.env.get('GEMINI_LIVE_VOICE') ?? 'Kore'
 const GEMINI_TIMEOUT_MS = 20_000
+
+// Skjemaimport er en SJELDEN operasjon med varig resultat: en mal leses inn én
+// gang og brukes så på hver eneste jobb i årevis. Da er det riktig å bruke den
+// dyre modellen — kostnaden er engangs, feilen er ikke. Faller tilbake til
+// standardmodellen hvis navnet ikke finnes, så et modellbytte hos Google ikke
+// tar funksjonen med seg.
+const GEMINI_IMPORT_MODEL = Deno.env.get('GEMINI_IMPORT_MODEL') ?? 'gemini-2.5-pro'
+// Et skannet skjema på fire sider tar lengre tid enn en talesetning. Klienten
+// venter tilsvarende lenge (se CLIENT_IMPORT_TIMEOUT_MS i lib/ai/gemini-client.ts).
+const GEMINI_IMPORT_TIMEOUT_MS = 110_000
+// Gemini tar inntil 20 MB i én forespørsel, base64 blåser opp med en tredel.
+// Vi stopper godt under, og sier fra HVORFOR i stedet for å la Google gjøre det.
+const IMPORT_MAX_BASE64 = 12 * 1024 * 1024
 
 // Ephemeral token for Gemini Live: klienten kobler til Live-WebSocketen direkte
 // (lyd-streaming kan ikke gå via denne funksjonen uten å doble latens), men skal
@@ -212,6 +227,76 @@ const CLASSIFY_INTENT_SCHEMA = {
   required: ['transcript', 'mode', 'confidence'],
 }
 
+const FORM_IMPORT_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    tittel: { type: 'STRING', description: 'Skjemaets tittel, ordrett fra dokumentet.' },
+    kategori: { type: 'STRING', enum: ['Sluttkontroll', 'Risiko / SJA', 'HMS', 'Måleprotokoll', 'Egenkontroll', 'Diverse'] },
+    merknad: { type: 'STRING', description: 'Én setning om hva du så: antall sider, kvalitet, og hva du eventuelt måtte utelate.' },
+    seksjoner: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          tittel: { type: 'STRING', description: 'Overskriften i dokumentet. Tom streng hvis skjemaet ikke er delt opp.' },
+          felt: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                id: { type: 'STRING', description: 'Kort snake_case-id på norsk, utledet av etiketten. Må være unik i hele skjemaet.' },
+                type: { type: 'STRING', enum: ['check', 'text', 'multiline', 'number', 'choice', 'table', 'info', 'photo'] },
+                label: { type: 'STRING', description: 'Teksten slik den står i dokumentet. Ikke omskriv, ikke forkort.' },
+                paakrevd: { type: 'BOOLEAN', description: 'Kun hvis dokumentet selv markerer punktet som obligatorisk.' },
+                hjelp: { type: 'STRING', description: 'Veiledning/henvisning som står ved punktet, f.eks. «jf. NEK 400 pkt. 6.4».' },
+                valg: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Kun for type=choice: alternativene som faktisk står i dokumentet.' },
+                kolonner: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Kun for type=table: kolonneoverskriftene.' },
+                enhet: { type: 'STRING', description: 'Kun for type=number: A, V, MΩ, mm², °C …' },
+                vises_hvis: {
+                  type: 'OBJECT',
+                  nullable: true,
+                  properties: {
+                    felt: { type: 'STRING', description: 'id-en til et punkt LENGER OPPE i skjemaet.' },
+                    er: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Svarene som utløser visning — ordrett fra det punktets alternativer.' },
+                  },
+                  required: ['felt', 'er'],
+                },
+                usikkert: { type: 'STRING', description: 'Fyll KUN når du er usikker: én setning om hva som var uklart. La stå tom ellers.' },
+              },
+              required: ['id', 'type', 'label'],
+            },
+          },
+        },
+        required: ['tittel', 'felt'],
+      },
+    },
+  },
+  required: ['tittel', 'kategori', 'merknad', 'seksjoner'],
+}
+
+const FORM_IMPORT_INSTRUKS =
+  'Du leser et norsk elektrofaglig skjema — sluttkontroll, samsvarserklæring, risikovurdering/SJA, måleprotokoll, ' +
+  'egenkontroll eller en sjekkliste — og gjør det om til en utfyllbar mal. Kilden kan være fra SpeedyCraft, Cordel, ' +
+  'Handyman, NELFO, eller et Word-dokument firmaet har laget selv.\n\n' +
+  'GRUNNREGEL: gjengi skjemaet, ikke forbedre det. Ikke legg til punkt som ikke står der, ikke slå sammen punkt, ' +
+  'ikke skriv om ordlyden. Den som lastet opp dette skal kjenne igjen sitt eget skjema.\n\n' +
+  'SLIK KJENNER DU IGJEN TYPENE:\n' +
+  '- Avkryssing med Ja/Nei/Ikke aktuelt, eller ruter som skal hukes av → check\n' +
+  '- Egne svaralternativer skrevet ut (f.eks. «Lav / Middels / Høy») → choice med akkurat de alternativene\n' +
+  '- Rutenett med kolonneoverskrifter som fylles rad for rad (kursfortegnelse, måleprotokoll) → table\n' +
+  '- Måleverdi med benevning → number med enhet\n' +
+  '- Én linje for navn, sted, anleggsnummer → text. Flere linjer for beskrivelse → multiline\n' +
+  '- Erklæringstekst, forklaring eller instruks som ikke skal fylles ut → info\n' +
+  '- Et felt der dokumentet ber om foto/vedlegg → photo\n\n' +
+  'OVERSKRIFTER blir seksjoner, ikke punkt. Er skjemaet ikke delt opp, lag én seksjon med tom tittel.\n\n' +
+  '«HVIS JA, BESKRIV …» er en betingelse: bruk vises_hvis mot punktet over, med svaret ordrett. Betingelser kan ' +
+  'BARE peke oppover i skjemaet.\n\n' +
+  'SIGNATURFELT OG SIGNATURRUTER skal du IKKE lage punkt av — Ampex har sin egen kundesignatur med tidsstempel. ' +
+  'Nevn det i merknad i stedet. Navnefelt som «Kontrollert av» er derimot et vanlig text-punkt.\n\n' +
+  'ER DU USIKKER — uskarp skanning, tvetydig punkt, en tabell du ikke får lest kolonnene i — så FYLL UT usikkert ' +
+  'med én setning om hva som var uklart. Et menneske går gjennom alt før dette tas i bruk, og en ærlig usikkerhet ' +
+  'er langt mer verdt for dem enn en selvsikker gjetning. Ikke la punkt være ute fordi de var vanskelige.'
+
 function buildSpec(body: AiVoiceRequest): GeminiSpec | null {
   const contextJson = JSON.stringify(body.context ?? {})
 
@@ -254,29 +339,69 @@ function buildSpec(body: AiVoiceRequest): GeminiSpec | null {
           `Kontekst om nåværende skjerm: ${contextJson}`,
         responseSchema: CLASSIFY_INTENT_SCHEMA,
       }
+    case 'form_import':
+      return {
+        systemInstruction: `${FORM_IMPORT_INSTRUKS}\n\nKONTEKST FRA APPEN:\n${contextJson}`,
+        responseSchema: FORM_IMPORT_SCHEMA,
+      }
     default:
       return null
   }
 }
 
 async function callGemini(apiKey: string, spec: GeminiSpec, body: AiVoiceRequest): Promise<Record<string, unknown>> {
+  const erImport = body.mode === 'form_import'
   const parts: Record<string, unknown>[] = []
   if (body.audio) {
     parts.push({ inline_data: { mime_type: body.audio.mimeType || AUDIO_MIME_FALLBACK, data: body.audio.base64 } })
+  }
+  if (body.dokument) {
+    if (body.dokument.base64.length > IMPORT_MAX_BASE64) {
+      throw new Error('Fila er for stor. Del opp skjemaet, eller last opp én PDF med lavere oppløsning.')
+    }
+    parts.push({ inline_data: { mime_type: body.dokument.mimeType, data: body.dokument.base64 } })
   }
   if (body.text) {
     parts.push({ text: body.text })
   }
   if (parts.length === 0) {
-    throw new Error('verken lyd eller tekst i forespørselen')
+    throw new Error('verken lyd, dokument eller tekst i forespørselen')
   }
 
+  const modeller = erImport && GEMINI_IMPORT_MODEL !== GEMINI_MODEL
+    ? [GEMINI_IMPORT_MODEL, GEMINI_MODEL]
+    : [GEMINI_MODEL]
+
+  let sisteFeil: unknown = null
+  for (const modell of modeller) {
+    try {
+      return await enGeminiRunde(apiKey, spec, parts, modell, erImport ? GEMINI_IMPORT_TIMEOUT_MS : GEMINI_TIMEOUT_MS)
+    } catch (err) {
+      sisteFeil = err
+      // Bare modellnavnet skal utløse fallback. En kvotefeil eller en dårlig
+      // forespørsel blir ikke bedre av å prøves på nytt mot en annen modell —
+      // da er det feilen selv brukeren skal få se.
+      const melding = err instanceof Error ? err.message : String(err)
+      if (!/ 404:|NOT_FOUND|is not found|not supported/i.test(melding)) throw err
+      console.warn(`[ai-voice] modell ${modell} utilgjengelig — faller tilbake:`, melding)
+    }
+  }
+  throw sisteFeil
+}
+
+async function enGeminiRunde(
+  apiKey: string,
+  spec: GeminiSpec,
+  parts: Record<string, unknown>[],
+  modell: string,
+  timeoutMs: number,
+): Promise<Record<string, unknown>> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${modell}:generateContent`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },

@@ -1,6 +1,6 @@
 # Status — les denne først
 
-Sist oppdatert: 2026-08-20. Holdes oppdatert; ikke lag daterte kopier.
+Sist oppdatert: 2026-08-21. Holdes oppdatert; ikke lag daterte kopier.
 
 ## Hvor vi står
 
@@ -19,9 +19,10 @@ a20855e feat(ordre): kundesignatur og ukeliste
 746fcd3 feat(skjema): format v2 — klikklister, tabeller og betinget visning
 ```
 
-Grønt: `npm run typecheck` og ni selvtester — `verify:pricefile`,
+Grønt: `npm run typecheck` og ti selvtester — `verify:pricefile`,
 `verify:invoicing`, `verify:forms`, `verify:quoting`, `verify:timesheet`,
-`verify:varesok`, `verify:approvals`, `verify:arkiv`, `verify:id-repair`.
+`verify:varesok`, `verify:approvals`, `verify:arkiv`, `verify:id-repair`,
+`verify:form-import`.
 
 > **iOS-bygget går gjennom.** 19. august ble appen kompilert for første gang:
 > `npx expo run:ios` → *Build Succeeded, 0 errors*, installert på simulator.
@@ -629,11 +630,8 @@ den flyttes uendret til Ampex Desktop når den finnes.
    prissammenligningen og hele søkerangeringen er bygget, men har aldri møtt
    ekte data. To filer fra to grossister — sammenligningen kan ikke prøves med
    én. Se «Hva som trengs» over for hvordan vi som *leverandør* får tak i dem.
-4. **Skjemaimport: PDF/bilde → mal.** Målet er nå klart, og formatet tar imot
-   det. Veien som slår alle konkurrentene er ikke å lese SpeedyCraft-basen først,
-   men å la kunden laste opp sitt eget skjema — da virker den også mot Cordel,
-   Handyman og Word-dokumentet fra 2009, som er der de fleste småfirma faktisk
-   har skjemaene sine. `validateFirmSections()` er ferdig og er kvalitetsporten.
+4. ~~**Skjemaimport: PDF/bilde → mal.**~~ **BYGGET 21. august** — se eget
+   avsnitt under. Gjenstår å prøve mot en ekte PDF.
 5. **Planlegging: hvem, hvor, når.** `orders.scheduled_at` og `assigned_to`
    finnes, men det finnes ingen ukevisning for hvem som gjør hva. Cordel og
    Handyman har ressursplanlegging, og det er det basen faktisk kjøper systemet
@@ -661,6 +659,61 @@ den flyttes uendret til Ampex Desktop når den finnes.
     slik de står** — `scan_jobs` finnes med et annet skjema, `worker_nodes`
     overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
     så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
+
+### Skjemaimport: firmaets eget skjema inn på ett minutt
+
+Bygget 21. august. `Skjema → Importer` tar en **PDF eller et bilde** og gjør det
+om til en redigerbar mal. Klikklister, tabeller, enheter og «hvis ja, beskriv»
+blir med.
+
+**Hvorfor denne veien og ikke SpeedyCraft-basen:** et firma som skal bytte
+system har skjemaene sine fra før, og de ligger like ofte i et Word-dokument fra
+2009 som i et fagsystem. Leser vi *filen deres*, virker importen mot SpeedyCraft,
+Cordel, Handyman, NELFO **og** Word — uten én integrasjon. Å be dem taste inn
+skjemaene på nytt er å be dem la være å ta systemet i bruk.
+
+**Modellen lagrer ingenting.** Den lager et utkast; et menneske går gjennom det
+før det blir en mal. En publisert mal går rett ut til montører som bruker den som
+dokumentasjon — et punkt som ble lest feil blir et hull i papirene på en jobb.
+
+**`lib/forms/import.ts` er det som står mellom modellen og malen.** En
+språkmodell som leser et skannet skjema bommer alltid på det mekaniske: id-er som
+kolliderer, klikklister uten alternativer, betingelser som peker nedover. Å be
+mennesket rydde det opp er feil bruk av mennesket — det er deterministisk arbeid.
+Regelen er **rett alt som kan rettes uten å gjette på innhold, og si fra om hver
+eneste rettelse**. Da handler gjennomgangen om FAGET, ikke om datastruktur.
+
+Selvtesten (`npm run verify:form-import`) tester ikke at modellen svarer riktig —
+det kan ingen test love. Den tester at **uansett hva modellen svarer, kommer det
+ut en mal `validateFirmSections()` godtar**. Et bevisst ødelagt svar med ti feil
+i (duplikat-id, tom klikkliste, tabell uten kolonner, ukjent type, punkt uten
+tekst, fire slags ugyldige betingelser, tom seksjon) kommer ut lovlig — og med ti
+lesbare setninger om hva som ble gjort.
+
+**Gjennomgangen er bygget rundt tre spørsmål, i rekkefølge:**
+
+| Spørsmål | Hvor det besvares |
+|----------|-------------------|
+| Hva så den? | Kildekort: filnavn, antall deler og punkt, modellens egen merknad |
+| Hva er den usikker på? | Gul ramme **på selve punktet** — ikke i en liste på toppen |
+| Hva rettet den selv? | Sammenslått linje som åpnes hvis du vil vite |
+
+Resten er den vanlige skjemaredigeringen, uendret. Ingen ny flate å lære.
+
+**To valg verdt å vite om:**
+
+- **Den dyre modellen brukes med vilje.** Import er en sjelden operasjon med
+  varig resultat: en mal leses inn én gang og brukes på hver jobb i årevis.
+  Kostnaden er engangs, feilen er ikke. `GEMINI_IMPORT_MODEL` (standard
+  `gemini-2.5-pro`) faller tilbake til standardmodellen hvis navnet ikke finnes,
+  så et modellbytte hos Google ikke tar funksjonen med seg.
+- **Bilde er med, ikke bare PDF.** Et skjema finnes like ofte som et telefonbilde
+  av et papirark. Den veien går gjennom Filer-appen, så den krever verken ny
+  avhengighet eller nytt dev-build.
+
+**Ikke prøvd mot en ekte PDF ennå.** Oppryddingen er testet i hjel; selve
+lesekvaliteten er det bare et virkelig skjema som kan avgjøre. Det er den ene
+tingen som gjenstår, og den tar fem minutter: `Skjema → Importer → Velg fil`.
 
 ### Stemme → transaksjon: assistenten kan nå gjøre jobben, ikke bare beskrive den
 

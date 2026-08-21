@@ -1,6 +1,6 @@
 import { supabase } from '../supabase'
 
-export type AiVoiceMode = 'gap_check' | 'order_lookup' | 'project_status' | 'classify_intent' | 'live_token'
+export type AiVoiceMode = 'gap_check' | 'order_lookup' | 'project_status' | 'classify_intent' | 'live_token' | 'form_import'
 
 export type AiVoiceRequest = {
   mode: AiVoiceMode
@@ -10,6 +10,8 @@ export type AiVoiceRequest = {
   context?: unknown
   /** live_token: be om et token UTEN lås, etter at en låst økt ble avvist ved setup. */
   ulaast?: boolean
+  /** form_import: PDF eller bilde av firmaets eget skjema. */
+  dokument?: { base64: string; mimeType: string }
 }
 
 export type AiVoiceOkResult = { ok: true; [key: string]: unknown }
@@ -17,6 +19,11 @@ export type AiVoiceFailure = { ok: false; reason: 'network' | 'timeout' | 'serve
 export type AiVoiceResult = AiVoiceOkResult | AiVoiceFailure
 
 const CLIENT_TIMEOUT_MS = 25_000
+// Skjemaimport leser et helt dokument, ikke en talesetning. Må ligge OVER
+// GEMINI_IMPORT_TIMEOUT_MS i edge-funksjonen — ellers gir klienten opp mens
+// serveren fortsatt jobber, og brukeren får «tidsavbrudd» på et kall som var
+// i ferd med å lykkes.
+const CLIENT_IMPORT_TIMEOUT_MS = 125_000
 
 /**
  * Eneste sted som kaller ai-voice Edge Function. Løser ALLTID — kaster aldri forbi
@@ -47,7 +54,10 @@ export async function fetchLiveToken(opts?: { ulaast?: boolean }): Promise<
 
 export async function callAiVoice(request: AiVoiceRequest): Promise<AiVoiceResult> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS)
+  const timeout = setTimeout(
+    () => controller.abort(),
+    request.mode === 'form_import' ? CLIENT_IMPORT_TIMEOUT_MS : CLIENT_TIMEOUT_MS,
+  )
 
   try {
     const { data, error } = await supabase.functions.invoke('ai-voice', {

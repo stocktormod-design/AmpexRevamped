@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { router } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { ChevronLeft, Plus, FileCheck2, ChevronRight, MessageCircle } from 'lucide-react-native'
+import { ChevronLeft, Plus, FileCheck2, ChevronRight, MessageCircle, FileUp } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { database } from '../../../lib/db'
 import { FormTemplate } from '../../../lib/db/models/form-template'
@@ -88,17 +88,34 @@ export default function SkjemaIndex() {
             Levende dokumentasjon. Endre, diskuter og revider — alt med logg og begrunnelse.
           </Text>
 
-          <Pressable
-            haptic="medium"
-            onPress={() => router.push('/(app)/skjema/ny')}
-            style={{
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-              height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.cta, marginTop: spacing.xl,
-            }}
-          >
-            <Plus size={sizes.icon} color={colors.ctaLabel} strokeWidth={2.2} />
-            <Text style={[t.headline, { color: colors.ctaLabel }]}>Nytt skjema</Text>
-          </Pressable>
+          {/* Import står SIDE OM SIDE med «nytt», ikke gjemt i en meny. De aller
+              fleste firma har skjemaene sine fra før — å be dem taste dem inn
+              på nytt er å be dem la være å ta i bruk systemet. */}
+          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl }}>
+            <Pressable
+              haptic="medium"
+              onPress={() => router.push('/(app)/skjema/importer')}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+                height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.cta,
+              }}
+            >
+              <FileUp size={sizes.icon} color={colors.ctaLabel} strokeWidth={2.2} />
+              <Text style={[t.headline, { color: colors.ctaLabel }]}>Importer</Text>
+            </Pressable>
+            <Pressable
+              haptic="medium"
+              onPress={() => router.push('/(app)/skjema/ny')}
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+                height: sizes.ctaHeight - 6, paddingHorizontal: spacing.lg, borderRadius: radius.xl,
+                backgroundColor: colors.bg,
+              }}
+            >
+              <Plus size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+              <Text style={[t.headline, { color: colors.label }]}>Nytt</Text>
+            </Pressable>
+          </View>
         </View>
 
         {templates.length === 0 ? (
@@ -107,8 +124,8 @@ export default function SkjemaIndex() {
               <FileCheck2 size={30} color={colors.secondaryLabel} strokeWidth={1.6} />
             </View>
             <Text style={[t.headline, { marginTop: spacing.lg }]}>Ingen skjema ennå</Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>
-              Lag firmaets første sjekkliste eller kontrollskjema.
+            <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center', lineHeight: 19 }]}>
+              Importer skjemaet dere alt bruker — PDF eller bilde — eller lag firmaets første fra bunnen.
             </Text>
           </View>
         ) : (

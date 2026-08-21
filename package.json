@@ -69,6 +69,7 @@
     "verify:timesheet": "tsc tools/verify-timesheet.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/timesheet --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/timesheet/tools/verify-timesheet.js",
     "verify:varesok": "tsc tools/verify-varesok.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/varesok --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/varesok/tools/verify-varesok.js",
     "verify:approvals": "tsc tools/verify-approvals.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/approvals --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/approvals/tools/verify-approvals.js",
+    "verify:form-import": "tsc tools/verify-form-import.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/form-import --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/form-import/tools/verify-form-import.js",
     "verify:id-repair": "tsc tools/verify-id-repair.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/id-repair --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/id-repair/tools/verify-id-repair.js",
     "verify:arkiv": "tsc tools/verify-arkiv.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/arkiv --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/arkiv/tools/verify-arkiv.js"
   },

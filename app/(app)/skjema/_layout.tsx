@@ -8,6 +8,7 @@ export default function SkjemaLayout() {
       <Stack.Screen name="[id]" />
       <Stack.Screen name="ny" options={{ presentation: 'modal' }} />
       <Stack.Screen name="rediger" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="importer" options={{ presentation: 'modal' }} />
     </Stack>
   )
 }
