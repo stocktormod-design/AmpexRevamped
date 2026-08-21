@@ -2,27 +2,63 @@
 
 Sist oppdatert: 2026-08-21. Holdes oppdatert; ikke lag daterte kopier.
 
-## Hvor vi står
+## Overlevering — start her
 
-Branch **`grossist-og-pool`**, pushet til `origin`. Runden 19.–20. august ligger
-i åtte commits over `7633048`:
+Branch **`grossist-og-pool`**, pushet. **32 commits** over `7633048`
+(19.–21. august). Arbeidstreet er rent bortsett fra `modules/ampex-splat/ios/
+MeshBakeV2.swift` og `MeshScanPresenter.swift`, som er Tormods egen WIP fra før
+og skal ikke røres.
 
-```
-49e5902 docs: hvem eier kunden, og hva som faktisk er testet
-c6c73bc style(ui): titler som puster, tab-linje som ikke er standard-iOS
-012e597 chore(db): skjema v22–v29, delte hjelpere og widget-versjon
-5ac6e07 feat(produksjon): revisjonsspor, faglig godkjenning og frosset arkiv
-13a006f feat(ai): stemme → transaksjon, og tokenet låses til modellen
-e807b34 feat(lager): varekartotek med pris fra flere grossister
-a20855e feat(ordre): kundesignatur og ukeliste
-8ad6563 feat(tilbud): ordren kan endelig oppstå av noe
-746fcd3 feat(skjema): format v2 — klikklister, tabeller og betinget visning
-```
-
-Grønt: `npm run typecheck` og ti selvtester — `verify:pricefile`,
+**Grønt:** `npm run typecheck` og ti selvtester — `verify:pricefile`,
 `verify:invoicing`, `verify:forms`, `verify:quoting`, `verify:timesheet`,
 `verify:varesok`, `verify:approvals`, `verify:arkiv`, `verify:id-repair`,
-`verify:form-import`.
+`verify:form-import`. Skjema **v31**. iOS-bygget: 0 feil, 1 advarsel.
+
+### Det aller viktigste å ta med seg
+
+**AI-en er hovedgrensesnittet, ikke skjermen.** Du trykker på Ampex-merket,
+sier hva du vil, og assistenten gjør det — 38 verktøy, inkludert timeføring,
+materiell, varesøk, tilbud og skjemautfylling. Skjermen finnes for å BEKREFTE
+at det ble riktig, og for det tale ikke egner seg til.
+
+Dette er lett å glemme, og jeg glemte det flere ganger i løpet av dagen: jeg
+bygde en klokke med start/stopp-knapper (reversert, `e0d22b0`) og foreslo fem
+nye faner (avvist). Begge løser at appen må betjenes for hånd. **Når AI-en gjør
+mesteparten, trenger du færre steder og færre knapper, ikke flere.**
+
+Assistentens oppførsel er «Jarvis»: gjør det du ber om, foreslå en bedre vei
+ÉN gang hvis det finnes en, aldri omdefiner oppgaven. Se
+`lib/ai/live-session.ts` sin systeminstruks — den er produktdesign, ikke
+konfigurasjon.
+
+### Verifisert på ekte data i dag
+
+- Synk går. De åtte base62-radene som blokkerte ALT er skrevet om (skjema v30),
+  og etterslepet kom fram i én transaksjon
+- Migrasjon v26 → v31 kjørt på databasen med ekte data i
+- Revisjonssporet skriver fra appen, med kun endrede felt
+- Synk: 28 tabeller, **null** kolonneavvik klient/server
+- To servermigrasjoner anvendt: `audit_row` rad_id, og
+  `order_materials.discount_percent`
+- `ai-voice` utrullet (låst token med fallback, mannsstemme, guidet gjennomgang)
+
+### IKKE verifisert — gjør dette først
+
+1. **Logg inn og se de mørke skjermene.** Hjem, Prosjekter, Meg og ordre ble
+   lagt om til mørk grunn i dag. Jeg fant to tilfeller av usynlig tekst ved å
+   ta skjermbilde, rettet dem, men **fikk ikke sett resultatet** — simulatoren
+   logget seg ut ved reinstallasjon. Kontrast kan ikke typecheckes.
+2. **Snakk med assistenten.** Mannsstemmen, den guidede skjemagjennomgangen og
+   Jarvis-regelen er alle uprøvd i en ekte økt.
+3. **Kjør skjemaimporten mot en ekte PDF.** Oppryddingen er testet i hjel,
+   lesekvaliteten er ikke prøvd én gang.
+4. **Kjør på en ekte telefon.** Alt er sett på simulator.
+
+### Det største hullet, uendret
+
+**Ingenting forlater appen som et dokument.** Ingen PDF finnes. Sluttkontrollen
+ligger inne i appen, tilbudet «markeres som sendt», fakturagrunnlaget deles som
+ren tekst. I dette faget ER dokumentet leveransen. Se eget avsnitt lenger nede.
 
 > **iOS-bygget går gjennom.** 19. august ble appen kompilert for første gang:
 > `npx expo run:ios` → *Build Succeeded, 0 errors*, installert på simulator.
@@ -38,6 +74,42 @@ Grønt: `npm run typecheck` og ti selvtester — `verify:pricefile`,
 > (*Build Succeeded, 0 errors*), migrert v26 → v30, og **pushen kom fram** — se
 > «Synken går» lenger nede. Det som fortsatt IKKE er sett: en ekte telefon og
 > Android.
+
+### Hva jeg ville tatt videre, i rekkefølge
+
+1. **PDF ut av appen.** Låser opp kundeleveransen, tilbudet og arkivet på én
+   gang, og har ingen ytre blokkering. Grunnlaget er der: skjemamotoren kjenner
+   alle felttyper, signaturen har strøk og tidsstempel, arkivpakken bærer
+   spørsmål OG svar. Det som mangler er gjengivelsen — HTML → PDF → del.
+2. **Påminnelser som faktisk varsler.** Tabellen finnes, assistenten oppretter
+   dem, ingenting varsler. Lokale varsler krever ikke push-entitlementen som er
+   strippet.
+3. **Foto på ordre og i skjema.** `photo` finnes som felttype, R2-opplasting
+   finnes to steder. Bare fangsten mangler — krever ny avhengighet og dev-build.
+4. **Lager over på verktøyflaten.** Hjem, Prosjekter, Meg og ordre er mørke;
+   Lager står igjen kremet og vil se halvferdig ut. `ToolScreen`/`ToolCard` står
+   klare — mekanisk arbeid, ingen nye avgjørelser. Samme med `cart-bar`, som er
+   lys og svever rett over den brune tab-baren.
+5. **Instruksjoner/notater på ordren.** Både Jobber og SpeedyCraft har det.
+   Montøren kommer fram og trenger å vite hva han skal gjøre; vi har
+   dokumentasjon å FYLLE UT, men ingenting som forteller ham oppdraget.
+
+Ikke gjør uten at Tormod ber om det: flere faner, kalender, bilmodus. Alle tre
+er foreslått og avvist — de løser at appen betjenes for hånd.
+
+### Arbeidsmåte som fungerte
+
+- **Ta skjermbilde etter enhver fargeendring.** `xcrun simctl io booted
+  screenshot`. Typecheck fanger ikke usynlig tekst; det gjorde skjermbildet, to
+  ganger.
+- **Bulk-erstatning av farger er en dårlig idé.** Typestilene bærer sin egen
+  farge, så et kort som bytter bakgrunn må overstyre HVER tekst — ikke bare de
+  som tilfeldigvis hadde en override fra før.
+- **Expo-pakker installeres med `npx expo install`, aldri `npm install`.** Et
+  SDK 57-bibliotek i et SDK 56-prosjekt bygget med 0 feil og krasjet ved
+  oppstart med «Symbol not found».
+- **Ingenting kosmetisk får blokkere oppstart.** Fonten holdt hele treet tilbake
+  og hvitskjermet appen uten én feilmelding noe sted.
 
 ### Uncommittet som IKKE er mitt
 
