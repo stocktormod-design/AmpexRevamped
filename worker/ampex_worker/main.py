@@ -17,7 +17,7 @@ from pathlib import Path
 
 from .api import Api, NodeConfig
 from .bake import BakeConfig, BakeResult, bake
-from .gpu import gpu_name
+from .gpu import compute_capability, gpu_name, vram_mb
 from .konfig import DEFAULT_ANON_KEY, DEFAULT_SUPABASE_URL
 
 VERSION = "0.1.0"
@@ -105,10 +105,22 @@ def cmd_run(_args) -> int:
 
 
 def cmd_enroll(args) -> int:
+    # Leses her og ikke i api.py: innmeldingen skal kunne testes uten en GPU,
+    # og et kall som spør driveren selv er et kall som ikke lar seg teste.
+    vram = vram_mb()
+    compute = compute_capability()
+
     token = Api.enroll(args.url, args.anon, args.code,
-                       socket.gethostname(), gpu_name(), VERSION)
+                       socket.gethostname(), gpu_name(), VERSION,
+                       vram_mb=vram, compute_capability=compute)
     NodeConfig(args.url, args.anon, token).save()
-    log.info("innmeldt som %s — token lagret", socket.gethostname())
+
+    # Skrives ut fordi det er DENNE avlesningen kontoret kommer til å vise, og
+    # den som setter opp maskinen skal kunne se med en gang om driveren svarte.
+    log.info("innmeldt som %s — %s, %s, compute %s — token lagret",
+             socket.gethostname(), gpu_name(),
+             f"{vram} MiB" if vram else "VRAM ukjent",
+             compute or "ukjent")
     return 0
 
 

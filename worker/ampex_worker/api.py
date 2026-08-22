@@ -90,7 +90,20 @@ class Api:
     # ── innmelding ──────────────────────────────────────────────────────────
     @staticmethod
     def enroll(supabase_url: str, anon_key: str, code: str,
-               hostname: str, gpu_name: str, version: str) -> str:
+               hostname: str, gpu_name: str, version: str,
+               vram_mb: int | None = None,
+               compute_capability: str | None = None) -> str:
+        """Meld inn maskinen og få node-tokenet tilbake.
+
+        Kjøres FØR noden har et token — derfor anon-nøkkelen. Hemmeligheten er
+        innmeldingskoden, som er engangs og utløper. Se `enroll_worker_node` i
+        migrasjonen 20260822140000.
+
+        VRAM og compute capability er valgfrie hele veien ned, og skal være
+        det: klarer ikke driveren å svare, skal maskinen fortsatt komme seg inn
+        i poolen. Et tomt felt i nodelista er et lite problem. En PC som nekter
+        å melde seg inn fordi nvidia-smi ikke fantes, er et stort.
+        """
         with httpx.Client(base_url=supabase_url.rstrip("/"), timeout=60.0,
                           headers={"apikey": anon_key,
                                    "Authorization": f"Bearer {anon_key}",
@@ -100,6 +113,8 @@ class Api:
                 "p_hostname": hostname,
                 "p_gpu_name": gpu_name,
                 "p_worker_version": version,
+                "p_vram_mb": vram_mb,
+                "p_compute_capability": compute_capability,
             })
             r.raise_for_status()
             return r.json()

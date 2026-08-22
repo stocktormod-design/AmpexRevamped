@@ -33,6 +33,37 @@ def _kjor(args: list[str]) -> str | None:
     return None
 
 
+def _nvidia(felt: str) -> str | None:
+    """Ett felt fra nvidia-smi. Samme kall, samme timeout, ett spørsmål."""
+    return _kjor(["nvidia-smi", f"--query-gpu={felt}", "--format=csv,noheader"])
+
+
+def vram_mb() -> int | None:
+    """Minne på kortet i MiB, eller None når driveren ikke svarer.
+
+    Ikke pynt i nodelista: dette er tallet som avgjør om en bake i det hele
+    tatt får plass på kortet, og det første man ser etter når den samme jobben
+    går på én maskin og feiler på en annen.
+
+    nvidia-smi svarer «24564 MiB». Vi vil ha tallet.
+    """
+    raa = _nvidia("memory.total")
+    if not raa:
+        return None
+    tall = "".join(c for c in raa if c.isdigit())
+    return int(tall) if tall else None
+
+
+def compute_capability() -> str | None:
+    """CUDA compute capability, f.eks. «8.9». None når driveren ikke svarer.
+
+    Eldre nvidia-smi kjenner ikke feltet og svarer med en feil i stedet for en
+    verdi. Da er None riktig: kolonna er til for feilsøking, og en gjetning der
+    er verre enn et tomt felt.
+    """
+    return _nvidia("compute_cap")
+
+
 def gpu_name() -> str:
     # nvidia-smi først: den svarer med det driveren faktisk kjører, og det er
     # den avlesningen som betyr noe når vi skal feilsøke en bake.
@@ -51,4 +82,6 @@ def gpu_name() -> str:
 
 
 if __name__ == "__main__":
-    print(gpu_name())
+    print(f"navn:   {gpu_name()}")
+    print(f"vram:   {vram_mb()} MiB")
+    print(f"compute: {compute_capability()}")

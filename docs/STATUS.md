@@ -192,6 +192,70 @@ WIP fra før. Urørt.
 
 ---
 
+## Runden 22. august (4): poolen — én nodetabell
+
+### Kontoret leste en tabell ingenting skriver til
+
+Målt på basen, ikke antatt:
+
+| Tabell | Rader | Funksjoner som rører den |
+|---|---|---|
+| `scan_workers` | 0 | 0 |
+| `worker_nodes` | 0 | 7 |
+
+De sju er hele kjeden: `enroll_worker_node`, `worker_node_for_token`,
+`claim_scan_job`, `heartbeat_scan_job`, `complete_scan_job`, `fail_scan_job`,
+`scan_job_queue_position`. Alt en PC gjør fra den melder seg inn til den
+leverer en ferdig bake.
+
+Men `kontor-lager.ts` leste `scan_workers` til Firma-flata, mens
+`skann-lager.ts` leste `worker_nodes` til Skann-flata. Samme app, samme begrep,
+to tabeller.
+
+**En PC som meldte seg inn ville aldri dukket opp under «Bake-noder».** Ingen
+feilmelding, ingen spørring som klaget — bare en liste som så feil vei. Det er
+ikke oppdaget før nå fordi ingen har meldt inn en maskin ennå.
+
+`worker_nodes` vant, og det var ikke et myntkast: den har `token_hash` (nodens
+autentisering) og `is_public` (Ampex-poolen). Uten de to finnes verken
+innlogging for en worker eller et skille mellom firmaets egne maskiner og
+overflow. `scan_workers` er droppet — tom tabell, null lesere, og å la den stå
+ville vært å la neste person velge feil av to like tabeller en gang til.
+
+### Statusene var verdier tabellen ikke kan inneholde
+
+Firma-flata tegnet `online` / `paused` / annet. `worker_nodes.status` har en
+check-constraint på `idle | busy | offline`. Alt havnet altså på «Nede», også
+en maskin som sto midt i en bake. Nå: **Ledig**, **Baker**, **Nede**, og
+**Trukket** når `revoked_at` er satt. Ny kolonne for `is_public` — det er den
+ene innstillingen på en node som betyr noe utenfor firmaets egne vegger.
+
+### VRAM fylles nå ut
+
+Kortet viste en VRAM-kolonne som ingen skrev til. `worker_nodes` har fått
+`vram_mb` og `compute_capability`, `enroll_worker_node` tar imot dem, og
+worker-en leser dem av nvidia-smi ved innmelding — samme kall den allerede
+gjorde for navnet, ett felt til.
+
+Begge er valgfrie hele veien ned. Svarer ikke driveren, skal maskinen fortsatt
+komme seg inn i poolen: et tomt felt i nodelista er et lite problem, en PC som
+nekter å melde seg inn fordi `nvidia-smi` ikke fantes er et stort. De nye
+parameterne har `default null`, så en eldre exe ute i et verksted melder seg
+inn akkurat som før.
+
+Verifisert på Tormods egen maskin: `python -m ampex_worker.gpu` gir
+`NVIDIA GeForce RTX 5070 Ti`, `16303 MiB`, `compute 12.0`.
+
+### Det som fortsatt står
+
+**`scan-blobs` er ikke deployet.** Den deler ut presignerte R2-URL-er og er
+hele leddet telefon → kø → worker → R2. Den trenger `R2_BUCKET` som secret;
+`r2-sign` fra den gamle appen har bare de tre nøklene og hardkoder bucketen.
+
+Ingen PC er meldt inn ennå, så kjeden er aldri kjørt ende-til-ende.
+
+---
+
 ## Runden 22. august (3): 2FA på invitasjoner, og firmabytte
 
 ### Koden kreves hver gang, og serveren er den som teller
@@ -1332,11 +1396,10 @@ den flyttes uendret til Ampex Desktop når den finnes.
     `drawing_markup`, `drawing_loops`, `rooms.shape` og tre skjermer under
     `prosjekter/`. Mindre urørt enn resten, og derfor riktig å ta etter
     ordresystemet.
-12. **Poolen må avklares.** `20260815120000_gpu_bake_worker_pool.sql` og
-    `20260817200000_ampex_public_pool.sql` er **aldri kjørt og kan ikke kjøres
-    slik de står** — `scan_jobs` finnes med et annet skjema, `worker_nodes`
-    overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
-    så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
+12. **Poolen — AVKLART 22. august.** Punktet sa at pool-migrasjonene aldri var
+    kjørt. Det stemte ikke: begge tabellene har stått i basen siden 21. august.
+    Det som stemte var overlappet, og det er nå borte. Se avsnittet
+    «Poolen: én nodetabell» lenger nede.
 
 ### Timeføring: si det, eller skriv det
 
