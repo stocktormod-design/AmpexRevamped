@@ -330,8 +330,25 @@ tjeneste ved siden av Supabase og R2, men uten løpende kostnad, så
 utgiftsklausulen står — se «Faste beslutninger».
 
 DNS-en for `ampex.no` ligger hos **Vercel** (`ns1/ns2.vercel-dns.com`), og
-domenet har ingen MX-post fra før. Resend-postene legges altså inn under
-Vercel → Domains → ampex.no → DNS, uten noe å kollidere med.
+domenet hadde ingen MX-post fra før. Postene er lagt inn 22. august under
+Vercel → Domains → ampex.no → DNS, med kommentar på hver:
+
+| Navn | Type | Verdi | Prio |
+|---|---|---|---|
+| `resend._domainkey` | TXT | `p=MIGfMA0GCSqGSIb3…WV2ThuQIDAQAB` (216 tegn) | |
+| `send` | MX | `feedback-smtp.eu-west-1.amazonses.com` | 10 |
+| `send` | TXT | `v=spf1 include:amazonses.com ~all` | |
+| `_dmarc` | TXT | `v=DMARC1; p=none;` | |
+
+DMARC står i overvåkingsmodus: den rapporterer, men avviser ingenting. Den skal
+ikke strammes til `p=quarantine` før SPF og DKIM har stått grønt en stund.
+
+**Click tracking er AV, og skal være det.** Resend kan skrive om hver lenke i
+e-posten til en sporings-URL. På en invitasjons- eller passordlenke er det
+direkte skadelig: sikkerhetsskannere hos Gmail og Outlook forhåndsåpner lenker,
+følger redirecten helt inn til Supabase, og innløser engangskoden. Brukeren får
+`otp_expired` — samme feil som 22. august, men med en årsak som er mye
+vanskeligere å finne. Og det er sporing av persondata vi ikke trenger.
 
 SMTP-verdiene i Supabase blir:
 
