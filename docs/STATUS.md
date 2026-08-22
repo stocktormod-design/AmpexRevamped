@@ -383,6 +383,37 @@ Malene bor to steder nå, og det er verdt å vite: `supabase/templates/` +
 hostede prosjektet har sin egen kopi i dashbordet. Endrer du en mal i repoet,
 er den ikke i drift før den også er limt inn der.
 
+### Lenkene peker på ampex.no, ikke på supabase.co
+
+`{{ .ConfirmationURL }}` peker på `<prosjekt-id>.supabase.co/auth/v1/verify`.
+Teknisk riktig, og helt feil for den som får den: en elektriker som får en lenke
+til et domene han aldri har hørt om, med en bokstavsuppe foran, skal IKKE klikke
+på den.
+
+Malene sender derfor `{{ .TokenHash }}` til vår egen adresse i stedet, og appen
+løser koden inn med `verifyOtp` — se `lesLenke` i `desktop/src/supabase.ts` og
+effekten i `auth.tsx`. Hele lenka står på ampex.no:
+
+```
+https://www.ampex.no/?token_hash=<64 tegn>&type=recovery
+```
+
+Supabase selger et eget auth-domene som løser det samme for ti dollar i
+måneden. Dette koster ingenting, og gjør i tillegg noe det betalte ikke gjør:
+**det tåler e-postskannere bedre.** Gmail og Outlook forhåndsåpner lenker for å
+sjekke dem. Peker lenka rett på `/auth/v1/verify`, blir engangskoden innløst av
+skanneren, og brukeren får «utløpt» når han selv klikker. Peker den på oss, må
+det kjøres JavaScript før koden brukes — og det gjør de færreste skannerne.
+
+Prisen er at innløsningen er et nettverkskall, og at en død lenke derfor kan
+komme fram ETTER første render. Derfor bor `lenkefeil` i auth-konteksten og ikke
+som en modulkonstant.
+
+Verifisert 22. august: `?token_hash=<tull>&type=recovery` på ampex.no gir
+«Lenka er utløpt eller allerede brukt. Be om en ny nedenfor.», adressen ryddes,
+og innloggingsskjemaet står under. Suksessgrenen er ikke prøvd — den ville
+brukt opp en ekte engangskode.
+
 **Ikke prøvd:** selve Ampex-flata (opprette et firma) — den krever at Tormod
 har kommet inn.
 
