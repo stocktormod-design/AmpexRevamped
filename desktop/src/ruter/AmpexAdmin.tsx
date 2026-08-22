@@ -159,11 +159,19 @@ export function AmpexAdmin() {
                 </div>
                 {/* Eieren opprettes i samme slengen. Et firma uten eier er et
                     firma ingen kommer inn i, og da er det ingenting verdt å
-                    lagre halvveis. */}
+                    lagre halvveis.
+                    
+                    Rollen er ALLTID `owner`, og det er ikke en forenkling.
+                    `kan_skrive_ik()` slipper inn owner, admin og installatør,
+                    så en installatør ville fått internkontrollen — men han kan
+                    ikke invitere noen (`bruker.inviter` er kun eier og admin).
+                    Et firma som starter med en installatør alene er et firma
+                    som aldri kan vokse uten at vi går inn i basen igjen. */}
                 <div className="inviter-felt">
                   <Felt
                     etikett="Eierens navn"
                     firkant
+                    hjelp="I et enmannsforetak er dette installatøren selv."
                     value={eierNavn}
                     onChange={e => setEierNavn(e.target.value)}
                   />
