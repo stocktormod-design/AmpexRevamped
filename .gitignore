@@ -64,3 +64,5 @@ desktop/src-tauri/gen/
 worker/dist/
 worker/build/
 worker/build.log
+
+.vercel
