@@ -291,10 +291,32 @@ i `ampex_admins`. Hele kjeden ga utslag: auth-bruker opprettet med
 `invited_at`, profilen fikk rolle og firma via service_role, og
 `bruker.invitert` står i revisjonssporet med Test Montør som aktør.
 
+**E-posten kom fram, og lenka virket — men landet feil sted.** Site URL på det
+hostede prosjektet sto fortsatt som Supabase' standard, `localhost:3000`, og
+`https://www.ampex.no` sto ikke i Redirect URLs. Da avviser GoTrue `redirectTo`
+og bytter den stille ut med Site URL. Engangskoden ble innløst — `email_confirmed_at`
+og `last_sign_in_at` ble satt 14:32 — men tokenene havnet i URL-en til
+`localhost:3000`, der ingenting lytter. Andre klikk ga `otp_expired`, fordi koden
+allerede var brukt opp.
+
+**En `redirectTo` som ikke står i lista blir ikke en feil. Den blir stille byttet
+ut.** Det er verre, fordi det ser ut som koden er gal.
+
+Verdiene er rettet i `supabase/config.toml`, men den fila leser ikke det hostede
+prosjektet — de MÅ settes i dashbordet under Authentication → URL Configuration:
+Site URL `https://www.ampex.no`, og `https://www.ampex.no/**` i Redirect URLs.
+
+Kontoen er aktiv, men uten brukbart passord. Når URL-ene er rettet: «Glemt
+passord?» på ampex.no med `stocktormod@gmail.com`. Invitasjonen kan ikke sendes
+på nytt — den er brukt opp.
+
+**E-postmalene i `supabase/templates/` er heller ikke i bruk på hosted.**
+Emnefeltet var «You've been invited», altså Supabase' engelske standard.
+`config.toml` peker på dem, men bare for den lokale stacken. De må limes inn
+under Authentication → Emails, eller pushes med `supabase config push`.
+
 **Ikke prøvd:** selve Ampex-flata (opprette et firma) — den krever at Tormod
-har tatt imot invitasjonen og logget inn. Om invitasjons-e-posten faktisk kom
-fram er heller ikke bekreftet; kommer den ikke, virker «Glemt passord» på
-ampex.no på den samme adressen nå som kontoen finnes.
+har kommet inn.
 
 ### Revokene i sikkerhetsmigrasjonen bet aldri
 
