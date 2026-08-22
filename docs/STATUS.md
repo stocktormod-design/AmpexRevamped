@@ -302,18 +302,32 @@ allerede var brukt opp.
 **En `redirectTo` som ikke står i lista blir ikke en feil. Den blir stille byttet
 ut.** Det er verre, fordi det ser ut som koden er gal.
 
-Verdiene er rettet i `supabase/config.toml`, men den fila leser ikke det hostede
-prosjektet — de MÅ settes i dashbordet under Authentication → URL Configuration:
-Site URL `https://www.ampex.no`, og `https://www.ampex.no/**` i Redirect URLs.
+Rettet i dashbordet 22. august: Site URL er `https://www.ampex.no`, og
+Redirect URLs har `https://www.ampex.no/**`, `https://ampex.no/**` og
+`http://localhost:5174/**` (kontoret i utvikling). `supabase/config.toml` er
+satt til det samme, men den fila leser ikke det hostede prosjektet — den
+gjelder den lokale stacken og `supabase config push`.
 
 Kontoen er aktiv, men uten brukbart passord. Når URL-ene er rettet: «Glemt
 passord?» på ampex.no med `stocktormod@gmail.com`. Invitasjonen kan ikke sendes
 på nytt — den er brukt opp.
 
-**E-postmalene i `supabase/templates/` er heller ikke i bruk på hosted.**
-Emnefeltet var «You've been invited», altså Supabase' engelske standard.
-`config.toml` peker på dem, men bare for den lokale stacken. De må limes inn
-under Authentication → Emails, eller pushes med `supabase config push`.
+### E-post er den neste ekte blokkeringen
+
+**Malene i `supabase/templates/` kan ikke tas i bruk.** Dashbordet sier det rett
+ut: «Set up custom SMTP to edit templates». Uten egen SMTP sender Supabase sine
+egne, engelske standardmaler, og emnefeltet blir «You've been invited».
+
+Verre: **grensa er 2 e-poster i timen for HELE prosjektet.** Ikke per bruker,
+per prosjekt. Den innebygde tjenesten er Supabase' egen testtjeneste, og den
+skal ikke brukes i produksjon. Med ekte kunder som inviterer ansatte betyr det
+at invitasjon nummer tre i samme time bare forsvinner — funksjonen svarer
+«sendt», og e-posten kommer aldri.
+
+Begge løses av det samme: egen SMTP. Resend har gratisnivå (3000/måned, 100/dag)
+og krever verifisering av `ampex.no` med DNS-poster. Det er en tjeneste til, og
+et valg noen må ta bevisst — invitasjonsflyten er ikke produksjonsklar før det
+er på plass.
 
 **Ikke prøvd:** selve Ampex-flata (opprette et firma) — den krever at Tormod
 har kommet inn.
