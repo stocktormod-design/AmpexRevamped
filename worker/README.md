@@ -119,6 +119,38 @@ Hele poenget med å flytte jobben hit. `BakeConfig` mot telefonens verdier:
 | Pose-refine | 30 iter, ikke-rigid | 8 iter, rigid |
 | Termikk | ingen brems | `thermalState` styrer alt |
 
+## Sjekk maskinen først
+
+```powershell
+.\.venv\Scripts\python.exe tools\sjekk_gpu.py
+```
+
+Svarer på «hvorfor er ikke GPU-en i bruk», som blir det vanligste spørsmålet når
+exe-en står på en PC i et verksted. Kjeden har fire ledd som kan svikte hver for
+seg, og symptomene ligner på hverandre.
+
+Målt på utviklingsmaskinen 22. august 2026 (RTX 5070 Ti, driver 610.88):
+
+| Ledd | Status |
+|---|---|
+| NVIDIA-driver | ok |
+| PyTorch 2.11 + cu128, ser sm_120 | ok |
+| CUDA Toolkit (nvcc) | **mangler** |
+| MSVC Build Tools (cl.exe) | **mangler** |
+| gsplat 1.5.3 med kompilerte kjerner | **nei** |
+| Open3D 0.19 med CUDA | nei (CPU-only, som ventet fra pip) |
+
+**Mesh-bake virker. Splat-trening gjør det ikke.**
+
+Torch har sin egen CUDA-runtime innebygd, så `torch.cuda.is_available()` er True
+uten at det finnes en `nvcc` på maskinen — og det er nvcc gsplat trenger for å
+kompilere kjernene sine ved første bruk. Den svelger feilen ved import (én linje
+på stderr) og krasjer først midt i en bake, med en `AttributeError` som ikke
+nevner verktøykjeden med et ord. Det er den feilen `sjekk_gpu.py` finnes for.
+
+CUDA Toolkit og MSVC Build Tools er de samme to som skal til for å bygge Open3D
+med CUDA. Én installasjon, to gevinster.
+
 ## Kjent begrensning: Open3D er CPU-only
 
 Pip-hjulet for Windows har ingen CUDA (`o3d.core.cuda.device_count() == 0`), så

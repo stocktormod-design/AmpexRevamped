@@ -1987,3 +1987,103 @@ Kontorappen bygger rent (1,2 MB, testbrukeren tree-shakes bort i produksjon).
 `vercel.json` og `.vercelignore` er på plass. **Blokkert på innlogging** —
 `npx vercel login` må kjøres av deg. Domenet `ampex.no` må deretter legges til i
 prosjektet og DNS pekes dit.
+
+---
+
+# 22. august — skannekjeden, kontorflatene og en toolchain-blokker
+
+## Opplastingslivsløpet
+
+`scan_jobs` fikk et livsløp som starter FØR filene lastes opp:
+
+```
+venter (venter_paa: wifi)  →  queued  →  claimed  →  running  →  done
+   ↑ jobben finnes alt her                                        ↓
+   telefonen holder filene                        input_slettes_etter = +72t
+```
+
+Grunnen er ikke teknisk. Montøren skanner i en kjeller uten dekning og laster
+opp når han er tilbake på wifi; opprettes jobben først ved opplasting, er
+skannet usynlig for kontoret i mellomtiden. `venter_paa` sier hvorfor det
+venter, så kontoret kan se «tre skann ligger på telefonen til Ola».
+
+Bytetak i basen: 1 GiB per jobb, 100 GiB rullerende 30 dager per firma.
+Rullerende, ikke kalendermåned — en kvote som nullstilles den 1. gir en topp
+den 1. og en tom pool den 31. Elleve påstander kjørt mot ekte base.
+
+`scan_job_lokalt_slettet` lar telefonen bekrefte at den har slettet sine egne
+kopier, og `input_slettes_etter` rydder R2 72 timer etter en vellykket bake.
+Rammene er inndata, ikke leveranse.
+
+## scan-blobs
+
+Den ene delen som manglet i hele kjeden. Fire grener med fire ulike
+autentiseringer: `upload` og `finish` (telefon, sesjon), `download` og `output`
+(worker, node-token).
+
+**`finish` teller selv.** `scan_job_opplastet` tar imot et byte-tall, og kom det
+tallet fra klienten var kvoten en høflig forespørsel — en modifisert app oppgir
+1 MB og laster opp 900. Funksjonen lister objektene i R2 og sender R2 sin egen
+sum inn i basen.
+
+`output`-grenen manglet i første utkast: `api.py` kalte `upload` med en nøkkel,
+og den veien krever brukersesjon. Worker-en har node-token. Resultatet navngis
+dessuten av serveren, så et kompromittert node-token ikke kan skrive utenfor
+sin egen jobb.
+
+**Ikke deployet.** R2-nøklene ligger i Vercel, ikke som Supabase-secrets, og
+verken supabase-CLI eller dashbordet er innlogget her.
+
+## Kontorflatene
+
+**Skann** under Arbeid: fire bolker, med «på telefonene» øverst fordi det er den
+eneste kontoret kan gjøre noe med. «Ryddet»-kolonnen viser om rammene faktisk er
+borte fra telefonen — står den tom, ligger LiDAR av kundens bolig i to
+eksemplarer.
+
+**Poolstyring** i Firma: innmeldingskode (verifisert mot ekte base) og
+Ampex-bryteren.
+
+To nye rettigheter i den delte matrisen. `pool.styr` er kun eier og
+administrator — ikke installatør. Å slå på Ampex-poolen er å tillate at LiDAR av
+kundens bolig pakkes ut på en maskin firmaet ikke eier; det binder firmaet
+overfor kundene sine og hører ikke hos den som setter opp PC-en.
+
+**Innloggingen** sto på `className="panel …"`, og `.panel` finnes ikke i
+`styles.css`. Kortet hadde verken bakgrunn, kant eller luft — krem på krem, med
+sidemenyens avatarprikk lånt som logo. Nå krom som grunnflate og papir som kort.
+
+## Splat: blokkert på verktøykjede, ikke på kode
+
+Testet direkte på maskinen. `gsplat` 1.5.3 installerer fint (rent Python-hjul),
+men **CUDA-kjernene JIT-kompileres ved første bruk**, og det krever nvcc.
+
+| Ledd | Status |
+|---|---|
+| Driver 610.88, RTX 5070 Ti | ok |
+| PyTorch 2.11 + cu128, ser sm_120 | ok |
+| CUDA Toolkit | **ikke installert** |
+| MSVC Build Tools | **ikke installert** |
+| gsplat-kjerner | **ikke kompilert** |
+
+Feilen er stygg å finne selv: gsplat skriver «No CUDA toolkit found» én gang på
+stderr ved import, fortsetter, og krasjer først midt i en bake med
+`AttributeError: 'NoneType' object has no attribute 'CameraModelType'` — som
+ikke nevner verktøykjeden med et ord.
+
+`worker/tools/sjekk_gpu.py` diagnostiserer hele kjeden og sier hva som mangler.
+Den tvinger UTF-8 på stdout, fordi den første versjonen krasjet med
+`UnicodeEncodeError` på en cp1252-konsoll — nøyaktig feilmodusen den finnes for
+å unngå på en verkstedsPC.
+
+Det som skal til er CUDA Toolkit + MSVC Build Tools. Samme to som README-en
+allerede oppga for å bygge Open3D med CUDA.
+
+## Blokkere, alle på deg
+
+| Blokker | Hva den stopper |
+|---|---|
+| `supabase login` / dashbord | R2-secrets → `scan-blobs`, og lekkasjesjekk av passord |
+| CUDA Toolkit + MSVC Build Tools | all splat-trening |
+| `MeshScanPresenter.swift` (din WIP) | wifi-gating, sletting etter opplasting, dybdekomprimering |
+| Kodesignering | at exe-en kan kjøre forbi Smart App Control |
