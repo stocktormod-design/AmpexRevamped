@@ -337,6 +337,20 @@ input.felt-inn { height: 36px; }
 .felt-firkant .felt-inn { border-radius: var(--r-input); }
 .felt-firkant input.felt-inn { height: 36px; }
 
+/* Felt med et verktoey inni: passordets oeye. Knappen ligger OVER inputen, og
+   inputen faar plass til den i stedet for aa la teksten loepe under. */
+.felt-med-knapp { position: relative; display: block; }
+.felt-med-knapp .felt-inn { padding-right: 40px; }
+.felt-vis {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  display: grid; place-items: center; width: 30px; height: 30px;
+  border-radius: var(--r-input); color: var(--blekk-3);
+  transition: color 100ms ease, background 100ms ease;
+}
+.felt-vis:hover { color: var(--blekk); background: var(--dis); }
+/* Caps Lock er en advarsel, ikke en hjelpetekst. Den skal ses. */
+.felt-caps { color: var(--gul); font-weight: 500; }
+
 textarea.skrivefelt {
   height: 300px; padding: 12px; border-radius: var(--r-input);
   resize: vertical; line-height: 1.6; font-family: inherit;
@@ -440,9 +454,16 @@ textarea.skrivefelt-lav { height: 110px; }
   place-items: center;
   min-height: 100%;
   padding: 32px;
-  background: var(--krom);
+  /* Kobberet ligger som et svakt lys bak kortet i stedet for aa staa i en
+     kant. Det er samme fargen som ellers, brukt til aa gi flaten en retning:
+     oeyet finner midten uten at noe er tegnet opp. */
+  background:
+    radial-gradient(88% 62% at 50% 0%, var(--krom-kobber-flate), transparent 68%),
+    var(--krom);
 }
-.logginn-boks { width: 372px; }
+/* Vokser ikke, men krymper: kontorskjermer er store, og en delt nettleser i
+   halv bredde skal fortsatt vise hele kortet. */
+.logginn-boks { width: 372px; max-width: 100%; }
 .logginn-merke {
   display: flex;
   flex-direction: column;
@@ -467,7 +488,31 @@ textarea.skrivefelt-lav { height: 110px; }
   /* Loefter papiret fra kromet. Uten skyggen ser kortet klistret ut. */
   box-shadow: rgba(0, 0, 0, 0.32) 0 20px 44px -14px;
 }
-.logginn-kort .knapp-primar { width: 100%; justify-content: center; }
+/* Knappene fyller kortet. Et halvbredt «Logg inn» ville vaert det eneste
+   elementet paa skjermen som ikke fulgte kolonna. */
+.logginn-kort .knapp { width: 100%; justify-content: center; }
+
+/* Overskrift inne i kortet — «Glemt passord» og «Velg et nytt passord».
+   Innlogginga selv har ingen: kortet ER innlogginga, og en tittel som gjentar
+   merket over den er stoey. */
+.logginn-tittel { display: flex; flex-direction: column; gap: 4px; }
+
+/* «Glemt passord?» hoerer til passordfeltet, ikke til knappen. Den negative
+   marginen tar igjen luften stabelen legger inn, saa lenka blir liggende
+   inntil feltet den handler om. */
+.logginn-rad { display: flex; justify-content: flex-end; margin-top: -10px; }
+.logginn-lenke {
+  font-size: 13px; font-weight: 500; color: var(--kobber-dyp);
+  border-radius: var(--r-input);
+}
+.logginn-lenke:hover { text-decoration: underline; }
+
+/* Beskjedfeltet staar alltid i DOM-en — det er et `aria-live`-omraade, og et
+   omraade som settes inn samtidig med teksten sin blir ikke lest opp.
+   Tomt tas det derfor UT AV FLYTEN i stedet for aa skjules: det slutter aa
+   spise 16 px av stabelen, men blir vaerende i tilgjengelighetstreet. */
+.logginn-meldinger { display: flex; flex-direction: column; gap: 12px; }
+.logginn-meldinger:empty { position: absolute; }
 .logginn-bunn {
   margin: 20px 0 0;
   font-size: 12px;
