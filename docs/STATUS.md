@@ -25,6 +25,58 @@ varekartotek. Eget avsnitt lenger ned, og `desktop/README.md`.
 og ordrekalenderen — er fortsatt **ikke sett på en skjerm**. Det er det første
 som bør gjøres.
 
+### Faste beslutninger
+
+Dette er avgjørelser som gjelder til noen bevisst omgjør dem, i motsetning til
+loggen lenger ned som forteller hva som skjedde når. Flyttet hit fra
+`docs/SESSION_HANDOFF.md`, som ble slettet: to overleveringsdokumenter betyr at
+det ene blir gammelt uten at noen merker det, og det var akkurat det som hadde
+skjedd.
+
+**Stack.** Expo SDK 56 + Expo Router + TypeScript, NativeWind v4. Supabase
+(Postgres, Auth, RLS per `company_id`). Cloudflare R2 for filer; tegninger er
+R2-only. **WatermelonDB** som lokal SQLite — valgt over PowerSync 3. juli 2026,
+fordi den ikke koster noe løpende utover Supabase og R2. Ingen Capacitor; Expo
+Modules.
+
+**Arkitektur.**
+
+- Offline-først: mobilskjermer leser og skriver **kun** WatermelonDB. Synk er usynlig, og trigges ved innlogging, forgrunn og nettverksretur — ikke på timer.
+- Kontorappen skriver derimot rett til Supabase. Det er et bevisst brudd på regelen over, ikke en forglemmelse: en kontor-PC er ikke offline.
+- Soft delete overalt (`deleted_at`). Aldri hard `DELETE` på data.
+- Dokumenter er uforanderlige — ny versjon, aldri overskriving.
+- RLS per `company_id` er isolasjonen. Alt annet er høflighet.
+- Skann-revisjoner er ikke-destruktive (`lib/scan-revisions.ts`): en server-bake blir en ny revisjon, aldri en overskriving.
+
+**3D og skanning.** Skanning er iOS Pro only; Android er view-only.
+
+Retningen er **endret 21.–22. august** og motsier det som sto i
+`SESSION_HANDOFF.md`: der het det «kun teksturert mesh, splat-motoren er
+fjernet». Nå er svaret begge deler, med hver sin rolle:
+
+| Lag | Hva | Rolle |
+|---|---|---|
+| Splat | Gaussians | det du ser på — fotorealistisk |
+| Proxy-mesh | TSDF fra LiDAR | det du måler mot og fester stikk og kurser til |
+
+Grunnen til at de ikke konkurrerer: et splat har ingen flate, så du kan verken
+måle i det eller feste noe til det. LiDAR gir metrisk skala gratis (ARKit-poser
+er metriske), bedre initialisering enn SfM, og dybdeveiledning som hindrer at
+splatten faller fra hverandre utenfor kameravinklene den ble trent på.
+
+Teksturbaken i mesh-pipelinen blir dermed overflødig og skal fjernes — den
+finnes for å få et mesh til å se bra ut, og det klarer den aldri fra 1920 px.
+
+**GPU-pool.** To pooler, samme worker-binær: firmaets egne PC-er (ingen kostnad
+for Ampex) og en Ampex-drevet pool som overflow. Ampex-poolen er en **tredje
+utgiftspost** og opphever «kun Supabase + R2»-klausulen i `CLAUDE.md` når den
+tas i bruk. Den er opt-in per firma, fordi et skann som bakes der forlater
+firmaets egne maskiner.
+
+**Bil-som-lager** med Teltonika QR-onboarding, planlagt og delvis bygget. GPS-en
+er samtidig det mest uavklarte personvernpunktet — se `docs/PERSONVERN.md`.
+
+
 ### Det aller viktigste å ta med seg
 
 **AI-en er hovedgrensesnittet, ikke skjermen.** Du trykker på Ampex-merket,
@@ -1889,7 +1941,6 @@ Og den hører sannsynligvis i **Ampex Desktop**, ikke i montørappen — se
 | `docs/ROADMAP_2026-08.md` | Full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering |
 | `docs/DESKTOP_OG_IMPORT.md` | Ampex Kontor (`desktop/`), SpeedyCraft-import |
 | `docs/ON_DEVICE_SCAN_PLAN.md` | Skann-planen (utracket) |
-| `docs/NEW_APP_PLAN.md` | Opprinnelig domene- og datamodell-plan |
 
 ---
 

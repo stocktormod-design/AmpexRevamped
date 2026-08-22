@@ -79,12 +79,13 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=
 ```
 
 ## Plan
-- `docs/NEW_APP_PLAN.md` — komplett domene-, stack- og datamodell-plan
 - `docs/STATUS.md` — hvor vi står nå og hva som er neste steg (LES DENNE FØRST)
 - `docs/ROADMAP_2026-08.md` — full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering
 - `docs/GROSSIST_INTEGRASJON.md` — prisfiler, prissammenligning, autobestilling
 - `docs/DESKTOP_OG_IMPORT.md` — Ampex Kontor (`desktop/`), SpeedyCraft-import og merge
 - `docs/REGNSKAPSINTEGRASJON.md` — Fiken, Tripletex, PowerOffice Go
+- `docs/PERSONVERN.md`, `VILKAR.md`, `DATABEHANDLERAVTALE.md` — personvern og avtaleverk (utkast)
+- `docs/AI_KONTEKST.md` — trelagsdeling av AI-konteksten, LOK, NEK 400, RLS mot verktøykall
 
 ## Regler
 1. Minimal diff — løs oppgaven, ikke refaktorer bredt
