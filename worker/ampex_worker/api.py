@@ -105,15 +105,25 @@ class Api:
             return r.json()
 
     # ── R2 via presignerte URL-er ───────────────────────────────────────────
-    def presign(self, job_id: str, action: str, key: str | None = None) -> dict:
+    def presign(self, job_id: str, action: str, name: str | None = None) -> dict:
         """Edge Function 'scan-blobs' bytter node-token mot kortlevde URL-er.
-        action: 'download' (hele input_prefix) eller 'upload' (én nøkkel)."""
-        r = self._c.post("/functions/v1/scan-blobs", json={
+
+        Worker-en har to grener der, og de er bevisst atskilte:
+          'download'  GET-URL-er for hele input_prefix
+          'output'    én PUT-URL for resultatet, under et ANNET prefiks
+
+        Skillet er ikke kosmetisk: uten det kan en node skrive over rammene den
+        nettopp lastet ned, og da kan en mislykket bake ikke kjøres om.
+        Telefonens 'upload'/'finish' krever brukersesjon og nås ikke herfra.
+        """
+        body: dict = {
             "node_token": self.cfg.node_token,
             "job_id": job_id,
             "action": action,
-            "key": key,
-        })
+        }
+        if name is not None:
+            body["files"] = [{"name": name}]
+        r = self._c.post("/functions/v1/scan-blobs", json=body)
         r.raise_for_status()
         return r.json()
 
@@ -131,7 +141,7 @@ class Api:
         return dest
 
     def upload_glb(self, job_id: str, glb: Path) -> str:
-        info = self.presign(job_id, "upload", key=glb.name)
+        info = self.presign(job_id, "output", name=glb.name)
         with glb.open("rb") as fh:
             r = httpx.put(info["url"], content=fh.read(), timeout=600.0,
                           headers={"Content-Type": "model/gltf-binary"})
