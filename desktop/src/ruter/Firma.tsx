@@ -146,6 +146,7 @@ export function Firma() {
                     <th className="h" style={{ width: 90 }}>VRAM</th>
                     <th style={{ width: 110 }}>Status</th>
                     <th style={{ width: 130 }}>Sist sett</th>
+                    <th style={{ width: 90 }}>Pool</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -154,13 +155,29 @@ export function Firma() {
                       <td style={{ fontWeight: 500 }}>{n.name}</td>
                       <td className="dempet">{n.gpu_name ?? '–'}</td>
                       <td className="h dempet">{n.vram_mb ? `${Math.round(n.vram_mb / 1024)} GB` : '–'}</td>
+                      {/* Statusene er tabellens egne: idle, busy, offline.
+                          Sto tidligere som online/paused, som er verdier
+                          `worker_nodes` ikke kan inneholde — kolonna har en
+                          check-constraint. Alt havnet derfor på «Nede». */}
                       <td>
-                        <Merke stil={n.status === 'online' ? 'ny' : n.status === 'paused' ? 'varsel' : 'noytral'}>
-                          {n.status === 'online' ? 'Oppe' : n.status === 'paused' ? 'Pauset' : 'Nede'}
-                        </Merke>
+                        {n.revoked_at ? (
+                          <Merke stil="feil">Trukket</Merke>
+                        ) : n.status === 'idle' ? (
+                          <Merke stil="ny">Ledig</Merke>
+                        ) : n.status === 'busy' ? (
+                          <Merke stil="endret">Baker</Merke>
+                        ) : (
+                          <Merke stil="noytral">Nede</Merke>
+                        )}
                       </td>
                       <td className="dempet-mer">
-                        {n.last_seen_at ? DATO.format(new Date(n.last_seen_at)) : 'aldri'}
+                        {n.last_heartbeat_at ? DATO.format(new Date(n.last_heartbeat_at)) : 'aldri'}
+                      </td>
+                      {/* Hvorvidt maskinen tar jobber fra ANDRE firmaer. Verdt
+                          en kolonne: det er den ene innstillingen på en node
+                          som har noe å si utenfor firmaets egne vegger. */}
+                      <td className="dempet-mer">
+                        {n.is_public ? 'Ampex' : 'Egen'}
                       </td>
                     </tr>
                   ))}

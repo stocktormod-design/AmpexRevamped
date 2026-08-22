@@ -272,13 +272,27 @@ export type Firmaoppsett = {
     regnskapssystem: string
   } | null
   ansatte: Ansatt[]
+  /**
+   * Bake-nodene, fra `worker_nodes`.
+   *
+   * Sto mot `scan_workers` til 22. august. Den tabellen var tom og ingen
+   * funksjon skrev til den — hele kjeden fra innmelding til ferdig bake går
+   * mot `worker_nodes`. En PC som meldte seg inn ville altså aldri dukket opp
+   * på Firma-flata. Se migrasjonen 20260822140000.
+   */
   noder: {
     id: string
     name: string
+    hostname: string | null
     gpu_name: string | null
     vram_mb: number | null
+    /** `idle` | `busy` | `offline`. Se check-constrainten på tabellen. */
     status: string
-    last_seen_at: string | null
+    /** Med i Ampex-poolen, altså tilgjengelig for andre firmaers overflow. */
+    is_public: boolean
+    /** Satt når noden er trukket. Da skal den ikke få jobber igjen. */
+    revoked_at: string | null
+    last_heartbeat_at: string | null
     worker_version: string | null
   }[]
 }
@@ -288,7 +302,7 @@ export async function hentFirma(): Promise<Firmaoppsett> {
     supabase.from('companies').select('id,name,org_number').is('deleted_at', null).limit(1).maybeSingle(),
     supabase.from('company_settings').select('retention_years,faglig_ansvarlig,regnskapssystem,ampex_pool').limit(1).maybeSingle(),
     supabase.rpc('firmaets_ansatte'),
-    supabase.from('scan_workers').select('id,name,gpu_name,vram_mb,status,last_seen_at,worker_version').is('deleted_at', null).order('name'),
+    supabase.from('worker_nodes').select('id,name,hostname,gpu_name,vram_mb,status,is_public,revoked_at,last_heartbeat_at,worker_version').is('deleted_at', null).order('name'),
   ])
 
   const forste = [c, s, a, n].find(r => r.error)
