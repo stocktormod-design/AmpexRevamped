@@ -86,6 +86,19 @@ export type Rettighet =
   | 'logg.les'
   /** Se firmaoppsettet: innstillinger, ansatte, bake-noder. */
   | 'firma.les'
+  /** Se skannekoeen: hva ligger paa telefonene, hva bakes, hva ble ferdig. */
+  | 'skann.les'
+  /**
+   * Styre bakepoolen: melde inn PC-er, trekke noder, og bryteren for
+   * Ampex-poolen.
+   *
+   * Kun eier og administrator, og det er den siste som avgjoer: aa slaa paa
+   * `company_settings.ampex_pool` er aa tillate at LiDAR av kundens bolig
+   * pakkes ut paa en maskin firmaet ikke eier. Det binder firmaet overfor
+   * kundene sine, og hoerer derfor samme sted som andre beslutninger som gjoer
+   * det — ikke hos den som tilfeldigvis setter opp PC-en.
+   */
+  | 'pool.styr'
 
 /**
  * Rollene og hva de får se.
@@ -102,6 +115,7 @@ const ALT: Rettighet[] = [
   'varer.les', 'priser.importer',
   'ik.les', 'ik.skriv', 'skjema.les', 'skjema.skriv', 'logg.les',
   'firma.les',
+  'skann.les', 'pool.styr',
 ]
 
 const MATRISE: Record<Rolle, Rettighet[]> = {
@@ -132,6 +146,7 @@ const MATRISE: Record<Rolle, Rettighet[]> = {
     'prosjekt.les', 'tilbud.les', 'timer.les', 'kunder.les',
     'faktura.les', 'varer.les',
     'ik.les', 'ik.skriv', 'skjema.les', 'skjema.skriv', 'logg.les',
+    'skann.les',
   ],
 
   // Basen leder sine egne jobber. Han ser ordrene han er med på, ikke firmaets
@@ -140,7 +155,7 @@ const MATRISE: Record<Rolle, Rettighet[]> = {
   // en rutine ingen får lese er en rutine ingen kan følge.
   bas: [
     'kontor', 'ordre.les', 'ordre.endre', 'prosjekt.les', 'kunder.les', 'varer.les',
-    'ik.les', 'skjema.les',
+    'ik.les', 'skjema.les', 'skann.les',
   ],
 
   // Alt en montør og en lærling trenger ligger i appen på telefonen.

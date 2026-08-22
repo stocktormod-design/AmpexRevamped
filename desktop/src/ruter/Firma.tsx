@@ -1,7 +1,9 @@
-import { rollenavn } from '@delt/kontor-tilgang'
+import { kan, rollenavn } from '@delt/kontor-tilgang'
 import { useEffect, useState } from 'react'
 import { hentFirma, type Firmaoppsett } from '@/lib/kontor-lager'
-import { Beskjed, initialer, Kort, Merke, Sidehode, stk } from '@/ui/kit'
+import { lagInnmeldingskode, settAmpexPool } from '@/lib/skann-lager'
+import { useAuth } from '@/auth'
+import { Beskjed, initialer, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 
 /**
  * Firmaoppsettet.
@@ -29,11 +31,18 @@ const REGNSKAP: Record<string, string> = {
 }
 
 export function Firma() {
+  const { profil } = useAuth()
   const [data, setData] = useState<Firmaoppsett | null>(null)
   const [feil, setFeil] = useState<string | null>(null)
+  const [kode, setKode] = useState<string | null>(null)
+  const [poolPa, setPoolPa] = useState<boolean | null>(null)
+  const [jobber, setJobber] = useState(false)
+  const styrer = kan(profil?.role, 'pool.styr')
 
   useEffect(() => {
-    hentFirma().then(setData).catch(e => setFeil(e instanceof Error ? e.message : String(e)))
+    hentFirma()
+      .then(d => { setData(d); setPoolPa(d.innstillinger?.ampex_pool ?? false) })
+      .catch(e => setFeil(e instanceof Error ? e.message : String(e)))
   }, [])
 
   const ansvarlig = data?.ansatte.find(a => a.id === data.innstillinger?.faglig_ansvarlig)
@@ -99,8 +108,8 @@ export function Firma() {
               <p className="kort-hjelp">Henter …</p>
             ) : data.noder.length === 0 ? (
               <p className="kort-hjelp">
-                Ingen noder meldt inn. Kontor-PC-en melder seg inn med en engangskode fra appen, og
-                blir da firmaets egen bakekapasitet. Innmelding herfra er ikke bygget ennå.
+                Ingen maskiner meldt inn. En PC med skjermkort melder seg inn med en engangskode
+                herfra, og blir da firmaets egen bakekapasitet.
               </p>
             ) : (
               <table className="linjer">
@@ -132,6 +141,76 @@ export function Firma() {
                 </tbody>
               </table>
             )}
+
+            {/* ── Innmelding ────────────────────────────────────────────────
+                Koden vises ÉN gang og lever i 30 minutter. Den byttes mot et
+                node-token som lagres på PC-en; selve tokenet ser vi aldri, og
+                basen lagrer kun en hash av det. */}
+            {styrer ? (
+              <div style={{ marginTop: 14 }}>
+                <Knapp
+                  stil="stille"
+                  disabled={jobber}
+                  onClick={() => {
+                    setJobber(true)
+                    setFeil(null)
+                    lagInnmeldingskode()
+                      .then(setKode)
+                      .catch(e => setFeil(e instanceof Error ? e.message : String(e)))
+                      .finally(() => setJobber(false))
+                  }}
+                >
+                  {jobber ? 'Lager kode …' : 'Meld inn en PC'}
+                </Knapp>
+                {kode ? (
+                  <div style={{ marginTop: 12 }}>
+                    <p className="felt-hjelp">
+                      Kjør dette på maskinen. Koden gjelder i 30 minutter og kan brukes én gang.
+                    </p>
+                    <pre className="kode-blokk valgbar">ampex-worker enroll --code {kode}</pre>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* ── Ampex-poolen ──────────────────────────────────────────────
+                Dette er ikke en ytelsesbryter. Slått på betyr at et skann —
+                LiDAR av kundens bolig — kan pakkes ut på en maskin firmaet
+                ikke eier. Basen håndhever det uansett, men den som krysser av
+                skal forstå hva han krysser av for. */}
+            <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--kant)' }}>
+              <div className="rad" style={{ justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 500 }}>Ampex-poolen</div>
+                  <p className="felt-hjelp" style={{ margin: '4px 0 0', maxWidth: 460 }}>
+                    Har firmaet ingen egen maskin oppe, kan skann bakes hos Ampex etter halvannet
+                    minutts ventetid. Da forlater skannet — LiDAR av kundens bolig — firmaets egne
+                    maskiner. Av som standard.
+                  </p>
+                </div>
+                <Knapp
+                  stil={poolPa ? 'merke' : 'stille'}
+                  disabled={!styrer || jobber || poolPa == null}
+                  onClick={() => {
+                    const ny = !poolPa
+                    setJobber(true)
+                    setFeil(null)
+                    settAmpexPool(ny)
+                      .then(() => setPoolPa(ny))
+                      .catch(e => setFeil(e instanceof Error ? e.message : String(e)))
+                      .finally(() => setJobber(false))
+                  }}
+                >
+                  {poolPa ? 'På' : 'Av'}
+                </Knapp>
+              </div>
+              {!styrer ? (
+                <p className="felt-hjelp" style={{ marginTop: 8 }}>
+                  Bare eier og administrator kan endre dette.
+                </p>
+              ) : null}
+            </div>
+
           </Kort>
         </div>
 
@@ -169,7 +248,7 @@ export function Firma() {
           <div className="seksjon">
             <div className="seksjon-tittel">Kommer</div>
             <p className="kort-hjelp">
-              Endre innstillinger, lage innmeldingskode for en bake-node, og importere fra
+              Endre innstillinger og importere fra
               SpeedyCraft. Alt tre hører på denne maskinen fordi det er her den gamle databasen
               ligger.
             </p>

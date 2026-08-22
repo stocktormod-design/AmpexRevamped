@@ -127,5 +127,26 @@ for (const r of ROLLER) {
 sjekk('rollenavn er menneskelig', rollenavn('regnskapsforer'), 'Regnskapsfører')
 sjekk('ukjent rolle får et ærlig navn', rollenavn('vaktmester'), 'Ukjent rolle')
 
+// ── Skann og bakepool ──────────────────────────────────────────────────────
+
+// Skannet er dokumentasjon av en jobb, saa den som leder jobben skal se koeen.
+sjekk('installatør ser skannekøen', kan('installator', 'skann.les'), true)
+sjekk('bas ser skannekøen', kan('bas', 'skann.les'), true)
+sjekk('eier ser skannekøen', kan('owner', 'skann.les'), true)
+
+// Regnskapsfoereren ser summen, ikke faget. Et 3D-skann er ikke fakturagrunnlag.
+sjekk('regnskapsfører ser ikke skannekøen', kan('regnskapsforer', 'skann.les'), false)
+
+// DEN VIKTIGSTE HER. Aa slaa paa Ampex-poolen er aa tillate at LiDAR av
+// kundens bolig pakkes ut paa en maskin firmaet ikke eier. Det binder firmaet
+// overfor kundene sine, og skal ikke ligge hos den som setter opp PC-en.
+sjekk('kun eier og admin styrer poolen', kan('owner', 'pool.styr') && kan('admin', 'pool.styr'), true)
+sjekk('installatør styrer ikke poolen', kan('installator', 'pool.styr'), false)
+sjekk('bas styrer ikke poolen', kan('bas', 'pool.styr'), false)
+sjekk('regnskapsfører styrer ikke poolen', kan('regnskapsforer', 'pool.styr'), false)
+
+// Montoer og laerling jobber i appen, ikke paa kontorflaten.
+sjekk('montør har fortsatt ingenting på kontoret', kan('montor', 'skann.les'), false)
+
 console.log(feil === 0 ? '\nAlle påstander holder.' : `\n${feil} påstander feilet.`)
 process.exit(feil === 0 ? 0 : 1)

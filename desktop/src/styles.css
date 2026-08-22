@@ -428,8 +428,53 @@ textarea.skrivefelt-lav { height: 110px; }
 
 /* Innlogging ------------------------------------------------------------- */
 
-.logginn { display: grid; place-items: center; height: 100%; background: var(--lerret); }
-.logginn-kort { width: 360px; }
+/* ── Innlogging ──────────────────────────────────────────────────────────────
+   Den eneste skjermen uten sidemeny. Da blir kromet hele flaten og kortet er
+   papiret — samme forhold som resten av appen, bare uten moebelet rundt. Det
+   gjoer ogsaa at fargene er sett foer man er innenfor.
+
+   Sto tidligere paa `--lerret` med et kort uten bakgrunn, fordi klassen
+   `panel` aldri har eksistert i denne fila. Krem paa krem. */
+.logginn {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 32px;
+  background: var(--krom);
+}
+.logginn-boks { width: 372px; }
+.logginn-merke {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 26px;
+}
+.logginn-merke svg { color: var(--krom-kobber); }
+.logginn-navn {
+  font-family: var(--f-display);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--krom-blekk);
+}
+.logginn-under { font-size: 13px; color: rgba(246, 241, 232, 0.68); }
+.logginn-kort {
+  padding: 26px;
+  background: var(--papir);
+  border: 1px solid var(--kant);
+  border-radius: var(--r-stor);
+  /* Loefter papiret fra kromet. Uten skyggen ser kortet klistret ut. */
+  box-shadow: rgba(0, 0, 0, 0.32) 0 20px 44px -14px;
+}
+.logginn-kort .knapp-primar { width: 100%; justify-content: center; }
+.logginn-bunn {
+  margin: 20px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: rgba(246, 241, 232, 0.58);
+}
 
 /* Ordre: liste og detalj ------------------------------------------------- */
 

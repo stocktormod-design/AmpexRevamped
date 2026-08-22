@@ -248,6 +248,8 @@ export type Firmaoppsett = {
   company: { id: string; name: string; org_number: string | null } | null
   innstillinger: {
     retention_years: number
+    /** Tillat at skann bakes paa Ampex sine maskiner. Av som standard. */
+    ampex_pool: boolean
     faglig_ansvarlig: string | null
     regnskapssystem: string
   } | null
@@ -266,7 +268,7 @@ export type Firmaoppsett = {
 export async function hentFirma(): Promise<Firmaoppsett> {
   const [c, s, a, n] = await Promise.all([
     supabase.from('companies').select('id,name,org_number').is('deleted_at', null).limit(1).maybeSingle(),
-    supabase.from('company_settings').select('retention_years,faglig_ansvarlig,regnskapssystem').limit(1).maybeSingle(),
+    supabase.from('company_settings').select('retention_years,faglig_ansvarlig,regnskapssystem,ampex_pool').limit(1).maybeSingle(),
     supabase.from('profiles').select('id,full_name,role,phone').is('deleted_at', null).order('full_name'),
     supabase.from('scan_workers').select('id,name,gpu_name,vram_mb,status,last_seen_at,worker_version').is('deleted_at', null).order('name'),
   ])
