@@ -2,7 +2,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { InputHTMLAttributes, ReactNode, RefObject } from 'react'
 import { useAuth } from '@/auth'
-import { lenkeFeil, supabase, tilbakeUrl } from '@/supabase'
+import { lenkeFeil, lenkeType, supabase, tilbakeUrl } from '@/supabase'
 import { AmpexLogo } from '@/ui/AmpexLogo'
 import { Beskjed, Felt, Knapp } from '@/ui/kit'
 
@@ -297,14 +297,20 @@ export function Logginn() {
 }
 
 /**
- * Nytt passord etter en gjenopprettingslenke.
+ * Passordskjermen bak en e-postlenke.
  *
  * Vises i stedet for kontoret så lenge `gjenoppretting` står — se `auth.tsx`.
  * Lenka er i praksis en innlogging uten passord, og den skal rekke å gjøre én
  * ting før den er brukt opp.
+ *
+ * To lenker ender her, og de er ikke det samme for den som står foran skjermen.
+ * «Glemt passord» er noe du ba om selv. En invitasjon er første gang du ser
+ * Ampex i det hele tatt, og da er «velg et NYTT passord» feil på et vis som gjør
+ * folk usikre: nytt i forhold til hva? Derfor to sett med ord, og bare det.
  */
 export function NyttPassord() {
   const { ferdigGjenopprettet, loggUt } = useAuth()
+  const invitert = lenkeType === 'invite'
   const [passord, setPassord] = useState('')
   const [igjen, setIgjen] = useState('')
   const [feil, setFeil] = useState<string | null>(null)
@@ -329,11 +335,15 @@ export function NyttPassord() {
     <Flate under="Passordet gjelder både her og i appen på telefonen.">
       <form className="logginn-kort stabel" onSubmit={lagre}>
         <div className="logginn-tittel">
-          <h2>Velg et nytt passord</h2>
-          <p className="felt-hjelp">Lenka er brukt opp når dette er lagret.</p>
+          <h2>{invitert ? 'Velkommen til Ampex' : 'Velg et nytt passord'}</h2>
+          <p className="felt-hjelp">
+            {invitert
+              ? 'Velg et passord, så er du inne. Det er det eneste som mangler.'
+              : 'Lenka er brukt opp når dette er lagret.'}
+          </p>
         </div>
         <Passordfelt
-          etikett="Nytt passord"
+          etikett={invitert ? 'Passord' : 'Nytt passord'}
           autoComplete="new-password"
           autoFocus
           hjelp={`Minst ${MINSTE_PASSORD} tegn.`}
@@ -348,7 +358,7 @@ export function NyttPassord() {
         />
         <Meldinger feil={feil} />
         <Knapp stil="merke" type="submit" disabled={jobber}>
-          {jobber ? 'Lagrer …' : 'Lagre og fortsett'}
+          {jobber ? 'Lagrer …' : invitert ? 'Sett passord og kom i gang' : 'Lagre og fortsett'}
         </Knapp>
         <Knapp stil="naken" type="button" onClick={() => void loggUt()}>
           Avbryt

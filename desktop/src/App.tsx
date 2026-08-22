@@ -1,7 +1,9 @@
 import { kan, rollenavn, type Rettighet } from '@delt/kontor-tilgang'
-import { Building2, ClipboardList, Clock, FileSpreadsheet, FileText, FolderKanban, LayoutGrid, Package, Scan, ShieldCheck, Users } from 'lucide-react'
+import { Building2, ClipboardList, Clock, FileSpreadsheet, FileText, FolderKanban, Globe, LayoutGrid, Package, Scan, ShieldCheck, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/auth'
+import { erAmpexAdmin } from '@/lib/brukere'
+import { AmpexAdmin } from '@/ruter/AmpexAdmin'
 import { Firma } from '@/ruter/Firma'
 import { Internkontroll } from '@/ruter/Internkontroll'
 import { Kunder } from '@/ruter/Kunder'
@@ -69,7 +71,19 @@ const RUTER = [
   { id: 'prisfil', navn: 'Prisfiler', gruppe: 'Firma', ikon: FileSpreadsheet, rett: 'priser.importer' as Rettighet, vis: () => <Prisfil /> },
 ] as const
 
-type RuteId = (typeof RUTER)[number]['id']
+/**
+ * Ampex-flata står UTENFOR `RUTER`, og det er ikke en stilistisk detalj.
+ *
+ * Alt i RUTER styres av `kan(rolle, rett)` — altså av rollen din i DITT firma.
+ * Denne ruta tilhører ingen firmaer, og kan derfor ikke ha en `Rettighet`:
+ * en rettighet er noe en rolle har, og rollen er per firma. Den styres av
+ * `ampex_admins` i stedet, og legges på lista etter filtreringen.
+ */
+const AMPEX_RUTE = {
+  id: 'ampex', navn: 'Ampex', gruppe: 'Ampex', ikon: Globe, vis: () => <AmpexAdmin />,
+} as const
+
+type Rute = (typeof RUTER)[number] | typeof AMPEX_RUTE
 
 export function App() {
   const { sesjon, profil, laster, feil, gjenoppretting, loggUt } = useAuth()
@@ -83,7 +97,20 @@ export function App() {
 
   const [assistent, setAssistent] = useState(false)
 
-  const synlige = RUTER.filter(r => kan(profil?.role, r.rett))
+  // Spoerres for hver innlogging, ikke bufres. Svaret er nei for alle andre enn
+  // et par personer, og en tabell med én policy er billig å spørre.
+  const [ampexAdmin, setAmpexAdmin] = useState(false)
+  useEffect(() => {
+    if (!profil) { setAmpexAdmin(false); return }
+    let avbrutt = false
+    erAmpexAdmin().then(ja => { if (!avbrutt) setAmpexAdmin(ja) })
+    return () => { avbrutt = true }
+  }, [profil])
+
+  const synlige: Rute[] = [
+    ...RUTER.filter(r => kan(profil?.role, r.rett)),
+    ...(ampexAdmin ? [AMPEX_RUTE] : []),
+  ]
 
   useEffect(() => {
     const påTast = (e: KeyboardEvent) => {
@@ -108,10 +135,17 @@ export function App() {
     )
   }
 
-  // Kom økta fra en «glemt passord»-lenke, er den eneste flaten som gjelder
-  // den som setter et nytt passord. Sjekken står FØR sesjonssjekken, ellers
-  // ville lenka gitt full tilgang uten at passordet ble byttet.
-  if (gjenoppretting) return <NyttPassord />
+  // Kom økta fra en e-postlenke — «glemt passord» eller en invitasjon — er den
+  // eneste flaten som gjelder den som setter passordet. Sjekken står FØR
+  // sesjonssjekken, ellers ville lenka gitt full tilgang uten at passordet ble
+  // satt i det hele tatt.
+  //
+  // Lenka logger inn i to trinn: supabase-js plukker tokenene ut av hash-en, og
+  // først da finnes økta. Uten mellomtilstanden her blinker innloggingsskjemaet
+  // forbi, og det ser ut som lenka ikke virket.
+  if (gjenoppretting) {
+    return sesjon ? <NyttPassord /> : <div className="tomt">Åpner lenka …</div>
+  }
 
   if (!sesjon) return <Logginn />
   if (laster) return <div className="tomt">Henter profilen …</div>
@@ -127,7 +161,12 @@ export function App() {
     )
   }
 
-  if (!kan(profil.role, 'kontor')) {
+  // Ampex-admin slipper forbi rollesperren, og MÅ gjøre det: rollen er noe du
+  // har i et firma, og den som oppretter firmaene hører ikke til noe. Uten
+  // dette ville den eneste som kan lage kunder stått med «kontoret er ikke for
+  // denne rollen» — og `synlige` inneholder da bare Ampex-flata uansett, fordi
+  // alle andre ruter filtreres på nettopp rollen.
+  if (!ampexAdmin && !kan(profil.role, 'kontor')) {
     return (
       <Sperre tittel="Kontoret er ikke for denne rollen" avslutt={loggUt}>
         <p className="kort-hjelp">
@@ -142,7 +181,7 @@ export function App() {
   // Rollen kan ha mistet en rettighet siden forrige økt. Da skal den falle
   // tilbake til første synlige rute, ikke vise en tom flate.
   const bedt = hash.replace('#/', '')
-  const aktiv = synlige.find(r => r.id === (bedt as RuteId)) ?? synlige[0]
+  const aktiv = synlige.find(r => r.id === bedt) ?? synlige[0]
 
   if (!aktiv) {
     return (

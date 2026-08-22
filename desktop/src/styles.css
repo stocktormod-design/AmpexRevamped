@@ -414,6 +414,27 @@ textarea.skrivefelt-lav { height: 110px; }
 .linjer .h { text-align: right; font-variant-numeric: tabular-nums; }
 .linjer td + td, .linjer th + th { padding-left: 20px; }
 
+/* Invitasjon: skjemaet under en liste ------------------------------------ */
+
+/* Ligger inne i kortet, under tabellen, med en haarlinje mellom. Et eget kort
+   for tre felt ville lagt et nytt panel paa flata for noe som handler om lista
+   rett over. */
+.inviter-boks { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--kant); }
+.kort > .inviter-boks:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
+/* Feltene deler bredden og brekker naar det blir trangt. Firmaflata staar i en
+   1fr-spalte ved siden av en 300 px-kolonne, og der er det trangt fort. */
+.inviter-felt {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.inviter-felt .velger { width: 100%; }
+
+/* Adressen under navnet i ansattlista. */
+.ansatt-epost { display: block; font-size: 12px; color: var(--blekk-3); }
+
 /* Slippsone -------------------------------------------------------------- */
 
 .slipp-ramme { display: grid; place-items: center; padding: 24px 0; }

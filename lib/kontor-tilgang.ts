@@ -99,6 +99,19 @@ export type Rettighet =
    * det — ikke hos den som tilfeldigvis setter opp PC-en.
    */
   | 'pool.styr'
+  /**
+   * Invitere en ny ansatt inn i firmaet, og sette rollen hennes.
+   *
+   * Kun eier og administrator. Regnskapsføreren har `firma.les` og ser altså
+   * ansattlista, men det er noe annet enn å bestemme hvem som slipper inn i
+   * den — og rollen hun ville satt er den samme rollen som avgjør hvem som ser
+   * lønnsgrunnlaget hennes.
+   *
+   * Rettigheten er kun for GRENSESNITTET. Den ekte sperren står i
+   * `supabase/functions/inviter-ansatt`, som slår opp kallerens egen rolle i
+   * basen og aldri stoler på klienten. Se kommentaren over `MATRISE`.
+   */
+  | 'bruker.inviter'
 
 /**
  * Rollene og hva de får se.
@@ -114,7 +127,7 @@ const ALT: Rettighet[] = [
   'faktura.les', 'faktura.marker', 'db.les',
   'varer.les', 'priser.importer',
   'ik.les', 'ik.skriv', 'skjema.les', 'skjema.skriv', 'logg.les',
-  'firma.les',
+  'firma.les', 'bruker.inviter',
   'skann.les', 'pool.styr',
 ]
 

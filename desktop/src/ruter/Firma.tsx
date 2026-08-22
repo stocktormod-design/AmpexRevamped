@@ -1,9 +1,10 @@
-import { kan, rollenavn } from '@delt/kontor-tilgang'
-import { useEffect, useState } from 'react'
+import { kan, rollenavn, type Rolle } from '@delt/kontor-tilgang'
+import { useCallback, useEffect, useState } from 'react'
+import { inviterAnsatt } from '@/lib/brukere'
 import { hentFirma, type Firmaoppsett } from '@/lib/kontor-lager'
 import { lagInnmeldingskode, settAmpexPool } from '@/lib/skann-lager'
 import { useAuth } from '@/auth'
-import { Beskjed, initialer, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
+import { Beskjed, Felt, initialer, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 
 /**
  * Firmaoppsettet.
@@ -16,7 +17,10 @@ import { Beskjed, initialer, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
  *    Desktop og ikke i montørappen. Dette er begynnelsen på den: se hvilke
  *    maskiner som er meldt inn og om de svarer.
  *
- * Alt er lesing. Innmeldingskoder og endring av innstillinger er neste steg.
+ * Invitasjon er den ene tingen her som SKRIVER. Den gjør det gjennom
+ * `supabase/functions/inviter-ansatt`, fordi `profiles.company_id` ikke kan
+ * settes fra en klient — se migrasjonen 20260822120000. Resten er fortsatt
+ * lesing; endring av innstillinger er neste steg.
  */
 
 const DATO = new Intl.DateTimeFormat('nb-NO', {
@@ -30,6 +34,109 @@ const REGNSKAP: Record<string, string> = {
   poweroffice: 'PowerOffice Go',
 }
 
+/**
+ * Rollene i den rekkefoelgen firmaet ansetter i dem.
+ *
+ * `owner` står med, og skal stå med: et firma kan ha to eiere, og alternativet
+ * er at den ene må be Ampex om å gjøre det. Sperren mot at hvem som helst
+ * setter den ligger i Edge Functionen, som slaar opp kallerens egen rolle.
+ */
+const ROLLEVALG: Rolle[] = ['montor', 'laerling', 'bas', 'installator', 'regnskapsforer', 'admin', 'owner']
+
+/**
+ * Inviter en ansatt.
+ *
+ * Ingen `company_id` i skjemaet, og det er ikke en forglemmelse: firmaet slaas
+ * opp fra oekta til den som inviterer, inne i `supabase/functions/inviter-ansatt`.
+ * Kunne klienten oppgi det, ville dette vært en vei inn i et fremmed firma.
+ */
+function Inviter({ ferdig }: { ferdig: () => void }) {
+  const [apen, setApen] = useState(false)
+  const [epost, setEpost] = useState('')
+  const [navn, setNavn] = useState('')
+  const [rolle, setRolle] = useState<Rolle>('montor')
+  const [jobber, setJobber] = useState(false)
+  const [feil, setFeil] = useState<string | null>(null)
+  const [kvittering, setKvittering] = useState<string | null>(null)
+
+  // Kvitteringen står i den LUKKEDE tilstanden, ikke i skjemaet. Skjemaet
+  // lukker seg når invitasjonen gikk gjennom, og en kvittering som forsvinner
+  // sammen med skjemaet er ingen kvittering.
+  if (!apen) {
+    return (
+      <div className="stabel">
+        {kvittering ? <Beskjed stil="ok">{kvittering}</Beskjed> : null}
+        {/* Egen blokk rundt knappen: `.stabel` strekker barna sine, og en
+            «Inviter ansatt»-knapp i full kortbredde leser som flatens hovedhandling.
+            Det er den ikke — lista over den er hovedsaken. */}
+        <div>
+          <Knapp stil="merke" onClick={() => { setApen(true); setKvittering(null) }}>
+            Inviter ansatt
+          </Knapp>
+        </div>
+      </div>
+    )
+  }
+
+  async function send(ev: React.FormEvent) {
+    ev.preventDefault()
+    setJobber(true)
+    setFeil(null)
+    try {
+      const svar = await inviterAnsatt(epost, navn, rolle)
+      setKvittering(
+        svar.status === 'invitert'
+          ? `Invitasjon sendt til ${svar.epost}. Hun står i lista med en gang, og «Invitert» blir borte når hun har logget inn.`
+          : svar.status === 'lagt-til'
+            ? `${svar.navn} hadde konto fra før og er lagt til i firmaet.`
+            : `${svar.epost} står allerede i firmaet.`,
+      )
+      setEpost(''); setNavn(''); setRolle('montor'); setApen(false)
+      ferdig()
+    } catch (e) {
+      setFeil(e instanceof Error ? e.message : String(e))
+    }
+    setJobber(false)
+  }
+
+  return (
+    <form className="stabel" onSubmit={send}>
+      <div className="inviter-felt">
+        <Felt
+          etikett="Navn"
+          firkant
+          autoFocus
+          value={navn}
+          onChange={e => setNavn(e.target.value)}
+        />
+        <Felt
+          etikett="E-post"
+          type="email"
+          inputMode="email"
+          firkant
+          value={epost}
+          onChange={e => setEpost(e.target.value)}
+        />
+        <label className="felt felt-firkant">
+          <span className="felt-etikett">Rolle</span>
+          <select className="velger" value={rolle} onChange={e => setRolle(e.target.value as Rolle)}>
+            {ROLLEVALG.map(r => <option key={r} value={r}>{rollenavn(r)}</option>)}
+          </select>
+        </label>
+      </div>
+      {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+      <div className="rad">
+        <Knapp stil="merke" type="submit" disabled={jobber || !navn || !epost}>
+          {jobber ? 'Sender …' : 'Send invitasjon'}
+        </Knapp>
+        <Knapp type="button" onClick={() => { setApen(false); setFeil(null) }}>Avbryt</Knapp>
+        <span className="strekk" />
+        <span className="dempet-mer">Rollen kan endres etterpå.</span>
+      </div>
+    </form>
+  )
+}
+
 export function Firma() {
   const { profil } = useAuth()
   const [data, setData] = useState<Firmaoppsett | null>(null)
@@ -39,11 +146,16 @@ export function Firma() {
   const [jobber, setJobber] = useState(false)
   const styrer = kan(profil?.role, 'pool.styr')
 
-  useEffect(() => {
+  // Trukket ut av useEffect fordi invitasjonen må kunne be om lista på nytt:
+  // den som nettopp ble invitert skal stå der med en gang, ikke etter en
+  // oppfriskning av siden.
+  const last = useCallback(() => {
     hentFirma()
       .then(d => { setData(d); setPoolPa(d.innstillinger?.ampex_pool ?? false) })
       .catch(e => setFeil(e instanceof Error ? e.message : String(e)))
   }, [])
+
+  useEffect(() => { last() }, [last])
 
   const ansvarlig = data?.ansatte.find(a => a.id === data.innstillinger?.faglig_ansvarlig)
 
@@ -63,7 +175,8 @@ export function Firma() {
               <p className="kort-hjelp">Henter …</p>
             ) : data.ansatte.length === 0 ? (
               <p className="kort-hjelp">
-                Ingen profiler ennå. En ansatt får profil første gang hun logger inn i appen.
+                Ingen ansatte ennå. Inviter dem nedenfor — de får en e-post med en lenke der de
+                velger sitt eget passord.
               </p>
             ) : (
               <table className="linjer">
@@ -72,7 +185,7 @@ export function Firma() {
                     <th>Navn</th>
                     <th style={{ width: 170 }}>Rolle</th>
                     <th style={{ width: 150 }}>Telefon</th>
-                    <th style={{ width: 130 }}>Kontoret</th>
+                    <th style={{ width: 150 }}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -83,24 +196,40 @@ export function Firma() {
                           <span className="bruker-merke" style={{ width: 30, height: 30, fontSize: 11 }}>
                             {initialer(a.full_name)}
                           </span>
-                          <span style={{ fontWeight: 500 }}>{a.full_name}</span>
+                          <span>
+                            <span style={{ fontWeight: 500 }}>
+                              {a.full_name || <span className="dempet-mer">Uten navn</span>}
+                            </span>
+                            {/* Adressen er ikke pynt: når en invitasjon ikke kom
+                                fram, er det første man vil se hvilken adresse
+                                den faktisk gikk til. */}
+                            {a.epost ? <span className="ansatt-epost valgbar">{a.epost}</span> : null}
+                          </span>
                         </span>
                       </td>
                       <td className="dempet">{rollenavn(a.role)}</td>
                       <td className="dempet valgbar">{a.phone ?? ''}</td>
-                      {/* Rollen styrer også om personen slipper inn her. Det er
-                          verdt å vise, så ingen leter etter en innlogging som
-                          aldri kommer til å virke. */}
+                      {/* To spoersmaal i én kolonne, i den rekkefoelgen de
+                          faktisk stilles: har hun kommet seg inn, og hvor
+                          slipper rollen henne inn når hun gjør det. En som er
+                          invitert i gaar og en som har jobbet her i to aar så
+                          helt like ut før `firmaets_ansatte()`. */}
                       <td>
-                        {a.role === 'montor' || a.role === 'laerling'
-                          ? <span className="dempet-mer">Kun app</span>
-                          : <Merke stil="noytral">Har tilgang</Merke>}
+                        {!a.har_logget_inn
+                          ? <Merke stil="varsel">Invitert</Merke>
+                          : a.role === 'montor' || a.role === 'laerling'
+                            ? <span className="dempet-mer">Kun app</span>
+                            : <Merke stil="noytral">Har tilgang</Merke>}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
+
+            {kan(profil?.role, 'bruker.inviter') ? (
+              <div className="inviter-boks"><Inviter ferdig={last} /></div>
+            ) : null}
           </Kort>
 
           <Kort tittel="Bake-noder" merkelapp="Maskiner som kan kjøre GPU-bake">
