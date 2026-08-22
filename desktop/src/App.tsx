@@ -1,5 +1,5 @@
 import { kan, rollenavn, type Rettighet } from '@delt/kontor-tilgang'
-import { Building2, ClipboardList, Clock, FileSpreadsheet, FileText, FolderKanban, LayoutGrid, Package, ShieldCheck, Users } from 'lucide-react'
+import { Building2, ClipboardList, Clock, FileSpreadsheet, FileText, FolderKanban, LayoutGrid, Package, Scan, ShieldCheck, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/auth'
 import { Firma } from '@/ruter/Firma'
@@ -13,6 +13,7 @@ import { Prosjekter } from '@/ruter/Prosjekter'
 import { Skjemaer } from '@/ruter/Skjemaer'
 import { Tilbud } from '@/ruter/Tilbud'
 import { Timer } from '@/ruter/Timer'
+import { Skann } from '@/ruter/Skann'
 import { Varer } from '@/ruter/Varer'
 import { mangler } from '@/supabase'
 import { AmpexLogo } from '@/ui/AmpexLogo'
@@ -56,6 +57,7 @@ const RUTER = [
   { id: 'prosjekt', navn: 'Prosjekter', gruppe: 'Arbeid', ikon: FolderKanban, rett: 'prosjekt.les' as Rettighet, vis: () => <Prosjekter /> },
   { id: 'tilbud', navn: 'Tilbud', gruppe: 'Arbeid', ikon: FileText, rett: 'tilbud.les' as Rettighet, vis: () => <Tilbud /> },
   { id: 'timer', navn: 'Timer', gruppe: 'Arbeid', ikon: Clock, rett: 'timer.les' as Rettighet, vis: () => <Timer /> },
+  { id: 'skann', navn: 'Skann', gruppe: 'Arbeid', ikon: Scan, rett: 'skann.les' as Rettighet, vis: () => <Skann /> },
 
   { id: 'kunder', navn: 'Kunder', gruppe: 'Register', ikon: Users, rett: 'kunder.les' as Rettighet, vis: () => <Kunder /> },
   { id: 'varer', navn: 'Varer', gruppe: 'Register', ikon: Package, rett: 'varer.les' as Rettighet, vis: () => <Varer /> },
