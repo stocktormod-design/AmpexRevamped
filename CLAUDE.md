@@ -72,6 +72,12 @@ logikk som håndterer penger, dokumentasjon eller lønn skal ha én.
 
 Roller hentes fra `profiles.role` i Supabase. RLS per `company_id` på alle tabeller.
 
+Firmaer opprettes av Ampex (`ampex_admins` + `supabase/functions/ampex-admin`),
+ansatte inviteres av eier/admin fra Firma-flata
+(`supabase/functions/inviter-ansatt`). **`company_id` kan ikke settes fra en
+klient** — `profiles_vern` avviser det — så begge veier går gjennom
+`service_role` i en Edge Function, og klienten oppgir aldri hvilket firma.
+
 ## Miljøvariabler
 ```
 EXPO_PUBLIC_SUPABASE_URL=

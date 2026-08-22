@@ -1,7 +1,7 @@
 import type { Rolle } from '@delt/kontor-tilgang'
 import type { Session } from '@supabase/supabase-js'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { supabase } from '@/supabase'
+import { lenkeType, supabase } from '@/supabase'
 
 export type Profil = {
   id: string
@@ -16,12 +16,12 @@ type Auth = {
   laster: boolean
   feil: string | null
   /**
-   * Sant når økta kom fra en «glemt passord»-lenke.
+   * Sant når økta kom fra en e-postlenke: «glemt passord» eller en invitasjon.
    *
-   * Lenka logger deg teknisk sett inn, og uten dette flagget ville du havnet
-   * rett på Oversikt med det gamle passordet fortsatt gyldig — altså en
-   * innlogging uten passord, sendt på e-post. Flagget holder deg på skjermen
-   * som setter et nytt, og slås av først når passordet faktisk er byttet.
+   * Begge er en innlogging UTEN passord, sendt på e-post. Uten dette flagget
+   * ville lenka sluppet deg rett inn — med det gamle passordet fortsatt
+   * gyldig, eller uten at det finnes et i det hele tatt. Flagget holder deg på
+   * skjermen som setter et, og slås av først når passordet faktisk er lagret.
    */
   gjenoppretting: boolean
   ferdigGjenopprettet: () => void
@@ -35,7 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profil, setProfil] = useState<Profil | null>(null)
   const [laster, setLaster] = useState(true)
   const [feil, setFeil] = useState<string | null>(null)
-  const [gjenoppretting, setGjenoppretting] = useState(false)
+  // Settes FØR første render, fra hash-en, og ikke av `PASSWORD_RECOVERY`
+  // alene: en invitasjon fyrer `SIGNED_IN` som alle andre innlogginger, og er
+  // umulig å kjenne igjen på hendelsen. Se `lenkeType` i supabase.ts.
+  const [gjenoppretting, setGjenoppretting] = useState(lenkeType !== null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -44,8 +47,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     const { data } = supabase.auth.onAuthStateChange((hendelse, s) => {
       if (hendelse === 'PASSWORD_RECOVERY') setGjenoppretting(true)
+      // Kun på SIGNED_OUT. `INITIAL_SESSION` kan komme med null mens
+      // supabase-js fortsatt holder på med tokenene i hash-en, og en nullstilling
+      // der ville sendt den som klikket på lenka til innloggingsskjemaet.
+      if (hendelse === 'SIGNED_OUT') setGjenoppretting(false)
       setSesjon(s)
-      if (!s) { setProfil(null); setLaster(false); setGjenoppretting(false) }
+      if (!s) { setProfil(null); setLaster(false) }
     })
     return () => data.subscription.unsubscribe()
   }, [])

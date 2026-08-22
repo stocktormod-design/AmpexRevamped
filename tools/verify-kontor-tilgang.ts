@@ -117,6 +117,7 @@ for (const r of ROLLER) {
     // Å kunne skrive internkontrollen uten å kunne knytte et skjema til den
     // gir et system der halvparten av rutinene peker i løse lufta.
     ['ik.skriv uten skjema.skriv', kan(r, 'ik.skriv') && !kan(r, 'skjema.skriv')],
+    ['bruker.inviter uten firma.les', kan(r, 'bruker.inviter') && !kan(r, 'firma.les')],
     ['en rettighet uten kontor', rettigheter(r).length > 0 && !kan(r, 'kontor')],
   ]
   for (const [hva, brutt] of avhengig) sjekk(`${r}: ${hva}`, brutt, false)
@@ -147,6 +148,22 @@ sjekk('regnskapsfører styrer ikke poolen', kan('regnskapsforer', 'pool.styr'), 
 
 // Montoer og laerling jobber i appen, ikke paa kontorflaten.
 sjekk('montør har fortsatt ingenting på kontoret', kan('montor', 'skann.les'), false)
+
+// ── Hvem slipper folk inn i firmaet ────────────────────────────────
+//
+// Rollen bestemmer hvem som ser lønnsgrunnlaget. Den som setter rollen, setter
+// altså det. Derfor er dette en kortere liste enn `firma.les`.
+
+sjekk('kun eier og admin inviterer', ROLLER.filter(r => kan(r, 'bruker.inviter')), ['owner', 'admin'])
+
+// Hun ser ansattlista — hun bestemmer bare ikke hvem som står i den.
+sjekk('regnskapsfører ser ansatte', kan('regnskapsforer', 'firma.les'), true)
+sjekk('regnskapsfører inviterer ikke', kan('regnskapsforer', 'bruker.inviter'), false)
+
+// Installatøren er faglig ansvarlig, ikke arbeidsgiver. Han har ikke engang
+// firmaflata, og skal ikke ha den bakveien inn heller.
+sjekk('installatør inviterer ikke', kan('installator', 'bruker.inviter'), false)
+sjekk('bas inviterer ikke', kan('bas', 'bruker.inviter'), false)
 
 console.log(feil === 0 ? '\nAlle påstander holder.' : `\n${feil} påstander feilet.`)
 process.exit(feil === 0 ? 0 : 1)

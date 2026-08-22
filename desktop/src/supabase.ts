@@ -51,6 +51,26 @@ function lesLenkefeil(): string | null {
 
 export const lenkeFeil = lesLenkefeil()
 
+/**
+ * Hva slags e-postlenke landet vi fra?
+ *
+ * `recovery` er «glemt passord». `invite` er en helt ny ansatt som aldri har
+ * hatt et passord i det hele tatt. Begge deler er en innlogging UTEN passord,
+ * og begge skal derfor ende i den samme skjermen — men de skal ikke si det
+ * samme, og det er hele grunnen til at typen leses og ikke bare bekreftes.
+ *
+ * Leses her, av samme grunn som `lenkeFeil`: supabase-js tømmer hash-en så
+ * snart den har sett på den. Hash-en røres ikke — tokenene ligger i den, og
+ * klienten trenger dem noen millisekunder senere.
+ */
+function lesLenketype(): 'invite' | 'recovery' | null {
+  if (!iNettleser) return null
+  const t = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('type')
+  return t === 'invite' || t === 'recovery' ? t : null
+}
+
+export const lenkeType = lesLenketype()
+
 export const supabase = createClient(url ?? 'http://localhost', anonKey ?? 'ugyldig', {
   auth: {
     autoRefreshToken: true,

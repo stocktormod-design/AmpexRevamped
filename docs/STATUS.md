@@ -18,9 +18,9 @@ iOS-bygget: 0 feil, 1 advarsel. Hele appen bundler rent
 (`npx expo export --platform ios`). Kontorappen bygger rent (`cd desktop &&
 npm run build`).
 
-**Sist inn: innlogginga på ampex.no.** Glemt passord med gjenopprettingslenke,
-norske feilmeldinger, og ikonet i nettleserfana. Eget avsnitt rett under. Ett
-oppsett gjenstår i Supabase, og det står der.
+**Sist inn: firmaer og brukere.** `ampex_admins`, invitasjon fra Firma-flata,
+og en Ampex-flate for å opprette kunder. Eget avsnitt rett under — les
+«Ikke gjort, og det haster» der først. Runden før: innlogginga på ampex.no.
 
 **UI-runden 21. august kveld** — brun grunnflate i hele appen, én font (Geist),
 og ordrekalenderen — er fortsatt **ikke sett på en skjerm**. Det er det første
@@ -189,6 +189,164 @@ en ny fane — det er forskjellen på å be om den og å foreslå den.)
 
 `modules/ampex-splat/ios/MeshBakeV2.swift` og `MeshScanPresenter.swift` er din
 WIP fra før. Urørt.
+
+---
+
+## Runden 22. august (2): firmaer og brukere
+
+Spørsmålet var «hvordan oppretter jeg firmaer og brukere til dem?», og svaret
+var ubehagelig: det gikk ikke. `companies` har ingen insert-policy, og
+`profiles.company_id` avvises av `profiles_vern` for enhver klient. Begge deler
+er RIKTIG — company_id er tenancy-modellen, og hele RLS-laget hviler på den —
+men konsekvensen var at både firma og ansatte måtte lages for hånd i
+SQL-editoren, med to innsettinger per firma fordi `company_settings` ikke har
+noen trigger som lager raden sin.
+
+### To nivåer, to veier inn
+
+**Firmaer opprettes av Ampex.** Ikke selvbetjening: et firma er en tenancy, og
+en registreringsside ville gjort «hvem er kunde» til noe man må telle rader for
+å svare på. Hvem som får gjøre det står i den nye tabellen `ampex_admins`, som
+er den eneste tabellen i basen uten `company_id`.
+
+Den er en egen tabell og ikke et flagg på `profiles`, og det er ikke smak:
+profiles er klient-oppdaterbar, `profiles_vern` passer bare på `id`,
+`company_id` og `role`, og et `ampex_admin`-flagg der ville vært en kolonne
+enhver innlogget bruker kunne satt på seg selv. Det er nøyaktig eskaleringen
+sikkerhetsrunden 21. august lukket, gjenåpnet et annet sted.
+
+**Ansatte inviteres av eier eller administrator**, fra Firma-flata.
+`supabase/templates/invite.html` har ligget ferdig i Ampex-drakt siden juni og
+har aldri vært i bruk. Nå er den det.
+
+### Klienten oppgir aldri et firma
+
+Verken invitasjonen eller firmaopprettelsen tar imot et `company_id`. Feltet
+finnes ikke i forespørselen. `inviter-ansatt` slår opp kallerens EGEN
+firmatilhørighet i basen og bruker den — kunne klienten oppgi det, ville
+invitasjonsskjemaet vært en vei inn i et fremmed firma.
+
+Fire utfall, og det siste er det viktige:
+
+| Utfall | Hva skjedde |
+|---|---|
+| `invitert` | ny konto, e-post sendt |
+| `lagt-til` | kontoen fantes uten firma, og er nå med |
+| `finnes` | står allerede i firmaet ditt |
+| avvist | adressen tilhører et ANNET firma |
+
+Det siste er en avvisning og ikke en flytting. Å flytte en person mellom
+firmaer er en tenancy-endring: timene, signaturene og samsvarserklæringene
+hennes ligger i det gamle firmaet. Det skal ikke skje fordi noen tastet feil
+adresse i et skjemafelt.
+
+### firmaets_ansatte()
+
+Firma-flata leste `profiles` rett, og kunne derfor ikke skille en som ble
+invitert i går fra en som har jobbet her i to år. Svaret står i `auth.users`
+(`invited_at`, `last_sign_in_at`), og det skjemaet når ingen klient. Ny
+security definer-funksjon, filtrert på `current_company_id()` inne i
+funksjonen — den som kaller skal ikke kunne oppgi hvilket firma hun spør om.
+Lista viser nå «Invitert» til personen faktisk har vært innom, og e-posten
+under navnet: når en invitasjon ikke kom fram, er den adressen det første man
+vil se på.
+
+### Invitasjonslenka lander i samme skjerm som «glemt passord»
+
+Begge er en innlogging uten passord, sendt på e-post. `lenkeType` leses ut av
+hash-en før supabase-js tømmer den, og `gjenoppretting` settes fra den — en
+invitasjon fyrer `SIGNED_IN` som enhver annen innlogging og er umulig å kjenne
+igjen på hendelsen alene. Ordene er ikke de samme: «velg et NYTT passord» til
+en som aldri har hatt et er feil på et vis som gjør folk usikre.
+
+### Ikke gjort, og det haster
+
+**`enable_signup` står på.** Hvem som helst kan lage konto på prosjektet i dag.
+De lander uten firma og RLS gir dem ingenting, så det er ikke et hull ennå —
+men det er en dør, og den blir farlig i det sekundet noe begynner å stole på
+`user_metadata`. Skru den av: Authentication → Sign In / Providers.
+
+**`test@ampex.no` er eier av Ampex Test AS, og passordet står i klartekst i
+`desktop/src/ruter/Logginn.tsx` i et OFFENTLIG repo.** Dev-knappen er borte fra
+produksjonsbundelen, men kontoen finnes fortsatt og passordet virker på
+ampex.no. Enten byttes passordet og fjernes fra koden, eller så settes kontoen
+i bero. Den skal uansett ALDRI inn i `ampex_admins`.
+
+### Rullet ut 22. august, og hva som faktisk er prøvd
+
+Migrasjonene er kjørt og begge Edge Functions er deployet på
+`vymgogzcicbaizjlaurr`. Verifisert i nettleseren, mot ekte data, som
+`test@ampex.no`:
+
+- Firma-flata henter ansatte gjennom `firmaets_ansatte()` og viser e-post og
+  «Har tilgang» / «Invitert»
+- invitasjonsskjemaet går hele veien: `  TEST@Ampex.no ` ble renset til
+  `test@ampex.no`, kallerens rolle og firma slått opp i basen, og svaret ble
+  `finnes` — uten at det ble sendt en e-post eller endret en rad
+- Ampex-ruta vises IKKE for en som ikke står i `ampex_admins`
+
+**Ikke prøvd:** selve Ampex-flata (opprette et firma) og en ekte
+invitasjons-e-post. Begge krever en Ampex-admin, og den eneste kontoen som
+finnes er `test@ampex.no` — som ikke skal ha den rollen, jf. avsnittet over.
+
+### Revokene i sikkerhetsmigrasjonen bet aldri
+
+Funnet under utrullingen, og verdt å vite: `revoke execute on function … from
+anon` gjør ikke det det ser ut som. En ny funksjon får `GRANT EXECUTE TO
+PUBLIC` automatisk, og PUBLIC er ikke en rolle man kan trekke fra en annen
+rolle. Tretten av funksjonene `20260821230000_sikkerhet.sql` mente å stenge for
+`anon`, er fortsatt åpne for `anon`.
+
+Ingenting lekker likevel, og det er verdt å si presist hvorfor: `watermelon_*`
+og `sync_*` er ikke security definer, så RLS gir anon null rader.
+`audit_row`, `handle_new_user` og `profiles_vern` returnerer `trigger`, og
+PostgREST lager ikke endepunkt av dem. `log_audit_event` og `kan_*` leser
+`auth.uid()` selv, og den første kaster på manglende firma. Beltet ble aldri
+festet, og selene holdt.
+
+Min egen `finn_bruker_paa_epost` var unntaket — security definer, leser
+`auth.users`, ingen intern sjekk. Den var i praksis et endepunkt for å spørre
+«finnes denne adressen hos Ampex». Lukket i `20260822130000_revoke_traff_ikke.sql`,
+som også dokumenterer riktig form (`revoke … from public` + `grant … to
+authenticated`).
+
+**De gamle er ikke rørt.** `watermelon_pull` er montørappens livsnerve, og en
+grant-endring på den skal gjøres med appen foran seg — ikke på slutten av en
+runde om invitasjoner.
+
+### Slik kommer det i drift
+
+De to første er gjort. `AMPEX_NETTSTED` er IKKE satt — funksjonene faller
+tilbake på `https://www.ampex.no/`, som er riktig verdi, så det haster ikke:
+
+```
+supabase secrets set AMPEX_NETTSTED=https://www.ampex.no/
+```
+
+Det som gjenstår, og som må gjøres én gang i SQL-editoren med din egen
+adresse (du trenger en konto først — lag den fra Authentication → Add user →
+Send invitation, og lenka lander i den nye passordskjermen):
+
+```sql
+insert into public.ampex_admins (user_id, notat)
+select id, 'Tormod' from auth.users where email = 'din@adresse.no'
+on conflict (user_id) do nothing;
+```
+
+Redirect-URL-ene må inneholde `https://www.ampex.no/**` — samme krav som
+gjenopprettingslenka fra forrige runde.
+
+### 2FA
+
+Ikke bygget, etter avtale. Retningen er TOTP med QR-kode (Supabase har det
+innebygd og gratis; `mfa.enroll` gir QR-koden ferdig som SVG), valgfritt for
+alle roller. SMS er valgt bort: det krever Twilio og en løpende kostnad, og
+bryter med «kun Supabase + R2».
+
+Den viktige delen når det skal gjøres er ikke QR-koden — den er et bilde. Det
+er at tvangen må ligge i RLS på `aal2` og ikke bare i skjermbildet: et stjålet
+passord går rett på PostgREST utenom hele grensesnittet. Mønsteret for et
+ekstra steg i innlogginga finnes allerede, i `gjenoppretting`-flagget.
 
 ---
 
