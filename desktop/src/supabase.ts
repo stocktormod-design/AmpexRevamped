@@ -71,6 +71,46 @@ function lesLenketype(): 'invite' | 'recovery' | null {
 
 export const lenkeType = lesLenketype()
 
+/**
+ * Vår EGEN lenke fra e-posten.
+ *
+ * ── Hvorfor vi ikke bruker `{{ .ConfirmationURL }}` ────────────────────────
+ *
+ * Den peker på `<prosjekt-id>.supabase.co/auth/v1/verify?...`. Teknisk helt
+ * riktig, og helt feil for den som får den: en elektriker som får en lenke til
+ * et domene han aldri har hørt om, med en tilfeldig bokstavsuppe foran, skal
+ * IKKE klikke på den. Han har rett i å la være.
+ *
+ * I stedet sender malene `{{ .TokenHash }}` til vår egen adresse, og appen
+ * løser koden inn med `verifyOtp`. Hele lenka står da på ampex.no. Supabase
+ * selger et eget auth-domene som løser det samme for ti dollar i måneden;
+ * dette koster ingenting og gjør i tillegg noe det ikke gjør:
+ *
+ * **Det tåler e-postskannere bedre.** Gmail og Outlook forhåndsåpner lenker
+ * for å sjekke dem. Peker lenka rett på `/auth/v1/verify`, blir koden innløst
+ * av skanneren, og brukeren får «utløpt» når han selv klikker. Peker den på
+ * oss, må det kjøres JavaScript for at koden skal brukes — og det gjør de
+ * færreste skannerne.
+ *
+ * Koden fjernes fra adressen med en gang den er lest. Den virker bare én gang,
+ * og skal ikke bli liggende i historikken eller i en oppfriskning.
+ */
+export type Lenke = { type: 'invite' | 'recovery' | 'signup' | 'magiclink'; tokenHash: string }
+
+function lesLenke(): Lenke | null {
+  if (!iNettleser) return null
+  const q = new URLSearchParams(window.location.search)
+  const tokenHash = q.get('token_hash')
+  const t = q.get('type')
+  if (!tokenHash) return null
+  if (t !== 'invite' && t !== 'recovery' && t !== 'signup' && t !== 'magiclink') return null
+
+  window.history.replaceState(null, '', window.location.pathname)
+  return { type: t, tokenHash }
+}
+
+export const lenke = lesLenke()
+
 export const supabase = createClient(url ?? 'http://localhost', anonKey ?? 'ugyldig', {
   auth: {
     autoRefreshToken: true,

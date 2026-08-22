@@ -2,7 +2,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { InputHTMLAttributes, ReactNode, RefObject } from 'react'
 import { useAuth } from '@/auth'
-import { lenkeFeil, lenkeType, supabase, tilbakeUrl } from '@/supabase'
+import { lenke, lenkeType, supabase, tilbakeUrl } from '@/supabase'
 import { AmpexLogo } from '@/ui/AmpexLogo'
 import { Beskjed, Felt, Knapp } from '@/ui/kit'
 
@@ -159,10 +159,16 @@ type Modus = 'logg-inn' | 'glemt'
  * knapp leser som at man har havnet et helt annet sted.
  */
 export function Logginn() {
+  const { lenkefeil } = useAuth()
   const [modus, setModus] = useState<Modus>('logg-inn')
   const [epost, setEpost] = useState(husket)
   const [passord, setPassord] = useState('')
-  const [feil, setFeil] = useState<string | null>(lenkeFeil)
+  const [feil, setFeil] = useState<string | null>(lenkefeil)
+
+  // `verifyOtp` er et nettverkskall, så en død lenke kan komme fram ETTER at
+  // skjermen er tegnet. Uten dette ville brukeren sett et blankt skjema og
+  // trodd at han bare hadde klikket feil.
+  useEffect(() => { if (lenkefeil) setFeil(lenkefeil) }, [lenkefeil])
   const [sendt, setSendt] = useState<string | null>(null)
   const [jobber, setJobber] = useState(false)
   const passordfelt = useRef<HTMLInputElement>(null)
@@ -310,7 +316,7 @@ export function Logginn() {
  */
 export function NyttPassord() {
   const { ferdigGjenopprettet, loggUt } = useAuth()
-  const invitert = lenkeType === 'invite'
+  const invitert = lenkeType === 'invite' || lenke?.type === 'invite'
   const [passord, setPassord] = useState('')
   const [igjen, setIgjen] = useState('')
   const [feil, setFeil] = useState<string | null>(null)
