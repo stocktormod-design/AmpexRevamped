@@ -33,6 +33,7 @@ const NETTSTED = Deno.env.get('AMPEX_NETTSTED') ?? 'https://www.ampex.no/'
 
 type Foresporsel =
   | { handling: 'firmaer' }
+  | { handling: 'bytt-firma'; firma_id?: string }
   | { handling: 'opprett'; navn?: string; org_nummer?: string; eier_epost?: string; eier_navn?: string }
 
 type Firmarad = {
@@ -48,6 +49,7 @@ type Firmarad = {
 type Svar =
   | { ok: true; firmaer: Firmarad[] }
   | { ok: true; opprettet: { id: string; navn: string; eier_epost: string } }
+  | { ok: true; byttet: { id: string; navn: string } }
   | { ok: false; error: string }
 
 const svar = (s: Svar) => Response.json(s)
@@ -128,6 +130,70 @@ export default {
           aktive: tell.get(f.id)?.aktive ?? 0,
         })) as Firmarad[],
       })
+    }
+
+    // ── Bytt hvilket firma Ampex-administratoren selv står i ──────────────
+    //
+    // Dette ER en tenancy-endring, altså nøyaktig det `profiles_vern` finnes
+    // for å hindre. At den likevel er lov her hviler på tre ting, og alle tre
+    // må stemme:
+    //
+    //   1. Den skjer med `service_role`, som er unntaket triggeren har
+    //      (`auth.uid() is null`). Ingen klient kan gjøre dette selv.
+    //   2. Kalleren er slått opp i `ampex_admins` lenger oppe i denne
+    //      funksjonen — ikke i et flagg klienten kunne satt på seg selv.
+    //   3. Det gir ingen NY tilgang. En Ampex-admin leser og skriver allerede
+    //      alle firmaer gjennom denne funksjonen; dette bestemmer bare hvilket
+    //      firma skjermbildene hans viser.
+    //
+    // Prisen står i revisjonssporet: rader han lager etter byttet føres på det
+    // nye firmaet. Derfor logges byttet i BEGGE firmaene, så et hopp i
+    // historikken har en forklaring ved siden av seg.
+    if (body.handling === 'bytt-firma') {
+      const firmaId = (body.firma_id ?? '').trim()
+      if (!firmaId) return svar({ ok: false, error: 'Mangler firma.' })
+
+      const { data: firma, error } = await ctx.supabaseAdmin
+        .from('companies')
+        .select('id,name,deleted_at')
+        .eq('id', firmaId)
+        .maybeSingle()
+      if (error) return svar({ ok: false, error: error.message })
+      if (!firma) return svar({ ok: false, error: 'Fant ikke firmaet.' })
+      if (firma.deleted_at) return svar({ ok: false, error: 'Firmaet er slettet.' })
+
+      const { data: for_, error: forFeil } = await ctx.supabaseAdmin
+        .from('profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (forFeil) return svar({ ok: false, error: forFeil.message })
+      if (for_?.company_id === firma.id) {
+        return svar({ ok: true, byttet: { id: firma.id, navn: firma.name } })
+      }
+
+      const { error: byttFeil } = await ctx.supabaseAdmin
+        .from('profiles')
+        .update({ company_id: firma.id })
+        .eq('id', user.id)
+      if (byttFeil) return svar({ ok: false, error: byttFeil.message })
+
+      const linje = (companyId: string, hendelse: string, detaljer: Record<string, unknown>) =>
+        ctx.supabaseAdmin.from('audit_events').insert({
+          company_id: companyId,
+          actor_id: user.id,
+          actor_name: user.email ?? 'Ampex',
+          operasjon: 'hendelse',
+          hendelse,
+          detaljer,
+        })
+
+      if (for_?.company_id) {
+        await linje(for_.company_id, 'ampex.forlot', { til: firma.id, av: 'ampex-admin' })
+      }
+      await linje(firma.id, 'ampex.byttet_inn', { fra: for_?.company_id ?? null, av: 'ampex-admin' })
+
+      return svar({ ok: true, byttet: { id: firma.id, navn: firma.name } })
     }
 
     if (body.handling !== 'opprett') return svar({ ok: false, error: 'Ukjent handling.' })

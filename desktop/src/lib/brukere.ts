@@ -24,17 +24,29 @@ async function kall<T>(funksjon: string, body: Record<string, unknown>): Promise
   return data as T
 }
 
+/** Så mange i én omgang. Samme tak står i Edge Functionen, som er den som teller. */
+export const MAKS_PER_INVITASJON = 10
+
+export type Invitert = { epost: string; navn: string; rolle: string }
+export type Utfall = { epost: string; navn: string; status: Invitasjonsstatus | 'avvist'; grunn?: string }
+
 /**
- * Inviter en ansatt inn i firmaet du selv hører til.
+ * Inviter opptil ti ansatte inn i firmaet du selv hører til.
  *
  * Firmaet oppgis ikke, og kan ikke oppgis: funksjonen slår opp kallerens eget
  * `company_id` i basen. Det er forskjellen på en invitasjon og en vei inn i et
  * fremmed firma.
+ *
+ * Kallet forutsetter at `bekreftKode()` nettopp er kjørt — se `tofaktor.ts`.
+ * Det er ikke noe klienten kan jukse med: Edge Functionen leser `aal2` og
+ * tidsstempelet på totp-steget rett ut av tokenet, og avviser et gammelt.
+ *
+ * Hele bunken går i ett kall med én kode. Å be om en ny kode per person ville
+ * gjort ti invitasjoner til ti anledninger til å taste feil, uten å gjøre noe
+ * tryggere: koden beviser hvem som sitter der, og han sitter der én gang.
  */
-export async function inviterAnsatt(epost: string, navn: string, rolle: string) {
-  return kall<{ status: Invitasjonsstatus; navn: string; epost: string }>('inviter-ansatt', {
-    epost, navn, rolle,
-  })
+export async function inviterAnsatte(ansatte: Invitert[]) {
+  return kall<{ resultat: Utfall[] }>('inviter-ansatt', { ansatte })
 }
 
 export type AmpexFirma = {
@@ -50,6 +62,25 @@ export type AmpexFirma = {
 export async function hentFirmaer() {
   const { firmaer } = await kall<{ firmaer: AmpexFirma[] }>('ampex-admin', { handling: 'firmaer' })
   return firmaer
+}
+
+/**
+ * Bytt hvilket firma DU står i.
+ *
+ * Kun for Ampex-administratorer, og det er en tenancy-endring — nøyaktig den
+ * `profiles_vern` finnes for å hindre. Derfor skjer den med `service_role`
+ * inne i Edge Functionen, etter et oppslag i `ampex_admins`, og aldri fra en
+ * klient. Se kommentaren der.
+ *
+ * Siden alt på skjermen tilhører det gamle firmaet, laster kalleren siden på
+ * nytt etterpå. Det er ærligere enn å prøve å friske opp tolv spørringer i
+ * riktig rekkefølge.
+ */
+export async function byttFirma(firmaId: string) {
+  return kall<{ byttet: { id: string; navn: string } }>('ampex-admin', {
+    handling: 'bytt-firma',
+    firma_id: firmaId,
+  })
 }
 
 export async function opprettFirma(inn: {
