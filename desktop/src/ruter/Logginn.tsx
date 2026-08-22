@@ -321,6 +321,7 @@ export function NyttPassord() {
   const [igjen, setIgjen] = useState('')
   const [feil, setFeil] = useState<string | null>(null)
   const [jobber, setJobber] = useState(false)
+  const [lagret, setLagret] = useState(false)
 
   async function lagre(ev: React.FormEvent) {
     ev.preventDefault()
@@ -333,8 +334,33 @@ export function NyttPassord() {
     setFeil(null)
     const { error } = await supabase.auth.updateUser({ password: passord })
     if (error) setFeil(norsk(error.message))
-    else ferdigGjenopprettet()
+    // IKKE `ferdigGjenopprettet()` her. Den slipper deg rett inn på Oversikt, og
+    // da har ingen sagt at passordet ble lagret — du står bare plutselig et
+    // annet sted. Etter en invitasjon er det nettopp DET du trenger å vite:
+    // virker passordet du nettopp fant på, neste gang du logger inn?
+    else setLagret(true)
     setJobber(false)
+  }
+
+  if (lagret) {
+    return (
+      <Flate under="Glemmer du det, bruker du «Glemt passord?» på innloggingssiden.">
+        <div className="logginn-kort stabel">
+          <div className="logginn-tittel">
+            <h2>Passordet er lagret</h2>
+            <p className="felt-hjelp">
+              Det gjelder både her og i appen på telefonen. Lenka fra e-posten er brukt opp.
+            </p>
+          </div>
+          {/* Egen knapp i stedet for å sende deg videre av seg selv: den som
+              nettopp har satt et passord skal få lese at det gikk bra, i sitt
+              eget tempo. */}
+          <Knapp stil="merke" onClick={ferdigGjenopprettet}>
+            Fortsett til Ampex Kontor
+          </Knapp>
+        </div>
+      </Flate>
+    )
   }
 
   return (
