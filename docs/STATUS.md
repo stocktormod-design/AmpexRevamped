@@ -361,10 +361,27 @@ SMTP-verdiene i Supabase blir:
 | Sender email | `ikke-svar@ampex.no` |
 | Sender name | `Ampex` |
 
-Når SMTP står: malene i `supabase/templates/` kan endelig limes inn under
-Authentication → Emails, og rate limit kan heves fra 2 i timen.
+**Ferdig 22. august.** SMTP står, og alle fire malene i `supabase/templates/`
+er limt inn under Authentication → Emails, med norske emnefelt:
 
-Invitasjonsflyten er ikke produksjonsklar før dette er på plass.
+| Mal | Emne |
+|---|---|
+| Invite user | Du er invitert til Ampex |
+| Reset password | Tilbakestill passordet ditt |
+| Confirm sign up | Bekreft e-postadressen din |
+| Magic link or OTP | Logg inn på Ampex |
+
+Rate limit måtte ikke røres: Supabase hevet den selv fra 2 til **30 i timen** da
+egen SMTP ble slått på. De to var altså samme sperre hele tiden.
+
+**Verifisert ende-til-ende:** «Glemt passord?» på ampex.no for
+`stocktormod@gmail.com` ga `Delivered` i Resend-loggen, med emnet «Tilbakestill
+passordet ditt». Kjeden ampex.no → Supabase → Resend → Gmail går.
+
+Malene bor to steder nå, og det er verdt å vite: `supabase/templates/` +
+`config.toml` gjelder den lokale stacken og `supabase config push`, mens det
+hostede prosjektet har sin egen kopi i dashbordet. Endrer du en mal i repoet,
+er den ikke i drift før den også er limt inn der.
 
 **Ikke prøvd:** selve Ampex-flata (opprette et firma) — den krever at Tormod
 har kommet inn.
