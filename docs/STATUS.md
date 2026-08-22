@@ -18,8 +18,9 @@ iOS-bygget: 0 feil, 1 advarsel. Hele appen bundler rent
 (`npx expo export --platform ios`). Kontorappen bygger rent (`cd desktop &&
 npm run build`).
 
-**Sist inn: Ampex Kontor er begynt** — `desktop/` finnes, med prisfil-import og
-varekartotek. Eget avsnitt lenger ned, og `desktop/README.md`.
+**Sist inn: innlogginga på ampex.no.** Glemt passord med gjenopprettingslenke,
+norske feilmeldinger, og ikonet i nettleserfana. Eget avsnitt rett under. Ett
+oppsett gjenstår i Supabase, og det står der.
 
 **UI-runden 21. august kveld** — brun grunnflate i hele appen, én font (Geist),
 og ordrekalenderen — er fortsatt **ikke sett på en skjerm**. Det er det første
@@ -188,6 +189,70 @@ en ny fane — det er forskjellen på å be om den og å foreslå den.)
 
 `modules/ampex-splat/ios/MeshBakeV2.swift` og `MeshScanPresenter.swift` er din
 WIP fra før. Urørt.
+
+---
+
+## Runden 22. august: innlogging på ampex.no, og ikonet i fana
+
+Bare kontorflaten. Montørappens innlogging er urørt.
+
+### Glemt passord — hullet som gjorde installatøren til passordvakt
+
+Den som glemte passordet sitt hadde nøyaktig én utvei: ringe installatøren og
+be ham gå inn i Supabase. Nå ligger «Glemt passord?» under passordfeltet, som en
+**tilstand i det samme kortet** og ikke en egen rute — flaten har ingen
+adresselinje å rute med.
+
+Lenka som kommer på e-post er i praksis en innlogging uten passord, og det er
+hele grunnen til at `auth.tsx` har fått flagget `gjenoppretting`. Uten det ville
+`PASSWORD_RECOVERY` sluppet deg rett inn på Oversikt med det gamle passordet
+fortsatt gyldig. Flagget står foran sesjonssjekken i `App.tsx` og holder deg på
+`NyttPassord` til passordet faktisk er byttet.
+
+Skjemaet svarer det samme enten kontoen finnes eller ikke. «Fant ingen konto»
+forteller hvem som jobber i firmaet til hvem som helst som gidder å gjette
+adresser.
+
+**`detectSessionInUrl` er ikke lenger hardkodet `false`.** Den følger nå om vi
+kjører i nettleser eller i Tauri: tokenene fra e-postlenka lander i hash-en på
+ampex.no, og der må de plukkes opp. WebView2 har fortsatt ingen callback-URL, og
+der er svaret det samme som før.
+
+### Resten av innlogginga
+
+- **Feilmeldingene er norske.** `norsk()` i `Logginn.tsx` oversetter det
+  Supabase svarer. «Failed to fetch» er det verste av dem: det betyr at nettet
+  er nede, og sto til nå som en engelsk halvsetning på et innloggingsskjema.
+- **Adressen renses** — `trim().toLowerCase()`. «Ola@Ampex.no » med et
+  mellomrom fra utklippstavla er samme konto for et menneske, men ikke for
+  `signInWithPassword`.
+- **Adressen huskes, passordet aldri.** `localStorage`, og skrivemerket starter
+  i passordfeltet når adressen allerede står der.
+- **Caps Lock-varsel og øye på passordfeltet.** «Feil passord» tre ganger på rad
+  er nesten alltid den tasten.
+- **Beskjedene ligger i et `aria-live`-område** som står i DOM-en hele tiden.
+  Tomt tas det ut av flyten i stedet for å skjules — et område som settes inn
+  samtidig med teksten sin blir ikke lest opp.
+- Knappen er kobber og ikke nesten-svart, som regel 4 i runden 21. august sier.
+
+### Ikonet i fana
+
+Det var Vercel-trekanten som sto der, og grunnen var at `desktop/index.html`
+ikke hadde en eneste `<link rel="icon">`. Da spør nettleseren etter
+`/favicon.ico`, forespørselen treffer omskrivinga i `vercel.json`
+(`/(.*)` → `/`), får index.html tilbake med bildetype og faller ned på vertens
+eget merke.
+
+`desktop/public/favicon.svg` er nå den samme lyn-A-en som i appen, i kobber på
+krom. `apple-touch-icon.png` ligger ved siden av for iOS, som ikke tar SVG på
+hjemskjermen.
+
+### Ett oppsett som må gjøres i Supabase
+
+Redirect-URL-ene under **Authentication → URL Configuration** må inneholde
+`https://ampex.no/**`, ellers sender gjenopprettingslenka folk til Site URL i
+stedet. Selve lenkeflyten er ikke prøvd ende-til-ende — det krever en ekte
+e-post.
 
 ---
 

@@ -5,7 +5,7 @@ import { useAuth } from '@/auth'
 import { Firma } from '@/ruter/Firma'
 import { Internkontroll } from '@/ruter/Internkontroll'
 import { Kunder } from '@/ruter/Kunder'
-import { Logginn } from '@/ruter/Logginn'
+import { Logginn, NyttPassord } from '@/ruter/Logginn'
 import { Ordre } from '@/ruter/Ordre'
 import { Oversikt } from '@/ruter/Oversikt'
 import { Prisfil } from '@/ruter/Prisfil'
@@ -72,7 +72,7 @@ const RUTER = [
 type RuteId = (typeof RUTER)[number]['id']
 
 export function App() {
-  const { sesjon, profil, laster, feil, loggUt } = useAuth()
+  const { sesjon, profil, laster, feil, gjenoppretting, loggUt } = useAuth()
   const [hash, setHash] = useState(() => window.location.hash)
 
   useEffect(() => {
@@ -107,6 +107,11 @@ export function App() {
       </Sperre>
     )
   }
+
+  // Kom økta fra en «glemt passord»-lenke, er den eneste flaten som gjelder
+  // den som setter et nytt passord. Sjekken står FØR sesjonssjekken, ellers
+  // ville lenka gitt full tilgang uten at passordet ble byttet.
+  if (gjenoppretting) return <NyttPassord />
 
   if (!sesjon) return <Logginn />
   if (laster) return <div className="tomt">Henter profilen …</div>

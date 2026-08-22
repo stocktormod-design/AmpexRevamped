@@ -15,6 +15,16 @@ type Auth = {
   profil: Profil | null
   laster: boolean
   feil: string | null
+  /**
+   * Sant når økta kom fra en «glemt passord»-lenke.
+   *
+   * Lenka logger deg teknisk sett inn, og uten dette flagget ville du havnet
+   * rett på Oversikt med det gamle passordet fortsatt gyldig — altså en
+   * innlogging uten passord, sendt på e-post. Flagget holder deg på skjermen
+   * som setter et nytt, og slås av først når passordet faktisk er byttet.
+   */
+  gjenoppretting: boolean
+  ferdigGjenopprettet: () => void
   loggUt: () => Promise<void>
 }
 
@@ -25,15 +35,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profil, setProfil] = useState<Profil | null>(null)
   const [laster, setLaster] = useState(true)
   const [feil, setFeil] = useState<string | null>(null)
+  const [gjenoppretting, setGjenoppretting] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSesjon(data.session)
       if (!data.session) setLaster(false)
     })
-    const { data } = supabase.auth.onAuthStateChange((_, s) => {
+    const { data } = supabase.auth.onAuthStateChange((hendelse, s) => {
+      if (hendelse === 'PASSWORD_RECOVERY') setGjenoppretting(true)
       setSesjon(s)
-      if (!s) { setProfil(null); setLaster(false) }
+      if (!s) { setProfil(null); setLaster(false); setGjenoppretting(false) }
     })
     return () => data.subscription.unsubscribe()
   }, [])
@@ -60,8 +72,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [sesjon])
 
   const loggUt = async () => { await supabase.auth.signOut() }
+  const ferdigGjenopprettet = () => setGjenoppretting(false)
 
-  return <Ctx.Provider value={{ sesjon, profil, laster, feil, loggUt }}>{children}</Ctx.Provider>
+  return (
+    <Ctx.Provider
+      value={{ sesjon, profil, laster, feil, gjenoppretting, ferdigGjenopprettet, loggUt }}
+    >
+      {children}
+    </Ctx.Provider>
+  )
 }
 
 export function useAuth(): Auth {
