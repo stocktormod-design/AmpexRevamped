@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { hentFirmaer, opprettFirma, type AmpexFirma } from '@/lib/brukere'
+import { useAuth } from '@/auth'
+import { byttFirma, hentFirmaer, opprettFirma, type AmpexFirma } from '@/lib/brukere'
 import { Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 
 /**
@@ -32,8 +33,10 @@ function orgnummer(n: string | null): string {
 }
 
 export function AmpexAdmin() {
+  const { profil } = useAuth()
   const [firmaer, setFirmaer] = useState<AmpexFirma[] | null>(null)
   const [feil, setFeil] = useState<string | null>(null)
+  const [bytter, setBytter] = useState<string | null>(null)
 
   const [apen, setApen] = useState(false)
   const [navn, setNavn] = useState('')
@@ -76,6 +79,26 @@ export function AmpexAdmin() {
 
   const aktive = (firmaer ?? []).filter(f => !f.deleted_at)
 
+  /**
+   * Bytt hvilket firma DU står i, og last siden på nytt.
+   *
+   * Oppfriskning og ikke en pen tilstandsoppdatering, med vilje: alt som
+   * allerede er hentet — ordrer, varer, internkontroll, ansatte — tilhører det
+   * gamle firmaet. Å friske opp tolv spørringer i riktig rekkefølge er en
+   * feilkilde; å laste på nytt er én linje som ikke kan ta feil.
+   */
+  async function bytt(f: AmpexFirma) {
+    setBytter(f.id)
+    setFeil(null)
+    try {
+      await byttFirma(f.id)
+      window.location.assign(window.location.pathname)
+    } catch (e) {
+      setFeil(e instanceof Error ? e.message : String(e))
+      setBytter(null)
+    }
+  }
+
   return (
     <>
       <Sidehode
@@ -103,6 +126,7 @@ export function AmpexAdmin() {
                   <th className="h" style={{ width: 100 }}>Ansatte</th>
                   <th style={{ width: 140 }}>Opprettet</th>
                   <th style={{ width: 110 }}>Status</th>
+                  <th style={{ width: 130 }} />
                 </tr>
               </thead>
               <tbody>
@@ -118,6 +142,17 @@ export function AmpexAdmin() {
                         : f.aktive === 0
                           ? <Merke stil="varsel">Uten eier</Merke>
                           : <Merke stil="noytral">Aktivt</Merke>}
+                    </td>
+                    {/* Du står i ett av dem. Resten kan du bytte til — og da
+                        ser du nøyaktig det kunden ser, ikke en anelse om det. */}
+                    <td className="h">
+                      {profil?.company_id === f.id ? (
+                        <span className="dempet-mer">Du er her</span>
+                      ) : f.deleted_at ? null : (
+                        <Knapp type="button" disabled={bytter !== null} onClick={() => void bytt(f)}>
+                          {bytter === f.id ? 'Bytter …' : 'Bytt til'}
+                        </Knapp>
+                      )}
                     </td>
                   </tr>
                 ))}

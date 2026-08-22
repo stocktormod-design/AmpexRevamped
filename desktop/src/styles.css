@@ -430,6 +430,36 @@ textarea.skrivefelt-lav { height: 110px; }
   gap: 12px;
   align-items: start;
 }
+
+/* Fjern-knappen paa en rad. `align-self: end` holder den paa linje med
+   feltene selv paa den foerste raden, som er den ene som har etiketter. */
+.inviter-fjern {
+  align-self: end;
+  display: grid; place-items: center;
+  width: 36px; height: 36px; flex: none;
+  border-radius: var(--r-input); color: var(--blekk-3);
+  border: 1px solid var(--kant);
+  transition: color 100ms ease, border-color 100ms ease, background 100ms ease;
+}
+.inviter-fjern:hover { color: var(--rod); border-color: rgba(163, 43, 34, 0.3); background: var(--rod-flate); }
+
+/* ── Totrinnsbekreftelse ─────────────────────────────────────────────────── */
+
+/* QR-koden ved siden av forklaringen. Brekker under paa smale flater. */
+.qr-rad { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+
+/* Supabase leverer QR-en som SVG i en data-URI. Hvit ramme rundt er ikke pynt:
+   en QR paa kremet bakgrunn har for lav kontrast for enkelte kameraer. */
+.qr {
+  width: 168px; height: 168px; flex: none;
+  background: #FFFFFF; padding: 8px;
+  border: 1px solid var(--kant); border-radius: var(--r-kort);
+}
+.qr-rad .stabel { flex: 1; min-width: 220px; gap: 8px; }
+
+/* Kvitteringen: én linje per person i bunken. */
+.kvittering { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.kvittering li { line-height: 1.5; }
 .inviter-felt .velger { width: 100%; }
 
 /* Adressen under navnet i ansattlista. */

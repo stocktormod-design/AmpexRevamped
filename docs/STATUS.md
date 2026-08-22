@@ -192,6 +192,79 @@ WIP fra før. Urørt.
 
 ---
 
+## Runden 22. august (3): 2FA på invitasjoner, og firmabytte
+
+### Koden kreves hver gang, og serveren er den som teller
+
+Invitasjonen er den ene handlingen i kontoret som lager en NY dør inn i
+firmaet, og den som inviterer setter rollen — altså hvem som ser lønn,
+dekningsbidrag og kunderegister. Kaprer noen en eiers økt på en ulåst
+kontor-PC, er invitasjonsskjemaet den korteste veien til en permanent bakdør:
+en konto angriperen eier selv, i et firma som ikke er hans.
+
+Derfor: TOTP med autentiseringsapp, påmelding med QR første gang, og **kode på
+nytt ved hver invitasjon**.
+
+`aal2` alene holder ikke. Det sier bare at brukeren en gang i denne økta skrev
+en kode, og en økt lever i dager. `amr` i tokenet bærer et tidsstempel per
+autentiseringssteg, og `inviter-ansatt` krever at TOTP-steget er under fem
+minutter gammelt (`FERSK_S`). Klienten kan ikke jukse med det: funksjonen er
+deployet med `verify_jwt`, så plattformen har alt sjekket signaturen før koden
+vår leser innholdet.
+
+Kravet gjelder eier OG administrator. De to er likestilte i modellen — begge
+kan endre roller, begge kan invitere — så en sperre på bare den ene er en dør
+med håndtak på begge sider.
+
+### Ti om gangen, én kode
+
+Et firma ansetter i puljer. Å be om en ny kode per person ville gjort ti
+invitasjoner til ti anledninger til å taste feil, uten å gjøre noe tryggere:
+koden beviser hvem som sitter der, og han sitter der én gang.
+
+Bunken avbrytes ikke av at én rad feiler. Kvitteringen viser utfallet per
+person — `invitert`, `lagt-til`, `finnes` eller `avvist` med grunn.
+
+### Firmabytte for Ampex-admin
+
+`bytt-firma` i `ampex-admin` flytter Ampex-administratorens egen
+`profiles.company_id`. Det ER tenancy-endringen `profiles_vern` finnes for å
+hindre, og den er lov her fordi tre ting stemmer samtidig: den skjer med
+`service_role` (triggerens eget unntak), kalleren er slått opp i
+`ampex_admins`, og den gir ingen NY tilgang — en Ampex-admin leser allerede
+alle firmaer gjennom den funksjonen.
+
+Prisen står i revisjonssporet: rader han lager etterpå føres på det nye
+firmaet. Derfor logges byttet i BEGGE firmaene (`ampex.forlot`,
+`ampex.byttet_inn`), så et hopp i historikken har en forklaring ved siden av
+seg.
+
+Flata laster siden på nytt etter byttet. Alt som var hentet tilhørte det gamle
+firmaet, og å friske opp tolv spørringer i riktig rekkefølge er en feilkilde;
+én `location.assign` kan ikke ta feil.
+
+### Isolasjonen er verifisert
+
+Alle 39 tabeller med `company_id` har RLS på, og hver eneste policy er scopet
+mot `current_company_id()`. Supabase' egen sikkerhetsskanner finner null
+RLS-avvik. Arntsen Elservice hadde null rader i alt annet enn `profiles`,
+`company_settings` og to revisjonslinjer fra opprettelsen — eksempeldataene
+ligger på Ampex Test AS, som er et annet firma.
+
+Skanneren gjentar derimot funnet fra `20260822130000`: 29 SECURITY
+DEFINER-funksjoner er kallbare av `anon` gjennom PUBLIC-granten. Fortsatt ikke
+en lekkasje (de er enten ikke security definer, returnerer `trigger`, eller
+leser `auth.uid()` selv), men fortsatt ryddearbeid som venter.
+
+### Ryddet i testdataene
+
+To ordretitler i Ampex Test AS inneholdt grovt tullball, og de samme strengene
+lå i tre `audit_events.endringer`. Titlene er byttet ut; revisjonslinjene er
+**sladdet, ikke slettet** — en logg som kan fjernes er ingen logg. Null treff
+igjen i noen tekst- eller jsonb-kolonne i basen.
+
+---
+
 ## Runden 22. august (2): firmaer og brukere
 
 Spørsmålet var «hvordan oppretter jeg firmaer og brukere til dem?», og svaret

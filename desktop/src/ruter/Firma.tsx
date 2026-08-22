@@ -1,10 +1,10 @@
-import { kan, rollenavn, type Rolle } from '@delt/kontor-tilgang'
+import { kan, rollenavn } from '@delt/kontor-tilgang'
 import { useCallback, useEffect, useState } from 'react'
-import { inviterAnsatt } from '@/lib/brukere'
 import { hentFirma, type Firmaoppsett } from '@/lib/kontor-lager'
+import { Inviter } from '@/ui/Inviter'
 import { lagInnmeldingskode, settAmpexPool } from '@/lib/skann-lager'
 import { useAuth } from '@/auth'
-import { Beskjed, Felt, initialer, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
+import { Beskjed, initialer, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 
 /**
  * Firmaoppsettet.
@@ -32,109 +32,6 @@ const REGNSKAP: Record<string, string> = {
   fiken: 'Fiken',
   tripletex: 'Tripletex',
   poweroffice: 'PowerOffice Go',
-}
-
-/**
- * Rollene i den rekkefoelgen firmaet ansetter i dem.
- *
- * `owner` står med, og skal stå med: et firma kan ha to eiere, og alternativet
- * er at den ene må be Ampex om å gjøre det. Sperren mot at hvem som helst
- * setter den ligger i Edge Functionen, som slaar opp kallerens egen rolle.
- */
-const ROLLEVALG: Rolle[] = ['montor', 'laerling', 'bas', 'installator', 'regnskapsforer', 'admin', 'owner']
-
-/**
- * Inviter en ansatt.
- *
- * Ingen `company_id` i skjemaet, og det er ikke en forglemmelse: firmaet slaas
- * opp fra oekta til den som inviterer, inne i `supabase/functions/inviter-ansatt`.
- * Kunne klienten oppgi det, ville dette vært en vei inn i et fremmed firma.
- */
-function Inviter({ ferdig }: { ferdig: () => void }) {
-  const [apen, setApen] = useState(false)
-  const [epost, setEpost] = useState('')
-  const [navn, setNavn] = useState('')
-  const [rolle, setRolle] = useState<Rolle>('montor')
-  const [jobber, setJobber] = useState(false)
-  const [feil, setFeil] = useState<string | null>(null)
-  const [kvittering, setKvittering] = useState<string | null>(null)
-
-  // Kvitteringen står i den LUKKEDE tilstanden, ikke i skjemaet. Skjemaet
-  // lukker seg når invitasjonen gikk gjennom, og en kvittering som forsvinner
-  // sammen med skjemaet er ingen kvittering.
-  if (!apen) {
-    return (
-      <div className="stabel">
-        {kvittering ? <Beskjed stil="ok">{kvittering}</Beskjed> : null}
-        {/* Egen blokk rundt knappen: `.stabel` strekker barna sine, og en
-            «Inviter ansatt»-knapp i full kortbredde leser som flatens hovedhandling.
-            Det er den ikke — lista over den er hovedsaken. */}
-        <div>
-          <Knapp stil="merke" onClick={() => { setApen(true); setKvittering(null) }}>
-            Inviter ansatt
-          </Knapp>
-        </div>
-      </div>
-    )
-  }
-
-  async function send(ev: React.FormEvent) {
-    ev.preventDefault()
-    setJobber(true)
-    setFeil(null)
-    try {
-      const svar = await inviterAnsatt(epost, navn, rolle)
-      setKvittering(
-        svar.status === 'invitert'
-          ? `Invitasjon sendt til ${svar.epost}. Raden står i lista med en gang, og «Invitert» blir borte når invitasjonen er tatt imot.`
-          : svar.status === 'lagt-til'
-            ? `${svar.navn} hadde konto fra før og er lagt til i firmaet.`
-            : `${svar.epost} står allerede i firmaet.`,
-      )
-      setEpost(''); setNavn(''); setRolle('montor'); setApen(false)
-      ferdig()
-    } catch (e) {
-      setFeil(e instanceof Error ? e.message : String(e))
-    }
-    setJobber(false)
-  }
-
-  return (
-    <form className="stabel" onSubmit={send}>
-      <div className="inviter-felt">
-        <Felt
-          etikett="Navn"
-          firkant
-          autoFocus
-          value={navn}
-          onChange={e => setNavn(e.target.value)}
-        />
-        <Felt
-          etikett="E-post"
-          type="email"
-          inputMode="email"
-          firkant
-          value={epost}
-          onChange={e => setEpost(e.target.value)}
-        />
-        <label className="felt felt-firkant">
-          <span className="felt-etikett">Rolle</span>
-          <select className="velger" value={rolle} onChange={e => setRolle(e.target.value as Rolle)}>
-            {ROLLEVALG.map(r => <option key={r} value={r}>{rollenavn(r)}</option>)}
-          </select>
-        </label>
-      </div>
-      {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
-      <div className="rad">
-        <Knapp stil="merke" type="submit" disabled={jobber || !navn || !epost}>
-          {jobber ? 'Sender …' : 'Send invitasjon'}
-        </Knapp>
-        <Knapp type="button" onClick={() => { setApen(false); setFeil(null) }}>Avbryt</Knapp>
-        <span className="strekk" />
-        <span className="dempet-mer">Rollen kan endres etterpå.</span>
-      </div>
-    </form>
-  )
 }
 
 export function Firma() {
