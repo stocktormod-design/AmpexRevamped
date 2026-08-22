@@ -86,7 +86,7 @@ function Inviter({ ferdig }: { ferdig: () => void }) {
       const svar = await inviterAnsatt(epost, navn, rolle)
       setKvittering(
         svar.status === 'invitert'
-          ? `Invitasjon sendt til ${svar.epost}. Hun står i lista med en gang, og «Invitert» blir borte når hun har logget inn.`
+          ? `Invitasjon sendt til ${svar.epost}. Raden står i lista med en gang, og «Invitert» blir borte når invitasjonen er tatt imot.`
           : svar.status === 'lagt-til'
             ? `${svar.navn} hadde konto fra før og er lagt til i firmaet.`
             : `${svar.epost} står allerede i firmaet.`,

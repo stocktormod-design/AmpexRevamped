@@ -285,9 +285,16 @@ Migrasjonene er kjørt og begge Edge Functions er deployet på
   `finnes` — uten at det ble sendt en e-post eller endret en rad
 - Ampex-ruta vises IKKE for en som ikke står i `ampex_admins`
 
-**Ikke prøvd:** selve Ampex-flata (opprette et firma) og en ekte
-invitasjons-e-post. Begge krever en Ampex-admin, og den eneste kontoen som
-finnes er `test@ampex.no` — som ikke skal ha den rollen, jf. avsnittet over.
+**Invitasjonen er kjørt for ekte etterpå.** `stocktormod@gmail.com` (Tormod
+Stokke) er invitert som eier i Ampex Test AS gjennom den nye flata, og satt inn
+i `ampex_admins`. Hele kjeden ga utslag: auth-bruker opprettet med
+`invited_at`, profilen fikk rolle og firma via service_role, og
+`bruker.invitert` står i revisjonssporet med Test Montør som aktør.
+
+**Ikke prøvd:** selve Ampex-flata (opprette et firma) — den krever at Tormod
+har tatt imot invitasjonen og logget inn. Om invitasjons-e-posten faktisk kom
+fram er heller ikke bekreftet; kommer den ikke, virker «Glemt passord» på
+ampex.no på den samme adressen nå som kontoen finnes.
 
 ### Revokene i sikkerhetsmigrasjonen bet aldri
 
@@ -323,9 +330,9 @@ tilbake på `https://www.ampex.no/`, som er riktig verdi, så det haster ikke:
 supabase secrets set AMPEX_NETTSTED=https://www.ampex.no/
 ```
 
-Det som gjenstår, og som må gjøres én gang i SQL-editoren med din egen
-adresse (du trenger en konto først — lag den fra Authentication → Add user →
-Send invitation, og lenka lander i den nye passordskjermen):
+Den første Ampex-administratoren er satt opp. For nummer to, eller på et nytt
+prosjekt, kjøres dette én gang i SQL-editoren (brukeren må finnes i
+`auth.users` først):
 
 ```sql
 insert into public.ampex_admins (user_id, notat)
