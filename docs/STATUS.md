@@ -324,10 +324,30 @@ skal ikke brukes i produksjon. Med ekte kunder som inviterer ansatte betyr det
 at invitasjon nummer tre i samme time bare forsvinner — funksjonen svarer
 «sendt», og e-posten kommer aldri.
 
-Begge løses av det samme: egen SMTP. Resend har gratisnivå (3000/måned, 100/dag)
-og krever verifisering av `ampex.no` med DNS-poster. Det er en tjeneste til, og
-et valg noen må ta bevisst — invitasjonsflyten er ikke produksjonsklar før det
-er på plass.
+**Valgt 22. august: Resend.** Gratisnivået er 3000 e-poster i måneden og 100 om
+dagen, som er rikelig for invitasjoner og passordlenker. Det er en tredje
+tjeneste ved siden av Supabase og R2, men uten løpende kostnad, så
+utgiftsklausulen står — se «Faste beslutninger».
+
+DNS-en for `ampex.no` ligger hos **Vercel** (`ns1/ns2.vercel-dns.com`), og
+domenet har ingen MX-post fra før. Resend-postene legges altså inn under
+Vercel → Domains → ampex.no → DNS, uten noe å kollidere med.
+
+SMTP-verdiene i Supabase blir:
+
+| Felt | Verdi |
+|---|---|
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| Username | `resend` |
+| Password | API-nøkkelen fra Resend |
+| Sender email | `ikke-svar@ampex.no` |
+| Sender name | `Ampex` |
+
+Når SMTP står: malene i `supabase/templates/` kan endelig limes inn under
+Authentication → Emails, og rate limit kan heves fra 2 i timen.
+
+Invitasjonsflyten er ikke produksjonsklar før dette er på plass.
 
 **Ikke prøvd:** selve Ampex-flata (opprette et firma) — den krever at Tormod
 har kommet inn.
