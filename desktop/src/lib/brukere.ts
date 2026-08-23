@@ -83,6 +83,60 @@ export async function byttFirma(firmaId: string) {
   })
 }
 
+/**
+ * En person i et firma, sett fra Ampex-flata.
+ *
+ * `bekreftet_at` er `auth.users.email_confirmed_at`. Det er den ene av de tre
+ * datoene som avgjør hva knappen ved siden av kommer til å gjøre — se
+ * `sendPaaNytt()`.
+ */
+export type AmpexPerson = {
+  id: string
+  epost: string
+  full_name: string | null
+  role: string
+  invitert_at: string | null
+  bekreftet_at: string | null
+  sist_innlogget_at: string | null
+  deleted_at: string | null
+}
+
+/**
+ * Folkene i ett bestemt firma.
+ *
+ * `firmaets_ansatte()` svarer bare for firmaet DU står i, med vilje. Denne
+ * veien tar firmaet som argument og er derfor kun for Ampex-administratorer —
+ * kontrollen ligger i Edge Functionen, ikke her.
+ */
+export async function hentFolk(firmaId: string) {
+  const { folk } = await kall<{ folk: AmpexPerson[] }>('ampex-admin', {
+    handling: 'folk',
+    firma_id: firmaId,
+  })
+  return folk
+}
+
+export type Sendt = { epost: string; slag: 'invitasjon' | 'passord' }
+
+/**
+ * Send lenken en gang til — og la serveren bestemme hvilken.
+ *
+ * Har personen ikke bekreftet e-posten sin, går det ut en ny invitasjon. Har
+ * hun det, finnes kontoen allerede, og da vil GoTrue avvise en invitasjon
+ * («already been registered»); det som trengs da er en passordlenke.
+ *
+ * Klienten oppgir ikke hvilken av de to den vil ha. Kunne den det, kunne
+ * skjermen og GoTrue vært uenige — og uenigheten ville blitt en feilmelding
+ * hos den som bare skulle purre.
+ */
+export async function sendPaaNytt(brukerId: string) {
+  const { sendt } = await kall<{ sendt: Sendt }>('ampex-admin', {
+    handling: 'send-paa-nytt',
+    bruker_id: brukerId,
+  })
+  return sendt
+}
+
 export async function opprettFirma(inn: {
   navn: string
   org_nummer: string

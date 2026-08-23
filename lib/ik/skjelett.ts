@@ -243,16 +243,23 @@ export type Fullstendighet = {
  * internkontrollsystem — og en prosentandel som sier 93 % ville skjult det.
  */
 export function fullstendighet(
-  punkter: { nummer: string; innhold: string | null; status: string; maaVaereSkriftlig: boolean }[],
+  /**
+   * `harRutine` og ikke en tekst: et punkt er et KAPITTEL, og under det kan det
+   * ligge flere rutiner (se migrasjonen 20260823150000). Spørsmålet er om
+   * kapittelet er skrevet i det hele tatt — ikke hvilken av rutinene som er
+   * lengst. Kalleren avgjør hva som teller som skrevet, og det er riktig sted:
+   * den vet om den ser på punktets egen tekst eller på rutinene under det.
+   */
+  punkter: { nummer: string; harRutine: boolean; status: string; maaVaereSkriftlig: boolean }[],
 ): Fullstendighet {
   const kreves = punkter.filter(p => p.maaVaereSkriftlig)
-  const manglerInnhold = kreves.filter(p => !p.innhold?.trim()).map(p => p.nummer)
+  const manglerInnhold = kreves.filter(p => !p.harRutine).map(p => p.nummer)
   const ikkeVedtatt = kreves
-    .filter(p => p.innhold?.trim() && p.status !== 'vedtatt')
+    .filter(p => p.harRutine && p.status !== 'vedtatt')
     .map(p => p.nummer)
   return {
     kreves: kreves.length,
-    pa_plass: kreves.filter(p => p.innhold?.trim() && p.status === 'vedtatt').length,
+    pa_plass: kreves.filter(p => p.harRutine && p.status === 'vedtatt').length,
     manglerInnhold,
     ikkeVedtatt,
   }

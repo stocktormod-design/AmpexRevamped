@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { rollenavn } from '@delt/kontor-tilgang'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/auth'
-import { byttFirma, hentFirmaer, opprettFirma, type AmpexFirma } from '@/lib/brukere'
+import {
+  byttFirma,
+  hentFirmaer,
+  hentFolk,
+  opprettFirma,
+  sendPaaNytt,
+  type AmpexFirma,
+  type AmpexPerson,
+} from '@/lib/brukere'
 import { Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 
 /**
@@ -32,11 +41,37 @@ function orgnummer(n: string | null): string {
   return /^\d{9}$/.test(n) ? `${n.slice(0, 3)} ${n.slice(3, 6)} ${n.slice(6)}` : n
 }
 
+/**
+ * Hva knappen ved siden av personen kommer til å sende.
+ *
+ * Speiler Edge Functionen, som speiler GoTrue: `/invite` avviser en bruker som
+ * har bekreftet e-posten sin, fordi en invitasjon er måten en konto blir til.
+ * Har hun alt laget seg en, er det veien INN i den hun mangler.
+ *
+ * Skjermen gjetter altså ikke — den viser den samme regelen serveren handler
+ * etter, så teksten på knappen og e-posten som kommer fram er samme sak.
+ */
+function harKonto(p: AmpexPerson): boolean {
+  return p.bekreftet_at !== null
+}
+
 export function AmpexAdmin() {
   const { profil } = useAuth()
   const [firmaer, setFirmaer] = useState<AmpexFirma[] | null>(null)
   const [feil, setFeil] = useState<string | null>(null)
   const [bytter, setBytter] = useState<string | null>(null)
+
+  /**
+   * Ett firma om gangen er utvidet.
+   *
+   * Ikke et sett: to åpne lister med folk under hver sin firmarad gjør tabellen
+   * til noe man må lete i. Den som purrer holder på med ett firma.
+   */
+  const [vist, setVist] = useState<string | null>(null)
+  const [folk, setFolk] = useState<AmpexPerson[] | null>(null)
+  const [folkfeil, setFolkfeil] = useState<string | null>(null)
+  const [sender, setSender] = useState<string | null>(null)
+  const [sendt, setSendt] = useState<string | null>(null)
 
   const [apen, setApen] = useState(false)
   const [navn, setNavn] = useState('')
@@ -99,6 +134,50 @@ export function AmpexAdmin() {
     }
   }
 
+  /** Slå opp folkene i ett firma, eller lukk lista igjen. */
+  async function vis(f: AmpexFirma) {
+    setSendt(null)
+    setFolkfeil(null)
+    if (vist === f.id) { setVist(null); setFolk(null); return }
+    setVist(f.id)
+    setFolk(null)
+    try {
+      setFolk(await hentFolk(f.id))
+    } catch (e) {
+      setFolk([])
+      setFolkfeil(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /**
+   * Send lenken en gang til.
+   *
+   * Hvilken av de to det blir avgjøres på serveren, ikke her — se
+   * `sendPaaNytt()`. Kvitteringen sier hva som FAKTISK gikk ut, og ikke hva
+   * knappen het da den ble trykket: står skjermen på en liste som er et minutt
+   * gammel, kan personen ha tatt imot invitasjonen i mellomtiden.
+   *
+   * Lista hentes på nytt etterpå, så `invitert_at` og statusmerket stemmer med
+   * det som nettopp skjedde.
+   */
+  async function purr(person: AmpexPerson, firmaId: string) {
+    setSender(person.id)
+    setSendt(null)
+    setFolkfeil(null)
+    try {
+      const ut = await sendPaaNytt(person.id)
+      setSendt(
+        ut.slag === 'invitasjon'
+          ? `Ny invitasjon sendt til ${ut.epost}.`
+          : `Passordlenke sendt til ${ut.epost} — kontoen fantes fra før.`,
+      )
+      setFolk(await hentFolk(firmaId))
+    } catch (e) {
+      setFolkfeil(e instanceof Error ? e.message : String(e))
+    }
+    setSender(null)
+  }
+
   return (
     <>
       <Sidehode
@@ -126,12 +205,13 @@ export function AmpexAdmin() {
                   <th className="h" style={{ width: 100 }}>Ansatte</th>
                   <th style={{ width: 140 }}>Opprettet</th>
                   <th style={{ width: 110 }}>Status</th>
-                  <th style={{ width: 130 }} />
+                  <th style={{ width: 210 }} />
                 </tr>
               </thead>
               <tbody>
                 {firmaer.map(f => (
-                  <tr key={f.id}>
+                  <Fragment key={f.id}>
+                  <tr>
                     <td style={{ fontWeight: 500 }}>{f.name}</td>
                     <td className="dempet valgbar h">{orgnummer(f.org_number)}</td>
                     <td className="h dempet">{f.aktive}</td>
@@ -146,15 +226,85 @@ export function AmpexAdmin() {
                     {/* Du står i ett av dem. Resten kan du bytte til — og da
                         ser du nøyaktig det kunden ser, ikke en anelse om det. */}
                     <td className="h">
-                      {profil?.company_id === f.id ? (
-                        <span className="dempet-mer">Du er her</span>
-                      ) : f.deleted_at ? null : (
-                        <Knapp type="button" disabled={bytter !== null} onClick={() => void bytt(f)}>
-                          {bytter === f.id ? 'Bytter …' : 'Bytt til'}
-                        </Knapp>
-                      )}
+                      <div className="rad" style={{ justifyContent: 'flex-end' }}>
+                        {f.ansatte === 0 ? null : (
+                          <Knapp type="button" onClick={() => void vis(f)}>
+                            {vist === f.id ? 'Skjul folk' : 'Folk'}
+                          </Knapp>
+                        )}
+                        {profil?.company_id === f.id ? (
+                          <span className="dempet-mer">Du er her</span>
+                        ) : f.deleted_at ? null : (
+                          <Knapp type="button" disabled={bytter !== null} onClick={() => void bytt(f)}>
+                            {bytter === f.id ? 'Bytter …' : 'Bytt til'}
+                          </Knapp>
+                        )}
+                      </div>
                     </td>
                   </tr>
+                  {/* Folkene i firmaet, med den ene knappen som purrer.
+                      Under firmaraden og ikke på en egen skjerm: spørsmålet
+                      «har eieren kommet inn?» er det samme spørsmålet som
+                      «Uten eier»-merket til venstre nettopp stilte. */}
+                  {vist === f.id ? (
+                    <tr className="folk-rad">
+                      <td colSpan={6}>
+                        {folkfeil ? <Beskjed stil="feil">{folkfeil}</Beskjed> : null}
+                        {sendt ? <Beskjed stil="ok">{sendt}</Beskjed> : null}
+                        {!folk ? (
+                          <p className="kort-hjelp">Henter …</p>
+                        ) : folk.length === 0 ? (
+                          <p className="kort-hjelp">Ingen folk i firmaet.</p>
+                        ) : (
+                          <table className="linjer">
+                            <tbody>
+                              {folk.map(person => (
+                                <tr key={person.id}>
+                                  <td style={{ fontWeight: 500 }}>
+                                    {person.full_name || '—'}
+                                  </td>
+                                  <td className="dempet valgbar">{person.epost}</td>
+                                  <td className="dempet" style={{ width: 140 }}>
+                                    {rollenavn(person.role)}
+                                  </td>
+                                  <td style={{ width: 150 }}>
+                                    {person.deleted_at
+                                      ? <Merke stil="feil">Trukket</Merke>
+                                      : !harKonto(person)
+                                        ? <Merke stil="varsel">Ikke tatt imot</Merke>
+                                        : person.sist_innlogget_at
+                                          ? <Merke stil="noytral">Har tilgang</Merke>
+                                          : <Merke stil="ny">Konto laget</Merke>}
+                                  </td>
+                                  <td className="dempet h" style={{ width: 150 }}>
+                                    {person.invitert_at
+                                      ? `Invitert ${DATO.format(new Date(person.invitert_at))}`
+                                      : null}
+                                  </td>
+                                  <td className="h" style={{ width: 210 }}>
+                                    {person.deleted_at ? null : (
+                                      <Knapp
+                                        type="button"
+                                        disabled={sender !== null}
+                                        onClick={() => void purr(person, f.id)}
+                                      >
+                                        {sender === person.id
+                                          ? 'Sender …'
+                                          : harKonto(person)
+                                            ? 'Send passordlenke'
+                                            : 'Inviter på nytt'}
+                                      </Knapp>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

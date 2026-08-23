@@ -191,6 +191,166 @@ export async function kvitterGjennomgang(punktId: string): Promise<void> {
   if (error) throw new Error(`Kunne ikke registrere gjennomgangen: ${error.message}`)
 }
 
+// ── Rutinene under et punkt ────────────────────────────────────────────────
+//
+// Punktene er hentet fra internkontrollforskriften § 5 og er generelle med
+// vilje. «Kartlegging av farer og risikovurdering» er ikke én rutine — det er
+// rutinen for arbeid i tavle, for arbeid i høyden, for AUS og for graving.
+// Punktet er kapittelet; rutinene lever under det, med hver sin versjon og
+// hvert sitt vedtak.
+//
+// Lesebekreftelsen (`ik_lest`) blir liggende på PUNKTET. «Jeg har lest
+// kapittelet om risikovurdering» er utsagnet som betyr noe — og en montør som
+// måtte kvittere fire ganger for det samme kapittelet er en montør som klikker
+// uten å lese. At kapittelversjonen likevel teller opp når en rutine endres,
+// gjøres av en trigger i basen (se migrasjonen 20260823150000), ikke herfra.
+
+export type IkRutine = {
+  id: string
+  punkt_id: string
+  tittel: string
+  innhold: string | null
+  ansvarlig: string | null
+  status: IkStatus
+  gjeldende_versjon: number
+  sort_order: number
+  vedtatt_at: string | null
+  updated_at: string
+}
+
+const RUTINEKOLONNER =
+  'id,punkt_id,tittel,innhold,ansvarlig,status,gjeldende_versjon,sort_order,vedtatt_at,updated_at'
+
+/**
+ * Alle rutinene i firmaet, bøttet på punkt.
+ *
+ * Én spørring og ikke én per punkt: skjelettet har 42 punkter, og 42 rundturer
+ * for å tegne én liste er 42 anledninger til å vente.
+ */
+export async function hentRutiner(): Promise<Map<string, IkRutine[]>> {
+  const { data, error } = await supabase
+    .from('ik_rutiner')
+    .select(RUTINEKOLONNER)
+    .is('deleted_at', null)
+    .order('sort_order')
+    .order('tittel')
+  if (error) throw new Error(`Kunne ikke lese rutinene: ${error.message}`)
+
+  const ut = new Map<string, IkRutine[]>()
+  for (const r of (data ?? []) as unknown as IkRutine[]) {
+    const liste = ut.get(r.punkt_id) ?? []
+    liste.push(r)
+    ut.set(r.punkt_id, liste)
+  }
+  return ut
+}
+
+export async function hentRutinerevisjoner(rutineId: string): Promise<IkRevisjon[]> {
+  const { data, error } = await supabase
+    .from('ik_revisjoner')
+    .select('id,versjon,tittel,hjemmel,formal,innhold,endringsnotat,endret_av_navn,created_at')
+    .eq('rutine_id', rutineId)
+    .is('deleted_at', null)
+    .order('versjon', { ascending: false })
+  if (error) throw new Error(`Kunne ikke lese revisjonene: ${error.message}`)
+  return (data ?? []) as unknown as IkRevisjon[]
+}
+
+/**
+ * Ny rutine under et punkt.
+ *
+ * Opprettes tom, med bare en tittel. Det er samme grunn som at skjelettet
+ * lages uten innhold: en rutine leverandøren har skrevet er ikke firmaets
+ * rutine, og en forhåndsutfylt tekst er den som blir stående uendret.
+ */
+export async function opprettRutine(punktId: string, tittel: string, brukerId: string): Promise<string> {
+  const navn = tittel.trim()
+  if (!navn) throw new Error('Rutinen må ha en tittel.')
+
+  const { data, error } = await supabase
+    .from('ik_rutiner')
+    .insert({ punkt_id: punktId, tittel: navn, created_by: brukerId })
+    .select('id')
+    .single()
+  if (error) throw new Error(`Kunne ikke opprette rutinen: ${error.message}`)
+  return (data as { id: string }).id
+}
+
+export type Rutineendring = {
+  tittel: string
+  innhold: string | null
+  ansvarlig: string | null
+}
+
+/**
+ * Lagrer en endring på en rutine, og arkiverer den som revisjon.
+ *
+ * Samme rekkefølge og samme begrunnelse som `lagreEndring()` for punktene:
+ * revisjonen først, fordi en endring uten spor er den feilen som ikke kan
+ * rettes i ettertid.
+ *
+ * `hjemmel` og `formal` står på punktet og gjentas ikke her — de skrives inn i
+ * revisjonsraden fra punktet, så en revisjon fortsatt kan leses alene og gi
+ * hele bildet av hva som gjaldt den dagen.
+ */
+export async function lagreRutineendring(
+  rutine: IkRutine,
+  punkt: Pick<IkPunkt, 'id' | 'hjemmel' | 'formal'>,
+  endring: Rutineendring,
+  endringsnotat: string,
+  bruker: { id: string; navn: string },
+): Promise<number> {
+  const notat = endringsnotat.trim()
+  if (!notat) throw new Error('Endringsnotat er påkrevd. Skriv én linje om hva som ble endret og hvorfor.')
+
+  const nyVersjon = rutine.gjeldende_versjon + 1
+
+  const rev = await supabase.from('ik_revisjoner').insert({
+    punkt_id: punkt.id,
+    rutine_id: rutine.id,
+    versjon: nyVersjon,
+    tittel: endring.tittel,
+    hjemmel: punkt.hjemmel,
+    formal: punkt.formal,
+    innhold: endring.innhold,
+    endringsnotat: notat,
+    endret_av: bruker.id,
+    endret_av_navn: bruker.navn,
+  })
+  if (rev.error) throw new Error(`Kunne ikke arkivere revisjonen: ${rev.error.message}`)
+
+  const { error } = await supabase
+    .from('ik_rutiner')
+    .update({ ...endring, gjeldende_versjon: nyVersjon })
+    .eq('id', rutine.id)
+  if (error) throw new Error(`Revisjonen ble arkivert, men rutinen ble ikke oppdatert: ${error.message}`)
+
+  return nyVersjon
+}
+
+export async function vedtaRutine(rutineId: string, brukerId: string): Promise<void> {
+  const { error } = await supabase
+    .from('ik_rutiner')
+    .update({ status: 'vedtatt', vedtatt_at: new Date().toISOString(), vedtatt_av: brukerId })
+    .eq('id', rutineId)
+  if (error) throw new Error(`Kunne ikke vedta rutinen: ${error.message}`)
+}
+
+/**
+ * Tar rutinen ut av bruk.
+ *
+ * Soft delete, regel 5 — og her er den ikke bare en regel: en rutine som gjaldt
+ * da noe skjedde skal kunne dokumenteres i ettertid, også etter at firmaet har
+ * sluttet å bruke den.
+ */
+export async function slettRutine(rutineId: string): Promise<void> {
+  const { error } = await supabase
+    .from('ik_rutiner')
+    .update({ deleted_at: new Date().toISOString(), status: 'utgatt' })
+    .eq('id', rutineId)
+  if (error) throw new Error(`Kunne ikke fjerne rutinen: ${error.message}`)
+}
+
 // ── Skjemaer knyttet til et punkt ──────────────────────────────────────────
 
 export type Skjemakobling = { id: string; template_id: string; tittel: string; versjon: number; status: string }

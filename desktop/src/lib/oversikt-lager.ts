@@ -1,6 +1,6 @@
 import { erForfalt, fullstendighet } from '@delt/ik/skjelett'
 import { supabase } from '@/supabase'
-import { hentPunkter } from '@/lib/ik-lager'
+import { hentPunkter, hentRutiner, type IkRutine } from '@/lib/ik-lager'
 
 /**
  * Tallene til forsiden.
@@ -43,13 +43,18 @@ export async function hentOversikt(kanSeIk: boolean, kanSeTilbud: boolean): Prom
   const uke = new Date()
   uke.setDate(uke.getDate() - 7)
 
-  const [o, q, t, punkter] = await Promise.all([
+  const [o, q, t, punkter, rutiner] = await Promise.all([
     supabase.from('orders').select('status').is('deleted_at', null),
     kanSeTilbud
       ? supabase.from('quotes').select('status,valid_until').is('deleted_at', null)
       : Promise.resolve({ data: [], error: null }),
     supabase.from('time_entries').select('hours').gte('date', uke.toISOString()).is('deleted_at', null),
     kanSeIk ? hentPunkter().catch(() => []) : Promise.resolve([]),
+    // Rutinene, ikke bare punktene: et kapittel er skrevet naar det har minst
+    // en rutine med tekst under seg (se migrasjonen 20260823150000).
+    kanSeIk
+      ? hentRutiner().catch(() => new Map<string, IkRutine[]>())
+      : Promise.resolve(new Map<string, IkRutine[]>()),
   ])
 
   const forste = [o, q, t].find(r => r.error)
@@ -72,7 +77,10 @@ export async function hentOversikt(kanSeIk: boolean, kanSeTilbud: boolean): Prom
 
   const ikStatus = punkter.length
     ? fullstendighet(punkter.map(p => ({
-        nummer: p.nummer, innhold: p.innhold, status: p.status, maaVaereSkriftlig: p.maaVaereSkriftlig,
+        nummer: p.nummer,
+        harRutine: (rutiner.get(p.id) ?? []).some(r => r.innhold?.trim()),
+        status: p.status,
+        maaVaereSkriftlig: p.maaVaereSkriftlig,
       })))
     : null
   const forfalte = tell(punkter, p => erForfalt(p.sist_gjennomgatt, p.gjennomgang_intervall_mnd, naa))

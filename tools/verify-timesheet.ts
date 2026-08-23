@@ -8,7 +8,7 @@
  * gjør at ulønnsom tid ser lønnsom ut.
  */
 import {
-  byggUkeliste, flyttUke, formatTimer, ukeEtikett, ukenummer, ukeSlutt, ukeStart,
+  arbeidsperiode, byggUkeliste, flyttUke, formatTimer, ukeEtikett, ukenummer, ukeSlutt, ukeStart,
 } from '../lib/timesheet-calc'
 
 let feil = 0
@@ -51,6 +51,20 @@ const naa = new Date(2026, 7, 19)
 sjekk('denne uken heter «Denne uken»', ukeEtikett(ukeStart(naa), naa), 'Denne uken')
 sjekk('forrige uke navngis', ukeEtikett(flyttUke(ukeStart(naa), -1), naa), 'Forrige uke')
 sjekk('eldre uker får nummer', ukeEtikett(flyttUke(ukeStart(naa), -3), naa), 'Uke 31')
+
+// ── Arbeidsperiode: tallet, ikke det relative ordet ─────────────────────────
+// Overskriften skal kunne skrives av på en timeliste. «Denne uken» kan den ikke.
+sjekk('denne uken navngis med nummer', arbeidsperiode(ukeStart(naa), naa), 'Arbeidsperiode Uke 34')
+sjekk(
+  'en uke man har blad seg til beholder tallet og sier fra',
+  arbeidsperiode(flyttUke(ukeStart(naa), 1), naa),
+  'Arbeidsperiode Uke 35 · Neste uke',
+)
+sjekk(
+  'eldre uker trenger ingen hale — tallet sier alt',
+  arbeidsperiode(flyttUke(ukeStart(naa), -3), naa),
+  'Arbeidsperiode Uke 31',
+)
 
 // ── Fordeling på dager ───────────────────────────────────────────────────────
 

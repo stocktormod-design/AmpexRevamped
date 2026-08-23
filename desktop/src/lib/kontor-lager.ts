@@ -17,6 +17,37 @@ function sjekk<T>(r: { data: T | null; error: { message: string } | null }, hva:
   return (r.data ?? []) as T
 }
 
+/**
+ * Firmaet den innloggede står i.
+ *
+ * `customers`, `projects` og `time_entries` er synktabeller, og de har hverken
+ * default på `company_id` eller på `id` — begge settes normalt av
+ * WatermelonDB-klienten. Kontoret skriver rett mot PostgREST og må derfor gjøre
+ * det samme.
+ *
+ * Verdien HENTES, den oppgis ikke. Klienten kan ikke velge firma: RLS krever
+ * `company_id = current_company_id()` på insert uansett, så et oppdiktet firma
+ * blir avvist av basen — dette er bare den ærlige veien til det samme svaret.
+ */
+export async function mittFirma(): Promise<string> {
+  const { data, error } = await supabase.rpc('current_company_id')
+  if (error) throw new Error(`Kunne ikke finne firmaet ditt: ${error.message}`)
+  if (!data) throw new Error('Du hører ikke til et firma.')
+  return data as string
+}
+
+/**
+ * Ny id, laget her.
+ *
+ * Synktabellene har klient-genererte primærnøkler (WatermelonDB-konvensjonen
+ * fra foundation-migrasjonen). At kontoret følger den er ikke kosmetikk: en rad
+ * kontoret lager skal kunne synkes ned til en telefon uten at noen må slå opp
+ * hvilken id den fikk.
+ */
+export function nyId(): string {
+  return crypto.randomUUID()
+}
+
 // ── Prosjekter ─────────────────────────────────────────────────────────────
 
 export type Prosjekt = {
@@ -83,6 +114,36 @@ export async function hentProsjekter(): Promise<Prosjekt[]> {
   }))
 }
 
+/**
+ * Nytt prosjekt, opprettet fra kontoret.
+ *
+ * Prosjektene ble til i appen, sammen med tegningen de hørte til. Det holdt så
+ * lenge alt startet ute på en jobb — men et rammeavtaleprosjekt starter på
+ * kontoret, med en kunde og en adresse, uker før noen tar med seg en telefon
+ * dit. Rom, tegninger og oppgaver kommer fortsatt i appen; dette lager bare
+ * mappa de skal ligge i.
+ */
+export async function opprettProsjekt(inn: {
+  navn: string
+  kunde: string
+  adresse: string
+}): Promise<string> {
+  const navn = inn.navn.trim()
+  if (!navn) throw new Error('Prosjektet må ha et navn.')
+
+  const id = nyId()
+  const r = await supabase.from('projects').insert({
+    id,
+    company_id: await mittFirma(),
+    name: navn,
+    customer_name: inn.kunde.trim() || null,
+    address: inn.adresse.trim() || null,
+    status: 'aktiv',
+  })
+  if (r.error) throw new Error(`Kunne ikke opprette prosjektet: ${r.error.message}`)
+  return id
+}
+
 // ── Kunder ─────────────────────────────────────────────────────────────────
 
 export type Kunde = {
@@ -126,6 +187,52 @@ export async function hentKunder(sok: string): Promise<Kunde[]> {
   for (const o of ordrer) if (o.customer_id) per.set(o.customer_id, (per.get(o.customer_id) ?? 0) + 1)
 
   return kunder.map(k => ({ ...k, ordrer: per.get(k.id) ?? 0 }))
+}
+
+export type NyKunde = {
+  navn: string
+  er_firma: boolean
+  org_nr: string
+  epost: string
+  telefon: string
+  adresse: string
+  postnr: string
+  sted: string
+}
+
+/**
+ * Ny kunde i registeret.
+ *
+ * `source_system` settes ikke. Den kolonnen forteller at raden kom fra Fiken
+ * eller SpeedyCraft, og en kunde noen tastet inn her har ingen kilde utenfor
+ * Ampex — å skrive «manuell» der ville gjort et tomt felt til en løgn ved neste
+ * regnskapsimport, som matcher på nettopp det feltet.
+ *
+ * Organisasjonsnummeret valideres ikke med kontrollsiffer slik firmaets eget
+ * gjør i `ampex-admin`. Der ER nummeret firmaets identitet mot Brønnøysund;
+ * her er det et notat på en faktura, og en privatkunde har ikke noe. En
+ * validering som avviser ni tilfeldige siffer ville stoppet den som taster inn
+ * et svensk organisasjonsnummer.
+ */
+export async function opprettKunde(inn: NyKunde): Promise<string> {
+  const navn = inn.navn.trim()
+  if (!navn) throw new Error('Kunden må ha et navn.')
+
+  const id = nyId()
+  const r = await supabase.from('customers').insert({
+    id,
+    company_id: await mittFirma(),
+    name: navn,
+    is_company: inn.er_firma,
+    org_nr: inn.org_nr.replace(/\s/g, '') || null,
+    email: inn.epost.trim() || null,
+    phone: inn.telefon.trim() || null,
+    address: inn.adresse.trim() || null,
+    postal_code: inn.postnr.trim() || null,
+    city: inn.sted.trim() || null,
+  })
+  if (r.error) throw new Error(`Kunne ikke opprette kunden: ${r.error.message}`)
+  return id
 }
 
 // ── Tilbud ─────────────────────────────────────────────────────────────────
@@ -240,6 +347,81 @@ export async function hentTimerIPerioden(fra: Date, til: Date): Promise<Timerad[
       .order('date'),
     'Kunne ikke lese timene',
   ) as Timerad[]
+}
+
+export type Aktivitet = { id: string; name: string; billable: boolean }
+
+/** Aktivitetene timene føres på. Arkiverte er ute — de skal ikke kunne velges. */
+export async function hentAktiviteter(): Promise<Aktivitet[]> {
+  return sjekk(
+    await supabase
+      .from('activities')
+      .select('id,name,billable')
+      .eq('archived', false)
+      .is('deleted_at', null)
+      .order('name'),
+    'Kunne ikke lese aktivitetene',
+  ) as Aktivitet[]
+}
+
+export type NyTime = {
+  ordreId: string
+  brukerId: string
+  brukerNavn: string
+  /** ISO-dato, «2026-08-23». Klokkeslettet betyr ingenting for en timeføring. */
+  dato: string
+  timer: number
+  aktivitetId: string | null
+  notat: string
+}
+
+/**
+ * Fører timer fra kontoret.
+ *
+ * ── Hvorfor en ordre er påkrevd ──────────────────────────────────────────
+ *
+ * `time_entries.order_id` er `not null`, og det er ikke en forglemmelse: en
+ * time er noe som ble brukt PÅ noe. Fakturagrunnlaget (`lib/invoicing.ts`)
+ * grupperer per ordre, og en time uten ordre ville vært en time ingen faktura
+ * kan finne. Skal det føres tid som ikke hører til en jobb — møter, opplæring,
+ * verkstedsdag — er svaret en intern ordre med en ikke-fakturerbar aktivitet,
+ * ikke en time som henger i løse lufta.
+ *
+ * ── Hvorfor `billable` ikke settes her ───────────────────────────────────
+ *
+ * Feltet står som null, og fakturagrunnlaget arver da fakturerbarheten fra
+ * aktiviteten (`verify:timesheet` dekker nettopp den arven). Å skrive en
+ * eksplisitt verdi her ville låst timen til det aktiviteten mente DA den ble
+ * ført — og en aktivitet som senere gjøres ikke-fakturerbar skal slå gjennom
+ * på ufakturerte timer.
+ *
+ * ── Hvem raden står på ───────────────────────────────────────────────────
+ *
+ * `user_id` er montøren timen gjelder; `created_by` settes til den som sitter
+ * på kontoret. De to er ofte forskjellige, og skillet er hele poenget: en time
+ * ført på vegne av en annen skal kunne kjennes igjen som det.
+ */
+export async function forTimer(inn: NyTime, foertAv: string): Promise<string> {
+  if (!inn.ordreId) throw new Error('Velg hvilken ordre timene hører til.')
+  if (!inn.brukerId) throw new Error('Velg hvem timene gjelder.')
+  if (!(inn.timer > 0)) throw new Error('Antall timer må være over null.')
+  if (inn.timer > 24) throw new Error('Mer enn 24 timer på én dag er neppe riktig.')
+
+  const id = nyId()
+  const r = await supabase.from('time_entries').insert({
+    id,
+    company_id: await mittFirma(),
+    order_id: inn.ordreId,
+    user_id: inn.brukerId,
+    user_name: inn.brukerNavn,
+    date: new Date(`${inn.dato}T12:00:00`).toISOString(),
+    hours: inn.timer,
+    activity_id: inn.aktivitetId,
+    note: inn.notat.trim() || null,
+    created_by: foertAv,
+  })
+  if (r.error) throw new Error(`Kunne ikke føre timene: ${r.error.message}`)
+  return id
 }
 
 // ── Firma ──────────────────────────────────────────────────────────────────
