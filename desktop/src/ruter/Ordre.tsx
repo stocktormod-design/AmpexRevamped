@@ -6,6 +6,7 @@ import { CheckCircle2, CircleAlert, FileText, Snowflake, Users } from 'lucide-re
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/auth'
 import { hentKunder, type Kunde } from '@/lib/kontor-lager'
+import { sendTilRegnskap } from '@/lib/regnskap'
 import {
   grunnlagFra,
   hentArkiv,
@@ -428,11 +429,38 @@ function Detalj({
   const [feil, setFeil] = useState<string | null>(null)
   const [arkiv, setArkiv] = useState<Arkivrad | null>(null)
   const [kanArkivere, setKanArkivere] = useState<{ ok: boolean; grunn: string | null } | null>(null)
+  const [regnskapskvittering, setRegnskapskvittering] = useState<string | null>(null)
 
   useEffect(() => {
     hentArkiv(o.id).then(setArkiv).catch(() => setArkiv(null))
     if (o.status === 'fakturert') kanFryses(o.id).then(setKanArkivere).catch(() => setKanArkivere(null))
   }, [o.id, o.status])
+
+  /**
+   * Sender ordren som fakturautkast til regnskapssystemet.
+   *
+   * Skilt fra `fakturer()` med vilje, og de skal IKKE slås sammen: denne
+   * pusher grunnlaget ut av Ampex, mens `fakturer()` fører ordren videre i
+   * Ampex' egen flyt. Ampex utsteder aldri en faktura — utkastet ligger i
+   * regnskapet til et menneske trykker der.
+   */
+  async function tilRegnskap() {
+    setJobber('regnskap')
+    setFeil(null)
+    setRegnskapskvittering(null)
+    try {
+      const r = await sendTilRegnskap(o.id)
+      setRegnskapskvittering(
+        `Utkast ${r.utkastId} ligger nå i ${r.system} på ${kr(r.bruttoOre)}. `
+        + 'Det blir en faktura først når noen godkjenner det der.',
+      )
+      await etterSkriving()
+    } catch (e) {
+      setFeil(e instanceof Error ? e.message : String(e))
+    } finally {
+      setJobber(null)
+    }
+  }
 
   async function fakturer() {
     if (!grunnlag) return
@@ -465,9 +493,17 @@ function Detalj({
               som alltid står der og feiler når man trykker, lærer folk å
               ignorere feilmeldinger. */}
           {kanFakturere && godkjent && o.status !== 'fakturert' && grunnlag && grunnlag.linjer.length > 0 ? (
-            <Knapp stil="merke" onClick={fakturer} disabled={jobber != null}>
-              {jobber === 'faktura' ? 'Merker …' : `Send faktura · ${kr(grunnlag.bruttoOre)}`}
-            </Knapp>
+            <>
+              {/* Samme betingelse som fakturaknappen: godkjent, ikke fakturert,
+                  og noe å fakturere. En knapp som alltid står der og feiler når
+                  man trykker, lærer folk å ignorere feilmeldinger. */}
+              <Knapp stil="stille" onClick={tilRegnskap} disabled={jobber != null}>
+                {jobber === 'regnskap' ? 'Sender …' : 'Send til regnskap'}
+              </Knapp>
+              <Knapp stil="merke" onClick={fakturer} disabled={jobber != null}>
+                {jobber === 'faktura' ? 'Merker …' : `Send faktura · ${kr(grunnlag.bruttoOre)}`}
+              </Knapp>
+            </>
           ) : null}
 
           {o.status === 'fakturert' && !arkiv ? (
@@ -482,6 +518,7 @@ function Detalj({
 
       <div className="detalj-kropp">
         {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+        {regnskapskvittering ? <Beskjed stil="ok">{regnskapskvittering}</Beskjed> : null}
         <Boks tittel="Kunde">
           <div className="fakta">
             <Fakta navn="Navn" verdi={o.customer_name || 'Ingen kunde'} />
