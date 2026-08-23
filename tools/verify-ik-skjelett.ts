@@ -75,7 +75,7 @@ sjekk(
 
 const alle = IK_SKJELETT.map(p => ({
   nummer: p.nummer,
-  innhold: 'skrevet',
+  harRutine: true,
   status: 'vedtatt',
   maaVaereSkriftlig: p.maaVaereSkriftlig,
 }))
@@ -84,7 +84,7 @@ sjekk('et ferdig system er komplett', fullstendighet(alle).pa_plass, 5)
 sjekk('og har ingenting utestående', fullstendighet(alle).manglerInnhold, [])
 
 // Det farlige tilfellet: alt annet er skrevet, men avvikshåndteringen mangler.
-const utenAvvik = alle.map(p => (p.nummer === '4' ? { ...p, innhold: '' } : p))
+const utenAvvik = alle.map(p => (p.nummer === '4' ? { ...p, harRutine: false } : p))
 const f = fullstendighet(utenAvvik)
 sjekk('mangler avvikshåndteringen, er systemet ikke komplett', f.pa_plass, 4)
 sjekk('og punktet står navngitt', f.manglerInnhold, ['4'])
@@ -99,8 +99,8 @@ sjekk('og de fem står oppført som ikke vedtatt', fullstendighet(bareUtkast).ik
 // forskriften ikke spør etter.
 const medEgneKapitler = [
   ...alle,
-  { nummer: '20', innhold: 'egen rutine', status: 'vedtatt', maaVaereSkriftlig: false },
-  { nummer: '21', innhold: 'egen rutine', status: 'vedtatt', maaVaereSkriftlig: false },
+  { nummer: '20', harRutine: true, status: 'vedtatt', maaVaereSkriftlig: false },
+  { nummer: '21', harRutine: true, status: 'vedtatt', maaVaereSkriftlig: false },
 ]
 sjekk('egne kapitler endrer ikke nevneren', fullstendighet(medEgneKapitler).kreves, 5)
 sjekk('og de teller ikke som oppfylte krav heller', fullstendighet(medEgneKapitler).pa_plass, 5)

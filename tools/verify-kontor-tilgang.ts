@@ -62,6 +62,15 @@ sjekk('basen ser bare ordrene sine', [kan('bas', 'ordre.les'), kan('bas', 'ordre
 sjekk('installatøren ser hele firmaet', kan('installator', 'ordre.alle'), true)
 sjekk('regnskapsfører retter ikke montørens føringer', kan('regnskapsforer', 'ordre.endre'), false)
 
+// Å OPPRETTE en ordre er å bestemme at nytt arbeid skal inn i porteføljen — en
+// annen avgjørelse enn å rette en times feilskriving, og en regnskapsfører som
+// retter tall skal ikke dermed kunne legge nye jobber inn i systemet.
+sjekk('installatøren oppretter ordrer', kan('installator', 'ordre.skriv'), true)
+sjekk('regnskapsføreren gjør ikke', kan('regnskapsforer', 'ordre.skriv'), false)
+sjekk('basen retter, men oppretter ikke', [kan('bas', 'ordre.endre'), kan('bas', 'ordre.skriv')], [true, false])
+sjekk('bare eier, admin og installatør oppretter ordrer', ROLLER.filter(r => kan(r, 'ordre.skriv')), ['owner', 'admin', 'installator'])
+sjekk('ingen oppretter ordrer uten å se dem', ROLLER.every(r => !kan(r, 'ordre.skriv') || kan(r, 'ordre.les')), true)
+
 // ── Timelista er lønnsgrunnlag ─────────────────────────────────────────────
 
 // Timene basen trenger står på ordrene hans. En samlet oversikt over hva
@@ -70,11 +79,35 @@ sjekk('basen ser ikke hele firmaets timeliste', kan('bas', 'timer.les'), false)
 sjekk('men ordrene sine ser han', kan('bas', 'ordre.les'), true)
 sjekk('regnskap, installatør, eier og admin ser timelista', ROLLER.filter(r => kan(r, 'timer.les')), ['owner', 'admin', 'installator', 'regnskapsforer'])
 
+// Å FØRE timer for andre er noe annet enn å se dem. Det er lønnsgrunnlag
+// skrevet på vegne av en annen, og regnskapsføreren har det ikke: hun ser
+// timelista fakturaen bygger på, men å endre den er å endre hva en montør får
+// betalt.
+sjekk('regnskapsfører ser timene, men fører dem ikke', [kan('regnskapsforer', 'timer.les'), kan('regnskapsforer', 'timer.skriv')], [true, false])
+sjekk('installatøren retter det som ble ført feil', kan('installator', 'timer.skriv'), true)
+sjekk('bare eier, admin og installatør fører timer', ROLLER.filter(r => kan(r, 'timer.skriv')), ['owner', 'admin', 'installator'])
+sjekk('ingen fører timer uten å se dem', ROLLER.every(r => !kan(r, 'timer.skriv') || kan(r, 'timer.les')), true)
+
 // ── Tilbud og kunder ───────────────────────────────────────────────────────
 
 sjekk('basen ser ikke tilbud — det er priser ut mot kunde', kan('bas', 'tilbud.les'), false)
 sjekk('men kunderegisteret trenger han', kan('bas', 'kunder.les'), true)
 sjekk('alle med kontortilgang ser kundene', ROLLER.filter(r => kan(r, 'kontor')).every(r => kan(r, 'kunder.les')), true)
+
+// Kunderegisteret er det fakturaen adresseres til, så regnskapsføreren skriver
+// i det. Basen gjør ikke: han trenger telefonnummeret på vei til jobben.
+sjekk('regnskapsføreren fører kunderegisteret', kan('regnskapsforer', 'kunder.skriv'), true)
+sjekk('basen leser kundene, men oppretter dem ikke', [kan('bas', 'kunder.les'), kan('bas', 'kunder.skriv')], [true, false])
+sjekk('ingen oppretter kunder uten å se dem', ROLLER.every(r => !kan(r, 'kunder.skriv') || kan(r, 'kunder.les')), true)
+
+// ── Prosjekter ─────────────────────────────────────────────────────────────
+
+// Prosjektene ble til i appen, sammen med tegningen. Et rammeavtaleprosjekt
+// starter derimot på kontoret, uker før noen tar med en telefon dit.
+sjekk('installatøren oppretter prosjekter', kan('installator', 'prosjekt.skriv'), true)
+sjekk('regnskapsføreren gjør ikke — faget er ikke hennes', kan('regnskapsforer', 'prosjekt.skriv'), false)
+sjekk('bare eier, admin og installatør oppretter dem', ROLLER.filter(r => kan(r, 'prosjekt.skriv')), ['owner', 'admin', 'installator'])
+sjekk('ingen oppretter prosjekter uten å se dem', ROLLER.every(r => !kan(r, 'prosjekt.skriv') || kan(r, 'prosjekt.les')), true)
 
 // ── Internkontrollen ───────────────────────────────────────────────────────
 

@@ -1,6 +1,8 @@
+import { kan } from '@delt/kontor-tilgang'
 import { useEffect, useRef, useState } from 'react'
-import { hentKunder, type Kunde } from '@/lib/kontor-lager'
-import { antall, Beskjed, Felt, Kort, Merke, Sidehode, stk } from '@/ui/kit'
+import { useAuth } from '@/auth'
+import { hentKunder, opprettKunde, type Kunde, type NyKunde } from '@/lib/kontor-lager'
+import { antall, Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 
 /**
  * Kunderegisteret.
@@ -14,14 +16,38 @@ import { antall, Beskjed, Felt, Kort, Merke, Sidehode, stk } from '@/ui/kit'
  * Organisasjonsnummeret er den eneste harde nøkkelen på tvers av systemer, og
  * det er den kundededupen skal matche på. Derfor står det i egen kolonne og
  * ikke gjemt i en detalj.
+ *
+ * Registeret fylles nå fra tre kanter: importen, appen, og skjemaet nederst
+ * her. Den siste er den som mangler når telefonen ringer og kunden ikke finnes
+ * fra før — da skal man ikke måtte ut på en jobb for å få lagt henne inn.
  */
+
+const TOM: NyKunde = {
+  navn: '',
+  er_firma: true,
+  org_nr: '',
+  epost: '',
+  telefon: '',
+  adresse: '',
+  postnr: '',
+  sted: '',
+}
 
 export function Kunder() {
   const [sok, setSok] = useState('')
   const [rader, setRader] = useState<Kunde[]>([])
   const [feil, setFeil] = useState<string | null>(null)
   const [laster, setLaster] = useState(true)
+  const [versjon, setVersjon] = useState(0)
   const teller = useRef(0)
+
+  const { profil } = useAuth()
+  const kanSkrive = kan(profil?.role, 'kunder.skriv')
+  const [apen, setApen] = useState(false)
+  const [ny, setNy] = useState<NyKunde>(TOM)
+  const [jobber, setJobber] = useState(false)
+  const [skjemafeil, setSkjemafeil] = useState<string | null>(null)
+  const [kvittering, setKvittering] = useState<string | null>(null)
 
   useEffect(() => {
     const id = window.setTimeout(async () => {
@@ -39,7 +65,7 @@ export function Kunder() {
       }
     }, 200)
     return () => window.clearTimeout(id)
-  }, [sok])
+  }, [sok, versjon])
 
   const firma = rader.filter(k => k.is_company).length
   const importerte = rader.filter(k => k.source_system).length
@@ -106,6 +132,130 @@ export function Kunder() {
             </tbody>
           </table>
         )}
+
+        {kanSkrive ? (
+          <div className="inviter-boks">
+            {!apen ? (
+              <div className="stabel">
+                {kvittering ? <Beskjed stil="ok">{kvittering}</Beskjed> : null}
+                {/* Egen blokk rundt knappen: `.stabel` strekker barna sine, og
+                    en knapp i full kortbredde leser som flatens hovedhandling.
+                    Det er den ikke — registeret over den er det. */}
+                <div>
+                  <Knapp stil="merke" onClick={() => { setApen(true); setKvittering(null) }}>
+                    Ny kunde
+                  </Knapp>
+                </div>
+              </div>
+            ) : (
+              <form
+                className="stabel"
+                onSubmit={async ev => {
+                  ev.preventDefault()
+                  setJobber(true)
+                  setSkjemafeil(null)
+                  try {
+                    await opprettKunde(ny)
+                    setKvittering(`${ny.navn.trim()} er lagt inn i registeret.`)
+                    setNy(TOM)
+                    setApen(false)
+                    // Sokestrengen er uendret, saa effekten under maa dyttes
+                    // eksplisitt. Aa skrive raden rett inn i lista i stedet
+                    // ville vist en kunde som ikke er lest tilbake fra basen.
+                    setVersjon(v => v + 1)
+                  } catch (e) {
+                    setSkjemafeil(e instanceof Error ? e.message : String(e))
+                  }
+                  setJobber(false)
+                }}
+              >
+                <div className="inviter-felt">
+                  <Felt
+                    firkant
+                    autoFocus
+                    etikett="Navn"
+                    value={ny.navn}
+                    onChange={e => setNy(k => ({ ...k, navn: e.target.value }))}
+                  />
+                  {/* Firma eller privat avgjør om org.nr betyr noe, og det er
+                      det eneste feltet som endrer betydningen av et annet. */}
+                  <label className="felt felt-firkant">
+                    <span className="felt-etikett">Type</span>
+                    <select
+                      className="felt-inn"
+                      value={ny.er_firma ? 'firma' : 'privat'}
+                      onChange={e => setNy(k => ({ ...k, er_firma: e.target.value === 'firma' }))}
+                    >
+                      <option value="firma">Firma</option>
+                      <option value="privat">Privatkunde</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="inviter-felt">
+                  <Felt
+                    firkant
+                    etikett="Organisasjonsnummer"
+                    inputMode="numeric"
+                    disabled={!ny.er_firma}
+                    hjelp={ny.er_firma
+                      ? 'Den eneste harde nøkkelen mot regnskapet. Fyll den ut hvis du har den.'
+                      : 'Gjelder bare firmakunder.'}
+                    value={ny.er_firma ? ny.org_nr : ''}
+                    onChange={e => setNy(k => ({ ...k, org_nr: e.target.value }))}
+                  />
+                  <Felt
+                    firkant
+                    etikett="Telefon"
+                    inputMode="tel"
+                    value={ny.telefon}
+                    onChange={e => setNy(k => ({ ...k, telefon: e.target.value }))}
+                  />
+                </div>
+                <div className="inviter-felt">
+                  <Felt
+                    firkant
+                    etikett="E-post"
+                    type="email"
+                    inputMode="email"
+                    hjelp="Dit fakturaen går."
+                    value={ny.epost}
+                    onChange={e => setNy(k => ({ ...k, epost: e.target.value }))}
+                  />
+                  <Felt
+                    firkant
+                    etikett="Adresse"
+                    value={ny.adresse}
+                    onChange={e => setNy(k => ({ ...k, adresse: e.target.value }))}
+                  />
+                </div>
+                <div className="inviter-felt">
+                  <Felt
+                    firkant
+                    etikett="Postnummer"
+                    inputMode="numeric"
+                    value={ny.postnr}
+                    onChange={e => setNy(k => ({ ...k, postnr: e.target.value }))}
+                  />
+                  <Felt
+                    firkant
+                    etikett="Sted"
+                    value={ny.sted}
+                    onChange={e => setNy(k => ({ ...k, sted: e.target.value }))}
+                  />
+                </div>
+                {skjemafeil ? <Beskjed stil="feil">{skjemafeil}</Beskjed> : null}
+                <div className="rad">
+                  <Knapp stil="merke" type="submit" disabled={jobber || !ny.navn.trim()}>
+                    {jobber ? 'Lagrer …' : 'Legg inn kunden'}
+                  </Knapp>
+                  <Knapp type="button" onClick={() => { setApen(false); setSkjemafeil(null) }}>
+                    Avbryt
+                  </Knapp>
+                </div>
+              </form>
+            )}
+          </div>
+        ) : null}
       </Kort>
     </>
   )

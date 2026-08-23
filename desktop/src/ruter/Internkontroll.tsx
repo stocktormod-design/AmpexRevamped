@@ -1,6 +1,6 @@
 import { erForfalt, fullstendighet, IK_GRUPPENAVN, IK_SKJELETT, nesteGjennomgang } from '@delt/ik/skjelett'
 import { kan } from '@delt/kontor-tilgang'
-import { CircleCheck, CircleDashed, FileText, Pencil, TriangleAlert, Unlink } from 'lucide-react'
+import { CircleCheck, CircleDashed, FileText, Pencil, Plus, TriangleAlert, Trash2, Unlink } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/auth'
 import {
@@ -9,17 +9,25 @@ import {
   hentLesinger,
   hentPunkter,
   hentRevisjoner,
+  hentRutiner,
+  hentRutinerevisjoner,
   hentSkjemakoblinger,
   hentSkjemamaler,
   knyttSkjema,
   kvitterGjennomgang,
   lagreEndring,
+  lagreRutineendring,
   loesnaSkjema,
+  opprettRutine,
   opprettSkjelett,
+  slettRutine,
   vedta,
+  vedtaRutine,
   type Endring,
   type IkPunkt,
+  type IkRutine,
   type Lesing,
+  type Rutineendring,
   type Skjemakobling,
   type Skjemamal,
 } from '@/lib/ik-lager'
@@ -64,6 +72,7 @@ export function Internkontroll() {
   const kanSkrive = kan(profil?.role, 'ik.skriv')
 
   const [punkter, setPunkter] = useState<IkPunkt[]>([])
+  const [rutiner, setRutiner] = useState<Map<string, IkRutine[]>>(new Map())
   const [koblinger, setKoblinger] = useState<Map<string, Skjemakobling[]>>(new Map())
   const [lesinger, setLesinger] = useState<Map<string, Lesing[]>>(new Map())
   const [maler, setMaler] = useState<Skjemamal[]>([])
@@ -76,14 +85,16 @@ export function Internkontroll() {
   const last = useCallback(async () => {
     setLaster(true)
     try {
-      const [p, k, l, m, a] = await Promise.all([
+      const [p, r, k, l, m, a] = await Promise.all([
         hentPunkter(),
+        hentRutiner(),
         hentSkjemakoblinger(),
         hentLesinger(),
         hentSkjemamaler(),
         hentFirma(),
       ])
       setPunkter(p)
+      setRutiner(r)
       setKoblinger(k)
       setLesinger(l)
       setMaler(m)
@@ -100,12 +111,30 @@ export function Internkontroll() {
   useEffect(() => { void last() }, [last])
 
   const naa = useMemo(() => new Date(), [])
+
+  /**
+   * Har kapittelet minst én rutine med tekst?
+   *
+   * En rutine uten innhold er en overskrift noen har opprettet og ikke skrevet
+   * ferdig. Den skal telle som «påbegynt», ikke som «på plass» — ellers ville
+   * fullstendigheten kunne fylles opp med tomme titler.
+   */
+  const harRutine = useCallback(
+    (id: string) => (rutiner.get(id) ?? []).some(r => r.innhold?.trim()),
+    [rutiner],
+  )
+
   const status = useMemo(
-    () => fullstendighet(punkter.map(p => ({ nummer: p.nummer, innhold: p.innhold, status: p.status, maaVaereSkriftlig: p.maaVaereSkriftlig }))),
-    [punkter],
+    () => fullstendighet(punkter.map(p => ({
+      nummer: p.nummer,
+      harRutine: harRutine(p.id),
+      status: p.status,
+      maaVaereSkriftlig: p.maaVaereSkriftlig,
+    }))),
+    [punkter, harRutine],
   )
   const forfalte = punkter.filter(p => erForfalt(p.sist_gjennomgatt, p.gjennomgang_intervall_mnd, naa))
-  const medInnhold = punkter.filter(p => p.innhold?.trim()).length
+  const medInnhold = punkter.filter(p => harRutine(p.id)).length
 
   // De lovpålagte først og for seg. Resten følger skjelettets egne grupper, og
   // punkter firmaet har lagt til selv havner sist under «Egne punkter».
@@ -228,10 +257,18 @@ export function Internkontroll() {
                           {p.status === 'vedtatt'
                             ? <CircleCheck size={13} strokeWidth={2} style={{ color: 'var(--gronn)', flex: 'none' }} />
                             : <CircleDashed size={13} strokeWidth={2} style={{ color: 'var(--blekk-3)', flex: 'none' }} />}
+                          {/* Antallet rutiner står her og ikke bare «skrevet»:
+                              et kapittel med fire rutiner og ett med én er to
+                              forskjellige ting for den som skal gjennomgå dem. */}
                           <span className="ordrerad-kunde">
-                            {p.innhold?.trim()
-                              ? (p.status === 'vedtatt' ? `Vedtatt · v${p.gjeldende_versjon}` : 'Skrevet, ikke vedtatt')
-                              : 'Ingen rutine'}
+                            {(() => {
+                              const n = (rutiner.get(p.id) ?? []).filter(r => r.innhold?.trim()).length
+                              if (n === 0) return 'Ingen rutine'
+                              const antallTekst = stk(n, 'rutine', 'rutiner')
+                              return p.status === 'vedtatt'
+                                ? `Vedtatt · ${antallTekst}`
+                                : `${antallTekst}, ikke vedtatt`
+                            })()}
                           </span>
                           {forfalt ? (
                             <TriangleAlert size={13} strokeWidth={2} style={{ color: 'var(--gul)', flex: 'none' }} />
@@ -252,6 +289,7 @@ export function Internkontroll() {
               <Punkt
                 key={aktiv.id}
                 punkt={aktiv}
+                rutiner={rutiner.get(aktiv.id) ?? []}
                 skjemaer={koblinger.get(aktiv.id) ?? []}
                 lesinger={lesinger.get(aktiv.id) ?? []}
                 maler={maler}
@@ -268,8 +306,199 @@ export function Internkontroll() {
   )
 }
 
+/**
+ * Én rutine under et kapittel.
+ *
+ * Egen komponent og ikke en rad i punktet, fordi hver rutine er sitt eget lille
+ * dokument: den har sin egen tekst, sin egen versjon og sitt eget vedtak, og
+ * den redigeres uten at de andre rutinene under samme kapittel røres.
+ *
+ * Redigeringen følger samme regel som kapittelet: LESER eller SKRIVER, aldri
+ * begge. Et felt man kan skrive i uten å ha bedt om det, er et felt man endrer
+ * noe i ved uhell — og her er «noe» en rutine folk har kvittert for at de har
+ * lest.
+ */
+function Rutine({
+  rutine,
+  punkt,
+  kanSkrive,
+  etterEndring,
+}: {
+  rutine: IkRutine
+  punkt: IkPunkt
+  kanSkrive: boolean
+  etterEndring: () => Promise<void>
+}) {
+  const { profil } = useAuth()
+  const [apen, setApen] = useState(false)
+  const [redigerer, setRedigerer] = useState(false)
+  const [utkast, setUtkast] = useState<Rutineendring>({
+    tittel: rutine.tittel,
+    innhold: rutine.innhold,
+    ansvarlig: rutine.ansvarlig,
+  })
+  const [notat, setNotat] = useState('')
+  const [jobber, setJobber] = useState<string | null>(null)
+  const [feil, setFeil] = useState<string | null>(null)
+  const seAudit = kan(profil?.role, 'logg.les')
+
+  // Stabile referanser: uten dem henter <Historikk> på nytt ved hver render.
+  const hentRev = useCallback(() => hentRutinerevisjoner(rutine.id), [rutine.id])
+  const hentAud = useCallback(() => hentAuditFor('ik_rutiner', rutine.id), [rutine.id])
+
+  const endret =
+    utkast.tittel !== rutine.tittel ||
+    (utkast.innhold ?? '') !== (rutine.innhold ?? '')
+
+  function start() {
+    setUtkast({ tittel: rutine.tittel, innhold: rutine.innhold, ansvarlig: rutine.ansvarlig })
+    setRedigerer(true)
+    setApen(true)
+  }
+
+  async function kjor(navn: string, arbeid: () => Promise<void>) {
+    setJobber(navn)
+    setFeil(null)
+    try {
+      await arbeid()
+      await etterEndring()
+    } catch (e) {
+      setFeil(e instanceof Error ? e.message : String(e))
+    } finally {
+      setJobber(null)
+    }
+  }
+
+  return (
+    <div className={redigerer ? 'rutine rutine-redigerer' : 'rutine'}>
+      <div className="rutine-hode">
+        <button
+          type="button"
+          className="rutine-navn"
+          aria-expanded={apen}
+          onClick={() => setApen(a => !a)}
+        >
+          {rutine.status === 'vedtatt'
+            ? <CircleCheck size={14} strokeWidth={2} style={{ color: 'var(--gronn)', flex: 'none' }} />
+            : <CircleDashed size={14} strokeWidth={2} style={{ color: 'var(--blekk-3)', flex: 'none' }} />}
+          <span>{rutine.tittel}</span>
+        </button>
+        <Merke stil={rutine.innhold?.trim() ? 'noytral' : 'varsel'}>
+          {rutine.innhold?.trim() ? `v${rutine.gjeldende_versjon}` : 'Tom'}
+        </Merke>
+        {kanSkrive && !redigerer ? (
+          <Knapp stil="stille" onClick={start}>
+            <Pencil size={14} strokeWidth={1.9} />
+            {rutine.innhold?.trim() ? 'Rediger' : 'Skriv'}
+          </Knapp>
+        ) : null}
+      </div>
+
+      {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+
+      {!apen ? null : !redigerer ? (
+        <>
+          {rutine.innhold?.trim() ? (
+            <div className="dokument valgbar">{rutine.innhold}</div>
+          ) : (
+            <div className="dokument-tom"><p>Ingen tekst skrevet ennå.</p></div>
+          )}
+
+          {kanSkrive ? (
+            <div className="rad" style={{ marginTop: 12 }}>
+              {rutine.status !== 'vedtatt' ? (
+                <Knapp
+                  stil="primar"
+                  disabled={!rutine.innhold?.trim() || jobber != null}
+                  onClick={() => kjor('vedta', () => vedtaRutine(rutine.id, profil?.id ?? ''))}
+                >
+                  {jobber === 'vedta' ? 'Vedtar …' : 'Vedta rutinen'}
+                </Knapp>
+              ) : null}
+              {/* Soft delete, regel 5 — og her er den ikke bare en regel: en
+                  rutine som gjaldt da noe skjedde skal kunne dokumenteres i
+                  ettertid, også etter at firmaet sluttet å bruke den. */}
+              <Knapp
+                stil="naken"
+                disabled={jobber != null}
+                onClick={() => kjor('slett', () => slettRutine(rutine.id))}
+              >
+                <Trash2 size={14} strokeWidth={1.9} />
+                {jobber === 'slett' ? 'Tar ut …' : 'Ta ut av bruk'}
+              </Knapp>
+            </div>
+          ) : null}
+
+          <div className="seksjon" style={{ marginTop: 16 }}>
+            <div className="seksjon-tittel">Historikk</div>
+            <Historikk
+              hentRevisjoner={hentRev}
+              hentAudit={hentAud}
+              seAudit={seAudit}
+              tom="Rutinen står slik den ble opprettet."
+            />
+          </div>
+        </>
+      ) : (
+        <div className="stabel" style={{ gap: 14, marginTop: 12 }}>
+          <div className="seksjon-hode">
+            <div className="seksjon-tittel">Redigerer rutinen</div>
+            <Merke stil="endret">Blir versjon {rutine.gjeldende_versjon + 1}</Merke>
+          </div>
+          <Felt
+            firkant
+            etikett="Tittel"
+            value={utkast.tittel}
+            onChange={e => setUtkast(u => ({ ...u, tittel: e.target.value }))}
+          />
+          <label className="felt felt-firkant">
+            <span className="felt-etikett">Rutinen</span>
+            <textarea
+              className="felt-inn skrivefelt"
+              value={utkast.innhold ?? ''}
+              placeholder="Skriv rutinen her …"
+              autoFocus
+              onChange={e => setUtkast(u => ({ ...u, innhold: e.target.value || null }))}
+            />
+          </label>
+          <Felt
+            firkant
+            etikett="Hva ble endret, og hvorfor?"
+            value={notat}
+            placeholder="Presisert at måling skal loggføres"
+            hjelp="Påkrevd. Blir stående i historikken."
+            onChange={e => setNotat(e.target.value)}
+          />
+          <div className="rad">
+            <Knapp
+              stil="merke"
+              disabled={!endret || !notat.trim() || jobber != null}
+              onClick={() => kjor('lagre', async () => {
+                await lagreRutineendring(rutine, punkt, utkast, notat, {
+                  id: profil?.id ?? '',
+                  navn: profil?.full_name ?? '',
+                })
+                setNotat('')
+                setRedigerer(false)
+              })}
+            >
+              {jobber === 'lagre' ? 'Lagrer …' : `Lagre som versjon ${rutine.gjeldende_versjon + 1}`}
+            </Knapp>
+            <Knapp stil="naken" disabled={jobber != null} onClick={() => { setNotat(''); setRedigerer(false) }}>
+              Avbryt
+            </Knapp>
+            {!endret ? <span className="felt-hjelp">Ingenting er endret ennå.</span> : null}
+            {endret && !notat.trim() ? <span className="felt-hjelp">Skriv hva som ble endret.</span> : null}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Punkt({
   punkt,
+  rutiner,
   skjemaer,
   lesinger,
   maler,
@@ -279,6 +508,7 @@ function Punkt({
   etterEndring,
 }: {
   punkt: IkPunkt
+  rutiner: IkRutine[]
   skjemaer: Skjemakobling[]
   lesinger: Lesing[]
   maler: Skjemamal[]
@@ -298,6 +528,8 @@ function Punkt({
   })
   const [notat, setNotat] = useState('')
   const [redigerer, setRedigerer] = useState(false)
+  /** Tittelen på rutinen som er i ferd med å opprettes. `null` = skjemaet er lukket. */
+  const [nyRutine, setNyRutine] = useState<string | null>(null)
   const [jobber, setJobber] = useState<string | null>(null)
   const [feil, setFeil] = useState<string | null>(null)
   const seAudit = kan(profil?.role, 'logg.les')
@@ -328,7 +560,6 @@ function Punkt({
     utkast.tittel !== punkt.tittel ||
     (utkast.hjemmel ?? '') !== (punkt.hjemmel ?? '') ||
     (utkast.formal ?? '') !== (punkt.formal ?? '') ||
-    (utkast.innhold ?? '') !== (punkt.innhold ?? '') ||
     utkast.gjennomgang_intervall_mnd !== punkt.gjennomgang_intervall_mnd
 
   // Montør og lærling leser rutinene i appen, men de er DE som skal kjenne dem.
@@ -338,6 +569,10 @@ function Punkt({
   const jegHarLest = harLest.find(l => l.user_id === profil?.id)
   const knyttede = new Set(skjemaer.map(s => s.template_id))
   const ledige = maler.filter(m => !knyttede.has(m.id))
+
+  // Et kapittel kan vedtas når minst én rutine under det har tekst. En tom
+  // tittel er ikke en rutine.
+  const harTekst = rutiner.some(r => r.innhold?.trim())
 
   const forfalt = erForfalt(punkt.sist_gjennomgatt, punkt.gjennomgang_intervall_mnd, naa)
   const neste = nesteGjennomgang(punkt.sist_gjennomgatt, punkt.gjennomgang_intervall_mnd)
@@ -394,32 +629,82 @@ function Punkt({
                 <div className="seksjon">
                   <div className="seksjon-hode">
                     <div className="seksjon-tittel">Formål</div>
+                    <Merke stil="noytral">Kapittel · v{punkt.gjeldende_versjon}</Merke>
+                    {kanSkrive ? (
+                      <Knapp stil="stille" onClick={start}>
+                        <Pencil size={15} strokeWidth={1.9} />
+                        Rediger kapittelet
+                      </Knapp>
+                    ) : null}
                   </div>
                   <p className="kort-hjelp valgbar">{punkt.formal || 'Ikke beskrevet.'}</p>
                 </div>
 
+                {/* Rutinene. Punktet er kapittelet — forskriftens § 5 er
+                    skrevet generelt — og under det kan det ligge så mange
+                    rutiner som arbeidet krever. «Kartlegging av farer» er
+                    rutinen for tavle, for høyden, for AUS og for graving, og
+                    presset ned i ett tekstfelt blir de fire til et veggteppe
+                    ingen leser. */}
                 <div className="seksjon">
                   <div className="seksjon-hode">
-                    <div className="seksjon-tittel">Rutinen</div>
-                    {punkt.innhold?.trim() ? (
-                      <Merke stil="noytral">Gjelder nå · v{punkt.gjeldende_versjon}</Merke>
-                    ) : null}
+                    <div className="seksjon-tittel">Rutiner</div>
+                    <Merke stil="noytral">{stk(rutiner.length, 'rutine', 'rutiner')}</Merke>
                     {kanSkrive ? (
-                      <Knapp stil="stille" onClick={start}>
-                        <Pencil size={15} strokeWidth={1.9} />
-                        {punkt.innhold?.trim() ? 'Rediger' : 'Skriv rutinen'}
+                      <Knapp stil="stille" onClick={() => setNyRutine('')}>
+                        <Plus size={15} strokeWidth={1.9} />
+                        Ny rutine
                       </Knapp>
                     ) : null}
                   </div>
 
-                  {punkt.innhold?.trim() ? (
-                    <div className="dokument valgbar">{punkt.innhold}</div>
-                  ) : (
+                  {nyRutine !== null ? (
+                    <div className="seksjon seksjon-redigerer" style={{ marginBottom: 14 }}>
+                      <Felt
+                        firkant
+                        autoFocus
+                        etikett="Hva heter rutinen?"
+                        value={nyRutine}
+                        placeholder="Arbeid i tavle"
+                        hjelp="Bare tittelen nå. Selve teksten skrives i neste steg, med endringsnotat."
+                        onChange={e => setNyRutine(e.target.value)}
+                      />
+                      <div className="rad" style={{ marginTop: 12 }}>
+                        <Knapp
+                          stil="merke"
+                          disabled={!nyRutine.trim() || jobber != null}
+                          onClick={() => kjor('ny-rutine', async () => {
+                            await opprettRutine(punkt.id, nyRutine, profil?.id ?? '')
+                            setNyRutine(null)
+                          })}
+                        >
+                          {jobber === 'ny-rutine' ? 'Oppretter …' : 'Opprett rutinen'}
+                        </Knapp>
+                        <Knapp stil="naken" disabled={jobber != null} onClick={() => setNyRutine(null)}>
+                          Avbryt
+                        </Knapp>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {rutiner.length === 0 ? (
                     <div className="dokument-tom">
-                      <p>Ingen rutine skrevet ennå.</p>
+                      <p>Ingen rutiner skrevet ennå.</p>
                       {HINT_FOR[punkt.nummer] ? (
                         <p className="felt-hjelp" style={{ maxWidth: '58ch' }}>{HINT_FOR[punkt.nummer]}</p>
                       ) : null}
+                    </div>
+                  ) : (
+                    <div className="stabel" style={{ gap: 14 }}>
+                      {rutiner.map(r => (
+                        <Rutine
+                          key={r.id}
+                          rutine={r}
+                          punkt={punkt}
+                          kanSkrive={kanSkrive}
+                          etterEndring={etterEndring}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
@@ -427,7 +712,7 @@ function Punkt({
             ) : (
               <div className="seksjon seksjon-redigerer">
                 <div className="seksjon-hode">
-                  <div className="seksjon-tittel">Redigerer punkt {punkt.nummer}</div>
+                  <div className="seksjon-tittel">Redigerer kapittel {punkt.nummer}</div>
                   <Merke stil="endret">Blir versjon {punkt.gjeldende_versjon + 1}</Merke>
                 </div>
 
@@ -454,19 +739,6 @@ function Punkt({
                       onChange={e => setUtkast(u => ({ ...u, formal: e.target.value || null }))}
                     />
                     <span className="felt-hjelp">Hva punktet skal sikre. Endres sjelden.</span>
-                  </label>
-                  <label className="felt felt-firkant">
-                    <span className="felt-etikett">Rutinen</span>
-                    {HINT_FOR[punkt.nummer] ? (
-                      <span className="felt-hjelp" style={{ marginBottom: 2 }}>{HINT_FOR[punkt.nummer]}</span>
-                    ) : null}
-                    <textarea
-                      className="felt-inn skrivefelt"
-                      value={utkast.innhold ?? ''}
-                      placeholder="Skriv rutinen her …"
-                      autoFocus
-                      onChange={e => setUtkast(u => ({ ...u, innhold: e.target.value || null }))}
-                    />
                   </label>
                   <Felt
                     firkant
@@ -527,7 +799,7 @@ function Punkt({
                   {punkt.status !== 'vedtatt' ? (
                     <Knapp
                       stil="primar"
-                      disabled={!punkt.innhold?.trim() || redigerer || jobber != null}
+                      disabled={!harTekst || redigerer || jobber != null}
                       onClick={() => kjor('vedta', () => vedta(punkt.id, profil?.id ?? ''))}
                     >
                       {jobber === 'vedta' ? 'Vedtar …' : 'Vedta punktet'}
@@ -541,8 +813,8 @@ function Punkt({
                       {jobber === 'kvitter' ? 'Registrerer …' : 'Gjennomgått i dag'}
                     </Knapp>
                   )}
-                  {punkt.status !== 'vedtatt' && !punkt.innhold?.trim() ? (
-                    <span className="felt-hjelp">Skriv rutinen først.</span>
+                  {punkt.status !== 'vedtatt' && !harTekst ? (
+                    <span className="felt-hjelp">Skriv minst én rutine først.</span>
                   ) : null}
                   {punkt.status !== 'vedtatt' && redigerer ? (
                     <span className="felt-hjelp">Lagre eller avbryt redigeringen først.</span>

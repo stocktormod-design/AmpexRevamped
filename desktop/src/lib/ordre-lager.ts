@@ -7,6 +7,7 @@ import {
   type TimeInn,
 } from '@delt/invoicing'
 import { bolkFor, type Bolk } from '@delt/ordrebolk'
+import { mittFirma, nyId } from '@/lib/kontor-lager'
 import { supabase } from '@/supabase'
 
 /**
@@ -126,6 +127,50 @@ export async function hentOrdrer(filter: OrdreFilter = {}, grense = 500): Promis
     godkjent: siste.get(o.id) === 'godkjent',
     nummer: o.order_number,
   }))
+}
+
+export type NyOrdre = {
+  tittel: string
+  kundeId: string | null
+  kundeNavn: string
+  adresse: string
+  beskrivelse: string
+}
+
+/**
+ * Ny ordre fra kontoret.
+ *
+ * `order_number` oppgis ikke — den kan ikke oppgis. `assign_order_number()`
+ * (migrasjonen 20260823140000) overskriver alltid feltet med neste tall fra
+ * firmaets egen serie, uansett hva som sendes. Det er poenget med at nummeret
+ * er en fasit: klienten foreslår aldri, den ber om et.
+ *
+ * `customer_id` er valgfri. Registeret er ferskt — mange ordrer vil peke på en
+ * kunde som ikke finnes ennå, og adressen jobben skal utføres på er ofte en
+ * annen enn kundens fakturaadresse uansett. Derfor fylles `customer_name` og
+ * `address` inn hver for seg og aldri fra hverandre.
+ *
+ * Ordren opprettes som «mottatt», samme startpunkt som en ordre som kommer inn
+ * fra appen. Tildeling, tidspunkt og materiell settes etterpå — dette lager
+ * bare selve ordren.
+ */
+export async function opprettOrdre(inn: NyOrdre, opprettetAv: string): Promise<string> {
+  const tittel = inn.tittel.trim()
+  if (!tittel) throw new Error('Ordren må ha en tittel.')
+
+  const id = nyId()
+  const r = await supabase.from('orders').insert({
+    id,
+    company_id: await mittFirma(),
+    title: tittel,
+    customer_id: inn.kundeId,
+    customer_name: inn.kundeNavn.trim() || null,
+    address: inn.adresse.trim() || null,
+    description: inn.beskrivelse.trim() || null,
+    created_by: opprettetAv,
+  })
+  if (r.error) throw new Error(`Kunne ikke opprette ordren: ${r.error.message}`)
+  return id
 }
 
 export type Materiellrad = {

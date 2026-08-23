@@ -31,8 +31,26 @@ export type Rettighet =
   | 'ordre.alle'
   /** Rette opp det som ble ført i felt — timer, materiell, beskrivelse. */
   | 'ordre.endre'
+  /**
+   * Opprette en ny ordre fra kontoret.
+   *
+   * Skilt fra `ordre.endre`, som er å RETTE noe som alt finnes. Å opprette er å
+   * bestemme at et NYTT stykke arbeid skal inn i firmaets portefølje — det er en
+   * annen avgjørelse enn å rette en times feilskriving, og de to skal ikke stå
+   * og falle sammen bare fordi de begge er skriving.
+   */
+  | 'ordre.skriv'
   /** Se prosjektene: rom, tegninger, oppgaver, deltakere. */
   | 'prosjekt.les'
+  /**
+   * Opprette et prosjekt fra kontoret.
+   *
+   * Prosjektene ble til i appen, sammen med tegningen de hørte til. Det holdt
+   * så lenge alt startet ute på en jobb — men et rammeavtaleprosjekt starter på
+   * kontoret, med en kunde og en adresse, uker før noen tar med seg en telefon
+   * dit.
+   */
+  | 'prosjekt.skriv'
   /** Se tilbud og hva de summerer til. */
   | 'tilbud.les'
   /**
@@ -43,8 +61,28 @@ export type Rettighet =
    * kollegaene har ført er noe annet enn å lede en jobb.
    */
   | 'timer.les'
+  /**
+   * Føre og rette timer for ANDRE enn seg selv.
+   *
+   * Dette er lønnsgrunnlag skrevet på vegne av en annen, og derfor en tyngre
+   * rettighet enn `timer.les`. Installatøren har den fordi han retter det som
+   * ble ført feil i felt; regnskapsføreren har den IKKE — hun ser timelista
+   * fakturaen bygger på, men å endre den er å endre hva en montør får betalt.
+   *
+   * Hver rad bærer `created_by`, så en time ført fra kontoret kan alltid
+   * skilles fra en time montøren førte selv.
+   */
+  | 'timer.skriv'
   /** Se kunderegisteret. */
   | 'kunder.les'
+  /**
+   * Opprette og rette kunder i registeret.
+   *
+   * Regnskapsføreren har denne. Kunderegisteret er det fakturaen adresseres
+   * til, og et feil organisasjonsnummer er hennes problem lenge før det er
+   * noen andres.
+   */
+  | 'kunder.skriv'
   /** Se fakturagrunnlaget: linjer, netto, mva, brutto. */
   | 'faktura.les'
   /** Marker som fakturert. */
@@ -122,8 +160,9 @@ export type Rettighet =
  */
 const ALT: Rettighet[] = [
   'kontor',
-  'ordre.les', 'ordre.alle', 'ordre.endre',
-  'prosjekt.les', 'tilbud.les', 'timer.les', 'kunder.les',
+  'ordre.les', 'ordre.alle', 'ordre.endre', 'ordre.skriv',
+  'prosjekt.les', 'prosjekt.skriv', 'tilbud.les', 'timer.les', 'timer.skriv',
+  'kunder.les', 'kunder.skriv',
   'faktura.les', 'faktura.marker', 'db.les',
   'varer.les', 'priser.importer',
   'ik.les', 'ik.skriv', 'skjema.les', 'skjema.skriv', 'logg.les',
@@ -142,7 +181,7 @@ const MATRISE: Record<Rolle, Rettighet[]> = {
   // finner fram dokumentasjonen når noen spør etter den.
   regnskapsforer: [
     'kontor', 'ordre.les', 'ordre.alle',
-    'prosjekt.les', 'tilbud.les', 'timer.les', 'kunder.les',
+    'prosjekt.les', 'tilbud.les', 'timer.les', 'kunder.les', 'kunder.skriv',
     'faktura.les', 'faktura.marker', 'db.les',
     'varer.les', 'ik.les', 'skjema.les', 'logg.les', 'firma.les',
   ],
@@ -155,8 +194,9 @@ const MATRISE: Record<Rolle, Rettighet[]> = {
   // samsvarserklæringen, og da er det hans rutiner — han er den eneste utenfor
   // eier og administrator som kan skrive dem.
   installator: [
-    'kontor', 'ordre.les', 'ordre.alle', 'ordre.endre',
-    'prosjekt.les', 'tilbud.les', 'timer.les', 'kunder.les',
+    'kontor', 'ordre.les', 'ordre.alle', 'ordre.endre', 'ordre.skriv',
+    'prosjekt.les', 'prosjekt.skriv', 'tilbud.les', 'timer.les', 'timer.skriv',
+    'kunder.les', 'kunder.skriv',
     'faktura.les', 'varer.les',
     'ik.les', 'ik.skriv', 'skjema.les', 'skjema.skriv', 'logg.les',
     'skann.les',

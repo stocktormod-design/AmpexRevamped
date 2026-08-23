@@ -837,3 +837,43 @@ textarea.skrivefelt-lav { height: 110px; }
 }
 .snarvei:hover { border-color: var(--kobber-kant); background: var(--papir); }
 .snarvei svg { color: var(--kobber); }
+
+/* Folkene i et firma, utvidet under firmaraden på Ampex-flata. Innrykket og
+   den svakere flaten gjør at den indre tabellen leser som en forklaring på
+   raden over, ikke som en ny liste ved siden av den. */
+.linjer .folk-rad > td {
+  padding: 0 0 16px 24px;
+  border-bottom: 1px solid var(--kant);
+}
+.folk-rad .linjer td { padding: 10px 0; border-bottom: none; }
+.folk-rad .beskjed { margin-bottom: 4px; }
+
+/* Rutinene under et internkontroll-kapittel. Hver er sitt eget lille dokument
+   — egen tekst, egen versjon, eget vedtak — og rammen sier nettopp det: de er
+   sidestilte under punktet, ikke avsnitt i én rutine. */
+.rutine {
+  border: 1px solid var(--kant);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: var(--dis);
+}
+.rutine-redigerer { border-color: var(--kobber-kant); background: var(--kobber-flate); }
+.rutine-hode { display: flex; align-items: center; gap: 10px; }
+.rutine-navn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 500;
+  color: var(--blekk);
+  text-align: left;
+  cursor: pointer;
+}
+.rutine-navn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rutine-navn:hover > span { color: var(--kobber); }
+.rutine .dokument, .rutine .dokument-tom { margin-top: 12px; }

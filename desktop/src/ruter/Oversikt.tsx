@@ -1,5 +1,5 @@
 import { kan } from '@delt/kontor-tilgang'
-import { byggUkeplan, DAGER, flyttUke, ukeEtikett, ukeSlutt, ukeStart } from '@delt/schedule-calc'
+import { arbeidsperiode, byggUkeplan, DAGER, flyttUke, ukeSlutt, ukeStart } from '@delt/schedule-calc'
 import { ChevronLeft, ChevronRight, CircleCheck, FileSpreadsheet, FileText, Package, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/auth'
@@ -76,7 +76,7 @@ export function Oversikt() {
     <>
       <Sidehode
         tittel={fornavn ? `God dag, ${fornavn}` : 'Oversikt'}
-        under={ukeEtikett(start, new Date())}
+        under={arbeidsperiode(start, new Date())}
         handling={
           <div className="rad">
             <Ikonknapp onClick={() => setStart(flyttUke(start, -1))} title="Forrige uke" aria-label="Forrige uke">

@@ -5,6 +5,7 @@ import { finnAvvik, type Snapshot } from '@delt/approvals-calc'
 import { CheckCircle2, CircleAlert, FileText, Snowflake, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/auth'
+import { hentKunder, type Kunde } from '@/lib/kontor-lager'
 import {
   grunnlagFra,
   hentArkiv,
@@ -13,6 +14,7 @@ import {
   kanFryses,
   kanGodkjenneFaglig,
   markerFakturert,
+  opprettOrdre,
   STATUS_NAVN,
   type Arkivrad,
   type Ordredetalj,
@@ -69,8 +71,14 @@ export function Ordre() {
   const seFaktura = kan(rolle, 'faktura.les')
   const kanFakturere = kan(rolle, 'faktura.marker')
   const seDb = kan(rolle, 'db.les')
+  const kanOpprette = kan(rolle, 'ordre.skriv')
 
   const [sok, setSok] = useState('')
+  const [apen, setApen] = useState(false)
+  const [kunder, setKunder] = useState<Kunde[]>([])
+  const [ny, setNy] = useState({ tittel: '', kundeId: '', adresse: '', beskrivelse: '' })
+  const [oppretterJobber, setOppretterJobber] = useState(false)
+  const [skjemafeil, setSkjemafeil] = useState<string | null>(null)
   const [bolker, setBolker] = useState<Bolk[]>([])
   const [rader, setRader] = useState<Ordrerad[]>([])
   const [valgt, setValgt] = useState<string | null>(null)
@@ -195,11 +203,109 @@ export function Ordre() {
                 onChange={e => setSok(e.target.value)}
               />
             </div>
+            {kanOpprette ? (
+              <Knapp
+                stil="merke"
+                onClick={() => {
+                  setApen(true)
+                  setSkjemafeil(null)
+                  // Kunderegisteret hentes bare når skjemaet faktisk åpnes —
+                  // ingen som bare søker i lista skal betale for det oppslaget.
+                  if (kunder.length === 0) void hentKunder('').then(setKunder).catch(() => {})
+                }}
+              >
+                Ny ordre
+              </Knapp>
+            ) : null}
           </>
         }
       />
 
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+
+      {apen ? (
+        <div className="inviter-boks" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none' }}>
+          <form
+            className="stabel"
+            onSubmit={async ev => {
+              ev.preventDefault()
+              setOppretterJobber(true)
+              setSkjemafeil(null)
+              try {
+                const kunde = kunder.find(k => k.id === ny.kundeId)
+                const id = await opprettOrdre(
+                  {
+                    tittel: ny.tittel,
+                    kundeId: ny.kundeId || null,
+                    kundeNavn: kunde?.name ?? '',
+                    adresse: ny.adresse,
+                    beskrivelse: ny.beskrivelse,
+                  },
+                  profil?.id ?? '',
+                )
+                setNy({ tittel: '', kundeId: '', adresse: '', beskrivelse: '' })
+                setApen(false)
+                await last()
+                setValgt(id)
+              } catch (e) {
+                setSkjemafeil(e instanceof Error ? e.message : String(e))
+              }
+              setOppretterJobber(false)
+            }}
+          >
+            <div className="inviter-felt">
+              <Felt
+                firkant
+                autoFocus
+                etikett="Tittel"
+                hjelp="Det navnet ordren skal gå under."
+                value={ny.tittel}
+                onChange={e => setNy(n => ({ ...n, tittel: e.target.value }))}
+              />
+              <label className="felt felt-firkant">
+                <span className="felt-etikett">Kunde</span>
+                <select
+                  className="felt-inn"
+                  value={ny.kundeId}
+                  onChange={e => setNy(n => ({ ...n, kundeId: e.target.value }))}
+                >
+                  <option value="">Ingen valgt ennå</option>
+                  {kunder.map(k => (
+                    <option key={k.id} value={k.id}>{k.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <Felt
+              firkant
+              etikett="Adresse"
+              hjelp="Der jobben skal utføres — ikke nødvendigvis kundens fakturaadresse."
+              value={ny.adresse}
+              onChange={e => setNy(n => ({ ...n, adresse: e.target.value }))}
+            />
+            <label className="felt felt-firkant">
+              <span className="felt-etikett">Beskrivelse</span>
+              <textarea
+                className="felt-inn skrivefelt skrivefelt-lav"
+                value={ny.beskrivelse}
+                onChange={e => setNy(n => ({ ...n, beskrivelse: e.target.value }))}
+              />
+            </label>
+            {skjemafeil ? <Beskjed stil="feil">{skjemafeil}</Beskjed> : null}
+            <div className="rad">
+              <Knapp stil="merke" type="submit" disabled={oppretterJobber || !ny.tittel.trim()}>
+                {oppretterJobber ? 'Oppretter …' : 'Opprett ordren'}
+              </Knapp>
+              <Knapp type="button" onClick={() => { setApen(false); setSkjemafeil(null) }}>
+                Avbryt
+              </Knapp>
+              <span className="felt-hjelp">
+                Tildeling, tidspunkt og materiell settes på ordren etter at den er opprettet.
+              </span>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       <div className="arbeidsflate">
         <div className="delt">
