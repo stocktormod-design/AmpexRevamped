@@ -5,6 +5,43 @@ import { byggReparasjonsSql, TABELLER_V30 } from './id-repair'
 export const migrations = schemaMigrations({
   migrations: [
     {
+      // Oppgaver pa tegningen: frist, beskrivelse, pin og synlighet.
+      //
+      // MA folge serverside 20260824100000. `sync_pull_columns` leser kolonnene
+      // fra information_schema, sa nye serverkolonner sendes til appen enten vi
+      // vil eller ei — og en kolonne WatermelonDB ikke kjenner avviser hele
+      // raden. De to skjemaene ma flyttes sammen.
+      toVersion: 32,
+      steps: [
+        addColumns({
+          table: 'tasks',
+          columns: [
+            { name: 'beskrivelse', type: 'string', isOptional: true },
+            { name: 'frist_at', type: 'number', isOptional: true },
+            { name: 'drawing_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'pin_x', type: 'number', isOptional: true },
+            { name: 'pin_y', type: 'number', isOptional: true },
+            { name: 'synlighet', type: 'string' },
+          ],
+        }),
+        createTable({
+          name: 'task_mottakere',
+          columns: [
+            { name: 'task_id', type: 'string', isIndexed: true },
+            { name: 'user_id', type: 'string', isIndexed: true },
+            { name: 'user_navn', type: 'string', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        // `synlighet` er not null pa serveren med default 'tildelt'.
+        // addColumns fyller eksisterende rader med null, og en null der ville
+        // gitt en oppgave uten synlighet — verken tildelt eller offentlig.
+        unsafeExecuteSql("update tasks set synlighet = 'tildelt' where synlighet is null;"),
+      ],
+    },
+    {
       // Rabatt avtalt i et tilbud fulgte ikke med når tilbudet ble ordre —
       // ordren ble fakturert til full pris. Se lib/quotes.ts registrerSvar.
       toVersion: 31,

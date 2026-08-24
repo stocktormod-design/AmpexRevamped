@@ -4,7 +4,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 31,
+  version: 32,
   tables: [
     tableSchema({
       name: 'product_prices',
@@ -299,6 +299,32 @@ export const schema = appSchema({
         { name: 'assigned_to', type: 'string', isOptional: true, isIndexed: true },
         { name: 'created_by', type: 'string', isOptional: true },
         { name: 'done_at', type: 'number', isOptional: true },
+        // Oppgaven pa tegningen (20260824100000). `pin_x`/`pin_y` er
+        // NORMALISERTE side-koordinater (0-1) — samme rom som rooms.shape og
+        // drawing_loops.nodes. Piksler ville flyttet seg mellom telefon,
+        // nettbrett og kontorskjerm.
+        { name: 'beskrivelse', type: 'string', isOptional: true },
+        { name: 'frist_at', type: 'number', isOptional: true },
+        { name: 'drawing_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'pin_x', type: 'number', isOptional: true },
+        { name: 'pin_y', type: 'number', isOptional: true },
+        { name: 'synlighet', type: 'string' }, // tildelt | prosjekt
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      // Hvem oppgaven ble SENDT til. `assigned_to` er den ene ansvarlige;
+      // dette er de informerte. En kommaseparert streng ville ikke kunnet
+      // sporres pa, og ansvar og informasjon er ikke samme ting.
+      name: 'task_mottakere',
+      columns: [
+        { name: 'task_id', type: 'string', isIndexed: true },
+        { name: 'user_id', type: 'string', isIndexed: true },
+        // Navnet lagres ved siden av id-en, som ellers i basen: en oppgave fra
+        // i fjor skal kunne leses selv om personen har sluttet.
+        { name: 'user_navn', type: 'string', isOptional: true },
+        { name: 'created_by', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
