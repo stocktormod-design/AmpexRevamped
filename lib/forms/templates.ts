@@ -1,4 +1,4 @@
-import { FormTemplate, JA_NEI_IA } from './types'
+import { JA_NEI_IA, type FormTemplate } from './types'
 
 /**
  * De 5 sikre — Ampex-maler v1.
