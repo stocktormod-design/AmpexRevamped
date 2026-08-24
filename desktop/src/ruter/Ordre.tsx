@@ -1,12 +1,14 @@
 import { formatKr, mvaLabel, somMvaType, type Fakturagrunnlag } from '@delt/invoicing'
+import { getTemplate } from '@delt/forms/templates'
 import { kan } from '@delt/kontor-tilgang'
 import { BOLKNAVN, BOLKREKKEFOLGE, grupper, type Bolk } from '@delt/ordrebolk'
 import { finnAvvik, type Snapshot } from '@delt/approvals-calc'
-import { CheckCircle2, CircleAlert, FileText, Snowflake, Users } from 'lucide-react'
+import { CheckCircle2, CircleAlert, FileText, Printer, Snowflake, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/auth'
 import { hentKunder, type Kunde } from '@/lib/kontor-lager'
 import { sendTilRegnskap } from '@/lib/regnskap'
+import { skrivUtDokument } from '@/lib/utskrift'
 import {
   grunnlagFra,
   hentArkiv,
@@ -46,6 +48,15 @@ import { antall, Beskjed, Felt, Knapp, Merke, Sidehode, stk } from '@/ui/kit'
 
 const DATO = new Intl.DateTimeFormat('nb-NO', { day: '2-digit', month: 'short' })
 const DATO_LANG = new Intl.DateTimeFormat('nb-NO', { day: '2-digit', month: 'long', year: 'numeric' })
+
+/**
+ * `template_id` er en nokkel, ikke en tittel. For Ampex-malene finnes navnet i
+ * den delte katalogen; for firmamaler star nokkelen igjen til noen apner
+ * dokumentet — bedre enn a finne pa et navn.
+ */
+function malnavn(id: string): string {
+  return getTemplate(id)?.name ?? id
+}
 
 function dato(v: string | null | undefined, lang = false): string {
   if (!v) return '–'
@@ -462,6 +473,25 @@ function Detalj({
     }
   }
 
+  /**
+   * Apner dokumentet i et utskriftsvindu.
+   *
+   * Dette er veien fra «utfylt i appen» til «noe kunden kan fa». I dette faget
+   * ER dokumentet leveransen — en sluttkontroll kunden ikke kan fa utlevert er
+   * ikke dokumentasjon for kunden, den er en notis hos oss.
+   */
+  async function skrivUt(dokumentId: string) {
+    setJobber(`utskrift-${dokumentId}`)
+    setFeil(null)
+    try {
+      await skrivUtDokument(o.id, dokumentId)
+    } catch (e) {
+      setFeil(e instanceof Error ? e.message : String(e))
+    } finally {
+      setJobber(null)
+    }
+  }
+
   async function fakturer() {
     if (!grunnlag) return
     setJobber('faktura')
@@ -568,7 +598,7 @@ function Detalj({
             {detalj.dokumenter.map(d => (
               <div key={d.id} className="rad" style={{ padding: '7px 0' }}>
                 <FileText size={15} strokeWidth={1.8} className="dempet-mer" />
-                <span className="strekk">{d.template_id}</span>
+                <span className="strekk">{malnavn(d.template_id)}</span>
                 {d.status === 'fullfort' ? (
                   <>
                     <CheckCircle2 size={14} strokeWidth={1.8} style={{ color: 'var(--gronn)' }} />
@@ -577,6 +607,12 @@ function Detalj({
                 ) : (
                   <Merke stil="varsel">Utkast</Merke>
                 )}
+                {/* Ogsaa pa utkast: den som skal se hva som mangler, trenger
+                    arket i handa. Utskriften merker seg selv som utkast. */}
+                <Knapp stil="stille" disabled={jobber != null} onClick={() => void skrivUt(d.id)}>
+                  <Printer size={14} strokeWidth={1.8} />
+                  {jobber === `utskrift-${d.id}` ? 'Apner …' : 'Skriv ut'}
+                </Knapp>
               </div>
             ))}
           </Boks>
