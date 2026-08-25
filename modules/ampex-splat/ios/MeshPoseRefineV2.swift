@@ -145,6 +145,54 @@ enum MeshPoseRefineV2 {
             return x
         }
 
+        // ── Ikke-rigid warp (Zhou-Koltun andre halvdel): grovt kontrollrutenett i bilderom
+        // per frame, 2D-forskyvning per punkt. Jacobi er ENKLERE enn den rigide (∇I·bilineær-
+        // vekt, ingen rotasjon). Se docs/SUBPIXEL_ALIGN_PLAN.md. warpGW×warpGH — start grovt.
+        let warpGW = 8, warpGH = 5
+        let warpN = 2 * warpGW * warpGH
+        // De 4 omkringliggende kontrollpunktene + bilineære vekter for en piksel (u,v).
+        func warpCell(_ lw: Int, _ lh: Int, _ u: Float, _ v: Float)
+            -> (idx: (Int, Int, Int, Int), w: (Float, Float, Float, Float)) {
+            let gxf = u / Float(max(lw - 1, 1)) * Float(warpGW - 1)
+            let gyf = v / Float(max(lh - 1, 1)) * Float(warpGH - 1)
+            let cx = min(max(Int(gxf), 0), warpGW - 2)
+            let cy = min(max(Int(gyf), 0), warpGH - 2)
+            let tx = min(max(gxf - Float(cx), 0), 1), ty = min(max(gyf - Float(cy), 0), 1)
+            let a = cy * warpGW + cx, b = a + 1, c = a + warpGW, d = c + 1
+            return ((a, b, c, d), ((1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty))
+        }
+        func warpOffset(_ grid: [SIMD2<Float>], _ lw: Int, _ lh: Int, _ u: Float, _ v: Float) -> SIMD2<Float> {
+            let (idx, w) = warpCell(lw, lh, u, v)
+            return grid[idx.0] * w.0 + grid[idx.1] * w.1 + grid[idx.2] * w.2 + grid[idx.3] * w.3
+        }
+        // Generell n×n-løser (samme Gauss-eliminasjon m/ partial pivot som solve6).
+        func solveN(_ A0: [Float], _ b0: [Float], _ n: Int) -> [Float]? {
+            var A = A0, b = b0
+            for col in 0..<n {
+                var pivot = col
+                for r in (col + 1)..<n where abs(A[r * n + col]) > abs(A[pivot * n + col]) { pivot = r }
+                if abs(A[pivot * n + col]) < 1e-12 { return nil }
+                if pivot != col {
+                    for c in 0..<n { A.swapAt(col * n + c, pivot * n + c) }
+                    b.swapAt(col, pivot)
+                }
+                let inv = 1 / A[col * n + col]
+                for r in (col + 1)..<n {
+                    let f = A[r * n + col] * inv
+                    if f == 0 { continue }
+                    for c in col..<n { A[r * n + c] -= f * A[col * n + c] }
+                    b[r] -= f * b[col]
+                }
+            }
+            var x = [Float](repeating: 0, count: n)
+            for r in (0..<n).reversed() {
+                var s = b[r]
+                for c in (r + 1)..<n { s -= A[r * n + c] * x[c] }
+                x[r] = s / A[r * n + r]
+            }
+            return x
+        }
+
         func rodrigues(_ w: SIMD3<Float>) -> simd_float3x3 {
             let th = simd_length(w)
             if th < 1e-8 { return matrix_identity_float3x3 }
@@ -263,6 +311,130 @@ enum MeshPoseRefineV2 {
             MeshLog.log("poseRefine — siste residual \(String(format: "%.4f", meanResAfter)) > beste \(String(format: "%.4f", bestRes)), ruller tilbake til beste poser")
             for fi in 0..<frames.count { frames[fi].w2c = bestW2C[fi] }
             meanResAfter = bestRes
+        }
+
+        // ── Ikke-rigid warp-stadium (OPT-IN: meshscan.warp = "on"). DEL 1 — MÅLER om det
+        // finnes justerbar restforvrengning under det rigide gulvet (~0,044). Warpen
+        // persisteres IKKE ennå: baken sampler fortsatt via pose alene, så «on» endrer
+        // LOGGET residual, ikke bildet. Bildeendringen er del 2 (warp-bevisst sampler +
+        // fixture v4 + blande-vei). Se docs/SUBPIXEL_ALIGN_PLAN.md.
+        // Går/faller på at residualen SYNKER monotont — samme fortegns-validering som den
+        // rigide (der fortegnet var flippet og residualen STEG). Synker den ikke, er warpen
+        // eller Jacobi-fortegnet galt; da lyver ikke tallet.
+        // OPT-IN: meshscan.warp = "on" (koster 6 ekstra iterasjoner per bake — regel 10, så
+        // ikke på som standard). Validert på device 2026-08-25: residualen synker MONOTONT
+        // under det rigide gulvet (0,0417→0,0399 og 0,0356→0,0341), altså rett Jacobi-fortegn.
+        if UserDefaults.standard.string(forKey: "meshscan.warp") == "on" && frames.count >= 3 {
+            let zeroGrid = [SIMD2<Float>](repeating: .zero, count: warpGW * warpGH)
+            var warps = [[SIMD2<Float>]](repeating: zeroGrid, count: frames.count)
+            // Regularisering holder kontrollpunkter i tekstur-fattige felt (blank vegg) fra å
+            // drive fritt og rive warpen. For lav = wobble/riving; for høy = kollapser til
+            // rigid. Startverdi — TUNE på fixture (docs, felle #3).
+            let warpLambda: Float = 0.02
+            let warpStepClamp: Float = 2.0 // piksler per steg — drift er sub-piksel, store hopp er outliers
+            var warpResBefore: Float = -1, warpResAfter: Float = 0
+            for witer in 0..<6 {
+                // Pass A: proxy fra WARPEDE samples (facing-vektet snitt) — ellers måles warpen
+                // mot en proxy den selv ikke har vært med å forme.
+                var sum = [Float](repeating: 0, count: nV)
+                var wsum = [Float](repeating: 0, count: nV)
+                for (fi, f) in frames.enumerated() {
+                    let grid = warps[fi]
+                    for i in 0..<nV {
+                        guard let pr = project(f, verts[i], vnorms[i]) else { continue }
+                        let off = warpOffset(grid, f.lw, f.lh, pr.u, pr.v)
+                        guard let s = sample(f, pr.u + off.x, pr.v + off.y) else { continue }
+                        let w = simd_dot(vnorms[i], simd_normalize(f.camPos - verts[i]))
+                        sum[i] += s.val * w; wsum[i] += w
+                    }
+                }
+                var proxyW = [Float](repeating: 0, count: nV)
+                for i in 0..<nV where wsum[i] > 1e-4 { proxyW[i] = sum[i] / wsum[i] }
+
+                // Pass B: per-frame GN på warp-rutenettet (parallelt — frames uavhengige)
+                let framesCopy = frames
+                let warpsCopy = warps
+                var newWarps = warps
+                var fRes = [Float](repeating: 0, count: frames.count)
+                var fResN = [Int](repeating: 0, count: frames.count)
+                newWarps.withUnsafeMutableBufferPointer { NW in
+                    fRes.withUnsafeMutableBufferPointer { FR in
+                        fResN.withUnsafeMutableBufferPointer { FN in
+                            DispatchQueue.concurrentPerform(iterations: framesCopy.count) { fi in
+                                let f = framesCopy[fi]
+                                let grid = warpsCopy[fi]
+                                var H = [Float](repeating: 0, count: warpN * warpN)
+                                var b = [Float](repeating: 0, count: warpN)
+                                var rSum: Float = 0; var rN = 0
+                                for i in 0..<nV where wsum[i] > 1e-4 {
+                                    guard let pr = project(f, verts[i], vnorms[i]) else { continue }
+                                    let (idx, wgt) = warpCell(f.lw, f.lh, pr.u, pr.v)
+                                    let off = grid[idx.0] * wgt.0 + grid[idx.1] * wgt.1 + grid[idx.2] * wgt.2 + grid[idx.3] * wgt.3
+                                    guard let s = sample(f, pr.u + off.x, pr.v + off.y) else { continue }
+                                    let r = s.val - proxyW[i]
+                                    rSum += abs(r); rN += 1
+                                    if abs(r) > 0.30 { continue } // okklusjonsskift/speil — ute av GN
+                                    // 4 kontrollpunkt × {x,y}: ∂I/∂cp.x = gx·w, ∂I/∂cp.y = gy·w.
+                                    let cpArr = [idx.0, idx.1, idx.2, idx.3]
+                                    let wArr = [wgt.0, wgt.1, wgt.2, wgt.3]
+                                    var cols = [Int](repeating: 0, count: 8)
+                                    var jv = [Float](repeating: 0, count: 8)
+                                    for k in 0..<4 {
+                                        cols[k * 2] = cpArr[k] * 2;     jv[k * 2] = s.gx * wArr[k]
+                                        cols[k * 2 + 1] = cpArr[k] * 2 + 1; jv[k * 2 + 1] = s.gy * wArr[k]
+                                    }
+                                    for a in 0..<8 {
+                                        b[cols[a]] += jv[a] * r
+                                        for c in 0..<8 { H[cols[a] * warpN + cols[c]] += jv[a] * jv[c] }
+                                    }
+                                }
+                                FR[fi] = rSum; FN[fi] = rN
+                                guard rN > 200 else { return }
+                                // Glatthetsregularisering: naborutenett (horisontal + vertikal).
+                                func reg(_ k: Int, _ m: Int) {
+                                    for comp in 0..<2 {
+                                        let ci = k * 2 + comp, cj = m * 2 + comp
+                                        H[ci * warpN + ci] += warpLambda; H[cj * warpN + cj] += warpLambda
+                                        H[ci * warpN + cj] -= warpLambda; H[cj * warpN + ci] -= warpLambda
+                                        let diff = grid[k][comp] - grid[m][comp]
+                                        b[ci] += warpLambda * diff; b[cj] -= warpLambda * diff
+                                    }
+                                }
+                                for gy in 0..<warpGH {
+                                    for gx in 0..<warpGW {
+                                        let k = gy * warpGW + gx
+                                        if gx + 1 < warpGW { reg(k, k + 1) }
+                                        if gy + 1 < warpGH { reg(k, k + warpGW) }
+                                    }
+                                }
+                                // Levenberg-demping (samme som den rigide)
+                                var trace: Float = 0
+                                for a in 0..<warpN { trace += H[a * warpN + a] }
+                                let lam = max(trace / Float(warpN) * 1e-3, 1e-6)
+                                for a in 0..<warpN { H[a * warpN + a] += lam }
+                                guard var d = solveN(H, b, warpN) else { return }
+                                for a in 0..<warpN { d[a] = -d[a] } // GN: δ = −H⁻¹b
+                                var g = grid
+                                for k in 0..<(warpGW * warpGH) {
+                                    var step = SIMD2(d[k * 2], d[k * 2 + 1])
+                                    let sl = simd_length(step)
+                                    if sl > warpStepClamp { step *= warpStepClamp / sl }
+                                    g[k] += step
+                                }
+                                NW[fi] = g
+                            }
+                        }
+                    }
+                }
+                warps = newWarps
+                var rs: Float = 0; var rn = 0
+                for fi in 0..<frames.count { rs += fRes[fi]; rn += fResN[fi] }
+                let mr = rn > 0 ? rs / Float(rn) : 0
+                if witer == 0 { warpResBefore = mr }
+                warpResAfter = mr
+                MeshLog.log("poseRefine warp iter \(witer + 1)/6 — snittresidual \(String(format: "%.4f", mr)) (\(rn) samples)")
+            }
+            MeshLog.log("poseRefine warp — residual \(String(format: "%.4f", warpResBefore)) → \(String(format: "%.4f", warpResAfter)), \(warpGW)×\(warpGH)-rutenett, \(frames.count) frames. MERK: kun målt, ikke persistert (del 2, docs/SUBPIXEL_ALIGN_PLAN.md)")
         }
 
         // ── Skriv raffinerte c2w-poser tilbake i keyframes
