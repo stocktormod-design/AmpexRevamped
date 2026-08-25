@@ -20,7 +20,7 @@ export default function Screen() {
   const kanGodkjenne = useKanGodkjenne()
   const insets = useSafeAreaInsets()
   const [voice, setVoice] = useState<string | null>(null)
-  const [palett, setPalett] = useState<PalettId>('naavaerende')
+  const [palett, setPalett] = useState<PalettId | null>(null) // null = ingen prøve valgt, tokens.js gjelder
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
