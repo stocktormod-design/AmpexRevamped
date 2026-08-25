@@ -16,7 +16,8 @@ import { Room } from '../../lib/db/models/room'
 import { MeshMarker } from '../../lib/db/models/mesh-marker'
 import { SYMBOLS, getSymbol, symbolSvg } from '../../lib/symbols'
 import { useUserId } from '../../lib/auth-user'
-import { NativeMeshViewer, nativeSplatAvailable, presentMeshScan, resolveScanPath, type MeshScanResult } from '../../lib/splat'
+import * as FileSystem from 'expo-file-system/legacy'
+import { NativeMeshViewer, nativeSplatAvailable, presentMeshScan, rebakeMeshScan, resolveScanPath, type MeshScanResult } from '../../lib/splat'
 import { colors, spacing, radius, type as t } from '../../lib/theme'
 
 type MarkerSheetState = { mode: 'new'; point: { x: number; y: number; z: number } } | { mode: 'edit'; marker: MeshMarker } | null
@@ -218,6 +219,18 @@ export default function SkannScreen() {
 
       {/* Bunn-CTA per steg */}
       <View style={{ position: 'absolute', left: spacing.screen, right: spacing.screen, bottom: insets.bottom + spacing.lg }}>
+        {/* A/B-selen hører hjemme HER, rett over primærknappen — ikke inne i den sentrerte
+            introteksten. Der lå den først, og da havnet den bak denne absolutt plasserte
+            bunnblokka: rendret, men usynlig. Ikke __DEV__-gated, fordi selen må virke i et
+            RELEASE-bygg — det er bare der bake-tider, termikk og wireframe-kadens er ekte.
+            Viser seg kun når det ligger skann-bundler med fixture på enheten. */}
+        {stage === 'intro' && nativeSplatAvailable && (
+          <RebakeAB onResult={(glbPath) => {
+            setMesh({ glbPath, framesDir: '', keyframes: 0, textured: true, filledFraction: null, geometryPath: 'anchor-v2' })
+            setScanPath(null) // rebake-GLB er ikke en lagret revisjon — ingen punkter hører til
+            setStage('view')
+          }} />
+        )}
         {stage === 'intro' && (
           <Cta
             label="Start skann"
@@ -301,6 +314,102 @@ function Cta({ label, onPress, disabled }: { label: string; onPress: () => void;
       style={{ height: 54, borderRadius: radius.xl, backgroundColor: disabled ? 'rgba(255,255,255,0.16)' : '#fff', alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.6 : 1 }}>
       <Text style={[t.headline, { color: disabled ? 'rgba(255,255,255,0.6)' : '#000' }]}>{label}</Text>
     </Pressable>
+  )
+}
+
+/**
+ * A/B-sele for teksturbaken (KUN __DEV__). Lister skann-bundlene som ligger igjen på
+ * enheten (`Documents/scan-frames/*` med fixture-mesh.bin) og baker den samme bundlen på
+ * nytt med valgt `meshscan.stasted`-modus. Poenget er å kunne sammenligne to bake-varianter
+ * av NØYAKTIG samme skann — knottene skal dømmes på fixtures, ikke på nye skann der
+ * håndbevegelsen er en ukontrollert variabel.
+ *   on     = topp-K beholdt, men begrenset til det valgte ståstedet (dagens)
+ *   legacy = multiband AV på alle re-plukkede flater (oppførselen før 2026-08-23)
+ *   off    = ståsted-valget hoppes over helt
+ * «farge»-bryteren står på tvers av de tre og styrer ICM-glatthetstermen
+ * (`meshscan.icmcolor`): på = fargeforskjell over sømmen, av = gammel flertallsstemme.
+ * Kombinasjonen som svarer på om ståstedet spiser gevinsten er farge=på + off, med
+ * farge=av + off som kontroll.
+ */
+function RebakeAB({ onResult }: { onResult: (glbPath: string) => void }) {
+  const [bundles, setBundles] = useState<string[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const [icmColor, setIcmColor] = useState(true)
+
+  useEffect(() => {
+    const dir = (FileSystem.documentDirectory ?? '') + 'scan-frames'
+    FileSystem.readDirectoryAsync(dir)
+      .then(async (names) => {
+        const withFixture: string[] = []
+        for (const n of names) {
+          const info = await FileSystem.getInfoAsync(`${dir}/${n}/fixture-mesh.bin`)
+          if (info.exists) withFixture.push(n)
+        }
+        setBundles(withFixture.sort().reverse())
+      })
+      .catch(() => setBundles([]))
+  }, [])
+
+  if (bundles.length === 0) return null
+
+  const run = async (name: string, mode: string) => {
+    const path = ((FileSystem.documentDirectory ?? '') + 'scan-frames/' + name).replace('file://', '')
+    setBusy(`${name}:${mode}`)
+    setNote(null)
+    try {
+      const r = await rebakeMeshScan(path, {
+        'meshscan.stasted': mode,
+        'meshscan.icmcolor': icmColor ? 'on' : 'off',
+      })
+      setNote(`${mode} · farge ${icmColor ? 'på' : 'av'} · ${(r.ms / 1000).toFixed(1)}s · fylt ${r.filledFraction === null ? '–' : Math.round(r.filledFraction * 100) + '%'}`)
+      onResult(r.glbPath)
+    } catch (e: any) {
+      setNote(`feilet: ${e?.message ?? e}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <View style={{ marginTop: spacing.xl, alignSelf: 'stretch', gap: spacing.sm }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        <Text style={[t.footnote, { color: 'rgba(255,255,255,0.4)' }]}>A/B-rebake (dev)</Text>
+        <Pressable haptic="light" pressScale={0.96} disabled={busy !== null}
+          onPress={() => setIcmColor(v => !v)}
+          style={{
+            paddingHorizontal: spacing.sm, height: 26, borderRadius: radius.md,
+            alignItems: 'center', justifyContent: 'center',
+            backgroundColor: icmColor ? colors.brand : 'rgba(255,255,255,0.1)',
+            opacity: busy !== null ? 0.4 : 1,
+          }}>
+          <Text style={[t.caption, { color: '#fff', fontWeight: '600' }]}>
+            {icmColor ? 'farge på' : 'farge av'}
+          </Text>
+        </Pressable>
+      </View>
+      {bundles.map(name => (
+        <View key={name} style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: radius.lg, padding: spacing.sm, gap: spacing.xs }}>
+          <Text style={[t.caption, { color: 'rgba(255,255,255,0.5)' }]} numberOfLines={1}>{name}</Text>
+          <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+            {['on', 'legacy', 'off'].map(mode => (
+              <Pressable key={mode} haptic="light" pressScale={0.96} disabled={busy !== null}
+                onPress={() => run(name, mode)}
+                style={{
+                  flex: 1, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: busy === `${name}:${mode}` ? colors.brand : 'rgba(255,255,255,0.1)',
+                  opacity: busy !== null && busy !== `${name}:${mode}` ? 0.4 : 1,
+                }}>
+                <Text style={[t.footnote, { color: '#fff', fontWeight: '600' }]}>
+                  {busy === `${name}:${mode}` ? 'baker…' : mode}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ))}
+      {!!note && <Text style={[t.caption, { color: 'rgba(255,255,255,0.55)' }]}>{note}</Text>}
+    </View>
   )
 }
 

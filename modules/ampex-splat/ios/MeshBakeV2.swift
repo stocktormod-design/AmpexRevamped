@@ -2,6 +2,7 @@ import Foundation
 import ARKit
 import Metal
 import CoreGraphics
+import os // os_proc_available_memory — ekte headroom fra OS-et, ikke total RAM
 
 /// V2-baken (2026-08, Scaniverse-arkitekturen): capture RECORDER bare (RGB + dybde + poser);
 /// all rekonstruksjon skjer offline i denne batchen. Rekkefølge: pose-refine (Zhou-Koltun)
@@ -110,8 +111,14 @@ enum MeshBakeV2 {
         ARMeshGlbExporter.dropCoplanarLayers(planes: planes, positions: positions, indices: &indices, triAnchor: &triAnchor)
         ARMeshGlbExporter.dropDoubleSurfaces(positions: positions, indices: &indices, triAnchor: &triAnchor)
         indices = ARMeshGlbExporter.dropDegenerateAndDuplicateFaces(positions: positions, indices: indices, triAnchor: &triAnchor)
+        // TAKET på 600 er nytt (device-funn 2026-08-15): terskelen skalerte med MESHSTØRRELSEN,
+        // så et stort rom (287k tris → minTris 1434) slettet 46k tris — hele vegger som ikke
+        // hang topologisk sammen med hovedkroppen forsvant («veggen med klokka vises ikke»).
+        // Flytende støy er små i ABSOLUTT forstand (titalls tris), så et tak fjerner fortsatt
+        // specks uten å spise ekte flate. Store rom har FLERE ekte løsrevne biter, ikke færre.
         indices = ARMeshGlbExporter.filterSmallComponents(vertexCount: positions.count / 3, indices: indices,
-                                                          minTris: max(120, indices.count / 3 / 200), triAnchor: &triAnchor)
+                                                          minTris: min(600, max(120, indices.count / 3 / 200)),
+                                                          triAnchor: &triAnchor)
         // Planær hullfylling (V1s «Polycam-triks», gjeninnført scan #9): TV-er/vinduer/
         // okkludert vegg gir hull i etablerte plan — fyll de planære grenseløkkene så baken
         // kan prosjisere ekte fotoinnhold på dem. Fyller kun FLATE løkker i eksisterende
@@ -225,8 +232,36 @@ enum MeshBakeV2 {
     ) -> ARMeshGlbExporter.TexturedExportResult {
         let t0 = CFAbsoluteTimeGetCurrent()
         let fail = ARMeshGlbExporter.TexturedExportResult(success: false, filledFraction: nil, geometryPath: "anchor-v2")
-        let atlasSize = ProcessInfo.processInfo.physicalMemory >= 6_000_000_000 ? 8192 : 4096
-        let maxKF = atlasSize >= 8192 ? 96 : 120
+        // ── Budsjett fra REELT headroom, ikke total RAM. Den gamle grenen bandt maxKF OMVENDT
+        // til atlasstørrelsen, så iPhone 13 Pro (6 GB) klarte så vidt >= 6e9 og arvet største
+        // atlas + FÆRREST keyframes (96) — svakeste enhet på tyngste sti. For dekningsproblemer
+        // slår keyframes atlasoppløsning, så de skalerer nå SAMME vei.
+        // meshscan.budget = "legacy" gjenoppretter gammel gren for fixture-A/B.
+        let atlasSize: Int
+        let maxKF: Int
+        let topK: Int
+        if UserDefaults.standard.string(forKey: "meshscan.budget") == "legacy" {
+            atlasSize = ProcessInfo.processInfo.physicalMemory >= 6_000_000_000 ? 8192 : 4096
+            maxKF = atlasSize >= 8192 ? 96 : 120
+            topK = 3
+        } else {
+            // Atlasparet (A+B) er den store posten: 8192² rgba8 ≈ 268 MB per tekstur, pluss
+            // lavoppløsnings-intermediatene og lesebufferet i rasterize().
+            let headroomMB = Int(os_proc_available_memory() / (1024 * 1024))
+            // Termisk brems (regel 8): flere keyframes = lengre pose-refine og flere snitt-pass.
+            // På en varm telefon er det billigere å levere et litt tynnere bake enn å bli strupet
+            // midt i jobben — ett hakk ned på stigen, aldri under gulvet.
+            let thermal = ProcessInfo.processInfo.thermalState
+            let hot = thermal == .serious || thermal == .critical
+            if headroomMB >= 2800 && !hot {
+                atlasSize = 8192; maxKF = 200; topK = 6
+            } else if headroomMB >= 1700 && !hot {
+                atlasSize = 6144; maxKF = 160; topK = 6
+            } else {
+                atlasSize = 4096; maxKF = 120; topK = 4
+            }
+            MeshLog.log("V2 budsjett — headroom \(headroomMB)MB, termikk \(thermal.rawValue) → atlas \(atlasSize), maxKF \(maxKF), topK \(topK)")
+        }
 
         ARMeshGlbExporter.progress?("Velger beste bilder…")
         // Planshots (dedikerte 12MP-veggfotos) er fredet fra pruningen.
@@ -314,10 +349,20 @@ enum MeshBakeV2 {
         // viser at den ikke koster kvalitet: scan #8-fasiten kjørte uten, og forenklingen
         // endrer face-størrelsene hele nedstrøms-pipelinen er tunet rundt (plan-delevakt og
         // søm-nivellering er nå areal-/n-bevisste, men dommen hører til på en fixture).
-        if UserDefaults.standard.string(forKey: "meshscan.simplify") == "on", mesh.indices.count / 3 > 24_000 {
+        // OPT-IN, IKKE auto. Auto-på over xatlas-taket ble prøvd 2026-08-15 og rullet tilbake
+        // samme kveld: en stue på 354k tris ble desimert til 100k, og taket fikk synlige store
+        // fasetter — merkbart styggere enn den chunkede atlasen den skulle redde oss fra.
+        // Lærdommen: CHUNKED xatlas koster sømmer (reparerbart nedstrøms), desimering koster
+        // geometri (ikke reparerbart). Den manglende veggen som utløste hele sporet kom
+        // dessuten fra komponentfilteret, ikke fra chunkingen — den er fikset for seg.
+        var didSimplify = false
+        if UserDefaults.standard.string(forKey: "meshscan.simplify") == "on",
+           mesh.indices.count / 3 > 24_000 {
+            didSimplify = true
             ARMeshGlbExporter.progress?("Forenkler mesh…")
-            // Taket på 60k holder xatlas rask; gulvet på 20k verner små rom. Finkornet
-            // fusjonsgeometri (10-15mm) kan komme inn på 500k+ — det er meningen nå.
+            // Taket på 60k holder xatlas rask; gulvet på 20k verner små rom. Kun brukervalgt,
+            // der fart er poenget — desimering koster synlig geometri (fasetter i tak), så den
+            // skal aldri slås på automatisk for å redde noe annet.
             MeshSimplify.simplify(mesh: &mesh,
                                   targetTris: max(20_000, min(60_000, mesh.indices.count / 3 / 5)),
                                   errorLimit: 1e-4)
@@ -565,9 +610,11 @@ enum MeshBakeV2 {
 
         var winner = [Int32](repeating: -1, count: triCount)
         var bestScore = [Float](repeating: 0, count: triCount)
-        // Top-3 per face → lavfrekvent snitt i multiband-blendingen (sheen/skygge/eksponering
-        // er lavfrekvent og midles bort; detaljene beholdes fra vinneren).
-        var topF = [Int32](repeating: -1, count: triCount * 3)
+        // Topp-K per face → lavfrekvent snitt i multiband-blendingen (sheen/skygge/eksponering
+        // er lavfrekvent og midles bort; detaljene beholdes fra vinneren). K > 3 gir jevnere
+        // farge når mange synsvinkler dekker samme flate — ekstra runder mater dette direkte,
+        // og siden bare LAVfrekvensen snittes kan bredere K ikke gi dobbeltkonturer.
+        var topF = [Int32](repeating: -1, count: triCount * topK)
         var wonUVArea = 0.0, totalUVArea = 0.0
         let chunk = 4096
         let chunks = (triCount + chunk - 1) / chunk
@@ -575,18 +622,21 @@ enum MeshBakeV2 {
             bestScore.withUnsafeMutableBufferPointer { B in
                 topF.withUnsafeMutableBufferPointer { T in
                     DispatchQueue.concurrentPerform(iterations: chunks) { ci in
+                        // Skrapeminne per CHUNK (ikke per trekant) — 4096 flater deler én allokering.
+                        var sK = [Float](repeating: 0, count: topK)
+                        var fK = [Int32](repeating: -1, count: topK)
                         for t in (ci * chunk)..<min((ci + 1) * chunk, triCount) {
-                            var s3: (Float, Float, Float) = (0, 0, 0)
-                            var f3: (Int32, Int32, Int32) = (-1, -1, -1)
+                            for j in 0..<topK { sK[j] = 0; fK[j] = -1 }
                             for (fi, c) in cands.enumerated() {
                                 let s = scoreOf(t, c)
-                                if s > s3.0 { s3 = (s, s3.0, s3.1); f3 = (Int32(fi), f3.0, f3.1) }
-                                else if s > s3.1 { s3 = (s3.0, s, s3.1); f3 = (f3.0, Int32(fi), f3.1) }
-                                else if s > s3.2 { s3.2 = s; f3.2 = Int32(fi) }
+                                if s <= sK[topK - 1] { continue } // slår ikke svakeste plass (0 = ugyldig)
+                                var j = topK - 1
+                                while j > 0 && sK[j - 1] < s { sK[j] = sK[j - 1]; fK[j] = fK[j - 1]; j -= 1 }
+                                sK[j] = s; fK[j] = Int32(fi)
                             }
-                            W[t] = f3.0
-                            B[t] = s3.0
-                            T[t * 3] = f3.0; T[t * 3 + 1] = f3.1; T[t * 3 + 2] = f3.2
+                            W[t] = fK[0]
+                            B[t] = sK[0]
+                            for j in 0..<topK { T[t * topK + j] = fK[j] }
                         }
                     }
                 }
@@ -671,7 +721,19 @@ enum MeshBakeV2 {
                         guard scoreOf(t, c) > 0 || scoreOf(t, c, relaxed: true) > 0 else { continue } // okkludert rest → generisk
                         winner[t] = Int32(bestFi)
                         locked[t] = true
-                        topF[t * 3] = Int32(bestFi); topF[t * 3 + 1] = -1; topF[t * 3 + 2] = -1 // multiband no-op på låste
+                        // Multiband AV på ALLE låste flater. Dette ble forsøkt slått PÅ for delte
+                        // plan (2026-08-15) for å utjevne farge mellom kvadrantene — og måtte
+                        // rulles tilbake samme kveld: spotlights i taket ble smurt ut.
+                        // Årsaken er prinsipiell og verdt å huske: multiband henter LAVFREKVENSEN
+                        // fra snittet av topp-K. En spot er en liten, blendet, lyssterk KLATT —
+                        // altså nesten ren lavfrekvens. Med restdrift i posene havner klatten
+                        // noen piksler fra hverandre i hver frame, og snittet smører den ut.
+                        // Fargeforskjell mellom kvadranter løses derfor ADDITIVT (søm-nivellering
+                        // + per-hjørne-forfining), som flytter NIVÅ uten å blande innhold og
+                        // dermed ikke kan smøre. Snitting er kuren mot flekkvis farge på flate
+                        // vegger og giften mot små lyssterke detaljer — her vinner detaljene.
+                        topF[t * topK] = Int32(bestFi)
+                        for j in 1..<topK { topF[t * topK + j] = -1 }
                     }
                     lockedPlanes += 1
                 } else if depth < 2 && (planeArea >= 2.0 || faces.count > 400) {
@@ -707,10 +769,99 @@ enum MeshBakeV2 {
         }
 
         // ── Vinner-regularisering (MRF-lite): plan-låste flater er ferdig tildelt og røres ikke.
-        // ICM-feiing (Gauss-Seidel): bytt til en nabo-label som har STØRRE lokal enighet enn
-        // dagens, når bildet er brukbart for flaten (≥ 30 % av beste). Grenser rettes ut og
-        // øyer krymper innenfra — flertallskravet (≥2) i første versjon lot konfettien stå
-        // (11k regioner à 14 flater på scan #3).
+        // ICM-feiing (Gauss-Seidel). To glatthetstermer, A/B via meshscan.icmcolor:
+        //   "off"  = flertallsstemme — tell naboer med samme label (gammel gren)
+        //   ellers = Waechters kriterium: FARGEFORSKJELLEN over sømmen.
+        // Forskjellen er hva de spør om. Flertallsstemmen spør «er naboene enige med meg»,
+        // altså koherens for koherensens skyld: den kan gjerne legge en søm tvers over en
+        // ensfarget vegg (usynlig sted, men den teller det ikke) eller la den stå midt i en
+        // kontrastkant (grelt synlig, men naboene var enige). Fargetermen spør «SYNES
+        // sømmen» og legger kuttet der bildene faktisk er enige — der overgangen ikke kan
+        // ses. Det er kriteriet som treffer «seamless» direkte.
+        // Fargen samples fra thumbene (96 px). Det er nok til FARGE-sammenligning — søm-
+        // nivelleringen nedenfor bruker samme kilde — men ville vært altfor grovt til et
+        // SKARPHETS-mål; et gradientintegral her ville målt støy, ikke detalj.
+        let icmColor = UserDefaults.standard.string(forKey: "meshscan.icmcolor") != "off"
+        // Vekt glatthet mot dataterm. 0 = ren dataterm (maks fragmentering), stor = ren
+        // koherens (kan låse en hel flate til ett dårlig bilde). Overstyrbar for tuning.
+        // A/B-selen (rebakeMeshScan) sender ALLE flagg som String, mens en defaults-write
+        // fra terminalen gir Double. Godta begge — ellers faller knotten stille tilbake til
+        // 0.6 nettopp i den ene veien som faktisk brukes til å måle den.
+        let icmLambda: Float = {
+            let d = UserDefaults.standard
+            if let s = d.string(forKey: "meshscan.icmlambda"), let v = Double(s) { return Float(v) }
+            if let n = d.object(forKey: "meshscan.icmlambda") as? Double { return Float(n) }
+            return 0.6
+        }()
+        // Fargeavstand (lineær RGB) der sømmen regnes som fullt synlig. Under denne bryr
+        // termen seg lite; over metter den, så én grell søm ikke kan kjøpes ut med mange små.
+        let seamNorm: Float = 0.12
+        // sRGB→lineær som oppslag: den indre løkka kaller dette titalls millioner ganger,
+        // og pow() tre ganger per sample er ren varme (regel 10).
+        var srgbLin = [Float](repeating: 0, count: 256)
+        for i in 0..<256 { srgbLin[i] = pow(Float(i) / 255, 2.2) }
+
+        // Thumb-sample i LINEÆRT rom MED gain. Gainene legges ellers først på i shaderen
+        // (wb-uniformen), så uten dem her ville termen målt EKSPONERINGSFORSKJELL mellom to
+        // frames i stedet for uenighet om innhold — og da flyttes sømmen til feil sted.
+        func sampleGained(_ p: SIMD3<Float>, _ fi: Int32) -> SIMD3<Float>? {
+            guard fi >= 0 else { return nil }
+            let c = cands[Int(fi)]
+            guard c.tw > 0 else { return nil }
+            let pcam = c.w2c * SIMD4(p, 1)
+            if pcam.z > -0.05 { return nil }
+            let z = -pcam.z
+            let u = c.intr.x * (pcam.x / z) + c.intr.z
+            let vv = c.intr.y * (-pcam.y / z) + c.intr.w
+            if u < 0 || vv < 0 || u >= c.imgW || vv >= c.imgH { return nil }
+            let tx = min(c.tw - 1, Int(u / c.imgW * Float(c.tw)))
+            let ty = min(c.th - 1, Int(vv / c.imgH * Float(c.th)))
+            let px = (ty * c.tw + tx) * 4
+            let qx = u / c.imgW - 0.5, qy = vv / c.imgH - 0.5
+            let devig = 1.0 + 0.15 * (qx * qx + qy * qy) * 4.0 // samme avvignettering som shaderen
+            let lin = SIMD3(srgbLin[Int(c.thumb[px])], srgbLin[Int(c.thumb[px + 1])], srgbLin[Int(c.thumb[px + 2])])
+            return lin * devig * gains[Int(fi)]
+        }
+
+        // Skrapeminne for naboene til ÉN flate — gjenbrukes, siden feiingen er seriell
+        // (Gauss-Seidel leser naboenes ferske labels, så den kan ikke parallelliseres).
+        // Naboens farge ved sømmen er fast mens vi prøver labels for flaten selv, så den
+        // samples én gang per nabo i stedet for én gang per (label, nabo).
+        var nbN = 0
+        var nbMid = [SIMD3<Float>](repeating: .zero, count: 3)
+        var nbLab = [Int32](repeating: -1, count: 3)
+        var nbCol = [SIMD3<Float>](repeating: .zero, count: 3)
+        var nbSeen = [Bool](repeating: false, count: 3)
+
+        // E(label) = dataterm + λ·Σ sømkostnad mot naboene.
+        // Dataterm 0 = beste tilgjengelige syn, 1 = så vidt brukbart.
+        func labelEnergy(_ lab: Int32, _ sc: Float, _ best: Float, gated: Bool) -> Float {
+            if gated && sc < 0.3 * best { return .infinity }   // samme brukbarhetsgate som flertallsgrenen
+            var e = 1 - min(1, max(0, sc) / best)
+            for k in 0..<nbN {
+                if lab == nbLab[k] { continue }                // samme bilde på begge sider = ingen søm
+                guard nbSeen[k], let cl = sampleGained(nbMid[k], lab) else { e += icmLambda; continue }
+                e += icmLambda * min(1, simd_length(cl - nbCol[k]) / seamNorm)
+            }
+            return e
+        }
+
+        // Sømenergi over HELE meshen — målestokken for A/B. Summerer synlig fargesprang over
+        // hver region-grense; lavere = mindre synlige sømmer.
+        func totalSeamEnergy() -> (Double, Int) {
+            var sum = 0.0, n = 0
+            for (_, f) in edgeFaces where f.1 >= 0 {
+                let a = Int(f.0), b = Int(f.1)
+                let la = winner[a], lb = winner[b]
+                guard la >= 0, lb >= 0, la != lb else { continue }
+                let p = (fCent[a] + fCent[b]) / 2
+                guard let ca = sampleGained(p, la), let cb = sampleGained(p, lb) else { continue }
+                sum += Double(min(1, simd_length(ca - cb) / seamNorm)); n += 1
+            }
+            return (sum, n)
+        }
+        let (seamE0, seamN0) = icmColor ? totalSeamEnergy() : (0, 0)
+
         var switched = 0
         for _ in 0..<8 {
             var changed = 0
@@ -725,16 +876,52 @@ enum MeshBakeV2 {
                     if nw == w0 { c0 += 1 } else if nw == w1 { c1 += 1 } else if nw == w2 { c2 += 1 }
                     else if w0 < 0 { w0 = nw; c0 = 1 } else if w1 < 0 { w1 = nw; c1 = 1 } else { w2 = nw; c2 = 1 }
                 }
-                var m: Int32 = -1, mc = curSame
-                if c0 > mc { m = w0; mc = c0 }
-                if c1 > mc { m = w1; mc = c1 }
-                if c2 > mc { m = w2; mc = c2 }
-                if m >= 0, scoreOf(t, cands[Int(m)]) >= 0.3 * bestScore[t] {
-                    winner[t] = m; changed += 1
+                if !icmColor {
+                    var m: Int32 = -1, mc = curSame
+                    if c0 > mc { m = w0; mc = c0 }
+                    if c1 > mc { m = w1; mc = c1 }
+                    if c2 > mc { m = w2; mc = c2 }
+                    if m >= 0, scoreOf(t, cands[Int(m)]) >= 0.3 * bestScore[t] {
+                        winner[t] = m; changed += 1
+                    }
+                    continue
                 }
+                // Naboenes farge ved hver søm — én gang, gjenbrukt over alle kandidatlabels.
+                nbN = 0
+                for e in 0..<Int(nbrN[t]) {
+                    let nb = Int(nbr[t * 3 + e])
+                    let nl = winner[nb]
+                    if nl < 0 { continue }
+                    let p = (fCent[t] + fCent[nb]) / 2
+                    nbMid[nbN] = p; nbLab[nbN] = nl
+                    if let c = sampleGained(p, nl) { nbCol[nbN] = c; nbSeen[nbN] = true }
+                    else { nbCol[nbN] = .zero; nbSeen[nbN] = false }
+                    nbN += 1
+                }
+                // bestScore[t] er beste OPPNÅELIGE score (satt i vinnervalget) og brukes som
+                // normalisering; dagens score må måles på nytt, siden winner[t] kan ha byttet
+                // i en tidligere feiing.
+                let best = max(bestScore[t], 1e-6)
+                let curSc = scoreOf(t, cands[Int(winner[t])])
+                var bestLab = winner[t]
+                var bestE = labelEnergy(winner[t], curSc, best, gated: false) // sittende label slipper gaten
+                for cand in [w0, w1, w2] where cand >= 0 {
+                    let sc = scoreOf(t, cands[Int(cand)])
+                    if sc <= 0 { continue }
+                    let e = labelEnergy(cand, sc, best, gated: true)
+                    if e < bestE { bestE = e; bestLab = cand }
+                }
+                if bestLab != winner[t] { winner[t] = bestLab; changed += 1 }
             }
             switched += changed
             if changed == 0 { break }
+        }
+        if icmColor {
+            let (seamE1, seamN1) = totalSeamEnergy()
+            let avg0 = seamN0 > 0 ? seamE0 / Double(seamN0) : 0
+            let avg1 = seamN1 > 0 ? seamE1 / Double(seamN1) : 0
+            MeshLog.log(String(format: "V2 ICM-fargeterm (λ=%.2f) — sømenergi %.1f (%d par, snitt %.3f) → %.1f (%d par, snitt %.3f)",
+                               icmLambda, seamE0, seamN0, avg0, seamE1, seamN1, avg1))
         }
 
         // Regioner = sammenhengende flater med samme vinnerbilde (grunnlag for nivellering + draw-grupper)
@@ -832,7 +1019,10 @@ enum MeshBakeV2 {
             clusterOf[fi] = found
         }
         let C = clusterCenters.count
-        if C > 1 && C <= 24 {
+        // meshscan.stasted: "off" = hopp over ståsted-valget helt (A/B mot dagens),
+        // "legacy" = gammel oppførsel (multiband AV på alle re-plukkede flater).
+        let stastedMode = UserDefaults.standard.string(forKey: "meshscan.stasted") ?? "on"
+        if C > 1 && C <= 24 && stastedMode != "off" {
             // Pass 1 (parallelt, samme stil som vinnervalget): beste score + frame PER ståsted per face
             var bestScoreC = [Float](repeating: 0, count: triCount * C)
             var bestFrameC = [Int32](repeating: -1, count: triCount * C)
@@ -876,6 +1066,11 @@ enum MeshBakeV2 {
                 }
             }
             var reassigned = 0
+            var skippedUnits = 0, skippedFaces = 0, keptOld = 0, unseenAll = 0, relaxedUsed = 0
+            // Kandidater gruppert per ståsted — den løse reservetesten under går kun over
+            // ståstedets egne frames, ikke hele lista.
+            var clusterCands = [[Int]](repeating: [], count: C)
+            for fi in 0..<cands.count { clusterCands[clusterOf[fi]].append(fi) }
             for faces in unitFaces {
                 var cov = [Float](repeating: 0, count: C)
                 var sum = [Float](repeating: 0, count: C)
@@ -895,19 +1090,86 @@ enum MeshBakeV2 {
                     let val = f * f * (sum[ci] / max(cov[ci], 1e-6))
                     if val > bestVal { bestVal = val; elected = ci }
                 }
-                guard elected >= 0 else { continue }
+                // Ingen klynge dekker >50 % av enheten → enheten beholder blandede ståsteder.
+                // Telles fordi det er en stille no-op: store enheter (tak/gulv velges som HELE
+                // plan) har sjelden ett ståsted som ser halve flaten, og da gjør hele
+                // ståsted-valget ingenting akkurat der lappeteppet er verst. Er `uten valg`
+                // stor, er flising av store enheter neste steg — ikke en lavere terskel.
+                guard elected >= 0 else { skippedUnits += 1; skippedFaces += faces.count; continue }
+                // Reserverekkefølge for flater det VALGTE ståstedet ikke ser. Målt på device
+                // (skann «Planlegging 2», 23/08): 39056 av 318991 flater — 12 % — falt hit, ti
+                // ganger så mange som 50 %-porten slipper. Før falt de tilbake på «behold gammel
+                // vinner», altså på hva vinnervalget tilfeldigvis hadde plukket per flate, fra
+                // hvilket som helst ståsted. Nabofaces i samme hull kunne dermed havne på hvert
+                // sitt ståsted, og resultatet er en TAGGETE kant midt inne i en enhet — nøyaktig
+                // flekken i taket og tonespranget i sofaputene.
+                // Nå faller de i stedet gjennom ståstedene i rekkefølge etter hvor mye av
+                // enheten de dekker. Naboflater i samme hull lander da på SAMME reserve-ståsted,
+                // så hullet blir én sammenhengende region med én ren grense — som søm-
+                // nivelleringen kan lukke — i stedet for et spettet felt den ikke kan.
+                var order = [elected]
+                order.append(contentsOf: (0..<C).filter { $0 != elected }.sorted { cov[$0] > cov[$1] })
                 for tf in faces {
                     let t = Int(tf)
-                    let nf = bestFrameC[t * C + elected]
-                    guard nf >= 0 else { continue } // ståstedet ser ikke denne flaten — behold gammel vinner
+                    var nf: Int32 = -1
+                    var usedCluster = elected
+                    for ci in order {
+                        let f = bestFrameC[t * C + ci]
+                        if f >= 0 { nf = f; usedCluster = ci; break }
+                    }
+                    // Siste ledd: flater som ingen frame ser under den STRENGE testen. Målt
+                    // 23/08 var dette 40905 av 396740 (10 %) — tre ganger så mange som reserve-
+                    // ståstedet reddet, og dermed den største resten av alle. Årsaken er at
+                    // redningspasset i regulariseringen tildeler vinnere med `relaxed: true`
+                    // (60833 flater samme kjøring), mens ståsted-valget bare så på strenge
+                    // treff — så nettopp de flatene falt gjennom hele kjeden og beholdt en
+                    // vinner fra et vilkårlig ståsted. Det er streifvinkler og okklusjonskanter,
+                    // altså kantsonene i rommet: taket sett på skrå, sofaputene man går forbi.
+                    // Samme rekkefølge som over, bare med den løse testen — koherens vinner
+                    // fortsatt over score, for alternativet er ikke et bedre bilde, det er et
+                    // TILFELDIG ståsted.
+                    if nf < 0 {
+                        for ci in order {
+                            var best: Float = 0
+                            var bf: Int32 = -1
+                            for fi in clusterCands[ci] {
+                                let s = scoreOf(t, cands[fi], relaxed: true)
+                                if s > best { best = s; bf = Int32(fi) }
+                            }
+                            if bf >= 0 { nf = bf; usedCluster = ci; relaxedUsed += 1; break }
+                        }
+                    }
+                    if nf >= 0 && usedCluster != elected { keptOld += 1 }
+                    guard nf >= 0 else { unseenAll += 1; continue } // ingen frame ser flaten i det hele tatt
                     if winner[t] != nf { reassigned += 1 }
                     winner[t] = nf
-                    // Innen ETT ståsted er eksponeringen konsistent — multiband trengs ikke der
-                    topF[t * 3] = nf; topF[t * 3 + 1] = -1; topF[t * 3 + 2] = -1
+                    if stastedMode == "legacy" {
+                        topF[t * topK] = nf
+                        for j in 1..<topK { topF[t * topK + j] = -1 }
+                    } else {
+                        // MÅLT på Tormods egen bundle (skann 15/08 21:46, 145 frames, 8 ståsteder):
+                        // for frames som ser SAMME vei er medianforskjellen i luminans 8,9 % INNAD
+                        // i ett ståsted, p90 27 %. Premisset «innen ett ståsted er eksponeringen
+                        // konsistent» holder altså ikke — og den gamle linja slo multiband av på
+                        // hver eneste re-plukkede flate nettopp i tillit til det premisset. Da satt
+                        // søm-nivelleringen alene igjen med de 9 prosentene, og den fikk samtidig
+                        // 2-3× flere regioner å løse (region-tellingen dobles her, hver kjøring i
+                        // pipeline.log) med færre pålitelige grensepar.
+                        // Nå beholdes topp-K, men KUN kandidatene fra det VALGTE ståstedet:
+                        // koherens (ett ståsted) og lavfrekvent utjevning (snitt over K) samtidig.
+                        // Snittet er fortsatt innenfor ett ståsted, så det kan ikke dra inn en
+                        // annen eksponering — og siden bare lavfrekvensen snittes, ikke smøre.
+                        var keep: [Int32] = [nf]
+                        for j in 0..<topK {
+                            let f = topF[t * topK + j]
+                            if f >= 0, f != nf, clusterOf[Int(f)] == usedCluster { keep.append(f) }
+                        }
+                        for j in 0..<topK { topF[t * topK + j] = j < keep.count ? keep[j] : -1 }
+                    }
                 }
             }
             buildRegions()
-            MeshLog.log("V2 ståsted-valg — \(C) ståsteder, \(unitFaces.count) enheter, \(reassigned) flater flyttet")
+            MeshLog.log("V2 ståsted-valg (\(stastedMode)) — \(C) ståsteder, \(unitFaces.count) enheter, \(reassigned) flater flyttet, \(skippedUnits) enheter uten valg (\(skippedFaces) flater), \(keptOld) på reserve-ståsted, \(relaxedUsed) via løs test, \(unseenAll) usett av alle")
         } else if C > 24 {
             MeshLog.log("V2 ståsted-valg hoppet over — \(C) ståsteder (> 24, uvanlig lang vandring)")
         }
@@ -916,6 +1178,9 @@ enum MeshBakeV2 {
         // fargespranget over hver region-grense i LINEÆRT rom og løs additive offsets som
         // utjevner dem — «4 forskjellige fotos»-stegene forsvinner, teksturinnholdet består.
         var regionOfs = [SIMD3<Float>](repeating: .zero, count: regionFrame.count)
+        // Per-HJØRNE forfining (se blokka nederst i samme if): én konstant per region kan ikke
+        // følge en gradient, så store regioner kan bånde selv etter at spranget er borte.
+        var cornerOfs = [SIMD3<Float>](repeating: .zero, count: triCount * 3)
         if regionFrame.count > 1 && regionFrame.count <= 20_000 {
             func sampleLinear(_ p: SIMD3<Float>, _ c: Cand) -> SIMD3<Float>? {
                 guard c.tw > 0 else { return nil }
@@ -953,7 +1218,10 @@ enum MeshBakeV2 {
             // ≥3 på u-forenklet mesh (scan #8-fasiten). Forenklede meshes har store faces
             // som ofte deler bare 1-2 kanter — der må gaten ned til 2 (85 % av grensepar
             // røk på device-kjøringen 2026-08-13). Bindes derfor til forenklings-flagget.
-            let minSamples: Float = UserDefaults.standard.string(forKey: "meshscan.simplify") == "on" ? 2 : 3
+            // Bindes til om forenklingen FAKTISK kjørte, ikke til flagget: med auto-på over
+            // xatlas-taket kan mesh være forenklet selv om flagget står av, og da ville en
+            // gate på 3 kastet de fleste grensepar (819/2687 på device 2026-08-15).
+            let minSamples: Float = didSimplify ? 2 : 3
             for (k, a) in pairAcc {
                 guard a.n >= minSamples else { continue }
                 let lo = Int32(k >> 32), hi = Int32(k & 0xFFFFFFFF)
@@ -975,10 +1243,96 @@ enum MeshBakeV2 {
                 }
                 regionOfs = next
             }
+            // Klemmen hevet 0,08 → 0,13 (2026-08-15): nivelleringen er nå ALENE om å utjevne
+            // farge mellom kvadranter på et delt plan (multiband er av på låste flater — se
+            // plan-tildelingen), og 0,08 rakk ikke å lukke spranget mellom to fotos av samme
+            // vegg. Additivt, så det kan ikke smøre; arealvekt-forankringen står igjen som vern
+            // mot «blomstrende utvasking» (scan #4).
             for i in 0..<regionOfs.count {
-                regionOfs[i] = simd_clamp(regionOfs[i], SIMD3(repeating: -0.08), SIMD3(repeating: 0.08))
+                regionOfs[i] = simd_clamp(regionOfs[i], SIMD3(repeating: -0.13), SIMD3(repeating: 0.13))
             }
             MeshLog.log("V2 søm-nivellering — \(regionFrame.count) regioner, \(trustedPairs)/\(pairAcc.count) grensepar brukt")
+
+            // ── Per-hjørne søm-forfining (Waechter-retning). Region-konstantene over fjerner
+            // SPRANGET mellom naboregioner; resten er gradienter én konstant ikke kan følge.
+            // Her måles RESTEN ved hver søm etter at region-offsetene er lagt på, halvparten
+            // legges på hver side, og korreksjonen diffunderes innover i regionen med demping
+            // så den toner UT i stedet for å stoppe brått ved grensen.
+            // Nøkkel er (sveiset verteks, region) — samme verteks har ULIK korreksjon på hver
+            // side av en søm, derfor per hjørne og ikke per uv-verteks.
+            // Rent additiv lavfrekvens: ingen detalj røres → kan ikke gi dobbeltkonturer.
+            // meshscan.seamlevel = "region" slår av og beholder ren region-konstant (A/B).
+            if UserDefaults.standard.string(forKey: "meshscan.seamlevel") != "region" {
+                let tSeam = CFAbsoluteTimeGetCurrent()
+                // 1) Ankre: restspranget ved hver søm, delt likt på de to sidene.
+                var anchor = [Int64: (d: SIMD3<Float>, n: Float)]()
+                for (key, f) in edgeFaces where f.1 >= 0 {
+                    let a = Int(f.0), b = Int(f.1)
+                    let ra = region[a], rb = region[b]
+                    guard ra >= 0, rb >= 0, ra != rb, winner[a] >= 0, winner[b] >= 0 else { continue }
+                    let p = (fCent[a] + fCent[b]) / 2
+                    guard let sa = sampleLinear(p, cands[Int(winner[a])]),
+                          let sb = sampleLinear(p, cands[Int(winner[b])]) else { continue }
+                    let half = ((sb + regionOfs[Int(rb)]) - (sa + regionOfs[Int(ra)])) * 0.5
+                    for v in [Int64(key >> 32), Int64(key & 0xFFFFFFFF)] {
+                        let ka = (v << 32) | Int64(ra), kb = (v << 32) | Int64(rb)
+                        var ea = anchor[ka] ?? (.zero, 0); ea.d += half;  ea.n += 1; anchor[ka] = ea
+                        var eb = anchor[kb] ?? (.zero, 0); eb.d -= half;  eb.n += 1; anchor[kb] = eb
+                    }
+                }
+                if !anchor.isEmpty {
+                    // 2) Tett indeksering av (verteks, region)-parene — dictionary-oppslag i
+                    //    diffusjonsløkka ville dominert kjøretiden, så den kjører på flate arrays.
+                    var dense = [Int64: Int32](minimumCapacity: triCount * 2)
+                    var cornerDense = [Int32](repeating: -1, count: triCount * 3)
+                    for t in 0..<triCount where region[t] >= 0 && winner[t] >= 0 {
+                        let r = Int64(region[t])
+                        for j in 0..<3 {
+                            let k = (Int64(wid[Int(uv.indices[t * 3 + j])]) << 32) | r
+                            if let d = dense[k] { cornerDense[t * 3 + j] = d }
+                            else { let d = Int32(dense.count); dense[k] = d; cornerDense[t * 3 + j] = d }
+                        }
+                    }
+                    let nD = dense.count
+                    var adjHead = [Int32](repeating: -1, count: nD)
+                    var adjTo = [Int32](); adjTo.reserveCapacity(triCount * 6)
+                    var adjNext = [Int32](); adjNext.reserveCapacity(triCount * 6)
+                    func addEdge(_ x: Int32, _ y: Int32) {
+                        adjTo.append(y); adjNext.append(adjHead[Int(x)]); adjHead[Int(x)] = Int32(adjTo.count - 1)
+                    }
+                    for t in 0..<triCount where cornerDense[t * 3] >= 0 {
+                        let a = cornerDense[t * 3], b = cornerDense[t * 3 + 1], c = cornerDense[t * 3 + 2]
+                        addEdge(a, b); addEdge(b, a); addEdge(b, c); addEdge(c, b); addEdge(c, a); addEdge(a, c)
+                    }
+                    var val = [SIMD3<Float>](repeating: .zero, count: nD)
+                    var pinned = [Bool](repeating: false, count: nD)
+                    var pinnedN = 0
+                    for (k, a) in anchor where a.n > 0 {
+                        guard let d = dense[k] else { continue }
+                        val[Int(d)] = a.d / a.n; pinned[Int(d)] = true; pinnedN += 1
+                    }
+                    // 3) Jacobi-diffusjon. Dempingen (0,92) gjør at korreksjonen dør ut innover
+                    //    — region-konstanten eier nivået, dette eier bare overgangen.
+                    var next = val
+                    for _ in 0..<24 {
+                        for i in 0..<nD where !pinned[i] {
+                            var s = SIMD3<Float>.zero
+                            var n: Float = 0
+                            var e = adjHead[i]
+                            while e >= 0 { s += val[Int(adjTo[Int(e)])]; n += 1; e = adjNext[Int(e)] }
+                            next[i] = n > 0 ? s / n * 0.92 : .zero
+                        }
+                        swap(&val, &next)
+                    }
+                    // 0,06 → 0,09 av samme grunn som region-klemmen over: den additive banen
+                    // gjør nå hele jobben. Overgangen toner uansett ut innover (demping 0,92).
+                    let lim = SIMD3<Float>(repeating: 0.09)
+                    for i in 0..<(triCount * 3) where cornerDense[i] >= 0 {
+                        cornerOfs[i] = simd_clamp(val[Int(cornerDense[i])], -lim, lim)
+                    }
+                    MeshLog.log("V2 søm-forfining — \(pinnedN)/\(nD) hjørner ankret, \(Int((CFAbsoluteTimeGetCurrent() - tSeam) * 1000))ms")
+                }
+            }
         }
         for t in 0..<triCount {
             let ia = Int(uv.indices[t * 3]) * 2, ib = Int(uv.indices[t * 3 + 1]) * 2, ic = Int(uv.indices[t * 3 + 2]) * 2
@@ -995,7 +1349,8 @@ enum MeshBakeV2 {
         // ── GPU-bake: én draw per region (gruppert per kildebilde), én tekstur resident om gangen.
         ARMeshGlbExporter.progress?("Baker tekstur…")
         guard let png = rasterize(uv: uv, winner: winner, region: region, regionFrame: regionFrame,
-                                  regionOfs: regionOfs, topF: topF, kfUse: kfUse, gains: gains,
+                                  regionOfs: regionOfs, cornerOfs: cornerOfs, topF: topF, topK: topK,
+                                  kfUse: kfUse, gains: gains,
                                   framesDir: framesDir, atlasSize: atlasSize) else { return failG }
 
         do {
@@ -1024,7 +1379,8 @@ enum MeshBakeV2 {
 
     private static func rasterize(
         uv: ARMeshGlbExporter.UVUnwrapResult, winner: [Int32], region: [Int32], regionFrame: [Int32],
-        regionOfs: [SIMD3<Float>], topF: [Int32], kfUse: [MeshScanPresenter.Keyframe],
+        regionOfs: [SIMD3<Float>], cornerOfs: [SIMD3<Float>], topF: [Int32], topK: Int,
+        kfUse: [MeshScanPresenter.Keyframe],
         gains: [SIMD3<Float>], framesDir: URL, atlasSize: Int
     ) -> Data? {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -1063,21 +1419,30 @@ enum MeshBakeV2 {
               let blurPipe = try? device.makeComputePipelineState(function: blurfn),
               let compPipe = try? device.makeComputePipelineState(function: compfn) else { return nil }
 
-        // Interleaved verteksbuffer [x,y,z,u,v]
-        let vCount = uv.positions.count / 3
-        var vdata = [Float](repeating: 0, count: vCount * 5)
-        for i in 0..<vCount {
-            vdata[i * 5] = uv.positions[i * 3]; vdata[i * 5 + 1] = uv.positions[i * 3 + 1]; vdata[i * 5 + 2] = uv.positions[i * 3 + 2]
-            vdata[i * 5 + 3] = uv.uvs[i * 2]; vdata[i * 5 + 4] = uv.uvs[i * 2 + 1]
+        // Interleaved verteksbuffer per HJØRNE [x,y,z,u,v,ox,oy,oz]. Per hjørne og ikke per
+        // uv-verteks fordi søm-forfiningen er per (verteks, REGION): en verteks som ligger på
+        // en regiongrense har ulik korreksjon på hver side, og en delt verteks kan bare bære én.
+        // Indeksene blir dermed løpende hjørne-ID-er. Koster ~3× verteksminne (10 MB ved
+        // xatlas-taket på 110k tris) — lite mot atlasparet.
+        let triCount = winner.count
+        var vdata = [Float](repeating: 0, count: triCount * 3 * 8)
+        for t in 0..<triCount {
+            for j in 0..<3 {
+                let vi = Int(uv.indices[t * 3 + j])
+                let o = (t * 3 + j) * 8
+                vdata[o] = uv.positions[vi * 3]; vdata[o + 1] = uv.positions[vi * 3 + 1]; vdata[o + 2] = uv.positions[vi * 3 + 2]
+                vdata[o + 3] = uv.uvs[vi * 2]; vdata[o + 4] = uv.uvs[vi * 2 + 1]
+                let c = cornerOfs.indices.contains(t * 3 + j) ? cornerOfs[t * 3 + j] : .zero
+                vdata[o + 5] = c.x; vdata[o + 6] = c.y; vdata[o + 7] = c.z
+            }
         }
         guard let vbuf = device.makeBuffer(bytes: vdata, length: vdata.count * 4) else { return nil }
 
         // Indekser gruppert per REGION, sortert per kildebilde → hver frame dekodes én gang,
         // hver region får sin egen nivellerings-offset i uniformen.
-        let triCount = winner.count
         var groups = [Int32: [UInt32]]()
         for t in 0..<triCount where winner[t] >= 0 {
-            groups[region[t], default: []].append(contentsOf: [uv.indices[t * 3], uv.indices[t * 3 + 1], uv.indices[t * 3 + 2]])
+            groups[region[t], default: []].append(contentsOf: [UInt32(t * 3), UInt32(t * 3 + 1), UInt32(t * 3 + 2)])
         }
         var sortedIdx = [UInt32]()
         var ranges: [(frame: Int, region: Int, offset: Int, count: Int)] = []
@@ -1106,16 +1471,16 @@ enum MeshBakeV2 {
               let tmpA = device.makeTexture(descriptor: lowDesc),
               let tmpB = device.makeTexture(descriptor: lowDesc) else { return nil }
 
-        // Snitt-passets indekser: alle top-3-flater per frame
+        // Snitt-passets indekser: alle topp-K-flater per frame
         var avgIdx = [UInt32]()
         var avgRanges = [Int: (offset: Int, count: Int)]()
         do {
             var byFrame = [Int32: [UInt32]]()
             for t in 0..<triCount {
-                for j in 0..<3 {
-                    let f = topF[t * 3 + j]
+                for j in 0..<topK {
+                    let f = topF[t * topK + j]
                     guard f >= 0 else { continue }
-                    byFrame[f, default: []].append(contentsOf: [uv.indices[t * 3], uv.indices[t * 3 + 1], uv.indices[t * 3 + 2]])
+                    byFrame[f, default: []].append(contentsOf: [UInt32(t * 3), UInt32(t * 3 + 1), UInt32(t * 3 + 2)])
                 }
             }
             for (f, idxs) in byFrame {
@@ -1177,7 +1542,7 @@ enum MeshBakeV2 {
             enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
                                       indexBuffer: ibuf, indexBufferOffset: r.offset * 4)
             enc.endEncoding()
-            // Snitt-pass for denne framen (én gang) — additiv akkumulering av top-3-flatene
+            // Snitt-pass for denne framen (én gang) — additiv akkumulering av topp-K-flatene
             if let ar = avgRanges[r.frame], !avgDone.contains(r.frame) {
                 avgDone.insert(r.frame)
                 let rp2 = MTLRenderPassDescriptor()
@@ -1204,7 +1569,7 @@ enum MeshBakeV2 {
 
         // ── Multiband-komposisjon: final = vinner + blur(snitt) − blur(vinner).
         // Lavfrekvensen (eksponering/sheen/skygge — det synlige lappeteppet) kommer fra
-        // snittet av top-3-frames; detaljene beholdes uendret fra vinneren.
+        // snittet av topp-K-frames; detaljene beholdes uendret fra vinneren.
         if let cb = queue.makeCommandBuffer() {
             func dispatch(_ enc: MTLComputeCommandEncoder, _ pipe: MTLComputePipelineState, _ size: Int) {
                 enc.setComputePipelineState(pipe)
@@ -1284,14 +1649,17 @@ enum MeshBakeV2 {
     using namespace metal;
 
     struct CamV2 { float4x4 w2c; float4 intr; float4 img; float4 wb; float4 ofs; };
-    struct VOutV2 { float4 position [[position]]; float3 wp; };
+    struct VOutV2 { float4 position [[position]]; float3 wp; float3 ofs; };
 
+    // 8 floats per HJØRNE: [x,y,z,u,v,ox,oy,oz]. ofs er per-hjørne søm-forfining og
+    // interpoleres over flaten, så korreksjonen glir jevnt i stedet for å hoppe ved grensen.
     vertex VOutV2 bakev2_vertex(uint vid [[vertex_id]], const device float* v [[buffer(0)]]) {
-        uint b = vid * 5;
+        uint b = vid * 8;
         VOutV2 o;
         float2 uv = float2(v[b+3], v[b+4]);
         o.position = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.0, 1.0);
         o.wp = float3(v[b], v[b+1], v[b+2]);
+        o.ofs = float3(v[b+5], v[b+6], v[b+7]);
         return o;
     }
 
@@ -1309,8 +1677,9 @@ enum MeshBakeV2 {
         float2 q = uvN - 0.5;
         float devig = 1.0 + 0.15 * dot(q, q) * 4.0;
         // Gain (multiplikativ) + søm-nivellering (additiv) i LINEÆRT rom — sRGB-teksturen
-        // sampler lineært, render-target skriver sRGB tilbake.
-        float3 col = clamp(frame.sample(s, uvN).rgb * devig * c.wb.rgb + c.ofs.rgb, 0.0, 1.0);
+        // sampler lineært, render-target skriver sRGB tilbake. c.ofs er region-konstanten
+        // (nivået), in.ofs er den interpolerte per-hjørne-forfiningen (overgangen).
+        float3 col = clamp(frame.sample(s, uvN).rgb * devig * c.wb.rgb + c.ofs.rgb + in.ofs, 0.0, 1.0);
         return float4(col, 1.0);
     }
 

@@ -16,7 +16,7 @@ export type RebakeResult = { glbPath: string; filledFraction: number | null; ms:
 
 type NativeModule = {
   presentMeshScan(companyId: string, roomId: string): Promise<MeshScanResult>
-  rebakeMeshScan(framesDirPath: string): Promise<RebakeResult>
+  rebakeMeshScan(framesDirPath: string, flags: Record<string, string>): Promise<RebakeResult>
 }
 
 let native: NativeModule | null = null
@@ -47,10 +47,17 @@ export async function presentMeshScan(companyId: string, roomId: string): Promis
   return native.presentMeshScan(companyId, roomId)
 }
 
-/** Regresjonssele: re-bake V2-teksturen mot et persistert skann (framesDir) uten å skanne på nytt. */
-export async function rebakeMeshScan(framesDirPath: string): Promise<RebakeResult> {
+/**
+ * Regresjonssele: re-bake V2-teksturen mot et persistert skann (framesDir) uten å skanne på nytt.
+ * `flags` overstyrer meshscan.*-knottene for kun denne baken (settes tilbake etterpå), så A/B
+ * kan kjøres fra appen i stedet for via Xcode-launch-argumenter. Tom streng = fjern knotten.
+ */
+export async function rebakeMeshScan(
+  framesDirPath: string,
+  flags: Record<string, string> = {},
+): Promise<RebakeResult> {
   if (!native) throw new Error('AmpexSplat native module not available')
-  return native.rebakeMeshScan(framesDirPath)
+  return native.rebakeMeshScan(framesDirPath, flags)
 }
 
 // ── Nærhetssensor («løft til øret»-aktivering, se lib/ai/raise-listener.ts) ──
