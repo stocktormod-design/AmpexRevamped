@@ -93,6 +93,27 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     // Encoding + disk I/O run here so the AR delegate never blocks (avoids ARFrame retention).
     private let captureQueue = DispatchQueue(label: "ampex.meshscan.capture")
     private var keyframes: [Keyframe] = []   // mutated only on captureQueue
+    // ── Erstatningsbuffer (2026-08-15): fangsten holder ÉN plass per synsvinkel-bøtte i stedet
+    // for en kø. Fem runder rundt et rom treffer i hovedsak de SAMME bøttene, så lagringen
+    // avgrenses av antall distinkte ståsteder — ikke av hvor langt du går — og hver plass ender
+    // med det beste av forsøkene. Gjenbesøk kan dermed bare forbedre, aldri fortynne.
+    // Erstatter én-skann-doktrinen (2026-08-13), som var riktig så lenge bufferet var
+    // først-til-mølla: da KUNNE gjenbesøk bare stjele plass. Nå konkurrerer det med seg selv.
+    // Begge feltene røres KUN på captureQueue.
+    private var bucketSlot: [Int64: Int] = [:]  // synsvinkel-bøtte → posisjon i keyframes
+    private var nextKFIndex = 0                 // filnavn-indeks — allokeres her, ikke på delegat-tråden
+    private var kfNew = 0, kfReplaced = 0, kfNotBetter = 0  // diagnostikk, kun captureQueue
+    // Delegat-tråden: hindrer at én bøtte spammer captureQueue (og at 4K-kopier hoper seg opp).
+    private var bucketLastDispatch: [Int64: Double] = [:]
+    // Kadens per bøtte. Device-kjøring 2026-08-15 (30 s skann): 1,5 s ga bare 30 keyframes av
+    // 160 tillatte og 90 % avvisning — når man står i ro eller dveler i et lite rom treffer man
+    // de samme bøttene hele tiden, og bufferet fikk aldri kandidater å velge mellom. 0,4 s lar
+    // en bøtte utfordres på nytt mens man fortsatt ser på den; erstatningen (15 % hysterese)
+    // er uansett den som avgjør om noe faktisk skrives.
+    // meshscan.capture = "slow" gjenoppretter 1,5 s for A/B.
+    private var bucketCadence: Double {
+        UserDefaults.standard.string(forKey: "meshscan.capture") == "slow" ? 1.5 : 0.4
+    }
     private var keyframeReserved = 0          // gate/index, delegate thread only
     private var lastKeyframeTime: Double = -1
     private var lastKeyframePos: SIMD3<Float>?
@@ -132,18 +153,24 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     // så gjenbesøk i lange skann ikke vokser lista — dekningen metter på 3 uansett.
     private var kfCams: [KFCam] = []
     private var kfCamBuckets = Set<Int64>()
-    // ── Én-skann-porten (brukerdoktrine 2026-08-13): celler som er FERDIG dekket (grønn =
-    // 3 distinkte ståsteder, okklusjonsbekreftet) — bygges av dekningstikket, leses av
-    // keyframe-porten i maybeCaptureKeyframe. Monoton vekst (formUnion): en ferdig flate
-    // forblir ferdig selv når ankeret glir ut av tikkens 12 m-radius. Effekt: gjenbesøk
-    // gir IKKE nye keyframes over ferdig flate («one scan is best»), kun der hull finnes.
+    // Celler som er FERDIG dekket (grønn = 3 distinkte ståsteder, okklusjonsbekreftet) —
+    // bygges av dekningstikket. Monoton vekst (formUnion) innenfor én økt: en ferdig flate
+    // forblir ferdig selv når ankeret glir ut av tikkens 12 m-radius. Nullstilles når
+    // AE/AWB-låsen slår inn, siden pre-lås-celler hviler på frames baken selv mistror.
+    // MERK (2026-08-15): dette styrer nå bare WIREFRAME-fargen, ikke fangsten. Én-skann-
+    // doktrinen er erstattet av erstatningsbufferet (`bucketSlot`) — gjenbesøk over grønn
+    // flate er trygt fordi en ny frame konkurrerer om sin egen bøtte i stedet for å fortynne
+    // et felles budsjett. Nyhetsporten står igjen kun som fallback før første mesh-anker.
     private var doneCells = Set<Int64>()
     private var gateRejected = 0
+    private var tooFastRejected = 0   // rammer sluppet av fartsporten (delegat-tråden)
     private var lastNoveltyCheck: Double = -1
     // Adaptiv kadens: stort mesh → dekningspasset tar lengre tid → senk frekvensen i stedet for
     // å pinne CPU. Kontinuerlig pinning ga termisk struping som gjorde ALT tregere jo lenger
     // man skannet (ARKit, UI, koding).
     private var coverageStride = 1
+    private var coverageCostN = 0
+    private var coverageCostSum = 0.0
     private var coverageTickCount = 0
     private weak var percentLabel: UILabel?
     private weak var doneButton: UIButton?
@@ -152,6 +179,26 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     private var ramTimer: Timer?
     private var donePulsing = false
     private static let lockGreen = SIMD3<Float>(0.204, 0.780, 0.349) // #34C759 — teksturert/låst wireframe
+
+    /// Synsvinkel-bøtte i ANKERETS lokale ramme — samme kvantisering som bakens `regionBucket`
+    /// (0,6 m posisjon × 30° yaw × 30° pitch), så fangst og utvalg deler oppfatning av «samme
+    /// ståsted». Anker-lokalt fordi verdensposen har drevet ved runde 5: samme fysiske ståsted
+    /// ville hashet til en NABObøtte og gitt to halvfylte plasser i stedet for én erstatning.
+    /// Ankerets ramme flytter seg med ARKits driftskorreksjon, så den er invariant.
+    private static func viewBucket(anchorID: String, rel: simd_float4x4) -> Int64 {
+        let p = SIMD3<Float>(rel.columns.3.x, rel.columns.3.y, rel.columns.3.z)
+        let f = SIMD3<Float>(-rel.columns.2.x, -rel.columns.2.y, -rel.columns.2.z)
+        let fl = simd_length(f)
+        let fwd = fl > 1e-6 ? f / fl : SIMD3<Float>(0, 0, -1)
+        let step: Float = .pi / 6 // 30°
+        let bx = Int64((p.x / 0.6).rounded()), by = Int64((p.y / 0.6).rounded()), bz = Int64((p.z / 0.6).rounded())
+        let yawB = Int64(((atan2(fwd.z, fwd.x) + .pi) / step).rounded())
+        let pitchB = Int64(((asin(max(-1, min(1, fwd.y))) + .pi / 2) / step).rounded())
+        // anchorID hasher per prosess — fint, bøttene sammenlignes kun innenfor ett skann.
+        var h = Int64(truncatingIfNeeded: anchorID.hashValue)
+        for v in [bx, by, bz, yawB, pitchB] { h = h &* 1_000_003 &+ v }
+        return h
+    }
 
     private static func voxelKey(_ p: SIMD3<Float>) -> VoxelKey {
         VoxelKey(x: Int32((p.x / voxelSize).rounded()),
@@ -227,7 +274,16 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                     if device.isWhiteBalanceModeSupported(.locked) { device.whiteBalanceMode = .locked }
                     device.unlockForConfiguration()
                     self?.aeLockTime = CACurrentMediaTime() // samme klokkedomene som ARFrame.timestamp
-                    MeshLog.log("AE/AWB låst etter innmåling")
+                    // Celler som rakk å bli FERDIG før låsen er stemplet på frames baken selv
+                    // mistror (preLock vektes 0,6 i vinnervalget) — og doneCells vokser monotont,
+                    // så uten dette kan de aldri fikses ved å gå tilbake. Nullstilling her er
+                    // nesten gratis: låsen slår inn 1,5 s ut i skannet, så settet er lite.
+                    if let n = self?.doneCells.count, n > 0 {
+                        self?.doneCells.removeAll(keepingCapacity: true)
+                        MeshLog.log("AE/AWB låst — \(n) pre-lås-celler åpnet igjen")
+                    } else {
+                        MeshLog.log("AE/AWB låst etter innmåling")
+                    }
                 } catch {
                     MeshLog.log("AE/AWB-lås feilet: \(error.localizedDescription)")
                 }
@@ -402,7 +458,14 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         sceneView.session.pause()
         writeKeyframesManifest()
         NSLog("[MeshScan] colour diag — framesProcessed=\(sampleFramesProcessed) vertsConsidered=\(sampleVertsConsidered) rejectedBehind=\(sampleRejectedBehind) rejectedOffscreen=\(sampleRejectedOffscreen) hits=\(sampleHits) voxelsFilled=\(colorAccum.count) keyframes=\(keyframes.count) framesDir=\(framesDir?.lastPathComponent ?? "nil")")
-        MeshLog.log("én-skann-porten — \(gateRejected) frames avvist totalt, \(doneCells.count) ferdig-celler")
+        MeshLog.log("porten — \(gateRejected) frames avvist totalt, \(doneCells.count) ferdig-celler")
+        // Erstatningsbufferets fasit: `nye` = distinkte ståsteder, `erstattet` = gjenbesøk som
+        // faktisk forbedret plassen sin, `ikke bedre` = gjenbesøk som tapte mot det som lå der.
+        // Er `erstattet` + `ikke bedre` ~0 over flere runder, treffer ikke bøttene hverandre og
+        // den anker-lokale nøkkelen er feil — da hjelper ikke flere runder.
+        let (n, r, w) = captureQueue.sync { (kfNew, kfReplaced, kfNotBetter) }
+        MeshLog.log("fartsporten — \(tooFastRejected) rammer sluppet (grense 1,1 m/s / 2,0 rad/s)")
+        MeshLog.log("erstatningsbuffer — \(n) nye bøtter, \(r) erstattet, \(w) ikke bedre (kadens \(bucketCadence)s)")
         if anchors.isEmpty {
             finish(.failure(MeshScanError.noMeshData))
             return
@@ -588,7 +651,10 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     // Decision + a fast pixel-buffer copy happen on the AR delegate; the heavy JPEG encode + disk
     // write run on captureQueue so we never hold an ARFrame (avoids the "retaining ARFrames" stall).
     private func maybeCaptureKeyframe(_ frame: ARFrame) {
-        guard framesDir != nil, keyframeReserved < MeshScanPresenter.maxKeyframes else { return }
+        // Taket håndheves nå på captureQueue mot ANTALL LAGREDE bøtter, ikke mot antall forsøk:
+        // med erstatning vokser ikke lagringen av gjenbesøk, så et forsøkstak ville stoppet
+        // fangsten på runde 2 uten grunn (og det var nettopp først-til-mølla-feilen).
+        guard framesDir != nil else { return }
         guard case .normal = frame.camera.trackingState else { return }
 
         let t = frame.timestamp
@@ -604,24 +670,50 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             if moved < MeshScanPresenter.keyframeMinMove && rotDot > MeshScanPresenter.keyframeMinRotateDot { return }
         }
 
-        // Reject blurry keyframes above 0.8 m/s linear or 1.4 rad/s (~80°/s) angular.
-        // UI warning fires at 0.7 m/s / ~70°/s — thresholds are aligned so users get visual feedback.
-        if lastLinSpeed > 0.8 || lastAngSpeed > 1.4 {
-            NSLog("[MeshScan] frame rejected — too fast: linSpeed=\(lastLinSpeed) angSpeed=\(lastAngSpeed)")
+        // Fartsporten (løsnet 2026-08-23: 0,8/1,4 → 1,1/2,0). Den harde avvisningen ble satt da
+        // bufferet var FØRST-TIL-MØLLA: en uskarp ramme okkuperte plassen sin for godt, så det
+        // var riktig å nekte den. Erstatningsbufferet snudde det — hver bøtte holder ÉN plass og
+        // bytter den ut mot enhver senere ramme som scorer 15 % bedre på `skarphet/(1+2·fart)`.
+        // En uskarp ramme kan altså ikke lenger fortrenge en skarp; den blir enten erstattet, eller
+        // så er den det ENESTE bildet av den synsvinkelen — og da slår uskarpt tomt.
+        // Målt på Tormods egen bundle (145 frames): median skarphet faller bare til 0,87× ved
+        // fart 0,6–0,8 og 0,73× over 0,8 — en helling, ikke en klippekant. Kostnaden ved å slippe
+        // dem inn er liten, gevinsten er at man kan snu hodet mens man går uten stille bildetap.
+        // Varselet står igjen på 0,7/1,2, altså med god margin FØR noe faktisk mistes.
+        if lastLinSpeed > 1.1 || lastAngSpeed > 2.0 {
+            tooFastRejected += 1
             return
         }
 
-        // ── ÉN-SKANN-PORTEN (brukerdoktrine 2026-08-13): der wireframen viser (ÉN bekreftet
-        // visning) legges det ALDRI mer tekstur — gjenbesøk tilfører bare konkurrerende
-        // vinkler/eksponeringer. Fangsten åpner kun når nok wireframe-fri flate er i sikte.
-        // Terskel 12 %: gir naturlig foto-kadens (~hver 0,3 m) når man går sidelengs.
-        if !doneCells.isEmpty {
+        // ── PORTEN. Erstatningsbufferet (se `bucketSlot`) gjør gjenbesøk trygt: en ny vinkel på
+        // ferdig flate konkurrerer nå om SIN EGEN bøtte i stedet for å fortynne et felles
+        // budsjett. Porten nekter derfor ikke lenger gjenbesøk — den begrenser bare kadensen
+        // per bøtte, så captureQueue ikke oversvømmes av 4K-kopier (regel 8).
+        // Uten mesh-anker (aller tidligst i skannet) finnes ingen driftsinvariant bøtte, og vi
+        // faller tilbake på den gamle nyhetsporten.
+        var nearestAnchor: ARMeshAnchor? = nil
+        var bucket: Int64? = nil
+        if let nearest = frame.anchors.compactMap({ $0 as? ARMeshAnchor }).min(by: {
+            simd_distance_squared(SIMD3($0.transform.columns.3.x, $0.transform.columns.3.y, $0.transform.columns.3.z), pos) <
+            simd_distance_squared(SIMD3($1.transform.columns.3.x, $1.transform.columns.3.y, $1.transform.columns.3.z), pos)
+        }) {
+            let b = MeshScanPresenter.viewBucket(anchorID: nearest.identifier.uuidString,
+                                                 rel: simd_inverse(nearest.transform) * m)
+            // Én dispatch per bøtte per `bucketCadence`: nok til at bøtta får kandidater å
+            // velge mellom, lite nok til at captureQueue ikke bygger kø av 4K-kopier.
+            if let last = bucketLastDispatch[b], t - last < bucketCadence {
+                gateRejected += 1
+                return
+            }
+            nearestAnchor = nearest
+            bucket = b
+        } else if !doneCells.isEmpty {
             if t - lastNoveltyCheck < 0.15 { return } // takt: porten dømmer maks ~7 Hz
             lastNoveltyCheck = t
             if let novelty = frameNovelty(frame), novelty < 0.12 {
                 gateRejected += 1
                 if gateRejected % 60 == 1 {
-                    MeshLog.log(String(format: "én-skann-porten — frame avvist (%.0f%% nytt i sikte), %d avvist så langt", novelty * 100, gateRejected))
+                    MeshLog.log(String(format: "nyhetsporten (uten anker) — frame avvist (%.0f%% nytt i sikte), %d avvist så langt", novelty * 100, gateRejected))
                 }
                 return
             }
@@ -632,7 +724,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         lastKeyframeTime = t
         lastKeyframePos = pos
         lastKeyframeFwd = fwd
-        storeKeyframe(frame: frame, copy: copy, targetWidth: kfTargetWidth, isPlaneShot: false)
+        if let b = bucket { bucketLastDispatch[b] = t }
+        storeKeyframe(frame: frame, copy: copy, targetWidth: kfTargetWidth,
+                      isPlaneShot: false, nearest: nearestAnchor, viewKey: bucket)
     }
 
     /// Andel av synsfeltet som ennå IKKE er ferdig dekket (0 = alt ferdig, 1 = alt nytt).
@@ -708,8 +802,8 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
 
     /// Delt lagringskjerne for video-keyframes OG dedikerte planshots (12MP-stills).
     /// Planshots omgår maxKeyframes-taket og flagges i manifestet.
-    private func storeKeyframe(frame: ARFrame, copy: CVPixelBuffer, targetWidth: CGFloat, isPlaneShot: Bool) {
-        guard isPlaneShot || keyframeReserved < MeshScanPresenter.maxKeyframes else { return }
+    private func storeKeyframe(frame: ARFrame, copy: CVPixelBuffer, targetWidth: CGFloat,
+                               isPlaneShot: Bool, nearest: ARMeshAnchor? = nil, viewKey: Int64? = nil) {
         let t = frame.timestamp
         let cam = frame.camera
         let m = cam.transform
@@ -723,7 +817,8 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             MeshScanPresenter.tightDepth($0.depthMap, confidence: $0.confidenceMap)
         }
 
-        let idx = keyframeReserved
+        // Teller kun FORSØK nå (logging/diagnostikk) — filnavn-indeksen allokeres på
+        // captureQueue, som er den eneste som vet om framen faktisk beholdes eller erstatter.
         keyframeReserved += 1
 
         let fullW = CGFloat(CVPixelBufferGetWidth(copy))
@@ -774,7 +869,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         // corrected transform → the camera path snaps onto the corrected geometry (no shredding).
         var kfAnchorID: String? = nil
         var kfRel: [Float]? = nil
-        if let nearest = frame.anchors.compactMap({ $0 as? ARMeshAnchor }).min(by: {
+        // Porten fant allerede nærmeste anker for bøtte-nøkkelen — gjenbruk det i stedet for å
+        // søke gjennom alle ankere en gang til på delegat-tråden (main).
+        if let nearest = nearest ?? frame.anchors.compactMap({ $0 as? ARMeshAnchor }).min(by: {
             simd_distance_squared(SIMD3($0.transform.columns.3.x, $0.transform.columns.3.y, $0.transform.columns.3.z), pos) <
             simd_distance_squared(SIMD3($1.transform.columns.3.x, $1.transform.columns.3.y, $1.transform.columns.3.z), pos)
         }) {
@@ -792,6 +889,32 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             guard let self = self, let dir = self.framesDir else { return }
             let sharp = MeshScanPresenter.sharpnessScore(copy)  // measure blur before encoding
             let motion = self.lastLinSpeed + 0.5 * self.lastAngSpeed  // camera speed at capture (lower = steadier)
+
+            // ── Erstatningsavgjørelsen. Tas FØR JPEG-encodingen: en kandidat som ikke slår
+            // plassen sin skal ikke koste encode-tid eller varme (regel 8).
+            // Scoren er identisk med `selectCoverageAware`s (skarphet dempet av bevegelse), så
+            // fangst og bake-utvalg rangerer likt.
+            let score = sharp / (1 + 2 * motion)
+            var replaceSlot: Int? = nil
+            let idx: Int
+            if !isPlaneShot, let b = viewKey, let existing = self.bucketSlot[b],
+               self.keyframes.indices.contains(existing) {
+                let old = self.keyframes[existing]
+                let oldScore = old.sharpness / (1 + 2 * old.motion)
+                // Hysterese 15 %: uten den ville jevnbyrdige kandidater tvunget fram en ny
+                // encode hver runde — fem runder = fem ganger encode-lasten for ingenting.
+                guard score > oldScore * 1.15 else { self.kfNotBetter += 1; return }
+                replaceSlot = existing
+                idx = old.index // overskriv SAMME filer — lagringen vokser ikke av gjenbesøk
+                self.kfReplaced += 1
+            } else {
+                // Nytt ståsted: taket gjelder her, mot antall LAGREDE frames.
+                guard isPlaneShot || self.keyframes.count < MeshScanPresenter.maxKeyframes else { return }
+                idx = self.nextKFIndex
+                self.nextKFIndex += 1
+                self.kfNew += 1
+            }
+
             let ci = CIImage(cvPixelBuffer: copy)
             let img = scale < 1.0 ? ci.transformed(by: CGAffineTransform(scaleX: scale, y: scale)) : ci
             // Eksplisitt JPEG-kvalitet: 4K-frames med default-kvalitet ville blåst opp
@@ -813,7 +936,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 }
             }
 
-            self.keyframes.append(Keyframe(
+            let kf = Keyframe(
                 index: idx,
                 file: fname,
                 timestamp: t,
@@ -830,7 +953,13 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 relTransform: kfRel,
                 preLock: nil,
                 isPlaneShot: isPlaneShot ? true : nil
-            ))
+            )
+            if let slot = replaceSlot {
+                self.keyframes[slot] = kf // samme plass, samme filnavn — bøtta beholder én frame
+            } else {
+                self.keyframes.append(kf)
+                if !isPlaneShot, let b = viewKey { self.bucketSlot[b] = self.keyframes.count - 1 }
+            }
         }
     }
 
@@ -1172,6 +1301,18 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 // Kalibrer kadensen mot faktisk kost: sikt på ~<25 % CPU-duty for dekningen.
                 let elapsed = CFAbsoluteTimeGetCurrent() - tickStart
                 self.coverageStride = max(1, min(8, Int(elapsed / 0.25) + 1))
+                // Kadensen er det brukeren opplever som «responsiv wireframe»: stride 8 betyr at
+                // fargen ligger opptil 8 s bak bevegelsen. Logg den EKTE kosten (hvert 10. utførte
+                // pass) så terskelen på 0,25 s kan justeres mot måling. NB: et Debug-bygg er
+                // ~20× tregere i denne løkka og pinner stride på 8 — knotten må dømmes på Release.
+                self.coverageCostN += 1
+                self.coverageCostSum += elapsed
+                if self.coverageCostN % 10 == 0 {
+                    let avg = self.coverageCostSum / Double(self.coverageCostN)
+                    MeshLog.log(String(format: "dekningspass — snitt %.0f ms over %d pass, stride %d (termikk %d)",
+                                       avg * 1000, self.coverageCostN, self.coverageStride,
+                                       ProcessInfo.processInfo.thermalState.rawValue))
+                }
                 self.coverageBusy = false
             }
         }

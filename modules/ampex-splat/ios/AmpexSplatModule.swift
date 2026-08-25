@@ -42,7 +42,10 @@ public final class AmpexSplatModule: Module {
 
     // Regresjonsselen: kjør V2-baken på nytt mot et persistert skann-bundle (framesDir med
     // fixture-mesh.bin + fixture-kf.json) — iterér på tekstur UTEN å skanne på nytt.
-    AsyncFunction("rebakeMeshScan") { (framesDirPath: String, promise: Promise) in
+    // `flags` setter meshscan.*-knottene for DENNE baken og legger dem tilbake etterpå, så
+    // A/B kan kjøres fra appen i stedet for via Xcode-launch-argumenter. Bakene leser
+    // UserDefaults synkront under kjøring, og køen er seriell for én bake om gangen.
+    AsyncFunction("rebakeMeshScan") { (framesDirPath: String, flags: [String: String], promise: Promise) in
       DispatchQueue.global(qos: .userInitiated).async {
         guard #available(iOS 14.0, *) else {
           promise.reject("rebake", "Krever iOS 14"); return
@@ -52,8 +55,30 @@ public final class AmpexSplatModule: Module {
           promise.reject("rebake", "Fant ikke fixture-mesh.bin / fixture-kf.json i \(framesDirPath)")
           return
         }
+        let defaults = UserDefaults.standard
+        var restore: [String: String?] = [:]
+        for (k, v) in flags where k.hasPrefix("meshscan.") {
+          restore[k] = defaults.string(forKey: k)
+          if v.isEmpty { defaults.removeObject(forKey: k) } else { defaults.set(v, forKey: k) }
+        }
+        defer {
+          for (k, v) in restore {
+            if let v = v { defaults.set(v, forKey: k) } else { defaults.removeObject(forKey: k) }
+          }
+        }
+        if !flags.isEmpty {
+          MeshLog.log("rebake — flagg \(flags.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " "))")
+        }
         let ts = Int(Date().timeIntervalSince1970 * 1000)
-        let glbURL = dir.appendingPathComponent("rebake-\(ts).glb")
+        // Merk filnavnet med ALLE flaggene, ikke bare ståstedet — ellers får to kjøringer som
+        // varierer noe annet (f.eks. icmcolor) identiske navn, og A/B-en blir umulig å lese.
+        let tag = flags.keys.sorted()
+          .compactMap { k -> String? in
+            guard k.hasPrefix("meshscan."), let v = flags[k], !v.isEmpty else { return nil }
+            return "-\(k.dropFirst("meshscan.".count))-\(v)"
+          }
+          .joined()
+        let glbURL = dir.appendingPathComponent("rebake\(tag)-\(ts).glb")
         let t0 = CFAbsoluteTimeGetCurrent()
         let result = MeshBakeV2.bake(mesh: fixture.mesh, keyframes: fixture.keyframes, framesDir: dir, to: glbURL)
         let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
