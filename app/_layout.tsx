@@ -147,7 +147,9 @@ export default function RootLayout() {
   const [nokkel, setNokkel] = useState('naavaerende')
   const fonterKlare = useAmpexFonts()
   useEffect(() => {
-    lagretPalett().then(id => { bruk(id); setNokkel(id) }).catch(() => {})
+    // Kun når en prøve FAKTISK er valgt — uten lagret valg står tokens.js
+    // (den brune grunnflaten) urørt. Se lagretPalett().
+    lagretPalett().then(id => { if (id) { bruk(id); setNokkel(id) } }).catch(() => {})
     return abonnerPalett(id => { bruk(id); setNokkel(id) })
   }, [])
 

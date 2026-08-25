@@ -82,9 +82,21 @@ export function bruk(id: PalettId) {
   Object.assign(colors, p.farger)
 }
 
-export async function lagretPalett(): Promise<PalettId> {
+/**
+ * `null` = brukeren har ALDRI valgt en prøve, og da skal ingenting overstyres.
+ *
+ * Sto tidligere med `'naavaerende'` som fallback, og den paletten er den gamle
+ * SANDFARGEDE (canvas #EFEAE1, bg #FFFFFF) — fra før grunnflaten ble brun.
+ * Rotlayoutet kaller `bruk()` på svaret ved hver oppstart, så på enhver enhet
+ * uten lagret valg ble de brune tokenene overskrevet med førtilstanden i det
+ * appen startet. Verre: `type`-skalaen i lib/theme.ts leser `colors.label` ved
+ * IMPORT, altså før overskrivingen, så teksten beholdt den kremede blekkfargen
+ * mens flatene ble sandfargede — kremet tekst på kremet grunn, uleselig.
+ * Prøveverktøyet skal kunne overstyre når noen faktisk velger noe, aldri ellers.
+ */
+export async function lagretPalett(): Promise<PalettId | null> {
   const v = await database.localStorage.get(NOKKEL).catch(() => undefined)
-  return PALETTER.some(p => p.id === v) ? (v as PalettId) : 'naavaerende'
+  return PALETTER.some(p => p.id === v) ? (v as PalettId) : null
 }
 
 export async function velgPalett(id: PalettId) {
