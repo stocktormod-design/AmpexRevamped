@@ -1021,7 +1021,13 @@ enum MeshBakeV2 {
         let C = clusterCenters.count
         // meshscan.stasted: "off" = hopp over ståsted-valget helt (A/B mot dagens),
         // "legacy" = gammel oppførsel (multiband AV på alle re-plukkede flater).
-        let stastedMode = UserDefaults.standard.string(forKey: "meshscan.stasted") ?? "on"
+        // Default OFF (2026-08-25): ståsted-valget tredoblet regionantallet på hver bake
+        // (788→2648 på device) og la en av de nye grensene tvers ned en dør — synlig grå søm
+        // midt på en flate («kan ikke bestemme hvilket foto»). Med valget AV faller region-
+        // antallet ~10× (2648→260), dør-sømmen forsvinner, og fargetermen plasserer de få
+        // sømmene som er igjen. meshscan.stasted = "on" gjenoppretter det gamle — verdt å
+        // sjekke på STORE åpne rom, som var grunnen valget fantes (kryss-roms-lappeteppe).
+        let stastedMode = UserDefaults.standard.string(forKey: "meshscan.stasted") ?? "off"
         if C > 1 && C <= 24 && stastedMode != "off" {
             // Pass 1 (parallelt, samme stil som vinnervalget): beste score + frame PER ståsted per face
             var bestScoreC = [Float](repeating: 0, count: triCount * C)
