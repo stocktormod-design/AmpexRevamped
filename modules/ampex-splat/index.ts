@@ -60,6 +60,29 @@ export async function rebakeMeshScan(
   return native.rebakeMeshScan(framesDirPath, flags)
 }
 
+// ── PDF-side → raster (DrawingPane/multiview eier transformen selv — se
+// docs/TEGNING_MULTIVIEW_PLAN.md; 4 × react-native-pdf er en minnefelle) ──
+
+export type PdfPageRaster = { uri: string; width: number; height: number; pageCount: number }
+
+type PdfModule = { renderPage(pdfPath: string, page: number, maxPx: number): Promise<PdfPageRaster> }
+
+let pdf: PdfModule | null = null
+try {
+  const { requireNativeModule } = require('expo-modules-core')
+  pdf = requireNativeModule('AmpexPdf') as PdfModule
+} catch {
+  pdf = null
+}
+
+export const isPdfRasterAvailable = pdf !== null
+
+/** Rasterér én PDF-side til JPEG i caches (cachet på fil+side+størrelse+mtime). */
+export async function renderPdfPage(pdfPath: string, page = 0, maxPx = 2048): Promise<PdfPageRaster> {
+  if (!pdf) throw new Error('AmpexPdf native module not available')
+  return pdf.renderPage(pdfPath.replace('file://', ''), page, maxPx)
+}
+
 // ── Nærhetssensor («løft til øret»-aktivering, se lib/ai/raise-listener.ts) ──
 
 type ProximityModule = {
