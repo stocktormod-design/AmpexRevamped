@@ -17,7 +17,7 @@ import { colors, spacing, radius, sizes, springs, type as t } from '../lib/theme
  * At det samtidig ser bedre ut enn en systemdialog er en bonus, ikke grunnen.
  */
 
-function Ark({ synlig, onLukk, children }: {
+export function Ark({ synlig, onLukk, children }: {
   synlig: boolean; onLukk: () => void; children: React.ReactNode
 }) {
   const insets = useSafeAreaInsets()

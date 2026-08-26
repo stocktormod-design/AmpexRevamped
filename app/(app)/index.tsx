@@ -70,11 +70,14 @@ function useMyTasks(userId: string | null) {
   return tasks
 }
 
-/** Inbox-rad: hak av til venstre, trykk rad → åpne prosjektet. */
+/** Inbox-rad: hak av til venstre, trykk rad → åpne tegningen pinnen står på,
+ *  ellers prosjektet. */
 function InboxRow({ task, last }: { task: Task; last: boolean }) {
   return (
     <Pressable
-      onPress={() => router.push(`/(app)/prosjekter/${task.projectId}`)}
+      onPress={() => task.drawingId
+        ? router.push({ pathname: '/(app)/prosjekter/tegning', params: { drawingId: task.drawingId } })
+        : router.push(`/(app)/prosjekter/${task.projectId}`)}
       style={[
         { flexDirection: 'row', alignItems: 'center', paddingRight: spacing.lg, paddingVertical: spacing.md + 2, paddingLeft: spacing.lg },
         !last && { borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder },
@@ -85,6 +88,11 @@ function InboxRow({ task, last }: { task: Task; last: boolean }) {
       </Pressable>
       <View style={{ flex: 1, marginHorizontal: spacing.md }}>
         <Text style={[t.bodyMedium, { color: colors.toolLabel }]} numberOfLines={2}>{task.title}</Text>
+        {!!task.fristAt && (
+          <Text style={[t.caption, { color: colors.toolTertiary, marginTop: 1 }]}>
+            Frist {task.fristAt.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}
+          </Text>
+        )}
       </View>
       {task.kind === 'lidar_scan' && <ScanSearch size={16} color={colors.brand} strokeWidth={sizes.lucideStroke} />}
       <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} style={{ marginLeft: spacing.sm }} />

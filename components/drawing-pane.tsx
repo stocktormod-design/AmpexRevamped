@@ -36,13 +36,20 @@ function svgFrom(points: [number, number][]): string {
   return d
 }
 
-export function DrawingPane({ drawing, width, height, transform, onActivate, onGestureEnd }: {
+export type PanePin = { id: string; x: number; y: number }
+
+export function DrawingPane({ drawing, width, height, transform, pins, onActivate, onGestureEnd, onLongPress, onTapPin }: {
   drawing: Drawing
   width: number
   height: number
   transform: PaneTransform
+  /** Oppgave-pins (normaliserte sidekoordinater) — skjermen filtrerer til «mine» */
+  pins?: PanePin[]
   onActivate?: () => void
   onGestureEnd?: (delta: PaneDelta) => void
+  /** Langtrykk på tegningen → normaliserte sidekoordinater (ny oppgave her) */
+  onLongPress?: (pt: { x: number; y: number }) => void
+  onTapPin?: (id: string) => void
 }) {
   const [raster, setRaster] = useState<PdfPageRaster | null>(null)
   const [failed, setFailed] = useState(false)
@@ -122,6 +129,44 @@ export function DrawingPane({ drawing, width, height, transform, onActivate, onG
       runOnJS(ended)(scale.value / Math.max(savedScale.value, 0.001), 0, 0)
     })
 
+  // Skjerm → normaliserte sidekoordinater. Transformrekkefølgen er
+  // origin(C) ∘ translate(tx,ty) ∘ scale(s): screen = C + (tx,ty) + s·(pane − C).
+  const toPage = (sx: number, sy: number): { x: number; y: number } | null => {
+    if (!fitted) return null
+    const s = scale.value
+    const px = (width / 2) + (sx - width / 2 - tx.value) / s
+    const py = (height / 2) + (sy - height / 2 - ty.value) / s
+    const x = (px - fitted.ox) / fitted.w
+    const y = (py - fitted.oy) / fitted.h
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null
+    return { x, y }
+  }
+  const handleLongPress = (sx: number, sy: number) => {
+    const pt = toPage(sx, sy)
+    if (pt && onLongPress) onLongPress(pt)
+  }
+  const handleTap = (sx: number, sy: number) => {
+    if (!fitted || !pins?.length || !onTapPin) return
+    // Treff i SKJERM-rom (fast radius uansett zoom): projiser hver pin ut og mål avstand.
+    const s = scale.value
+    for (const p of pins) {
+      const panePt = { x: fitted.ox + p.x * fitted.w, y: fitted.oy + p.y * fitted.h }
+      const scrX = width / 2 + tx.value + s * (panePt.x - width / 2)
+      const scrY = height / 2 + ty.value + s * (panePt.y - height / 2)
+      if (Math.hypot(scrX - sx, scrY - sy) < 26) { onTapPin(p.id); return }
+    }
+  }
+  const longPressGesture = Gesture.LongPress()
+    .minDuration(400)
+    .onStart(e => { runOnJS(handleLongPress)(e.x, e.y) })
+  const tapGesture = Gesture.Tap()
+    .maxDuration(250)
+    .onEnd(e => { runOnJS(handleTap)(e.x, e.y) })
+
+  // Pins tegnes i side-rommet men med INVERS-skalert radius → konstant størrelse på skjermen.
+  const pinR = useDerivedValue(() => 9 / scale.value)
+  const pinRi = useDerivedValue(() => 4.5 / scale.value)
+
   const userTransform = useDerivedValue(() => [
     { translateX: tx.value },
     { translateY: ty.value },
@@ -148,7 +193,7 @@ export function DrawingPane({ drawing, width, height, transform, onActivate, onG
 
   const { w: W, h: H, ox, oy } = fitted
   return (
-    <GestureDetector gesture={Gesture.Simultaneous(pinchGesture, panGesture)}>
+    <GestureDetector gesture={Gesture.Simultaneous(pinchGesture, panGesture, longPressGesture, tapGesture)}>
       <Canvas style={{ width, height, backgroundColor: '#E7E7EC' }}>
         <Group transform={userTransform} origin={center}>
           <Group transform={[{ translateX: ox }, { translateY: oy }]}>
@@ -172,6 +217,14 @@ export function DrawingPane({ drawing, width, height, transform, onActivate, onG
                 path={svgFrom(s.points.map(([x, y]) => [x * W, y * H]))}
                 style="stroke" color={s.color} strokeWidth={s.width}
                 strokeCap="round" strokeJoin="round" />
+            ))}
+            {/* Oppgave-pins — vises KUN for tildelt bruker (skjermen filtrerer),
+                borte ved «done». Invers-skalert radius = konstant på skjermen. */}
+            {pins?.map(p => (
+              <Group key={p.id}>
+                <Circle cx={p.x * W} cy={p.y * H} r={pinR} color="#FFFFFF" />
+                <Circle cx={p.x * W} cy={p.y * H} r={pinRi} color={colors.brand} />
+              </Group>
             ))}
           </Group>
         </Group>

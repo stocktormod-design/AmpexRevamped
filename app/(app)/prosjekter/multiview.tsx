@@ -16,8 +16,11 @@ import { useSharedValue } from 'react-native-reanimated'
 import { Pressable } from '../../../components/pressable'
 import { ChoiceSheet } from '../../../components/sheet'
 import { DrawingPane, type PaneDelta, type PaneTransform } from '../../../components/drawing-pane'
+import { TaskPinSheet, type TaskPinSheetState } from '../../../components/task-pin-sheet'
 import { database } from '../../../lib/db'
 import { Drawing, disciplineLabel } from '../../../lib/db/models/drawing'
+import { Task } from '../../../lib/db/models/task'
+import { useUserId } from '../../../lib/auth-user'
 import { colors, radius, shadows, sizes, spacing, paperType as t } from '../../../lib/theme'
 import { usePapirStatuslinje } from '../../../components/tool-surface'
 
@@ -35,6 +38,21 @@ export default function Multiview() {
   const [paneIds, setPaneIds] = useState<(string | null)[]>([drawingId ?? null, null])
   const [locked, setLocked] = useState(true)
   const [picking, setPicking] = useState<number | null>(null)
+  const userId = useUserId()
+  const [myTasks, setMyTasks] = useState<Task[]>([])
+  const [pinSheet, setPinSheet] = useState<TaskPinSheetState>(null)
+
+  // Mine åpne oppgave-pins for rutenes tegninger (tildelt-bare synlighet)
+  const paneKey = paneIds.filter(Boolean).join(',')
+  useEffect(() => {
+    const ids = paneIds.filter((x): x is string => !!x)
+    if (ids.length === 0 || !userId) { setMyTasks([]); return }
+    const sub = database.get<Task>('tasks')
+      .query(Q.where('drawing_id', Q.oneOf(ids)), Q.where('assigned_to', userId), Q.where('status', 'open'))
+      .observe().subscribe(setMyTasks)
+    return () => sub.unsubscribe()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paneKey, userId])
 
   useEffect(() => {
     if (!projectId) return
@@ -83,6 +101,13 @@ export default function Multiview() {
                 <DrawingPane
                   drawing={d} width={paneW} height={paneH} transform={transforms[i]}
                   onGestureEnd={delta => onPaneGestureEnd(i, delta)}
+                  pins={myTasks.filter(x => x.drawingId === d.id && x.pinX !== null && x.pinY !== null)
+                    .map(x => ({ id: x.id, x: x.pinX!, y: x.pinY! }))}
+                  onLongPress={pt => projectId && setPinSheet({ mode: 'ny', projectId, drawingId: d.id, x: pt.x, y: pt.y })}
+                  onTapPin={id => {
+                    const task = myTasks.find(x => x.id === id)
+                    if (task) setPinSheet({ mode: 'vis', task })
+                  }}
                 />
               ) : (
                 <Pressable onPress={() => setPicking(i)}
@@ -152,6 +177,8 @@ export default function Multiview() {
         }}
         onAvbryt={() => setPicking(null)}
       />
+
+      <TaskPinSheet state={pinSheet} userId={userId} onClose={() => setPinSheet(null)} />
     </View>
   )
 }
