@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react'
-import { View, ScrollView, ActivityIndicator, Dimensions } from 'react-native'
+import { View, ScrollView, ActivityIndicator, useWindowDimensions } from 'react-native'
 import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import Pdf from 'react-native-pdf'
 import * as DocumentPicker from 'expo-document-picker'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import { ChevronLeft, Columns2, FileText, Upload, Pencil } from 'lucide-react-native'
+import { useSharedValue } from 'react-native-reanimated'
 import { Pressable } from '../../../components/pressable'
+import { DrawingPane } from '../../../components/drawing-pane'
+import { TaskPinSheet, type TaskPinSheetState } from '../../../components/task-pin-sheet'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Drawing, disciplineLabel } from '../../../lib/db/models/drawing'
+import { Task } from '../../../lib/db/models/task'
 import { uploadDrawingPdf, getLocalPdf } from '../../../lib/drawings-storage'
+import { useUserId } from '../../../lib/auth-user'
 import { colors, spacing, radius, sizes, shadows, paperType as t } from '../../../lib/theme'
 import { usePapirStatuslinje } from '../../../components/tool-surface'
 
@@ -28,6 +32,26 @@ export default function TegningViewer() {
   const [siblings, setSiblings] = useState<Drawing[]>([])
   const [localUri, setLocalUri] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const userId = useUserId()
+  const win = useWindowDimensions()
+
+  // Vieweren kjører på DrawingPane (rasterert side + eid transform + Skia) —
+  // samme komponent som multiview. NB: kun side 1 inntil sideveksler bygges.
+  const scale = useSharedValue(1)
+  const tx = useSharedValue(0)
+  const ty = useSharedValue(0)
+  useEffect(() => { scale.value = 1; tx.value = 0; ty.value = 0 }, [drawingId, scale, tx, ty])
+
+  // Oppgave-pins: KUN mine åpne (synlighet er tildelt-bare, plan-avgjørelse).
+  const [myTasks, setMyTasks] = useState<Task[]>([])
+  const [pinSheet, setPinSheet] = useState<TaskPinSheetState>(null)
+  useEffect(() => {
+    if (!drawingId || !userId) { setMyTasks([]); return }
+    const sub = database.get<Task>('tasks')
+      .query(Q.where('drawing_id', drawingId), Q.where('assigned_to', userId), Q.where('status', 'open'))
+      .observe().subscribe(setMyTasks)
+    return () => sub.unsubscribe()
+  }, [drawingId, userId])
 
   // Aktiv tegning
   useEffect(() => {
@@ -77,20 +101,23 @@ export default function TegningViewer() {
   }
 
   if (!drawing) return <View style={{ flex: 1, backgroundColor: WORKSPACE }} />
-  const win = Dimensions.get('window')
   const panel = { backgroundColor: PANEL, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.08)', ...shadows.card } as const
 
   return (
     <View style={{ flex: 1, backgroundColor: WORKSPACE }}>
-      {/* Lerret — native PDF-render på lyst lerret (siden flyter hvit) */}
+      {/* Lerret — DrawingPane (rasterert side + Skia-overlay). Langtrykk = ny
+          oppgave-pin her; tap på pin = mitt oppgaveark. */}
       {localUri ? (
-        <Pdf
-          source={{ uri: localUri }}
-          style={{ flex: 1, width: win.width, backgroundColor: WORKSPACE }}
-          trustAllCerts={false}
-          spacing={12}
-          maxScale={6}
-          renderActivityIndicator={() => <ActivityIndicator color={colors.paperSecondary} />}
+        <DrawingPane
+          drawing={drawing}
+          width={win.width} height={win.height}
+          transform={{ scale, tx, ty }}
+          pins={myTasks.filter(x => x.pinX !== null && x.pinY !== null).map(x => ({ id: x.id, x: x.pinX!, y: x.pinY! }))}
+          onLongPress={pt => setPinSheet({ mode: 'ny', projectId: drawing.projectId, drawingId: drawing.id, x: pt.x, y: pt.y })}
+          onTapPin={id => {
+            const task = myTasks.find(x => x.id === id)
+            if (task) setPinSheet({ mode: 'vis', task })
+          }}
         />
       ) : (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl }}>
@@ -171,6 +198,8 @@ export default function TegningViewer() {
           </ScrollView>
         </View>
       )}
+
+      <TaskPinSheet state={pinSheet} userId={userId} onClose={() => setPinSheet(null)} />
     </View>
   )
 }
