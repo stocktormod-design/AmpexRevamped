@@ -15,6 +15,7 @@ import { Project, projectStatusLabel } from '../../../lib/db/models/project'
 import { Drawing, disciplineLabel } from '../../../lib/db/models/drawing'
 import { ProjectMember } from '../../../lib/db/models/project-member'
 import { Room, overallProgress } from '../../../lib/db/models/room'
+import { FireDevice } from '../../../lib/db/models/fire-device'
 import { Task } from '../../../lib/db/models/task'
 import { toggleTaskDone } from '../../../lib/tasks'
 import { useUserRole } from '../../../lib/auth-user'
@@ -145,6 +146,34 @@ async function toggleScanResponsible(member: ProjectMember, members: ProjectMemb
   syncQuietly()
 }
 
+/** Lenke til detektorlista — vises kun når prosjektet har brannkomponenter. */
+function DetektorlisteRow({ projectId }: { projectId: string }) {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    const sub = database.get<FireDevice>('fire_devices')
+      .query(Q.where('project_id', projectId))
+      .observeCount().subscribe(setCount)
+    return () => sub.unsubscribe()
+  }, [projectId])
+  if (count === 0) return null
+  return (
+    <Pressable
+      haptic="light" pressScale={0.98}
+      onPress={() => router.push({ pathname: '/(app)/prosjekter/detektorliste', params: { projectId } })}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm,
+        height: 44, borderRadius: radius.lg, paddingHorizontal: spacing.md,
+        backgroundColor: colors.fill,
+      }}
+    >
+      <Layers size={sizes.icon - 2} color={colors.brand} strokeWidth={2} />
+      <Text style={[t.subhead, { flex: 1 }]}>Detektorliste</Text>
+      <Text style={t.footnote}>{count}</Text>
+      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={2} />
+    </Pressable>
+  )
+}
+
 export default function ProsjektDetailScreen() {
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -259,6 +288,7 @@ export default function ProsjektDetailScreen() {
             <Plus size={sizes.icon} color="#fff" strokeWidth={2.2} />
             <Text style={[t.headline, { color: '#fff' }]}>Legg til tegning</Text>
           </Pressable>
+          <DetektorlisteRow projectId={project.id} />
         </View>
 
         {/* Medlemmer — trykk for å sette LiDAR-ansvarlig, hold for å fjerne */}

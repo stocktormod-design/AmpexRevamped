@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as DocumentPicker from 'expo-document-picker'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { Check, ChevronLeft, Columns2, FileText, Hand, MousePointer2, Pencil, Slash, Undo2, Upload, Waypoints } from 'lucide-react-native'
+import { Check, ChevronLeft, Columns2, FileText, Flame, Hand, MousePointer2, Pencil, Slash, Undo2, Upload, Waypoints } from 'lucide-react-native'
 import { useSharedValue } from 'react-native-reanimated'
 import { Pressable } from '../../../components/pressable'
 import { DrawingPane, type EditTool } from '../../../components/drawing-pane'
@@ -14,6 +14,8 @@ import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Drawing, disciplineLabel } from '../../../lib/db/models/drawing'
 import { DrawingMarkup, type Stroke } from '../../../lib/db/models/drawing-markup'
+import { FireDevice } from '../../../lib/db/models/fire-device'
+import { FireDeviceSheet } from '../../../components/fire-device-sheet'
 import { Task } from '../../../lib/db/models/task'
 import { uploadDrawingPdf, getLocalPdf } from '../../../lib/drawings-storage'
 import { loadDraft, saveDraft, clearDraft } from '../../../lib/markup-drafts'
@@ -75,6 +77,35 @@ export default function TegningViewer() {
     setDraft([])
     syncQuietly()
     setEditMode(false)
+  }
+
+  // ── Brannkomponenter (fase 4): stempel-plassering med AUTO-TAG (neste ledige
+  // adresse på sløyfe 01 — «plasser 40 detektorer uten å skrive ett tall»),
+  // detaljer via velg-tapp. Arket åpnes IKKE per plassering (stempel-flyt). ──
+  const [deviceSheet, setDeviceSheet] = useState<FireDevice | null>(null)
+  async function placeDevice(pt: { x: number; y: number }) {
+    if (!drawing) return
+    const all = await database.get<FireDevice>('fire_devices')
+      .query(Q.where('project_id', drawing.projectId)).fetch()
+    let max = 0
+    for (const d of all) {
+      const m = /^01\.(\d+)$/.exec(d.tag)
+      if (m) max = Math.max(max, parseInt(m[1], 10))
+    }
+    await database.write(async () => {
+      await database.get<FireDevice>('fire_devices').create(d => {
+        d.projectId = drawing.projectId
+        d.drawingId = drawing.id
+        d.x = pt.x; d.y = pt.y
+        d.kind = 'royk'
+        d.tag = `01.${String(max + 1).padStart(3, '0')}`
+        d.createdBy = userId
+      })
+    })
+    syncQuietly()
+  }
+  async function openDevice(id: string) {
+    try { setDeviceSheet(await database.get<FireDevice>('fire_devices').find(id)) } catch {}
   }
 
   // Oppgave-pins: KUN mine åpne (synlighet er tildelt-bare, plan-avgjørelse).
@@ -148,7 +179,7 @@ export default function TegningViewer() {
           width={win.width} height={win.height}
           transform={{ scale, tx, ty }}
           pins={myTasks.filter(x => x.pinX !== null && x.pinY !== null).map(x => ({ id: x.id, x: x.pinX!, y: x.pinY! }))}
-          edit={editMode ? { tool, color, width: penWidth, draft, onDraftChange: changeDraft } : undefined}
+          edit={editMode ? { tool, color, width: penWidth, draft, onDraftChange: changeDraft, onPlaceDevice: placeDevice, onTapDevice: openDevice } : undefined}
           onLongPress={pt => setPinSheet({ mode: 'ny', projectId: drawing.projectId, drawingId: drawing.id, x: pt.x, y: pt.y })}
           onTapPin={id => {
             const task = myTasks.find(x => x.id === id)
@@ -230,6 +261,7 @@ export default function TegningViewer() {
               ['penn', Pencil],
               ['linje', Slash],
               ['sloyfe', Waypoints],
+              ['brann', Flame],
               ['pan', Hand],
             ] as const).map(([tl, Icon]) => (
               <Pressable key={tl} haptic="light" pressScale={0.92} onPress={() => setTool(tl)}
@@ -303,6 +335,7 @@ export default function TegningViewer() {
       )}
 
       <TaskPinSheet state={pinSheet} userId={userId} onClose={() => setPinSheet(null)} />
+      <FireDeviceSheet device={deviceSheet} onClose={() => setDeviceSheet(null)} />
     </View>
   )
 }
