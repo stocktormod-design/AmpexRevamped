@@ -13,6 +13,8 @@ export class DrawingMarkup extends Model {
   static table = 'drawing_markup'
 
   @text('drawing_id') drawingId: string
+  @text('kind') kind: string | null // null/'stroke' — rad-formen fra v32
+  @text('created_by') createdBy: string | null
   @text('data') data: string | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date

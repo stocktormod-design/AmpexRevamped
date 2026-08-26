@@ -39,6 +39,7 @@ import { FormComment } from './models/form-comment'
 import { DrawingLoop } from './models/drawing-loop'
 import { OrderScan } from './models/order-scan'
 import { MeshMarker } from './models/mesh-marker'
+import { FireDevice } from './models/fire-device'
 import { NfcTag } from './models/nfc-tag'
 import { OrderSignature } from './models/order-signature'
 import { ProductPrice } from './models/product-price'
@@ -59,5 +60,5 @@ const adapter = new SQLiteAdapter({
 
 export const database = new Database({
   adapter,
-  modelClasses: [Order, OrderDocument, OrderMaterial, OrderExtra, Product, Customer, Activity, Location, StockMovement, Project, Drawing, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, NfcTag, Quote, QuoteLine, OrderSignature, ProductPrice, OrderApproval, OrderArchive],
+  modelClasses: [Order, OrderDocument, OrderMaterial, OrderExtra, Product, Customer, Activity, Location, StockMovement, Project, Drawing, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, FireDevice, NfcTag, Quote, QuoteLine, OrderSignature, ProductPrice, OrderApproval, OrderArchive],
 })

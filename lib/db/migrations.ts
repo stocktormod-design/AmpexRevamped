@@ -5,6 +5,56 @@ import { byggReparasjonsSql, TABELLER_V30 } from './id-repair'
 export const migrations = schemaMigrations({
   migrations: [
     {
+      // Tegning fase 0 (docs/TEGNING_MULTIVIEW_PLAN.md): oppgave-pins (speiler
+      // serverkolonner som ALLEREDE fantes i liva-DB-en), markup-rader (kind/
+      // created_by), fire_devices-registeret og drawings.source.
+      toVersion: 32,
+      steps: [
+        addColumns({
+          table: 'tasks',
+          columns: [
+            { name: 'beskrivelse', type: 'string', isOptional: true },
+            { name: 'frist_at', type: 'number', isOptional: true },
+            { name: 'drawing_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'pin_x', type: 'number', isOptional: true },
+            { name: 'pin_y', type: 'number', isOptional: true },
+            { name: 'synlighet', type: 'string', isOptional: true },
+          ],
+        }),
+        addColumns({
+          table: 'drawing_markup',
+          columns: [
+            { name: 'kind', type: 'string', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+          ],
+        }),
+        addColumns({
+          table: 'drawings',
+          columns: [{ name: 'source', type: 'string', isOptional: true }],
+        }),
+        createTable({
+          name: 'fire_devices',
+          columns: [
+            { name: 'project_id', type: 'string', isIndexed: true },
+            { name: 'drawing_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'room_id', type: 'string', isOptional: true },
+            { name: 'loop_id', type: 'string', isOptional: true },
+            { name: 'x', type: 'number' },
+            { name: 'y', type: 'number' },
+            { name: 'kind', type: 'string' },
+            { name: 'tag', type: 'string' },
+            { name: 'serial', type: 'string', isOptional: true },
+            { name: 'model', type: 'string', isOptional: true },
+            { name: 'placed_at', type: 'number', isOptional: true },
+            { name: 'note', type: 'string', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
       // Rabatt avtalt i et tilbud fulgte ikke med når tilbudet ble ordre —
       // ordren ble fakturert til full pris. Se lib/quotes.ts registrerSvar.
       toVersion: 31,

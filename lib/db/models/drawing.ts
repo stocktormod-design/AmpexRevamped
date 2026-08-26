@@ -22,6 +22,7 @@ export class Drawing extends Model {
   @text('name') name: string
   @text('file_path') filePath: string | null
   @field('page_count') pageCount: number | null
+  @text('source') source: string | null // null/'lokal' | 'ekstern' (skrivebeskyttet grunnlag)
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 }

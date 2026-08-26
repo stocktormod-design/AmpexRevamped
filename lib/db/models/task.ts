@@ -1,5 +1,5 @@
 import { Model } from '@nozbe/watermelondb'
-import { text, date, readonly } from '@nozbe/watermelondb/decorators'
+import { text, field, date, readonly } from '@nozbe/watermelondb/decorators'
 
 export type TaskKind = 'general' | 'lidar_scan'
 export type TaskStatus = 'open' | 'done'
@@ -16,6 +16,15 @@ export class Task extends Model {
   @text('assigned_to') assignedTo: string | null
   @text('created_by') createdBy: string | null
   @date('done_at') doneAt: Date | null
+  // Pin-feltene (serverkolonner som fantes før klienten — norske navn er serverens):
+  // en oppgave kan festes på et punkt på en tegning; pinnen vises KUN for tildelt
+  // bruker og forsvinner ved done (ikke permanent).
+  @text('beskrivelse') beskrivelse: string | null
+  @date('frist_at') fristAt: Date | null
+  @text('drawing_id') drawingId: string | null
+  @field('pin_x') pinX: number | null // normalisert 0..1
+  @field('pin_y') pinY: number | null
+  @text('synlighet') synlighet: string | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 }
