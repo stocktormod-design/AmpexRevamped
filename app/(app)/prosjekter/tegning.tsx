@@ -6,7 +6,7 @@ import Pdf from 'react-native-pdf'
 import * as DocumentPicker from 'expo-document-picker'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { ChevronLeft, FileText, Upload, Pencil } from 'lucide-react-native'
+import { ChevronLeft, Columns2, FileText, Upload, Pencil } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
@@ -131,10 +131,16 @@ export default function TegningViewer() {
           </View>
         </View>
         {localUri && (
-          <Pressable onPress={() => router.push({ pathname: '/(app)/prosjekter/tegning-edit', params: { drawingId: drawing.id } })} pressScale={0.92}
-            style={[panel, { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' }]}>
-            <Pencil size={sizes.icon - 1} color={colors.paperLabel} strokeWidth={2.1} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <Pressable onPress={() => router.push({ pathname: '/(app)/prosjekter/multiview', params: { projectId: drawing.projectId, drawingId: drawing.id } })} pressScale={0.92}
+              style={[panel, { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' }]}>
+              <Columns2 size={sizes.icon - 1} color={colors.paperLabel} strokeWidth={2.1} />
+            </Pressable>
+            <Pressable onPress={() => router.push({ pathname: '/(app)/prosjekter/tegning-edit', params: { drawingId: drawing.id } })} pressScale={0.92}
+              style={[panel, { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' }]}>
+              <Pencil size={sizes.icon - 1} color={colors.paperLabel} strokeWidth={2.1} />
+            </Pressable>
+          </View>
         )}
       </View>
 

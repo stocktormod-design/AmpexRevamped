@@ -1,6 +1,6 @@
 {
   "platforms": ["apple"],
   "apple": {
-    "modules": ["AmpexSplatModule", "AmpexMeshViewerModule", "AmpexProximityModule", "AmpexMicModule"]
+    "modules": ["AmpexSplatModule", "AmpexMeshViewerModule", "AmpexProximityModule", "AmpexMicModule", "AmpexPdfModule"]
   }
 }
