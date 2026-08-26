@@ -282,9 +282,22 @@ enum MeshBakeV2 {
         // på cm-nivå er hovedårsaken til smurte projeksjoner — fiks posene FØR geometri og
         // vinnervalg. Anchor-meshen (full oppløsning) er proxy uansett geometrivalg.
         // Flagg av: meshscan.poserefine = "off" (fixture-A/B).
+        // blend: DEFAULT = HYBRID multiband gjennom warpen — vinnerfoto beholder all detalj
+        // (og hele scoringen: dybdekant, gjenskinn, skarphet), mens LAVFREKVENSEN kommer fra
+        // et warp-justert snitt av den EKTE topp-K. Det er lavfrekvensen som er lappeteppet
+        // (eksponering/tone), så snittet visker det ut uten å ofre skarphet. Rått fullfrekvens-
+        // snitt (device 2026-08-26: taggete tonelapper i taket der topp-K-settet skifter, og
+        // søyle-smuss dratt inn på veggen av lavt rangerte syn) beholdes som "raw" for A/B.
+        // "winner"/"off" = ren vinnervei. blend tvinger warpen på (snittet sampler gjennom den).
+        // Se docs/SUBPIXEL_ALIGN_PLAN.md.
+        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend")
+        let blendAll = blendFlag != "off" && blendFlag != "winner"
+        let blendRaw = blendFlag == "raw"
+        var warpGrids = [[SIMD2<Float>]]()
         if UserDefaults.standard.string(forKey: "meshscan.poserefine") != "off" {
             ARMeshGlbExporter.progress?("Justerer kameraer…")
-            MeshPoseRefineV2.refine(keyframes: &kfUse, positions: meshIn.positions, normals: meshIn.normals, framesDir: framesDir)
+            MeshPoseRefineV2.refine(keyframes: &kfUse, positions: meshIn.positions, normals: meshIn.normals,
+                                    framesDir: framesDir, forceWarp: blendAll, warpGridsByKF: &warpGrids)
         }
 
         // ── Geometri-stadium: ANCHOR-MESH ER DEFAULT (scan #8-fasiten, brukerdom 2026-08-13
@@ -642,6 +655,11 @@ enum MeshBakeV2 {
                 }
             }
         }
+
+        // Snapshot av EKTE topp-K per flate FØR plan-lås/ståsted trunkerer den til ett foto.
+        // blend=all snitter over dette — ellers arver låste vegger sitt ENE låste foto, og
+        // plan-lås-delingene («N delt») blir synlige linjer tvers over veggen (device 2026-08-25).
+        let topFavg = blendAll ? topF : []
 
         // ── Plan-tildeling (fase B — RoomRecon/TwinTex-klassen): vegg-plan får ETT foto.
         // Null søm på flaten folk faktisk ser på, per konstruksjon. Klassen (wall=1) kommer
@@ -1352,11 +1370,38 @@ enum MeshBakeV2 {
         let failG = ARMeshGlbExporter.TexturedExportResult(success: false, filledFraction: Double(filled), geometryPath: geometryPath)
         if filled < 0.05 { return failG }
 
+        // ── Skjøt-bånd (kun blend=raw): flater innen K naboskritt fra en vinnergrense (to ulike
+        // kildefotos). Raw-snittet bruker den EKTE topp-K KUN i båndet → tonesteget mellom to
+        // plan-låste veggbiter blir en myk overgang i stedet for en grå linje, mens veggens
+        // INDRE beholder sitt ene skarpe foto. Hybriden trenger ikke båndet — lavfrekvens-
+        // snittet krysser grensene overalt per konstruksjon.
+        var seamBand = [Bool](repeating: false, count: triCount)
+        if blendRaw {
+            for t in 0..<triCount where winner[t] >= 0 {
+                for e in 0..<Int(nbrN[t]) {
+                    let nw = winner[Int(nbr[t * 3 + e])]
+                    if nw >= 0 && nw != winner[t] { seamBand[t] = true; break }
+                }
+            }
+            // 2 skritt (~10–15cm): 6 ga 57k/97k flater i bånd på device 2026-08-26 — med ~690
+            // regioner dekker 6-stegs flood fra HVER regiongrense nesten hele meshen, og de
+            // plan-låste veggenes skarpe indre spises 30–60cm inn fra hver kant.
+            for _ in 0..<2 {
+                var nx = seamBand
+                for t in 0..<triCount where !seamBand[t] && winner[t] >= 0 {
+                    for e in 0..<Int(nbrN[t]) where seamBand[Int(nbr[t * 3 + e])] { nx[t] = true; break }
+                }
+                seamBand = nx
+            }
+            MeshLog.log("V2 skjøt-bånd — \(seamBand.lazy.filter { $0 }.count) flater i overgangsbånd")
+        }
+
         // ── GPU-bake: én draw per region (gruppert per kildebilde), én tekstur resident om gangen.
         ARMeshGlbExporter.progress?("Baker tekstur…")
         guard let png = rasterize(uv: uv, winner: winner, region: region, regionFrame: regionFrame,
-                                  regionOfs: regionOfs, cornerOfs: cornerOfs, topF: topF, topK: topK,
-                                  kfUse: kfUse, gains: gains,
+                                  regionOfs: regionOfs, cornerOfs: cornerOfs, topF: topF, topFavg: topFavg, topK: topK,
+                                  seamBand: seamBand, kfUse: kfUse, gains: gains, warpGrids: warpGrids,
+                                  blendAll: blendAll, blendRaw: blendRaw,
                                   framesDir: framesDir, atlasSize: atlasSize) else { return failG }
 
         do {
@@ -1381,13 +1426,16 @@ enum MeshBakeV2 {
         var img: SIMD4<Float> // w, h, 0, 0
         var wb: SIMD4<Float>  // lineær gain-utjevning per kanal, w ubrukt
         var ofs: SIMD4<Float> // additiv søm-nivellering per region (lineært rom)
+        var camPos: SIMD4<Float> = .zero // verdensrom kamera-posisjon (blend=all vinkelvekting), w ubrukt
     }
 
     private static func rasterize(
         uv: ARMeshGlbExporter.UVUnwrapResult, winner: [Int32], region: [Int32], regionFrame: [Int32],
-        regionOfs: [SIMD3<Float>], cornerOfs: [SIMD3<Float>], topF: [Int32], topK: Int,
+        regionOfs: [SIMD3<Float>], cornerOfs: [SIMD3<Float>], topF: [Int32], topFavg: [Int32], topK: Int,
+        seamBand: [Bool],
         kfUse: [MeshScanPresenter.Keyframe],
-        gains: [SIMD3<Float>], framesDir: URL, atlasSize: Int
+        gains: [SIMD3<Float>], warpGrids: [[SIMD2<Float>]], blendAll: Bool, blendRaw: Bool,
+        framesDir: URL, atlasSize: Int
     ) -> Data? {
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue(),
@@ -1477,14 +1525,153 @@ enum MeshBakeV2 {
               let tmpA = device.makeTexture(descriptor: lowDesc),
               let tmpB = device.makeTexture(descriptor: lowDesc) else { return nil }
 
-        // Snitt-passets indekser: alle topp-K-flater per frame
+        // ── Warp-snitt-pipeline (deles av hybridens lavfrekvens-pass og raw-grenen): additivt
+        // vektet snitt (farge·vekt + vekt i alfa) som sampler gjennom warp-rutenettet.
+        let gW = MeshPoseRefineV2.warpGridW, gH = MeshPoseRefineV2.warpGridH
+        var gdim = SIMD2<Int32>(Int32(gW), Int32(gH))
+        let zeroGrid = [SIMD2<Float>](repeating: .zero, count: gW * gH)
+        var waPipeOpt: MTLRenderPipelineState? = nil
+        if blendAll, let wafn = lib.makeFunction(name: "bakev2_avg_warp_fragment") {
+            let wadesc = MTLRenderPipelineDescriptor()
+            wadesc.vertexFunction = vfn
+            wadesc.fragmentFunction = wafn
+            wadesc.colorAttachments[0].pixelFormat = .rgba16Float
+            wadesc.colorAttachments[0].isBlendingEnabled = true
+            wadesc.colorAttachments[0].rgbBlendOperation = .add
+            wadesc.colorAttachments[0].alphaBlendOperation = .add
+            wadesc.colorAttachments[0].sourceRGBBlendFactor = .one
+            wadesc.colorAttachments[0].destinationRGBBlendFactor = .one
+            wadesc.colorAttachments[0].sourceAlphaBlendFactor = .one
+            wadesc.colorAttachments[0].destinationAlphaBlendFactor = .one
+            waPipeOpt = try? device.makeRenderPipelineState(descriptor: wadesc)
+        }
+
+        // ── blend=raw (A/B-arm): hele teksturen = fullfrekvens-SNITT av topp-K per flate,
+        // warp-justert. Ingen vinner per flate → ingen sømmer, men tonelapper der topp-K-
+        // settet skifter (device 2026-08-26). Selvstendig gren som returnerer FØR vinnerløkka.
+        if blendRaw {
+            let fullDesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float,
+                                                                    width: atlasSize, height: atlasSize, mipmapped: false)
+            fullDesc.usage = [.renderTarget, .shaderRead, .shaderWrite]
+            fullDesc.storageMode = .private
+            guard let waPipe = waPipeOpt,
+                  let avgFull = device.makeTexture(descriptor: fullDesc) else { return nil }
+
+            // Per flate: INDRE av en låst vegg bruker den plan-lås-trunkerte topF (ETT foto →
+            // skarpt, bordskjøtene synes). SKJØT-BÅNDET bruker den EKTE topp-K (topFavg) → snittes
+            // over begge veggfotoene, så tonesteget mellom bitene blir en myk overgang i stedet
+            // for grå linje. Møbler (ikke-låst) har uansett full topp-K i topF. Slik beholdes
+            // skarpheten overalt UNNTATT en smal stripe der linja lå (device 2026-08-25).
+            let hasAvg = topFavg.count == triCount * topK
+            let hasBand = seamBand.count == triCount
+            var byFrame = [Int32: [UInt32]]()
+            for t in 0..<triCount {
+                let useAvg = hasAvg && hasBand && seamBand[t]
+                for j in 0..<topK {
+                    let f = (useAvg ? topFavg : topF)[t * topK + j]
+                    guard f >= 0 else { continue }
+                    byFrame[f, default: []].append(contentsOf: [UInt32(t * 3), UInt32(t * 3 + 1), UInt32(t * 3 + 2)])
+                }
+            }
+            var idxAll = [UInt32](); var frRange = [(frame: Int, offset: Int, count: Int)]()
+            for (f, idxs) in byFrame.sorted(by: { $0.key < $1.key }) {
+                frRange.append((Int(f), idxAll.count, idxs.count)); idxAll.append(contentsOf: idxs)
+            }
+            guard !idxAll.isEmpty, let ibufA = device.makeBuffer(bytes: idxAll, length: idxAll.count * 4) else { return nil }
+
+            var firstA = true
+            for (bi, fr) in frRange.enumerated() {
+                let k = kfUse[fr.frame]
+                guard let cg = MeshImageIO.loadCGImage(framesDir, k.file), let rgba = MeshImageIO.rgbaBytes(cg) else { continue }
+                let fdesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm_srgb,
+                                                                     width: cg.width, height: cg.height, mipmapped: false)
+                fdesc.usage = .shaderRead
+                guard let ftex = device.makeTexture(descriptor: fdesc) else { continue }
+                rgba.withUnsafeBytes { raw in
+                    ftex.replace(region: MTLRegionMake2D(0, 0, cg.width, cg.height), mipmapLevel: 0,
+                                 withBytes: raw.baseAddress!, bytesPerRow: cg.width * 4)
+                }
+                var cam = CamV2(w2c: simd_inverse(simd_float4x4(columns: (
+                    SIMD4(k.transform[0], k.transform[1], k.transform[2], k.transform[3]),
+                    SIMD4(k.transform[4], k.transform[5], k.transform[6], k.transform[7]),
+                    SIMD4(k.transform[8], k.transform[9], k.transform[10], k.transform[11]),
+                    SIMD4(k.transform[12], k.transform[13], k.transform[14], k.transform[15])))),
+                    intr: SIMD4(k.intrinsics[0], k.intrinsics[1], k.intrinsics[2], k.intrinsics[3]),
+                    img: SIMD4(Float(k.width), Float(k.height), 0, 0),
+                    wb: SIMD4(gains[fr.frame], 0), ofs: SIMD4(0, 0, 0, 0),
+                    camPos: SIMD4(k.transform[12], k.transform[13], k.transform[14], 1))
+                var grid = (fr.frame < warpGrids.count && warpGrids[fr.frame].count == gW * gH) ? warpGrids[fr.frame] : zeroGrid
+                guard let cb = queue.makeCommandBuffer() else { continue }
+                let rp = MTLRenderPassDescriptor()
+                rp.colorAttachments[0].texture = avgFull
+                rp.colorAttachments[0].loadAction = firstA ? .clear : .load
+                rp.colorAttachments[0].storeAction = .store
+                rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+                guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { continue }
+                enc.setRenderPipelineState(waPipe)
+                enc.setVertexBuffer(vbuf, offset: 0, index: 0)
+                enc.setFragmentBytes(&cam, length: MemoryLayout<CamV2>.stride, index: 0)
+                enc.setFragmentBytes(&grid, length: MemoryLayout<SIMD2<Float>>.stride * gW * gH, index: 1)
+                enc.setFragmentBytes(&gdim, length: MemoryLayout<SIMD2<Int32>>.stride, index: 2)
+                enc.setFragmentTexture(ftex, index: 0)
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: fr.count, indexType: .uint32,
+                                          indexBuffer: ibufA, indexBufferOffset: fr.offset * 4)
+                enc.endEncoding()
+                cb.commit(); cb.waitUntilCompleted()
+                firstA = false
+                if bi % 16 == 0 { ARMeshGlbExporter.progress?("Snitter alle syn… \(bi * 100 / max(frRange.count, 1)) %") }
+            }
+            // Normaliser (÷ dekning) → atlasB (srgb), så dilate atlasB→atlasA og les tilbake.
+            if let cb = queue.makeCommandBuffer(), let enc = cb.makeComputeCommandEncoder() {
+                enc.setComputePipelineState(normPipe)
+                enc.setTexture(avgFull, index: 0); enc.setTexture(atlasB, index: 1)
+                let tg = MTLSize(width: 16, height: 16, depth: 1)
+                enc.dispatchThreadgroups(MTLSize(width: (atlasSize + 15) / 16, height: (atlasSize + 15) / 16, depth: 1),
+                                         threadsPerThreadgroup: tg)
+                enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+            }
+            var bsrc = atlasB, bdst = atlasA
+            for _ in 0..<16 {
+                guard let cb = queue.makeCommandBuffer(), let enc = cb.makeComputeCommandEncoder() else { break }
+                enc.setComputePipelineState(dilatePipe)
+                enc.setTexture(bsrc, index: 0); enc.setTexture(bdst, index: 1)
+                let tg = MTLSize(width: 16, height: 16, depth: 1)
+                enc.dispatchThreadgroups(MTLSize(width: (atlasSize + 15) / 16, height: (atlasSize + 15) / 16, depth: 1),
+                                         threadsPerThreadgroup: tg)
+                enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+                swap(&bsrc, &bdst)
+            }
+            let bpr = atlasSize * 4
+            guard let readBuf = device.makeBuffer(length: bpr * atlasSize, options: .storageModeShared),
+                  let cb = queue.makeCommandBuffer(), let blit = cb.makeBlitCommandEncoder() else { return nil }
+            blit.copy(from: bsrc, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                      sourceSize: MTLSize(width: atlasSize, height: atlasSize, depth: 1),
+                      to: readBuf, destinationOffset: 0, destinationBytesPerRow: bpr, destinationBytesPerImage: bpr * atlasSize)
+            blit.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+            let pixels = [UInt8](UnsafeBufferPointer(start: readBuf.contents().assumingMemoryBound(to: UInt8.self),
+                                                     count: bpr * atlasSize))
+            MeshLog.log("V2 blend=raw — fullfrekvens-snitt av topp-\(topK) syn per flate, \(frRange.count) frames, warp-justert")
+            return MeshImageIO.jpegData(pixels, atlasSize)
+        }
+
+        // Snitt-passets indekser: alle topp-K-flater per frame. I hybriden (blendAll) brukes
+        // den EKTE topp-K (topFavg, snapshottet FØR plan-lås/ståsted trunkerte til ett foto) —
+        // lavfrekvensen SKAL krysse plan-grensene; det er den som visker ut tonesteget mellom
+        // to låste veggbiter (grålinja) og tonelappene i taket.
+        let avgTopF = (blendAll && topFavg.count == triCount * topK) ? topFavg : topF
+        // Topp-3, ikke topp-K(6): objekter som stikker ut fra en plan-snappet vegg (støvsuger-
+        // uttak ~2–3cm) har EKTE parallakse mellom syn — warpen retter planet, ikke det som
+        // står av planet. Med 6 syn ble uttaket dobbelt-eksponert i lavfrekvensen (device
+        // 2026-08-26); de 3 best skårede synene er vinkelmessig nærmest → forskyvningen
+        // krymper, og 3 syn er nok til å snitte bort eksponerings-lappeteppet.
+        let avgK = min(topK, 3)
         var avgIdx = [UInt32]()
         var avgRanges = [Int: (offset: Int, count: Int)]()
         do {
             var byFrame = [Int32: [UInt32]]()
             for t in 0..<triCount {
-                for j in 0..<topK {
-                    let f = topF[t * topK + j]
+                for j in 0..<avgK {
+                    let f = avgTopF[t * topK + j]
                     guard f >= 0 else { continue }
                     byFrame[f, default: []].append(contentsOf: [UInt32(t * 3), UInt32(t * 3 + 1), UInt32(t * 3 + 2)])
                 }
@@ -1532,7 +1719,8 @@ enum MeshBakeV2 {
                 intr: SIMD4(k.intrinsics[0], k.intrinsics[1], k.intrinsics[2], k.intrinsics[3]),
                 img: SIMD4(Float(k.width), Float(k.height), 0, 0),
                 wb: SIMD4(gains[r.frame], 0),
-                ofs: SIMD4(regionOfs.indices.contains(r.region) ? regionOfs[r.region] : .zero, 0))
+                ofs: SIMD4(regionOfs.indices.contains(r.region) ? regionOfs[r.region] : .zero, 0),
+                camPos: SIMD4(k.transform[12], k.transform[13], k.transform[14], 1))
 
             guard let cb = queue.makeCommandBuffer() else { continue }
             let rp = MTLRenderPassDescriptor()
@@ -1557,9 +1745,22 @@ enum MeshBakeV2 {
                 rp2.colorAttachments[0].storeAction = .store
                 rp2.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
                 if let enc2 = cb.makeRenderCommandEncoder(descriptor: rp2) {
-                    enc2.setRenderPipelineState(avgPipeline)
-                    enc2.setVertexBuffer(vbuf, offset: 0, index: 0)
-                    enc2.setFragmentBytes(&cam, length: MemoryLayout<CamV2>.stride, index: 0)
+                    // Hybrid: snittet sampler gjennom warp-rutenettet og vektes med facing⁴ —
+                    // det er justeringen som gjør at lavfrekvensen ikke smører kanter på tvers
+                    // av syn. Uten warp-pipeline (blend=winner): gammelt uvektet snitt.
+                    if let waPipe = waPipeOpt {
+                        enc2.setRenderPipelineState(waPipe)
+                        enc2.setVertexBuffer(vbuf, offset: 0, index: 0)
+                        enc2.setFragmentBytes(&cam, length: MemoryLayout<CamV2>.stride, index: 0)
+                        var grid = (r.frame < warpGrids.count && warpGrids[r.frame].count == gW * gH)
+                            ? warpGrids[r.frame] : zeroGrid
+                        enc2.setFragmentBytes(&grid, length: MemoryLayout<SIMD2<Float>>.stride * gW * gH, index: 1)
+                        enc2.setFragmentBytes(&gdim, length: MemoryLayout<SIMD2<Int32>>.stride, index: 2)
+                    } else {
+                        enc2.setRenderPipelineState(avgPipeline)
+                        enc2.setVertexBuffer(vbuf, offset: 0, index: 0)
+                        enc2.setFragmentBytes(&cam, length: MemoryLayout<CamV2>.stride, index: 0)
+                    }
                     enc2.setFragmentTexture(ftex, index: 0)
                     enc2.drawIndexedPrimitives(type: .triangle, indexCount: ar.count, indexType: .uint32,
                                                indexBuffer: avgIbuf, indexBufferOffset: ar.offset * 4)
@@ -1615,6 +1816,9 @@ enum MeshBakeV2 {
             cb.commit()
             cb.waitUntilCompleted()
         }
+        if blendAll {
+            MeshLog.log("V2 hybrid multiband — vinner-detalj + warp-justert lavfrekvens fra ekte topp-\(avgK)")
+        }
 
         // Dilation (fyller chart-gutters så mipmapping/bilineær ikke drar inn svart) —
         // starter fra multiband-komposittet i atlasB
@@ -1654,7 +1858,7 @@ enum MeshBakeV2 {
     #include <metal_stdlib>
     using namespace metal;
 
-    struct CamV2 { float4x4 w2c; float4 intr; float4 img; float4 wb; float4 ofs; };
+    struct CamV2 { float4x4 w2c; float4 intr; float4 img; float4 wb; float4 ofs; float4 camPos; };
     struct VOutV2 { float4 position [[position]]; float3 wp; float3 ofs; };
 
     // 8 floats per HJØRNE: [x,y,z,u,v,ox,oy,oz]. ofs er per-hjørne søm-forfining og
@@ -1703,6 +1907,47 @@ enum MeshBakeV2 {
         float2 q = uvN - 0.5;
         float devig = 1.0 + 0.15 * dot(q, q) * 4.0;
         return float4(frame.sample(s, uvN).rgb * devig * c.wb.rgb, 1.0);
+    }
+
+    // Warp-justert snitt-pass (blend=all): som over, men bøyer uvN med det NORMALISERTE
+    // warp-rutenettet (offset i [0,1]-bilderom, bilineær mellom kontrollpunktene) FØR
+    // samplingen. Rutenettet indekseres av den projiserte uvN — samme som i refinen. Det er
+    // dette som gjør snittet skarpt i stedet for smurt: alle syn peker på samme punkt.
+    fragment float4 bakev2_avg_warp_fragment(VOutV2 in [[stage_in]],
+                                             constant CamV2& c [[buffer(0)]],
+                                             constant float2* grid [[buffer(1)]],
+                                             constant int2& gdim [[buffer(2)]],
+                                             texture2d<float, access::sample> frame [[texture(0)]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        float3 pc = (c.w2c * float4(in.wp, 1.0)).xyz;
+        float z = max(-pc.z, 1e-4);
+        float u = c.intr.x * (pc.x / z) + c.intr.z;
+        float vv = c.intr.y * (-pc.y / z) + c.intr.w;
+        float2 uvN = clamp(float2(u / c.img.x, vv / c.img.y), 0.0, 1.0);
+        // Bilineær warp-offset fra rutenettet (indeksert av uvN).
+        float gx = uvN.x * float(gdim.x - 1);
+        float gy = uvN.y * float(gdim.y - 1);
+        int cx = clamp(int(gx), 0, gdim.x - 2);
+        int cy = clamp(int(gy), 0, gdim.y - 2);
+        float tx = clamp(gx - float(cx), 0.0, 1.0);
+        float ty = clamp(gy - float(cy), 0.0, 1.0);
+        float2 o00 = grid[cy * gdim.x + cx];
+        float2 o10 = grid[cy * gdim.x + cx + 1];
+        float2 o01 = grid[(cy + 1) * gdim.x + cx];
+        float2 o11 = grid[(cy + 1) * gdim.x + cx + 1];
+        float2 off = o00 * (1 - tx) * (1 - ty) + o10 * tx * (1 - ty) + o01 * (1 - tx) * ty + o11 * tx * ty;
+        uvN = clamp(uvN + off, 0.0, 1.0);
+        float2 q = uvN - 0.5;
+        float devig = 1.0 + 0.15 * dot(q, q) * 4.0;
+        // Vinkelvekting: flaten som dette synet ser mest HEAD-ON (ortogonalt) skal dominere
+        // snittet — grazing-syn bærer parallakse og gir spøkelser (LED-lenke to steder).
+        // Normalen hentes fra skjermrom-deriverte av verdensposisjonen (ingen verteks-normal
+        // trengs). pow(·,4) gjør vektingen aggressiv nok til å undertrykke spøkelset.
+        float3 n = normalize(cross(dfdx(in.wp), dfdy(in.wp)));
+        float3 viewDir = normalize(c.camPos.xyz - in.wp);
+        float facing = clamp(abs(dot(n, viewDir)), 0.0, 1.0); // abs: normal-orientering er vilkårlig
+        float w = pow(facing, 4.0) + 1e-3;                    // liten sokkel så ingen flate blir helt svart
+        return float4(frame.sample(s, uvN).rgb * devig * c.wb.rgb * w, w);
     }
 
     kernel void bakev2_norm(texture2d<float, access::read> acc [[texture(0)]],

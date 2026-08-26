@@ -12,6 +12,12 @@ import simd
 @available(iOS 14.0, *)
 enum MeshPoseRefineV2 {
 
+    // Warp-rutenettets dimensjoner — delt med baken (blend=all sampler gjennom samme rutenett).
+    // 8×5: aggressivt finere (12×8, løsere λ) SENKET residualen men REV opp blanke vegger —
+    // teksturløse flater har ikke gradient å justere mot, så løsere regularisering lot punktene
+    // drive og rive. Residual er IKKE en trygg proxy for utseende (device 2026-08-25).
+    static let warpGridW = 8, warpGridH = 5
+
     private struct Frame {
         var w2c: simd_float4x4
         var camPos: SIMD3<Float>
@@ -29,8 +35,13 @@ enum MeshPoseRefineV2 {
         positions: [Float], normals: [Float],
         framesDir: URL,
         iterations: Int = 8,
-        maxVertices: Int = 50_000
+        maxVertices: Int = 50_000,
+        forceWarp: Bool = false,
+        // Ut: normaliserte warp-rutenett per keyframe (warpGridW*warpGridH SIMD2, offset i
+        // [0,1]-bilderom). Tom for keyframes uten warp. Baken (blend=all) sampler gjennom dem.
+        warpGridsByKF: inout [[SIMD2<Float>]]
     ) -> (before: Float, after: Float) {
+        warpGridsByKF = [[SIMD2<Float>]](repeating: [], count: keyframes.count)
         let vCountAll = positions.count / 3
         guard vCountAll > 100, !keyframes.isEmpty else { return (0, 0) }
         let t0 = CFAbsoluteTimeGetCurrent()
@@ -148,7 +159,7 @@ enum MeshPoseRefineV2 {
         // ── Ikke-rigid warp (Zhou-Koltun andre halvdel): grovt kontrollrutenett i bilderom
         // per frame, 2D-forskyvning per punkt. Jacobi er ENKLERE enn den rigide (∇I·bilineær-
         // vekt, ingen rotasjon). Se docs/SUBPIXEL_ALIGN_PLAN.md. warpGW×warpGH — start grovt.
-        let warpGW = 8, warpGH = 5
+        let warpGW = warpGridW, warpGH = warpGridH
         let warpN = 2 * warpGW * warpGH
         // De 4 omkringliggende kontrollpunktene + bilineære vekter for en piksel (u,v).
         func warpCell(_ lw: Int, _ lh: Int, _ u: Float, _ v: Float)
@@ -324,16 +335,17 @@ enum MeshPoseRefineV2 {
         // OPT-IN: meshscan.warp = "on" (koster 6 ekstra iterasjoner per bake — regel 10, så
         // ikke på som standard). Validert på device 2026-08-25: residualen synker MONOTONT
         // under det rigide gulvet (0,0417→0,0399 og 0,0356→0,0341), altså rett Jacobi-fortegn.
-        if UserDefaults.standard.string(forKey: "meshscan.warp") == "on" && frames.count >= 3 {
+        if (forceWarp || UserDefaults.standard.string(forKey: "meshscan.warp") == "on") && frames.count >= 3 {
             let zeroGrid = [SIMD2<Float>](repeating: .zero, count: warpGW * warpGH)
             var warps = [[SIMD2<Float>]](repeating: zeroGrid, count: frames.count)
             // Regularisering holder kontrollpunkter i tekstur-fattige felt (blank vegg) fra å
             // drive fritt og rive warpen. For lav = wobble/riving; for høy = kollapser til
             // rigid. Startverdi — TUNE på fixture (docs, felle #3).
-            let warpLambda: Float = 0.02
-            let warpStepClamp: Float = 2.0 // piksler per steg — drift er sub-piksel, store hopp er outliers
+            let warpLambda: Float = 0.02  // fast nok til at blanke vegger ikke rives (0.008 rev)
+            let warpStepClamp: Float = 2.0 // piksler per steg — større (4.0) rev blanke vegger
             var warpResBefore: Float = -1, warpResAfter: Float = 0
-            for witer in 0..<6 {
+            let warpIters = 8
+            for witer in 0..<warpIters {
                 // Pass A: proxy fra WARPEDE samples (facing-vektet snitt) — ellers måles warpen
                 // mot en proxy den selv ikke har vært med å forme.
                 var sum = [Float](repeating: 0, count: nV)
@@ -432,9 +444,19 @@ enum MeshPoseRefineV2 {
                 let mr = rn > 0 ? rs / Float(rn) : 0
                 if witer == 0 { warpResBefore = mr }
                 warpResAfter = mr
-                MeshLog.log("poseRefine warp iter \(witer + 1)/6 — snittresidual \(String(format: "%.4f", mr)) (\(rn) samples)")
+                MeshLog.log("poseRefine warp iter \(witer + 1)/\(warpIters) — snittresidual \(String(format: "%.4f", mr)) (\(rn) samples)")
             }
-            MeshLog.log("poseRefine warp — residual \(String(format: "%.4f", warpResBefore)) → \(String(format: "%.4f", warpResAfter)), \(warpGW)×\(warpGH)-rutenett, \(frames.count) frames. MERK: kun målt, ikke persistert (del 2, docs/SUBPIXEL_ALIGN_PLAN.md)")
+            // Eksporter NORMALISERTE rutenett (offset delt på thumb-størrelse → oppløsnings-
+            // uavhengig, så baken kan bruke samme rutenett på fulloppløste frames). Indeksert
+            // per keyframe via frameKF; frames uten thumb får tomt (baken tolker som identitet).
+            for fi in 0..<frames.count {
+                let f = frames[fi]
+                let g = warps[fi]
+                var norm = [SIMD2<Float>](repeating: .zero, count: g.count)
+                for k in 0..<g.count { norm[k] = SIMD2(g[k].x / Float(max(f.lw, 1)), g[k].y / Float(max(f.lh, 1))) }
+                warpGridsByKF[frameKF[fi]] = norm
+            }
+            MeshLog.log("poseRefine warp — residual \(String(format: "%.4f", warpResBefore)) → \(String(format: "%.4f", warpResAfter)), \(warpGW)×\(warpGH)-rutenett, \(frames.count) frames (eksportert til baken)")
         }
 
         // ── Skriv raffinerte c2w-poser tilbake i keyframes

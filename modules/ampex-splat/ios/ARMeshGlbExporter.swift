@@ -284,6 +284,35 @@ enum ARMeshGlbExporter {
                 }
                 if interiorForeign { drop[t] = true; removed += 1 }
             }
+            // Sult-vakt: ved anchor-GRENSER (ikke ekte lag) eier cellene hverandres naboer i
+            // sjakkmønster, og uten vakt felles BEGGE sider → grå kors-hull langs anchor-
+            // rutenettet («crosses of grey», device 2026-08-26). Hull-fyllet redder dem ikke
+            // (slisser > 1,5m-taket). Angre droppet der en celle mister >80 % av flaten sin —
+            // ekte lag beholder vinnerens ≥~50 % og felles fortsatt.
+            func triArea2(_ t: Int) -> Float {
+                let a = pt(indices[t * 3]), b = pt(indices[t * 3 + 1]), c = pt(indices[t * 3 + 2])
+                return simd_length(simd_cross(b - a, c - a)) * 0.5
+            }
+            var totalArea = [Int64: Float](minimumCapacity: counts.count)
+            for (cell, byAnchor) in counts { totalArea[cell] = byAnchor.values.reduce(0, +) }
+            var droppedArea = [Int64: Float]()
+            for t in near where drop[t] {
+                let a = pt(indices[t * 3]), b = pt(indices[t * 3 + 1]), c = pt(indices[t * 3 + 2])
+                droppedArea[cell2D((a + b + c) / 3), default: 0] += triArea2(t)
+            }
+            for t in near where drop[t] {
+                var starves = false
+                for k in 0..<3 {
+                    let cell = cell2D(pt(indices[t * 3 + k]))
+                    guard let tot = totalArea[cell], tot > 0 else { continue }
+                    if tot - (droppedArea[cell] ?? 0) < 0.2 * tot { starves = true; break }
+                }
+                if starves {
+                    drop[t] = false; removed -= 1
+                    let a = pt(indices[t * 3]), b = pt(indices[t * 3 + 1]), c = pt(indices[t * 3 + 2])
+                    droppedArea[cell2D((a + b + c) / 3), default: 0] -= triArea2(t)
+                }
+            }
         }
         guard removed > 0 else { return }
         var outIdx = [UInt32](); outIdx.reserveCapacity(indices.count)
@@ -581,8 +610,7 @@ enum ARMeshGlbExporter {
         var owner = [Int64: UInt32](minimumCapacity: counts.count)
         for (cell, byAnchor) in counts { owner[cell] = byAnchor.max { $0.value < $1.value }!.key }
         // Pass 2: dropp kun triangler der ALLE tre vertekscellene har fremmed eier
-        var outIdx = [UInt32](); outIdx.reserveCapacity(indices.count)
-        var outAnchor = [UInt32](); outAnchor.reserveCapacity(triCount)
+        var drop = [Bool](repeating: false, count: triCount)
         for t in 0..<triCount {
             let mine = triAnchor[t]
             let b = bucket(t)
@@ -592,7 +620,34 @@ enum ARMeshGlbExporter {
                 let o = owner[cellKey(positions[vi], positions[vi + 1], positions[vi + 2], b)]
                 if o == nil || o == mine { interiorForeign = false; break }
             }
-            if interiorForeign { continue }
+            // interiorForeign = alle tre hjørner i fremmed-eide celler → DETTE er laget som felles
+            if interiorForeign { drop[t] = true }
+        }
+        // Sult-vakt (samme felle som i dropCoplanarLayers): ved anchor-grenser kan sjakkmønstret
+        // eierskap felle BEGGE sider av grensen → hull. Angre droppet der en celle mister alle
+        // sine triangler så minst ~20 % overlever.
+        var totalCnt = [Int64: Int32](minimumCapacity: counts.count)
+        for (cell, byAnchor) in counts { totalCnt[cell] = byAnchor.values.reduce(0, +) }
+        var droppedCnt = [Int64: Int32]()
+        for t in 0..<triCount where drop[t] { droppedCnt[centroidKey(t, bucket(t)), default: 0] += 1 }
+        for t in 0..<triCount where drop[t] {
+            let b = bucket(t)
+            var starves = false
+            for k in 0..<3 {
+                let vi = Int(indices[t * 3 + k]) * 3
+                let cell = cellKey(positions[vi], positions[vi + 1], positions[vi + 2], b)
+                guard let tot = totalCnt[cell], tot > 0 else { continue }
+                let survive = tot - (droppedCnt[cell] ?? 0)
+                if survive * 5 < tot { starves = true; break }
+            }
+            if starves {
+                drop[t] = false
+                droppedCnt[centroidKey(t, b), default: 0] -= 1
+            }
+        }
+        var outIdx = [UInt32](); outIdx.reserveCapacity(indices.count)
+        var outAnchor = [UInt32](); outAnchor.reserveCapacity(triCount)
+        for t in 0..<triCount where !drop[t] {
             outIdx.append(indices[t * 3]); outIdx.append(indices[t * 3 + 1]); outIdx.append(indices[t * 3 + 2])
             outAnchor.append(triAnchor[t])
         }
@@ -693,7 +748,11 @@ enum ARMeshGlbExporter {
                 n += SIMD3((p.y - q.y) * (p.z + q.z), (p.z - q.z) * (p.x + q.x), (p.x - q.x) * (p.y + q.y))
             }
             let nLen = simd_length(n)
-            guard maxR <= 1.5, nLen > 1e-6 else { continue }
+            // 2.2m (var 1.5): kors-formede dedup-hull på vegg (vertikal+horisontal slisse som
+            // henger sammen) har maxR ~1.5–1.6m fra sentroiden og gled akkurat under gamle
+            // taket (device 2026-08-26). Planaritets-vakten (RMS 3cm) bærer fortsatt sikkerheten
+            // mot å fylle den ytre skanngrensen.
+            guard maxR <= 2.2, nLen > 1e-6 else { continue }
             n /= nLen
             var sq: Float = 0
             for e in loop { let d = simd_dot(pos(e.fromV) - c, n); sq += d * d }
