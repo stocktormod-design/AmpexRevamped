@@ -18,6 +18,7 @@ import { SYMBOLS, getSymbol, symbolSvg } from '../../lib/symbols'
 import { useUserId } from '../../lib/auth-user'
 import * as FileSystem from 'expo-file-system/legacy'
 import { NativeMeshViewer, nativeSplatAvailable, presentMeshScan, rebakeMeshScan, resolveScanPath, type MeshScanResult } from '../../lib/splat'
+import { ensureScanLocal, ensureScanUploaded } from '../../lib/scan-storage'
 import { colors, spacing, radius, type as t } from '../../lib/theme'
 
 type MarkerSheetState = { mode: 'new'; point: { x: number; y: number; z: number } } | { mode: 'edit'; marker: MeshMarker } | null
@@ -60,6 +61,24 @@ export default function SkannScreen() {
       setScanPath(null)
     }
   }, [viewPath]))
+
+  // Speil GLB-en mot R2 i bakgrunnen: finnes den lokalt men ikke i skyen → last opp
+  // (f.eks. skann tatt offline); finnes den IKKE lokalt (kollegas skann, reinstallert
+  // app) → hent ned og remount vieweren (glbReload — samme sti, så prop-endring alene
+  // trigger ikke ny SceneKit-load). Stille ved feil — synk er usynlig (regel 2).
+  const [glbReload, setGlbReload] = useState(0)
+  useEffect(() => {
+    if (!viewPath) return
+    let alive = true
+    ;(async () => {
+      const abs = resolveScanPath(viewPath)
+      const info = await FileSystem.getInfoAsync('file://' + abs).catch(() => null)
+      if (info?.exists) { ensureScanUploaded(viewPath).catch(() => {}); return }
+      const got = await ensureScanLocal(viewPath)
+      if (alive && got) setGlbReload(n => n + 1)
+    })()
+    return () => { alive = false }
+  }, [viewPath])
 
   useEffect(() => {
     if (!scanPath) { setMarkers([]); return }
@@ -116,6 +135,7 @@ export default function SkannScreen() {
       const r = await presentMeshScan('ampex', scanId ?? roomId ?? 'rom')
       const path = r.relativePath || r.glbPath
       await persistPath(path)
+      ensureScanUploaded(path).catch(() => {}) // speil til R2 i bakgrunnen — stille ved offline
       setScanPath(path)
       setMesh(r)
       setStage('done')
@@ -154,6 +174,7 @@ export default function SkannScreen() {
       {/* 3D-viewer: teksturert mesh (GLB, SceneKit) — kun device/prebuild */}
       {stage === 'view' && mesh && NativeMeshViewer && (
         <NativeMeshViewer
+          key={`${mesh.glbPath}#${glbReload}`}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
           glbPath={mesh.glbPath}
           markerMode={markerMode}

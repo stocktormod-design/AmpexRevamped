@@ -137,11 +137,17 @@ gjenopprettbare kilden til hva databasen faktisk inneholder.
 
 ## Fortsatt lokalt, uten servertabell
 
-`nfc_tags`, `mesh_markers`, `reminders`, `assistant_notes`.
+`nfc_tags`, `reminders`, `assistant_notes`.
 
 `reminders` og `assistant_notes` er **bruker**skopet, ikke firmaskopet, og
 trenger en annen RLS-form enn de andre — derfor ikke tatt med her.
-`mesh_markers` hører til skann-domenet, som er WIP.
+
+`mesh_markers` fikk servertabell + sync_tables-rad 2026-08-26
+(`20260826210000_mesh_markers.sql` — anvendt på liva-DB-en OG sjekket inn, i
+motsetning til de fil-løse migrasjonene denne fila handler om). Skann-GLB-ene
+speiles samtidig til R2 under `room-scans/`-prefiks (`lib/scan-storage.ts`;
+`r2-sign` v7 godtar prefikset, kilden er nå sjekket inn under
+`supabase/functions/r2-sign/`).
 
 ## Hvorfor driften oppsto
 
