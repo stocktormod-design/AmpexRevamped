@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, View } from 'react-native'
 import { Text } from './text'
-import { Canvas, Group, Image as SkiaImage, Path, Circle, Line as SkiaLine, useImage, vec } from '@shopify/react-native-skia'
+import { Canvas, Group, Image as SkiaImage, ImageSVG, Path, Circle, Skia, useImage, vec } from '@shopify/react-native-skia'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import { runOnJS, useDerivedValue, useSharedValue, type SharedValue } from 'react-native-reanimated'
 import { Trash2 } from 'lucide-react-native'
@@ -28,6 +28,8 @@ import { syncQuietly } from '../lib/db/sync'
 import { Drawing } from '../lib/db/models/drawing'
 import { DrawingMarkup, type Stroke } from '../lib/db/models/drawing-markup'
 import { DrawingLoop, type LoopNode } from '../lib/db/models/drawing-loop'
+import { FireDevice, type FireDeviceKind } from '../lib/db/models/fire-device'
+import { symbolSvg } from '../lib/symbols'
 import { getLocalPdf } from '../lib/drawings-storage'
 import { renderPdfPage, type PdfPageRaster } from '../modules/ampex-splat'
 import { colors, radius, shadows, spacing, type as t } from '../lib/theme'
@@ -41,13 +43,24 @@ export type PaneTransform = {
 export type PaneDelta = { ds: number; dtx: number; dty: number }
 export type PanePin = { id: string; x: number; y: number }
 
-export type EditTool = 'velg' | 'penn' | 'linje' | 'sloyfe' | 'pan'
+export type EditTool = 'velg' | 'penn' | 'linje' | 'sloyfe' | 'brann' | 'pan'
 export type PaneEdit = {
   tool: EditTool
   color: string
   width: number
   draft: Stroke[]
   onDraftChange: (next: Stroke[]) => void
+  /** brann-verktøyet (stempel-modus, Fieldwire-mønsteret): tapp plasserer — forelderen
+      lager fire_devices-raden (auto-tag) og åpner device-arket */
+  onPlaceDevice?: (pt: { x: number; y: number }) => void
+  /** velg: tapp på brannkomponent → forelderen åpner device-arket */
+  onTapDevice?: (id: string) => void
+}
+
+// fire_devices.kind → symbol-id i lib/symbols.ts (tegnes som NEK-aktige glyfer)
+const KIND_SYMBOL: Record<FireDeviceKind, string> = {
+  royk: 'royk', varme: 'sensor', multi: 'royk', melder: 'melder',
+  klokke: 'klokke', sirene: 'klokke', sentral: 'fordeling', annet: 'royk',
 }
 
 type Selection =
@@ -122,6 +135,14 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, onA
     const sub = database.get<DrawingLoop>('drawing_loops')
       .query(Q.where('drawing_id', drawing.id))
       .observe().subscribe(setLoops)
+    return () => sub.unsubscribe()
+  }, [drawing.id])
+
+  const [devices, setDevices] = useState<FireDevice[]>([])
+  useEffect(() => {
+    const sub = database.get<FireDevice>('fire_devices')
+      .query(Q.where('drawing_id', drawing.id))
+      .observe().subscribe(setDevices)
     return () => sub.unsubscribe()
   }, [drawing.id])
 
@@ -237,8 +258,19 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, onA
       addLoopNode(pt.x, pt.y)
       return
     }
+    if (edit.tool === 'brann') {
+      // Stempel-modus (Fieldwire-mønsteret): hvert tapp plasserer en ny komponent.
+      edit.onPlaceDevice?.(pt)
+      return
+    }
     if (edit.tool === 'velg') {
-      // Treff i skjerm-rom: noder først (grips), så kladd-streker.
+      // Treff i skjerm-rom: brannkomponenter først, så noder (grips), så kladd-streker.
+      if (edit.onTapDevice) {
+        for (const dv of devices) {
+          const scr = toScreen(dv.x, dv.y)
+          if (Math.hypot(scr.x - sx, scr.y - sy) < 24) { edit.onTapDevice(dv.id); return }
+        }
+      }
       for (const l of loops) {
         const nodes = l.nodeList
         for (let i = 0; i < nodes.length; i++) {
@@ -354,6 +386,16 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, onA
       else runOnJS(handleViewTap)(e.x, e.y)
     })
 
+  // Brannsymboler som Skia-SVG (rød — matcher O-plan-konvensjonen); memoisert per kind.
+  const deviceSvgs = useMemo(() => {
+    const out: Partial<Record<FireDeviceKind, ReturnType<typeof Skia.SVG.MakeFromString>>> = {}
+    for (const kind of Object.keys(KIND_SYMBOL) as FireDeviceKind[]) {
+      const raw = symbolSvg(KIND_SYMBOL[kind], '#D70015').replace('<svg ', '<svg width="24" height="24" ')
+      out[kind] = Skia.SVG.MakeFromString(raw)
+    }
+    return out
+  }, [])
+
   const userTransform = useDerivedValue(() => [
     { translateX: tx.value },
     { translateY: ty.value },
@@ -423,6 +465,17 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, onA
                   style="stroke" color={s.color} strokeWidth={s.width}
                   strokeCap="round" strokeJoin="round" />
               ))}
+              {/* Brannkomponenter — røde symboler (O-plan-konvensjonen), skalerer med tegningen */}
+              {devices.map(dv => {
+                const svg = deviceSvgs[dv.kind] ?? deviceSvgs.royk
+                const S = 22
+                return (
+                  <Group key={dv.id}>
+                    <Circle cx={dv.x * W} cy={dv.y * H} r={S * 0.7} color="rgba(255,255,255,0.88)" />
+                    {svg && <ImageSVG svg={svg} x={dv.x * W - S / 2} y={dv.y * H - S / 2} width={S} height={S} />}
+                  </Group>
+                )
+              })}
               {/* Kladd (edit) — uendret utseende til publisering */}
               {edit?.draft.map((s, i) => (
                 <Path key={`d${i}`}
