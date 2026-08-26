@@ -4,7 +4,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 31,
+  version: 32,
   tables: [
     tableSchema({
       name: 'product_prices',
@@ -299,6 +299,14 @@ export const schema = appSchema({
         { name: 'assigned_to', type: 'string', isOptional: true, isIndexed: true },
         { name: 'created_by', type: 'string', isOptional: true },
         { name: 'done_at', type: 'number', isOptional: true },
+        // Serverkolonnene under fantes ALLEREDE i liva-DB-en (fil-løs migrasjon) —
+        // klienten speiler dem først fra v32. Norske navn er serverens.
+        { name: 'beskrivelse', type: 'string', isOptional: true },
+        { name: 'frist_at', type: 'number', isOptional: true },
+        { name: 'drawing_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'pin_x', type: 'number', isOptional: true }, // normalisert 0..1 på tegningen
+        { name: 'pin_y', type: 'number', isOptional: true },
+        { name: 'synlighet', type: 'string', isOptional: true }, // null/'tildelt' = kun tildelt bruker ser pinnen
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
@@ -308,6 +316,31 @@ export const schema = appSchema({
       columns: [
         { name: 'drawing_id', type: 'string', isIndexed: true },
         { name: 'data', type: 'string', isOptional: true }, // JSON: streker i normaliserte side-koordinater
+        { name: 'kind', type: 'string', isOptional: true }, // null/'stroke' — rad-formen fra v32 (én rad per publisering)
+        { name: 'created_by', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      // KUN brannkomponenter bærer registerdata (tag `sløyfe.adresse`, serienr,
+      // modell) — andre symboler er rene tegneelementer i drawing_loops.
+      // Detektorlista per prosjekt genereres herfra.
+      name: 'fire_devices',
+      columns: [
+        { name: 'project_id', type: 'string', isIndexed: true },
+        { name: 'drawing_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'room_id', type: 'string', isOptional: true },
+        { name: 'loop_id', type: 'string', isOptional: true },
+        { name: 'x', type: 'number' }, // normalisert 0..1 på tegningen
+        { name: 'y', type: 'number' },
+        { name: 'kind', type: 'string' }, // royk|varme|multi|melder|klokke|sirene|sentral|annet
+        { name: 'tag', type: 'string' }, // sløyfe.adresse, f.eks. 01.023
+        { name: 'serial', type: 'string', isOptional: true },
+        { name: 'model', type: 'string', isOptional: true },
+        { name: 'placed_at', type: 'number', isOptional: true },
+        { name: 'note', type: 'string', isOptional: true },
+        { name: 'created_by', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
@@ -407,6 +440,7 @@ export const schema = appSchema({
         { name: 'name', type: 'string' },
         { name: 'file_path', type: 'string', isOptional: true }, // R2-nøkkel til PDF
         { name: 'page_count', type: 'number', isOptional: true },
+        { name: 'source', type: 'string', isOptional: true }, // null/'lokal' | 'ekstern' (skrivebeskyttet grunnlag)
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
