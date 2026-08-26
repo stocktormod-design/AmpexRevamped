@@ -337,6 +337,9 @@ function RebakeAB({ onResult }: { onResult: (glbPath: string) => void }) {
   const [note, setNote] = useState<string | null>(null)
   const [icmColor, setIcmColor] = useState(true)
   const [warp, setWarp] = useState(false)
+  // Speiler bake-defaulten (blend=all er PÅ i målebygget) så panelet viser det et vanlig
+  // skann faktisk gjør; «vinner» er fallback-armen i A/B-matrisen (warp av/på × vinner/snitt).
+  const [blendAll, setBlendAll] = useState(true)
 
   useEffect(() => {
     const dir = (FileSystem.documentDirectory ?? '') + 'scan-frames'
@@ -363,8 +366,9 @@ function RebakeAB({ onResult }: { onResult: (glbPath: string) => void }) {
         'meshscan.stasted': mode,
         'meshscan.icmcolor': icmColor ? 'on' : 'off',
         'meshscan.warp': warp ? 'on' : 'off',
+        'meshscan.blend': blendAll ? 'all' : 'winner',
       })
-      setNote(`${mode} · farge ${icmColor ? 'på' : 'av'} · warp ${warp ? 'på' : 'av'} · ${(r.ms / 1000).toFixed(1)}s · fylt ${r.filledFraction === null ? '–' : Math.round(r.filledFraction * 100) + '%'}`)
+      setNote(`${mode} · farge ${icmColor ? 'på' : 'av'} · warp ${warp ? 'på' : 'av'} · ${blendAll ? 'snitt' : 'vinner'} · ${(r.ms / 1000).toFixed(1)}s · fylt ${r.filledFraction === null ? '–' : Math.round(r.filledFraction * 100) + '%'}`)
       onResult(r.glbPath)
     } catch (e: any) {
       setNote(`feilet: ${e?.message ?? e}`)
@@ -399,6 +403,18 @@ function RebakeAB({ onResult }: { onResult: (glbPath: string) => void }) {
           }}>
           <Text style={[t.caption, { color: '#fff', fontWeight: '600' }]}>
             {warp ? 'warp på' : 'warp av'}
+          </Text>
+        </Pressable>
+        <Pressable haptic="light" pressScale={0.96} disabled={busy !== null}
+          onPress={() => setBlendAll(v => !v)}
+          style={{
+            paddingHorizontal: spacing.sm, height: 26, borderRadius: radius.md,
+            alignItems: 'center', justifyContent: 'center',
+            backgroundColor: blendAll ? colors.brand : 'rgba(255,255,255,0.1)',
+            opacity: busy !== null ? 0.4 : 1,
+          }}>
+          <Text style={[t.caption, { color: '#fff', fontWeight: '600' }]}>
+            {blendAll ? 'snitt' : 'vinner'}
           </Text>
         </Pressable>
       </View>
