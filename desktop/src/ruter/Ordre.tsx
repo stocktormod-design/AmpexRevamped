@@ -3,11 +3,12 @@ import { getTemplate } from '@delt/forms/templates'
 import { kan } from '@delt/kontor-tilgang'
 import { BOLKNAVN, BOLKREKKEFOLGE, grupper, type Bolk } from '@delt/ordrebolk'
 import { finnAvvik, type Snapshot } from '@delt/approvals-calc'
-import { CheckCircle2, CircleAlert, FileText, Printer, Snowflake, Users } from 'lucide-react'
+import { CheckCircle2, CircleAlert, Download, FileText, Printer, Snowflake, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/auth'
 import { hentKunder, type Kunde } from '@/lib/kontor-lager'
 import { sendTilRegnskap } from '@/lib/regnskap'
+import { byggRegnskapsfil, lastNed } from '@/lib/regnskapsfil'
 import { skrivUtDokument } from '@/lib/utskrift'
 import {
   grunnlagFra,
@@ -91,6 +92,8 @@ export function Ordre() {
   const [ny, setNy] = useState({ tittel: '', kundeId: '', adresse: '', beskrivelse: '' })
   const [oppretterJobber, setOppretterJobber] = useState(false)
   const [skjemafeil, setSkjemafeil] = useState<string | null>(null)
+  const [eksporterer, setEksporterer] = useState(false)
+  const [eksportkvittering, setEksportkvittering] = useState<string | null>(null)
   const [bolker, setBolker] = useState<Bolk[]>([])
   const [rader, setRader] = useState<Ordrerad[]>([])
   const [valgt, setValgt] = useState<string | null>(null)
@@ -195,6 +198,38 @@ export function Ordre() {
     [detalj, seFaktura],
   )
 
+  /**
+   * Eksporterer de fakturaklare ordrene som CSV til regnskapsforeren.
+   *
+   * Bunke, ikke enkeltordre: regnskapsforeren importerer en fil per periode,
+   * ikke en per jobb. Fakturanummer tildeles av databasen og er idempotente —
+   * gaar fila tapt, kan du eksportere paa nytt uten at serien faar hull.
+   */
+  async function eksporterRegnskap() {
+    const klare = rader.filter(o => o.bolk === 'godkjenning' && o.godkjent && o.status !== 'fakturert')
+    if (klare.length === 0) {
+      setEksportkvittering('Ingen godkjente ordrer klare til fakturering.')
+      return
+    }
+    setEksporterer(true)
+    setEksportkvittering(null)
+    try {
+      const r = await byggRegnskapsfil({ ordreIder: klare.map(o => o.id) })
+      lastNed(r.csv, r.filnavn)
+      const hoppet = r.hoppetOver.length > 0
+        ? ` ${r.hoppetOver.length} ordre hoppet over: ${r.hoppetOver.map(h => `#${h.nummer ?? '?'} (${h.grunn})`).join(', ')}.`
+        : ''
+      setEksportkvittering(
+        `${r.filnavn} lastet ned — ${stk(r.antallFakturaer, 'faktura', 'fakturaer')}, `
+        + `${stk(r.antallLinjer, 'linje', 'linjer')}, ${kr(r.bruttoOre)} inkl. mva.${hoppet}`,
+      )
+      await last()
+    } catch (e) {
+      setEksportkvittering(e instanceof Error ? e.message : String(e))
+    }
+    setEksporterer(false)
+  }
+
   function veksle(b: Bolk) {
     setBolker(v => (v.includes(b) ? v.filter(x => x !== b) : [...v, b]))
   }
@@ -215,6 +250,12 @@ export function Ordre() {
                 onChange={e => setSok(e.target.value)}
               />
             </div>
+            {kanFakturere ? (
+              <Knapp stil="stille" disabled={eksporterer} onClick={() => void eksporterRegnskap()}>
+                <Download size={15} strokeWidth={1.8} />
+                {eksporterer ? 'Lager fil …' : 'Eksporter til regnskap'}
+              </Knapp>
+            ) : null}
             {kanOpprette ? (
               <Knapp
                 stil="merke"
@@ -234,6 +275,7 @@ export function Ordre() {
       />
 
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+      {eksportkvittering ? <Beskjed stil="ok">{eksportkvittering}</Beskjed> : null}
 
       {apen ? (
         <div className="inviter-boks" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none' }}>
