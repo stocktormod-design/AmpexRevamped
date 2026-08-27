@@ -246,7 +246,7 @@ export type Aktivitet = {
 export type Deltaker = { user_id: string; user_name: string | null }
 
 export type Ordredetalj = {
-  ordre: Omit<Ordrerad, 'bolk' | 'godkjent' | 'nummer'> & { description: string | null; customer_phone: string | null; created_at: string }
+  ordre: Omit<Ordrerad, 'bolk' | 'godkjent' | 'nummer'> & { description: string | null; customer_phone: string | null; created_at: string; customer_id: string | null }
   materiell: Materiellrad[]
   timer: Timerad[]
   tillegg: Tilleggsrad[]
@@ -258,7 +258,7 @@ export type Ordredetalj = {
 
 export async function hentOrdredetalj(orderId: string): Promise<Ordredetalj> {
   const [o, m, t, e, d, g, dl, ak] = await Promise.all([
-    supabase.from('orders').select(`${ORDRE_KOLONNER},description,customer_phone,created_at`).eq('id', orderId).is('deleted_at', null).single(),
+    supabase.from('orders').select(`${ORDRE_KOLONNER},description,customer_phone,created_at,customer_id`).eq('id', orderId).is('deleted_at', null).single(),
     supabase.from('order_materials').select('id,elnummer,description,quantity,unit,unit_price,cost_price,vat_type,billable,invoiced_at,discount_percent').eq('order_id', orderId).is('deleted_at', null).order('created_at'),
     supabase.from('time_entries').select('id,user_id,user_name,date,hours,note,internal_note,activity_id,billable,invoiced_at').eq('order_id', orderId).is('deleted_at', null).order('date'),
     supabase.from('order_extras').select('id,title,description,pricing,price,vat_type,status,approved_by,approved_at,invoiced_at').eq('order_id', orderId).is('deleted_at', null).order('created_at'),

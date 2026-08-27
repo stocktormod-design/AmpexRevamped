@@ -164,18 +164,32 @@ revoke execute on function public.assign_quote_number() from public, anon, authe
 -- Soft delete går klar: `deleted_at` er en annen kolonne, og nummeret følger
 -- raden ned. Det er også poenget — nummeret blir aldri ledig igjen.
 
+-- ⚠ Feltreferansene MÅ ligge i hver sin NØSTEDE if.
+--
+-- Skrevet flatt — `if tg_table_name = 'quotes' and new.quote_number is …` —
+-- kompilerer PL/pgSQL hele betingelsen som ETT uttrykk, og slår da opp
+-- `new.quote_number` også når triggeren kjører på `orders`. Resultatet er
+-- «record "new" has no field "quote_number"», og det rammer ikke bare
+-- nummerendringer: det rammer ENHVER oppdatering av en ordre, fordi den
+-- betingelsen alltid evalueres når den første er usann.
+--
+-- Sto slik fra 23. til 27. august og blokkerte statusendring, fakturering og
+-- soft delete på alle ordrer. Rettet i 20260827100500.
 create or replace function public.nummer_er_laast()
 returns trigger
 language plpgsql
 as $$
 begin
-  if tg_table_name = 'orders' and new.order_number is distinct from old.order_number then
-    raise exception 'Ordrenummer kan ikke endres (% → %)', old.order_number, new.order_number
-      using errcode = '23514';
-  end if;
-  if tg_table_name = 'quotes' and new.quote_number is distinct from old.quote_number then
-    raise exception 'Tilbudsnummer kan ikke endres (% → %)', old.quote_number, new.quote_number
-      using errcode = '23514';
+  if tg_table_name = 'orders' then
+    if new.order_number is distinct from old.order_number then
+      raise exception 'Ordrenummer kan ikke endres (% → %)', old.order_number, new.order_number
+        using errcode = '23514';
+    end if;
+  elsif tg_table_name = 'quotes' then
+    if new.quote_number is distinct from old.quote_number then
+      raise exception 'Tilbudsnummer kan ikke endres (% → %)', old.quote_number, new.quote_number
+        using errcode = '23514';
+    end if;
   end if;
   return new;
 end $$;
