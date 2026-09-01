@@ -71,6 +71,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         let depthHeight: Int
         var sharpness: Float = 0   // gradient-energy blur metric (higher = sharper); used to pick the best frames
         var motion: Float = 0      // camera speed at capture (lower = steadier); pruned out if ghosty
+        var blurPx: Float? = nil   // predikert bevegelsesuskarphet i lagrede piksler (eksponeringstid × fart × brennvidde); nil = eldre bundle
         var anchorID: String? = nil      // nearest mesh anchor at capture — for drift re-anchoring at export
         var relTransform: [Float]? = nil // camera pose in that anchor's local frame (column-major 16)
         var preLock: Bool? = nil         // tatt FØR AE/AWB-låsen slo inn → annen eksponering enn resten
@@ -114,7 +115,27 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     private var bucketCadence: Double {
         UserDefaults.standard.string(forKey: "meshscan.capture") == "slow" ? 1.5 : 0.4
     }
+    // Uskarphetsporten (forskningsoppgradering #1, 2026-08-27): grense i predikerte
+    // uskarphets-PIKSLER for kandidater til alt besøkte bøtter. Fartsporten er eksponerings-
+    // blind; denne er fysikken. Harnesset sender alle flagg som String — parse den òg.
+    private var blurGatePx: Float {
+        if let s = UserDefaults.standard.string(forKey: "meshscan.blurgate") {
+            if s == "off" { return .infinity }
+            if let v = Float(s) { return v }
+        }
+        return 60
+    }
+    // Tett dybdelogg (se maybeRecordDenseDepth): teller/takt på delegat-tråden, filhandle på captureQueue.
+    private var denseCount = 0
+    /// Teller ALLE kandidat-tikk (ikke bare lagrede) — grunnlaget for uttynningen.
+    private var denseTick: UInt64 = 0
+    private var lastDenseTime: Double = -1
+    private var denseHandle: FileHandle?
+    private static let denseMax = 600      // ~118 MB tak per bundle
+    private static let denseInterval = 0.2 // 5 Hz
     private var keyframeReserved = 0          // gate/index, delegate thread only
+    private var lastNoveltyForce: Double = -1 // dekningstvangens 2 Hz-takt (delegat-tråden)
+    private var noveltyForced = 0             // diagnostikk: fangster tvunget av ufotografert sikt
     private var lastKeyframeTime: Double = -1
     private var lastKeyframePos: SIMD3<Float>?
     private var lastKeyframeFwd: SIMD3<Float>?
@@ -139,6 +160,13 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     private var wasTooFast = false
     private var lastLinSpeed: Float = 0
     private var lastAngSpeed: Float = 0
+    // Uskarphets-diagnostikk (delegat-tråden): kalibreringsdata til pipeline.log — grensa på
+    // 60 px er satt i blinde, disse tallene fra ekte skann er det som skal justere den.
+    private var blurRejected = 0
+    private var blurStatSum: Double = 0
+    private var blurStatMax: Float = 0
+    private var blurStatN = 0
+    private var lastExposureMs: Float = 0
     private static let defaultHint = "Gå sidelengs og mal rommet — rutenettet er ferdig tekstur"
 
     // Én node per ARMeshAnchor, EID av ARSCNView (didAdd/didRemove) — SceneKit synker
@@ -464,7 +492,14 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         // Er `erstattet` + `ikke bedre` ~0 over flere runder, treffer ikke bøttene hverandre og
         // den anker-lokale nøkkelen er feil — da hjelper ikke flere runder.
         let (n, r, w) = captureQueue.sync { (kfNew, kfReplaced, kfNotBetter) }
+        captureQueue.sync { try? denseHandle?.close(); denseHandle = nil }
+        MeshLog.log("tett dybdelogg — \(denseCount) rå dybdekart lagret (super-res-råstoff)")
+        MeshLog.log("dekningstvangen — \(noveltyForced) fangster tvunget av ufotografert sikt (>30 %)")
         MeshLog.log("fartsporten — \(tooFastRejected) rammer sluppet (grense 1,1 m/s / 2,0 rad/s)")
+        // Kalibreringsdata for uskarphetsporten: 60 px-grensa er satt i blinde — snitt/maks
+        // herfra på ekte skann (via pipeline.log) er det som skal justere den.
+        let avgBlur = blurStatN > 0 ? Float(blurStatSum / Double(blurStatN)) : 0
+        MeshLog.log(String(format: "uskarphetsporten — %d rammer sluppet (grense %.0f px); predikert uskarphet snitt %.1f / maks %.1f px, eksponering %.1f ms ved slutt", blurRejected, blurGatePx, avgBlur, blurStatMax, lastExposureMs))
         MeshLog.log("erstatningsbuffer — \(n) nye bøtter, \(r) erstattet, \(w) ikke bedre (kadens \(bucketCadence)s)")
         if anchors.isEmpty {
             finish(.failure(MeshScanError.noMeshData))
@@ -551,6 +586,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                             atan2(-cm.columns.2.z, -cm.columns.2.x)))
         if poseHistory.count > 400 { poseHistory.removeFirst(poseHistory.count - 400) }
         maybeCaptureKeyframe(frame)
+        maybeRecordDenseDepth(frame)
         frameCounter += 1
         if frameCounter % 6 != 0 { return } // throttle — sampling is the heavy part
         let anchors = frame.anchors.compactMap { $0 as? ARMeshAnchor }
@@ -623,6 +659,28 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         sampleCursor = ai
     }
 
+    /// Predikert bevegelsesuskarphet i LAGREDE piksler: (vinkelfart + linfart/1,5 m nominell
+    /// dybde) × eksponeringstid × brennvidde. Fartstersklene alene er eksponerings-BLINDE:
+    /// i et mørkt rom med lang (AE-låst) eksponeringstid smører 0,5 rad/s titalls piksler,
+    /// i godt lys nesten ingenting. Fysikken, ikke farten, er dommeren.
+    private func predictedBlurPx(_ frame: ARFrame) -> Float {
+        let exposure = Float(frame.camera.exposureDuration)
+        let fullW = Float(frame.camera.imageResolution.width)
+        let scale = fullW > 0 ? min(1, Float(kfTargetWidth) / fullW) : 1
+        let fx = frame.camera.intrinsics[0][0] * scale
+        return (lastAngSpeed + lastLinSpeed / 1.5) * exposure * fx
+    }
+
+    /// Felles kvalitetsrangering — brukes av erstatningsbufferet (fangst), dekningsutvalget
+    /// (ARMeshGlbExporter.selectCoverageAware) og bake-vinnervalget (MeshBakeV2), som MÅ
+    /// rangere likt. Tenengrad-skarphet dempet av fart OG predikert eksponerings-uskarphet:
+    /// i mørke rom blåser sensorstøy opp gradient-energien slik at en støyete, uskarp ramme
+    /// kan slå en ren — blurPx er innholds- og støyuavhengig og korrigerer akkurat det.
+    /// nil blurPx (eldre fixtures) = faktor 1 → gamle bundles rangerer og baker som før.
+    static func kfQuality(sharpness: Float, motion: Float, blurPx: Float?) -> Float {
+        sharpness / (1 + 2 * motion) / (1 + max(0, blurPx ?? 0) / 30)
+    }
+
     // Warn the user (and improve capture) when the phone moves/rotates too fast → motion blur.
     private func updateSpeedHint(_ frame: ARFrame) {
         let m = frame.camera.transform
@@ -637,7 +695,13 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         let angSpeed = acos(max(-1, min(1, simd_dot(lf, fwd)))) / dt      // rad/s
         lastLinSpeed = linSpeed                                          // reused to reject blurry keyframes
         lastAngSpeed = angSpeed
-        let tooFast = linSpeed > 0.7 || angSpeed > 1.2                    // ~70°/s
+        let blurPx = predictedBlurPx(frame)
+        lastExposureMs = Float(frame.camera.exposureDuration) * 1000
+        blurStatSum += Double(blurPx); blurStatN += 1; blurStatMax = max(blurStatMax, blurPx)
+        // Varselet slår også inn når PREDIKERT uskarphet passerer 40 % av portgrensa — i mørke
+        // rom skjer det ved langt lavere fart enn de rå fartstersklene (som består som gulv).
+        let tooFast = linSpeed > 0.7 || angSpeed > 1.2 || blurPx > blurGatePx * 0.4 // ~70°/s
+
         if tooFast == wasTooFast { return }
         wasTooFast = tooFast
         DispatchQueue.main.async { [weak self] in
@@ -667,7 +731,20 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             if t - lastKeyframeTime < MeshScanPresenter.keyframeMinInterval { return }
             let moved = lastKeyframePos.map { simd_distance($0, pos) } ?? .greatestFiniteMagnitude
             let rotDot = lastKeyframeFwd.map { simd_dot($0, fwd) } ?? -1
-            if moved < MeshScanPresenter.keyframeMinMove && rotDot > MeshScanPresenter.keyframeMinRotateDot { return }
+            if moved < MeshScanPresenter.keyframeMinMove && rotDot > MeshScanPresenter.keyframeMinRotateDot {
+                // DEKNINGSTVANG (grå-funn 2026-08-27, replay på device-bundle: 907 av 1040
+                // grå flater lå aldri inne i NOE foto — LiDAR-meshen vokser bredere enn
+                // fotodekningen). Dveler man foran en ufotografert flate uten å flytte seg
+                // >12 cm eller snu >8°, avviser denne porten HVER frame for alltid, og
+                // flaten forblir grå uansett hvor lenge man peker på den. Er >30 % av
+                // synsfeltet ufotografert (frameNovelty mot doneCells = keyframe-dekkede
+                // celler), tving fangsten gjennom. Sjekken taktes til 2 Hz — frameNovelty
+                // er et sparsomt 16×12-dybdegrid, men ikke gratis på 60 Hz.
+                guard t - lastNoveltyForce > 0.5 else { return }
+                lastNoveltyForce = t
+                guard let nov = frameNovelty(frame), nov > 0.30 else { return }
+                noveltyForced += 1
+            }
         }
 
         // Fartsporten (løsnet 2026-08-23: 0,8/1,4 → 1,1/2,0). Den harde avvisningen ble satt da
@@ -705,6 +782,15 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 gateRejected += 1
                 return
             }
+            // Uskarphetsporten: eksponerings-VEKTET avvisning, kun for bøtter som alt har fått
+            // en dispatch — «uskarpt slår tomt» består, første blikk på en flate slipper alltid
+            // gjennom. Avvisningen bruker IKKE kadens-slotten (bucketLastDispatch settes bare
+            // ved dispatch), så neste roligere ramme får sjansen umiddelbart i stedet for at en
+            // smurt kandidat okkuperer bøttas 0,4 s og må slås med 15 % hysterese etterpå.
+            if bucketLastDispatch[b] != nil, predictedBlurPx(frame) > blurGatePx {
+                blurRejected += 1
+                return
+            }
             nearestAnchor = nearest
             bucket = b
         } else if !doneCells.isEmpty {
@@ -727,6 +813,57 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         if let b = bucket { bucketLastDispatch[b] = t }
         storeKeyframe(frame: frame, copy: copy, targetWidth: kfTargetWidth,
                       isPlaneShot: false, nearest: nearestAnchor, viewKey: bucket)
+    }
+
+    /// ── Tett dybdelogg (super-res-fundamentet; Scaniverse-lærdom #2: «save raw data»).
+    /// LiDAR-dybden tas vare på LØPENDE (5 Hz, RÅ sceneDepth — smoothedSceneDepth er alt
+    /// temporalt filtrert og dermed ødelagt som super-res-kilde), ikke bare ved keyframes.
+    /// Temporal dybde-superoppløsning ved re-fusjon trenger MANGE overlappende samples per
+    /// flate for å komme over 256×192-taket — keyframes alene gir 30–150 kart. Koster én
+    /// memcpy per tikk + ~1 MB/s disk (tak 600 kart ≈ 118 MB). Verdensposer lagres rå;
+    /// re-fusjonen kan driftkorrigere dem ved å interpolere keyframenes anchor-korreksjon
+    /// (samme timestamps). Av med meshscan.densedepth = "off". Leses i dag av INGEN —
+    /// dette er datainnsamlingen som gjør super-res-eksperimentet mulig på ekte bundles.
+    private func maybeRecordDenseDepth(_ frame: ARFrame) {
+        // TYNN UT framfor å STOPPE (2026-08-31). Det harde taket stoppet opptaket helt etter
+        // ~600 kart, altså to minutter ved 5 Hz — nok til ett rom, men et leilighetsskann fikk
+        // da full dekning av de første to minuttene og INGENTING av resten. Nå halveres
+        // frekvensen for hver gang taket nås, så dekningen blir jevn over hele skannet og
+        // totalen holder seg innenfor omtrent samme diskbudsjett uansett lengde.
+        denseTick &+= 1
+        let stride = 1 << min(4, denseCount / max(1, MeshScanPresenter.denseMax / 2))
+        guard framesDir != nil,
+              denseCount < MeshScanPresenter.denseMax,
+              denseTick % UInt64(stride) == 0,
+              frame.timestamp - lastDenseTime >= MeshScanPresenter.denseInterval,
+              case .normal = frame.camera.trackingState,
+              UserDefaults.standard.string(forKey: "meshscan.densedepth") != "off",
+              let sd = frame.sceneDepth ?? frame.smoothedSceneDepth,
+              let depth = MeshScanPresenter.tightDepth(sd.depthMap, confidence: sd.confidenceMap)
+        else { return }
+        lastDenseTime = frame.timestamp
+        let idx = denseCount
+        denseCount += 1
+        let m = frame.camera.transform
+        let K = frame.camera.intrinsics
+        let res = frame.camera.imageResolution
+        // Intrinsics skalert til dybdekartets oppløsning — leses som fx,fy,cx,cy i kart-piksler.
+        let sx = Float(depth.width) / Float(res.width), sy = Float(depth.height) / Float(res.height)
+        let cols = [m.columns.0, m.columns.1, m.columns.2, m.columns.3]
+        let mStr = cols.flatMap { [$0.x, $0.y, $0.z, $0.w] }.map { String(format: "%.6f", $0) }.joined(separator: ",")
+        let line = String(format: "{\"i\":%d,\"t\":%.4f,\"w\":%d,\"h\":%d,\"fx\":%.3f,\"fy\":%.3f,\"cx\":%.3f,\"cy\":%.3f,\"m\":[%@]}\n",
+                          idx, frame.timestamp, depth.width, depth.height,
+                          K[0][0] * sx, K[1][1] * sy, K[2][0] * sx, K[2][1] * sy, mStr)
+        captureQueue.async { [weak self] in
+            guard let self = self, let dir = self.framesDir else { return }
+            try? depth.data.write(to: dir.appendingPathComponent("dense-\(idx).f32"), options: .atomic)
+            if self.denseHandle == nil {
+                let url = dir.appendingPathComponent("dense.jsonl")
+                FileManager.default.createFile(atPath: url.path, contents: nil)
+                self.denseHandle = try? FileHandle(forWritingTo: url)
+            }
+            if let d = line.data(using: .utf8) { self.denseHandle?.write(d) }
+        }
     }
 
     /// Andel av synsfeltet som ennå IKKE er ferdig dekket (0 = alt ferdig, 1 = alt nytt).
@@ -809,6 +946,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         let m = cam.transform
         let pos = SIMD3<Float>(m.columns.3.x, m.columns.3.y, m.columns.3.z)
         let fwd = simd_normalize(SIMD3<Float>(-m.columns.2.x, -m.columns.2.y, -m.columns.2.z))
+        // Predikert uskarphet leses HER (delegat-tråden — frame og fartsstate er gyldige) og
+        // fanges inn i captureQueue-closuren sammen med resten av frame-dataene.
+        let blurPx = predictedBlurPx(frame)
         // Extract a tight Float32 depth map (small, ~256x192) synchronously for the occlusion test.
         // Low-confidence pixels (ARConfidenceLevel.low) are zeroed inline — every downstream
         // consumer (TSDF integration, ICP refine, room-bounds sampling) already skips z<=0.25,
@@ -892,15 +1032,15 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
 
             // ── Erstatningsavgjørelsen. Tas FØR JPEG-encodingen: en kandidat som ikke slår
             // plassen sin skal ikke koste encode-tid eller varme (regel 8).
-            // Scoren er identisk med `selectCoverageAware`s (skarphet dempet av bevegelse), så
-            // fangst og bake-utvalg rangerer likt.
-            let score = sharp / (1 + 2 * motion)
+            // Scoren er `kfQuality` — identisk med `selectCoverageAware`s og bake-vinnervalgets,
+            // så fangst og bake-utvalg rangerer likt.
+            let score = MeshScanPresenter.kfQuality(sharpness: sharp, motion: motion, blurPx: blurPx)
             var replaceSlot: Int? = nil
             let idx: Int
             if !isPlaneShot, let b = viewKey, let existing = self.bucketSlot[b],
                self.keyframes.indices.contains(existing) {
                 let old = self.keyframes[existing]
-                let oldScore = old.sharpness / (1 + 2 * old.motion)
+                let oldScore = MeshScanPresenter.kfQuality(sharpness: old.sharpness, motion: old.motion, blurPx: old.blurPx)
                 // Hysterese 15 %: uten den ville jevnbyrdige kandidater tvunget fram en ny
                 // encode hver runde — fem runder = fem ganger encode-lasten for ingenting.
                 guard score > oldScore * 1.15 else { self.kfNotBetter += 1; return }
@@ -949,6 +1089,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 depthHeight: depthH,
                 sharpness: sharp,
                 motion: motion,
+                blurPx: blurPx,
                 anchorID: kfAnchorID,
                 relTransform: kfRel,
                 preLock: nil,

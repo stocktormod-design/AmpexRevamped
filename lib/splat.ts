@@ -2,11 +2,11 @@
 // (Splat-simuleringen som lå her er slettet 2026-08-11 — den var kun en demo-
 // fallback for Expo Go, og ga et falskt «bake»-forløp uten ekte 3D-modell.)
 import {
-  isNativeSplatAvailable, getNativeMeshViewerView, presentMeshScan, rebakeMeshScan,
+  isNativeSplatAvailable, getNativeMeshViewerView, presentMeshScan, rebakeMeshScan, buildSplat,
   type MeshScanResult,
 } from '../modules/ampex-splat'
 
-export { presentMeshScan, rebakeMeshScan }
+export { presentMeshScan, rebakeMeshScan, buildSplat }
 export type { MeshScanResult }
 
 import * as FileSystem from 'expo-file-system/legacy'

@@ -69,7 +69,11 @@ enum ARMeshGlbExporter {
     /// dets beste frames ikke er blant de skarpeste i hele rommet — selv om dekningsoverlayen
     /// viste grønt der under selve skanningen (se gap-analyse: coverage vs. bake er frikoblet).
     static func selectCoverageAware(_ keyframes: [MeshScanPresenter.Keyframe], budget: Int) -> [MeshScanPresenter.Keyframe] {
-        func kfScore(_ k: MeshScanPresenter.Keyframe) -> Float { k.sharpness / (1 + 2 * k.motion) }
+        // Felles rangering (kfQuality) — samme formel som erstatningsbufferet og bake-
+        // vinnervalget, nå med predikert eksponerings-uskarphet (nil på eldre bundles = som før).
+        func kfScore(_ k: MeshScanPresenter.Keyframe) -> Float {
+            MeshScanPresenter.kfQuality(sharpness: k.sharpness, motion: k.motion, blurPx: k.blurPx)
+        }
         var byBucket = [Int64: MeshScanPresenter.Keyframe](minimumCapacity: keyframes.count / 2)
         for k in keyframes {
             let b = regionBucket(k)
@@ -191,11 +195,13 @@ enum ARMeshGlbExporter {
         // centimeter fra hverandre). Dobbeltflakene gir (a) «shingel»-tak av lag på lag, (b) svarte
         // bake-texels (flak med søppelnormal feiler facing-testen for alle bilder) og (c) dobbel
         // jobb for xatlas. Per (voxel, normal-retning) vinner anchoren med flest triangler.
-        dropOverlapSheets(positions: positions, indices: &indices, triAnchor: &triAnchor)
+        // Delt sult-bok mellom dedup-passene — se dropOverlapSheets-dokken.
+        var dedupLedger = [(c: SIMD3<Float>, n: SIMD3<Float>, area: Float)]()
+        dropOverlapSheets(positions: positions, indices: &indices, triAnchor: &triAnchor, droppedLedger: &dedupLedger)
         // Plan-bevisst lag-dedup: 3D-cellededuppen skiller lag i normal-retningen (ulike celler)
         // og ser dem aldri. I PLANETS 2D-koordinater er lagene derimot samme flate — fjern
         // fremmed-interiør der (spøkelsesflakene/halvtransparente lagrestene på tak og vegger).
-        dropCoplanarLayers(planes: planes, positions: positions, indices: &indices, triAnchor: &triAnchor)
+        dropCoplanarLayers(planes: planes, positions: positions, indices: &indices, triAnchor: &triAnchor, droppedLedger: &dedupLedger)
         // Dobbeltflate-fjerning langs normalen: drift-kopier 4–12 cm fra hverandre ligger i
         // dødsonen mellom celle-dedup (±6 cm) og fantomtesten (trenger ≥15 cm klaring pga
         // dybdestøy) — «samme hull vises to ganger». Denne søker eksplisitt etter en annen
@@ -243,13 +249,18 @@ enum ARMeshGlbExporter {
     /// normal ≤ ~25°) til planets 2D-koordinater og kjør 8 cm-celle-eierskap der. Lag som
     /// 3D-cellededuppen aldri ser (skilt i normal-retning) er samme flate i 2D. Samme
     /// konservative regel: dropp kun triangler der ALLE tre verteksceller har fremmed eier.
-    static func dropCoplanarLayers(planes: [SIMD4<Float>], positions: [Float], indices: inout [UInt32], triAnchor: inout [UInt32]) {
+    static func dropCoplanarLayers(planes: [SIMD4<Float>], positions: [Float], indices: inout [UInt32], triAnchor: inout [UInt32],
+                                   droppedLedger: inout [(c: SIMD3<Float>, n: SIMD3<Float>, area: Float)]) {
         let triCount = indices.count / 3
         guard !planes.isEmpty, triAnchor.count == triCount, triCount > 0 else { return }
         func pt(_ vi: UInt32) -> SIMD3<Float> {
             let i = Int(vi) * 3
             return SIMD3(positions[i], positions[i + 1], positions[i + 2])
         }
+        // Delt sult-bok: av med meshscan.dedupshared = "off" (kjører ved FANGST — kan ikke
+        // A/B-es via rebake, kun med nye skann; endringen er strengt konservativ uansett).
+        let useLedger = UserDefaults.standard.string(forKey: "meshscan.dedupshared") != "off"
+        var sharedUndone = 0
         var drop = [Bool](repeating: false, count: triCount)
         var removed = 0
         for pl in planes {
@@ -295,6 +306,15 @@ enum ARMeshGlbExporter {
             }
             var totalArea = [Int64: Float](minimumCapacity: counts.count)
             for (cell, byAnchor) in counts { totalArea[cell] = byAnchor.values.reduce(0, +) }
+            // Delt sult-bok: areal pass 1 (overlap-dedup) alt har felt i samme plan-celle.
+            // |dot| på normalen — anchors har spredte flippede normaler (scoreOf-lærdommen),
+            // og posisjonstesten (±6 cm) er uansett hovedfilteret.
+            var prevDropped = [Int64: Float]()
+            if useLedger {
+                for e in droppedLedger where abs(simd_dot(n, e.c) - d) <= 0.06 && abs(simd_dot(e.n, n)) >= 0.9 {
+                    prevDropped[cell2D(e.c), default: 0] += e.area
+                }
+            }
             var droppedArea = [Int64: Float]()
             for t in near where drop[t] {
                 let a = pt(indices[t * 3]), b = pt(indices[t * 3 + 1]), c = pt(indices[t * 3 + 2])
@@ -302,17 +322,38 @@ enum ARMeshGlbExporter {
             }
             for t in near where drop[t] {
                 var starves = false
+                var byLedger = false
                 for k in 0..<3 {
                     let cell = cell2D(pt(indices[t * 3 + k]))
                     guard let tot = totalArea[cell], tot > 0 else { continue }
-                    if tot - (droppedArea[cell] ?? 0) < 0.2 * tot { starves = true; break }
+                    let survive = tot - (droppedArea[cell] ?? 0)
+                    // Overlevelse måles mot bestanden FØR pass 1 (tot + prev), ikke bare mot
+                    // det pass 1 lot ligge igjen — det er dét som stanser 0.8×0.8-erosjonen.
+                    let prev = prevDropped[cell] ?? 0
+                    if survive < 0.2 * (tot + prev) {
+                        starves = true
+                        byLedger = survive >= 0.2 * tot // hadde overlevd uten den delte boken
+                        break
+                    }
                 }
                 if starves {
                     drop[t] = false; removed -= 1
+                    if byLedger { sharedUndone += 1 }
                     let a = pt(indices[t * 3]), b = pt(indices[t * 3 + 1]), c = pt(indices[t * 3 + 2])
                     droppedArea[cell2D((a + b + c) / 3), default: 0] -= triArea2(t)
                 }
             }
+        }
+        // Før også dette passets felte flater inn i boken (for ev. senere pass).
+        for t in 0..<triCount where drop[t] {
+            let a = pt(indices[t * 3]), b = pt(indices[t * 3 + 1]), c = pt(indices[t * 3 + 2])
+            let cr = simd_cross(b - a, c - a)
+            let l = simd_length(cr)
+            guard l > 1e-12 else { continue }
+            droppedLedger.append((c: (a + b + c) / 3, n: cr / l, area: l * 0.5))
+        }
+        if sharedUndone > 0 {
+            MeshLog.log("coplanar dedup — delt sult-vakt angret \(sharedUndone) dropp (pass-1-tap medregnet)")
         }
         guard removed > 0 else { return }
         var outIdx = [UInt32](); outIdx.reserveCapacity(indices.count)
@@ -580,7 +621,14 @@ enum ARMeshGlbExporter {
     /// triangler (minst én verteks i egen eller herreløs celle) beholdes alltid: anchor-TILER
     /// deler søm uten å overlappe, og vinner-tar-alt per centroid-celle karvet stiplede hull
     /// langs alle anchor-grenser (kvalitetsregresjonen 2026-07-05).
-    static func dropOverlapSheets(positions: [Float], indices: inout [UInt32], triAnchor: inout [UInt32]) {
+    /// `droppedLedger` er den DELTE sult-boken på tvers av dedup-passene (device 2026-08-26,
+    /// «kors-striper»-oppfølging): hvert pass' sult-vakt garanterte ≥20 % overlevelse mot SIN
+    /// EGEN startbestand, så en anchor-grensecelle kunne tape 80 % i pass 1 og 80 % av resten
+    /// i pass 2 → 4 % igjen (sekvensiell erosjon 0.8×0.8). Passene fører nå felte flater inn
+    /// i boken, og senere pass måler overlevelse mot bestanden FØR første pass. Endringen kan
+    /// bare angre FLERE dropp (strengt konservativ retning — dedup-havariets lærdom).
+    static func dropOverlapSheets(positions: [Float], indices: inout [UInt32], triAnchor: inout [UInt32],
+                                  droppedLedger: inout [(c: SIMD3<Float>, n: SIMD3<Float>, area: Float)]) {
         let triCount = indices.count / 3
         guard triAnchor.count == triCount, triCount > 0 else { return }
         let inv: Float = 1.0 / 0.06
@@ -650,6 +698,18 @@ enum ARMeshGlbExporter {
         for t in 0..<triCount where !drop[t] {
             outIdx.append(indices[t * 3]); outIdx.append(indices[t * 3 + 1]); outIdx.append(indices[t * 3 + 2])
             outAnchor.append(triAnchor[t])
+        }
+        // Før de felte flatene inn i den delte sult-boken (centroid, normal, areal) — senere
+        // pass' vakter regner dem fortsatt med i cellens opprinnelige bestand.
+        for t in 0..<triCount where drop[t] {
+            let a = Int(indices[t * 3]) * 3, b = Int(indices[t * 3 + 1]) * 3, c = Int(indices[t * 3 + 2]) * 3
+            let pa = SIMD3(positions[a], positions[a + 1], positions[a + 2])
+            let pb = SIMD3(positions[b], positions[b + 1], positions[b + 2])
+            let pc = SIMD3(positions[c], positions[c + 1], positions[c + 2])
+            let cr = simd_cross(pb - pa, pc - pa)
+            let l = simd_length(cr)
+            guard l > 1e-12 else { continue }
+            droppedLedger.append((c: (pa + pb + pc) / 3, n: cr / l, area: l * 0.5))
         }
         MeshLog.log("overlap dedup — tris \(triCount) → \(outAnchor.count) (fjernet \(triCount - outAnchor.count) dobbeltflak)")
         indices = outIdx

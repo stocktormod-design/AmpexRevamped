@@ -103,9 +103,19 @@ public final class AmpexMeshViewerView: ExpoView {
       return
     }
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-      guard let node = AmpexGlbLoader.loadNode(path: path) else {
+      // .ply = konstruert splat (MeshSplatBuild), alt annet = teksturert GLB. Begge ender
+      // som en SCNNode, så navigasjon, markører og reset nedenfor er felles.
+      // MÅLES fordi tiden fra knappetrykk til ferdig modell er MYE lengre enn bakens egen
+      // 25 s, og denne lastingen — inkludert dekoding av et 6144² JPEG-atlas — er det
+      // eneste steget etter baken som ikke har vært synlig i pipeline.log.
+      let tLoad = CFAbsoluteTimeGetCurrent()
+      let loaded = path.hasSuffix(".ply") ? MeshSplatView.loadNode(path: path)
+                                          : AmpexGlbLoader.loadNode(path: path)
+      MeshLog.log(String(format: "MeshViewer: lasting av %@ tok %.1fs",
+                         (path as NSString).lastPathComponent, CFAbsoluteTimeGetCurrent() - tLoad))
+      guard let node = loaded else {
         DispatchQueue.main.async { self?.scnView.scene = nil }
-        NSLog("[MeshViewer] GLB-lasting feilet: \(path)")
+        NSLog("[MeshViewer] lasting feilet: \(path)")
         return
       }
       DispatchQueue.main.async {
