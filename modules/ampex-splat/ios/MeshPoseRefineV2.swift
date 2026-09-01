@@ -20,6 +20,7 @@ enum MeshPoseRefineV2 {
     // rev dette opp blanke vegger — kommentaren over gjaldt fast λ.
     static let warpGridW = 12, warpGridH = 8
 
+
     private struct Frame {
         var w2c: simd_float4x4
         var camPos: SIMD3<Float>
@@ -37,7 +38,12 @@ enum MeshPoseRefineV2 {
         positions: [Float], normals: [Float],
         framesDir: URL,
         iterations: Int = 8,
-        maxVertices: Int = 50_000,
+        // PROXY-OPPLØSNINGEN ER WARPENS MÅLESTOKK. Warpen sammenligner hvert bilde mot en
+        // per-verteks proxyfarge; er proxyen grov, kan residualen ikke bli lav uansett hvor
+        // god warpen er. 50k punkter over et rom er ~4,4 cm mellom hvert, mens feilen som
+        // skal rettes er millimeter. TSDF-nettet har 774k vertekser — proxyen brukte 6 % av
+        // dem. meshscan.proxyverts.
+        maxVertices: Int = Int(UserDefaults.standard.string(forKey: "meshscan.proxyverts") ?? "") ?? 50_000,
         forceWarp: Bool = false,
         // Ut: normaliserte warp-rutenett per keyframe (warpGridW*warpGridH SIMD2, offset i
         // [0,1]-bilderom). Tom for keyframes uten warp. Baken (blend=all) sampler gjennom dem.
@@ -187,6 +193,38 @@ enum MeshPoseRefineV2 {
             let a = cy * warpGW + cx, b = a + 1, c = a + warpGW, d = c + 1
             return ((a, b, c, d), ((1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty))
         }
+
+        /// Lyshetskompensasjon per bilde: løser skalaren `a` og forskyvningen `b` som best mapper
+        /// dette bildets samples over på proxyfargene.
+        ///
+        /// HVORFOR: refinen minimerte ren fargedifferanse `s − proxy`. Varierer eksponeringen
+        /// 10 % mellom bilder, bidrar det alene mer til residualen enn hele den geometriske
+        /// feilen — og da jager optimeringen LYSHET i stedet for POSISJON. Målt: residualen sto
+        /// på 0.0538 uansett om proxyen hadde 52k eller 417k punkter, altså helt ufølsom for
+        /// geometrisk oppløsning. Med (a, b) trukket fra måler residualen kun om innholdet ligger
+        /// på samme sted, slik det skal.
+        func photoGain(_ f: Frame, _ proxy: [Float], stride: Int = 4) -> (Float, Float) {
+            var sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0, n = 0.0
+            var i = 0
+            while i < verts.count {
+                defer { i += stride }
+                // proxy < 0 markerer et punkt uten farge ennå; hopp over det.
+                guard proxy[i] > 0, let pr = project(f, verts[i], vnorms[i]),
+                      let s = sample(f, pr.u, pr.v) else { continue }
+                let x = Double(s.val), y = Double(proxy[i])
+                sx += x; sy += y; sxx += x * x; sxy += x * y; n += 1
+            }
+            guard n > 50 else { return (1, 0) }
+            let den = n * sxx - sx * sx
+            guard abs(den) > 1e-9 else { return (1, 0) }
+            // Klemt: en frame skal justeres, ikke omskrives. Utenfor dette er noe annet galt
+            // (okklusjon, speil), og da er identitet tryggere.
+            let a = Float(max(0.6, min(1.7, (n * sxy - sx * sy) / den)))
+            let b = Float((sy - Double(a) * sx) / n)
+            return (a, max(-0.25, min(0.25, b)))
+    }
+
+
         func warpOffset(_ grid: [SIMD2<Float>], _ lw: Int, _ lh: Int, _ u: Float, _ v: Float) -> SIMD2<Float> {
             let (idx, w) = warpCell(lw, lh, u, v)
             return grid[idx.0] * w.0 + grid[idx.1] * w.1 + grid[idx.2] * w.2 + grid[idx.3] * w.3
@@ -264,10 +302,11 @@ enum MeshPoseRefineV2 {
                             var H = [Float](repeating: 0, count: 36)
                             var b = [Float](repeating: 0, count: 6)
                             var rSum: Float = 0; var rN = 0
+                            let (ga, gb) = photoGain(f, proxy)
                             for i in 0..<nV where wsum[i] > 1e-4 {
                                 guard let pr = project(f, verts[i], vnorms[i]),
                                       let s = sample(f, pr.u, pr.v) else { continue }
-                                let r = s.val - proxy[i]
+                                let r = (ga * s.val + gb) - proxy[i]
                                 rSum += abs(r); rN += 1
                                 if abs(r) > 0.30 { continue } // okklusjonsskift/speil — ute av GN
                                 // Jacobi: ∇I · ∂(u,v)/∂pc · ∂pc/∂ξ, venstre-perturbasjon exp(ξ)·w2c
@@ -277,7 +316,8 @@ enum MeshPoseRefineV2 {
                                 // du/dpc, dv/dpc (u = fx·x/z̄+cx, v = fy·(−y)/z̄+cy, z̄ = −z)
                                 let du = SIMD3<Float>(f.fx * iz, 0, f.fx * pc.x * iz * iz)
                                 let dv = SIMD3<Float>(0, -f.fy * iz, -f.fy * pc.y * iz * iz)
-                                let gpc = s.gx * du + s.gy * dv   // ∂I/∂pc (1×3)
+                                // Gradienten skaleres med samme a, siden residualen nå er a·I + b.
+                                let gpc = (ga * s.gx) * du + (ga * s.gy) * dv   // ∂I/∂pc (1×3)
                                 // ∂pc/∂ξ = [ -[pc]× | I ]; gpcᵀ·(-[pc]×) = (pc × gpc)ᵀ.
                                 // NB fortegnet HER var flippet i første device-kjøring (residual
                                 // STEG 0.039→0.046) — pc × gpc, ikke gpc × pc.
@@ -411,12 +451,13 @@ enum MeshPoseRefineV2 {
                                 // og da blir warpen for stiv til å rette opp smøringen.
                                 var gradE = [Float](repeating: 0, count: warpGW * warpGH)
                                 var rSum: Float = 0; var rN = 0
+                                let (ga, gb) = photoGain(f, proxyW)
                                 for i in 0..<nV where wsum[i] > 1e-4 {
                                     guard let pr = project(f, verts[i], vnorms[i]) else { continue }
                                     let (idx, wgt) = warpCell(f.lw, f.lh, pr.u, pr.v)
                                     let off = grid[idx.0] * wgt.0 + grid[idx.1] * wgt.1 + grid[idx.2] * wgt.2 + grid[idx.3] * wgt.3
                                     guard let s = sample(f, pr.u + off.x, pr.v + off.y) else { continue }
-                                    let r = s.val - proxyW[i]
+                                    let r = (ga * s.val + gb) - proxyW[i]
                                     rSum += abs(r); rN += 1
                                     if abs(r) > 0.30 { continue } // okklusjonsskift/speil — ute av GN
                                     // 4 kontrollpunkt × {x,y}: ∂I/∂cp.x = gx·w, ∂I/∂cp.y = gy·w.
@@ -426,8 +467,8 @@ enum MeshPoseRefineV2 {
                                     var jv = [Float](repeating: 0, count: 8)
                                     let gmag = s.gx * s.gx + s.gy * s.gy
                                     for k in 0..<4 {
-                                        cols[k * 2] = cpArr[k] * 2;     jv[k * 2] = s.gx * wArr[k]
-                                        cols[k * 2 + 1] = cpArr[k] * 2 + 1; jv[k * 2 + 1] = s.gy * wArr[k]
+                                        cols[k * 2] = cpArr[k] * 2;     jv[k * 2] = (ga * s.gx) * wArr[k]
+                                        cols[k * 2 + 1] = cpArr[k] * 2 + 1; jv[k * 2 + 1] = (ga * s.gy) * wArr[k]
                                         gradE[cpArr[k]] += gmag * wArr[k]
                                     }
                                     for a in 0..<8 {

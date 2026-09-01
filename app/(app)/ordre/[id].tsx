@@ -18,11 +18,11 @@ import { useGodkjenninger, useGrunnlag } from '../../../lib/approvals'
 import { GodkjenningKort } from '../../../components/godkjenning-kort'
 import { ArkivKort } from '../../../components/arkiv-kort'
 import { SectionHeader, Chip } from '../../../components/ui'
-import { ToolCard, useMorkStatuslinje } from '../../../components/tool-surface'
+import { PapirCard, usePapirFokus } from '../../../components/papir-surface'
 import { ChoiceSheet } from '../../../components/sheet'
 import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { ScanCard } from '../../../components/scan-card'
-import { deleteScanFiles, clearRevisions } from '../../../lib/scan-revisions'
+import { deleteScanFiles, clearRevisions, archiveRevision } from '../../../lib/scan-revisions'
 import { AddressMap } from '../../../components/address-map'
 import { database } from '../../../lib/db'
 import { slettMateriell, uttakForMateriell } from '../../../lib/cart'
@@ -213,15 +213,15 @@ function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }
           <Box size={18} color={colors.brand} strokeWidth={2.1} />
           <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.brand, flex: 1 }]}>3D-skann</Text>
           {scans.length > 0 && (
-            <Text style={[t.caption, { color: colors.toolTertiary, fontVariant: ['tabular-nums'] }]}>
+            <Text style={[t.caption, { color: colors.tertiaryLabel, fontVariant: ['tabular-nums'] }]}>
               {String(scans.length)}
             </Text>
           )}
         </View>
-        <Text style={[t.title3, { color: colors.toolLabel, marginTop: spacing.sm }]}>
+        <Text style={[t.title3, { color: colors.label, marginTop: spacing.sm }]}>
           {scans.length > 0 ? 'Rommet er målt opp' : 'Mål opp rommet med telefonen'}
         </Text>
-        <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 2, lineHeight: 18 }]}>
+        <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 2, lineHeight: 18 }]}>
           {scans.length > 0
             ? 'Ta et nytt skann når noe er endret — begge versjonene beholdes.'
             : 'LiDAR gir mål, plassering og dokumentasjon av som-bygget, uten målebånd.'}
@@ -245,6 +245,11 @@ function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }
                 onScan={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind], title: s.title, viewPath: '' } })}
                 onOpenRevision={rev => router.push({ pathname: '/(app)/skann', params: { viewPath: rev.path, title: `${s.title} · ${new Date(rev.ts).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` } })}
                 onDelete={() => removeScan(s)}
+                onRebuilt={async path => {
+                  if (s.scanPath) await archiveRevision(s.id, s.scanPath)
+                  await database.write(async () => { await s.update(x => { x.scanPath = path }) })
+                  syncQuietly()
+                }}
               />
             </View>
           ))}
@@ -269,8 +274,8 @@ function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }
           paddingVertical: spacing.md + 2,
         }}
       >
-        <Box size={17} color="#fff" strokeWidth={2.3} />
-        <Text style={[t.headline, { color: '#fff' }]}>Start skanning</Text>
+        <Box size={17} color={colors.ctaLabel} strokeWidth={2.3} />
+        <Text style={[t.headline, { color: colors.ctaLabel }]}>Start skanning</Text>
       </Pressable>
     </View>
   )
@@ -295,12 +300,12 @@ function LeggTilKnapp({ tekst, onPress }: { tekst: string; onPress: () => void }
         flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
         height: 34, paddingLeft: spacing.sm + 2, paddingRight: spacing.md,
         borderRadius: radius.pill,
-        backgroundColor: colors.toolRaisedStrong,
-        borderWidth: 1, borderColor: colors.toolBorder,
+        backgroundColor: colors.fill,
+        borderWidth: 1, borderColor: colors.separator,
       }}
     >
-      <Plus size={15} color={colors.toolLabel} strokeWidth={2.4} />
-      <Text style={[t.footnote, { color: colors.toolLabel, fontWeight: '600' }]}>{tekst}</Text>
+      <Plus size={15} color={colors.label} strokeWidth={2.4} />
+      <Text style={[t.footnote, { color: colors.label, fontWeight: '600' }]}>{tekst}</Text>
     </Pressable>
   )
 }
@@ -340,22 +345,22 @@ function Rad({ ikon, tittel, under, underVarsel, verdi, sterkVerdi, onPress, for
       style={{
         flexDirection: 'row', alignItems: 'center', gap: spacing.md,
         paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-        ...(forst ? {} : { borderTopWidth: 1, borderTopColor: colors.toolBorder }),
+        ...(forst ? {} : { borderTopWidth: 1, borderTopColor: colors.separator }),
       }}
     >
       {ikon}
       <View style={{ flex: 1 }}>
-        <Text style={[t.headline, { color: colors.toolLabel }]}>{tittel}</Text>
+        <Text style={[t.headline, { color: colors.label }]}>{tittel}</Text>
         {!!under && (
-          <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 1 }, underVarsel && { color: colors.warning }]}>
+          <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 1 }, underVarsel && { color: colors.warning }]}>
             {under}
           </Text>
         )}
       </View>
-      <Text style={[t.bodyMedium, { color: sterkVerdi ? colors.toolLabel : colors.toolSecondary, fontVariant: ['tabular-nums'] }]}>
+      <Text style={[t.bodyMedium, { color: sterkVerdi ? colors.label : colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>
         {verdi}
       </Text>
-      <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
+      <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
     </Pressable>
   )
 }
@@ -519,16 +524,16 @@ function MetaRow({ label, value, last }: { label: string; value: string; last?: 
   return (
     <View style={[
       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-      !last && { borderBottomWidth: 1, borderBottomColor: colors.toolBorder },
+      !last && { borderBottomWidth: 1, borderBottomColor: colors.separator },
     ]}>
-      <Text style={[t.body, { color: colors.toolSecondary }]}>{label}</Text>
-      <Text style={[t.body, { color: colors.toolLabel, fontVariant: ['tabular-nums'] }]}>{value}</Text>
+      <Text style={[t.body, { color: colors.secondaryLabel }]}>{label}</Text>
+      <Text style={[t.body, { color: colors.label, fontVariant: ['tabular-nums'] }]}>{value}</Text>
     </View>
   )
 }
 
 export default function OrderDetailScreen() {
-  useMorkStatuslinje()
+  usePapirFokus()
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [order, setOrder] = useState<Order | null>(null)
@@ -740,7 +745,7 @@ export default function OrderDetailScreen() {
             <View style={StyleSheet.absoluteFill}>
               <AddressMap address={order.address} onPress={naviger} height={300} chrome={false} />
               <LinearGradient
-                colors={['rgba(33,28,21,0.35)', 'rgba(33,28,21,0.72)', colors.toolBg]}
+                colors={['rgba(243,238,230,0)', 'rgba(243,238,230,0.72)', colors.canvas]}
                 locations={[0, 0.55, 1]}
                 style={StyleSheet.absoluteFill}
               />
@@ -757,7 +762,7 @@ export default function OrderDetailScreen() {
                   backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center',
                 }}
               >
-                <ChevronLeft size={sizes.icon} color={colors.toolLabel} strokeWidth={2.2} />
+                <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
               </Pressable>
               <AmpexMarkButton />
             </View>
@@ -769,12 +774,12 @@ export default function OrderDetailScreen() {
                   {orderStatusLabel[order.status] ?? order.status}
                 </Text>
                 {!!order.orderNumber && (
-                  <Text style={[t.eyebrow, { color: colors.toolTertiary }]}>{`#${order.orderNumber}`}</Text>
+                  <Text style={[t.eyebrow, { color: colors.tertiaryLabel }]}>{`#${order.orderNumber}`}</Text>
                 )}
-                {!!when && <Text style={[t.eyebrow, { color: colors.toolTertiary }]}>{when}</Text>}
+                {!!when && <Text style={[t.eyebrow, { color: colors.tertiaryLabel }]}>{when}</Text>}
               </View>
 
-              <Text style={[t.display, { color: colors.toolLabel, marginTop: spacing.sm }]} numberOfLines={2}>
+              <Text style={[t.display, { color: colors.label, marginTop: spacing.sm }]} numberOfLines={2}>
                 {order.title}
               </Text>
 
@@ -784,12 +789,12 @@ export default function OrderDetailScreen() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
                   <View style={{ flex: 1 }}>
                     {!!order.customerName && (
-                      <Text style={[t.subhead, { color: colors.toolLabel, fontWeight: '600' }]} numberOfLines={1}>
+                      <Text style={[t.subhead, { color: colors.label, fontWeight: '600' }]} numberOfLines={1}>
                         {order.customerName}
                       </Text>
                     )}
                     {!!order.address && (
-                      <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 1 }]} numberOfLines={1}>
+                      <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 1 }]} numberOfLines={1}>
                         {order.address}
                       </Text>
                     )}
@@ -808,7 +813,7 @@ export default function OrderDetailScreen() {
                       backgroundColor: 'rgba(255,255,255,0.14)',
                       alignItems: 'center', justifyContent: 'center',
                     }}>
-                      <Navigation size={17} color={colors.toolLabel} strokeWidth={2.1} />
+                      <Navigation size={17} color={colors.label} strokeWidth={2.1} />
                     </Pressable>
                   )}
                 </View>
@@ -862,8 +867,8 @@ export default function OrderDetailScreen() {
             onPress={() => router.push({ pathname: '/(app)/ordre/timer', params: { id } })}
             style={{
               marginHorizontal: spacing.screen,
-              backgroundColor: colors.toolRaised,
-              borderWidth: 1, borderColor: colors.toolBorder,
+              backgroundColor: colors.bg,
+              borderWidth: 1, borderColor: colors.separator,
               borderRadius: radius.lg,
               paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
               flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -871,16 +876,16 @@ export default function OrderDetailScreen() {
           >
             <Clock size={19} color={colors.brand} strokeWidth={2.1} />
             <View style={{ flex: 1 }}>
-              <Text style={[t.caption, { textTransform: 'uppercase', color: colors.toolTertiary }]}>Timer</Text>
+              <Text style={[t.caption, { textTransform: 'uppercase', color: colors.tertiaryLabel }]}>Timer</Text>
               {timer > 0 ? (
-                <Text style={[t.title1, { color: colors.toolLabel, marginTop: 1 }]}>
+                <Text style={[t.title1, { color: colors.label, marginTop: 1 }]}>
                   {`${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t`}
                 </Text>
               ) : (
                 <Text style={[t.title3, { color: colors.brand, marginTop: 2 }]}>Før første time</Text>
               )}
             </View>
-            <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
+            <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
           </Pressable>
         </View>
 
@@ -891,7 +896,7 @@ export default function OrderDetailScreen() {
             flexDirection: 'row', alignItems: 'center',
             marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.sm,
           }}>
-            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.toolTertiary, flex: 1 }]}>
+            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel, flex: 1 }]}>
               {materials.length > 0 ? `Materiell · ${materials.length}` : 'Materiell'}
             </Text>
             <LeggTilKnapp
@@ -900,7 +905,7 @@ export default function OrderDetailScreen() {
             />
           </View>
           {materials.length === 0 ? (
-            <Text style={[t.footnote, { color: colors.toolSecondary, marginHorizontal: spacing.screen + spacing.xs }]}>
+            <Text style={[t.footnote, { color: colors.secondaryLabel, marginHorizontal: spacing.screen + spacing.xs }]}>
               Ingenting ført. Skann en vare eller søk den opp.
             </Text>
           ) : (
@@ -914,8 +919,8 @@ export default function OrderDetailScreen() {
                   key={m.id}
                   style={{
                     minWidth: 132, maxWidth: 190,
-                    backgroundColor: colors.toolRaised,
-                    borderWidth: 1, borderColor: colors.toolBorder,
+                    backgroundColor: colors.bg,
+                    borderWidth: 1, borderColor: colors.separator,
                     borderRadius: radius.md,
                     paddingHorizontal: spacing.md, paddingVertical: spacing.md,
                   }}
@@ -923,11 +928,11 @@ export default function OrderDetailScreen() {
                   <Text style={[t.footnote, { color: colors.brand, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
                     {`${formatQty(m.quantity)} ${m.unit}`}
                   </Text>
-                  <Text style={[t.subhead, { color: colors.toolLabel, marginTop: 2 }]} numberOfLines={2}>
+                  <Text style={[t.subhead, { color: colors.label, marginTop: 2 }]} numberOfLines={2}>
                     {m.description}
                   </Text>
                   {!!m.elnummer && (
-                    <Text style={[t.caption, { color: colors.toolTertiary, marginTop: 2, fontVariant: ['tabular-nums'] }]}>
+                    <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 2, fontVariant: ['tabular-nums'] }]}>
                       {`EL ${m.elnummer}`}
                     </Text>
                   )}
@@ -945,7 +950,7 @@ export default function OrderDetailScreen() {
             flexDirection: 'row', alignItems: 'center',
             marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.sm,
           }}>
-            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.toolTertiary, flex: 1 }]}>
+            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel, flex: 1 }]}>
               Dokumentasjon
             </Text>
             {remainingTemplates.length > 0 && (
@@ -958,11 +963,11 @@ export default function OrderDetailScreen() {
               onPress={addDocumentation}
               style={{
                 marginHorizontal: spacing.screen, borderRadius: radius.lg,
-                borderWidth: 1, borderColor: colors.toolBorder, borderStyle: 'dashed',
+                borderWidth: 1, borderColor: colors.separator, borderStyle: 'dashed',
                 paddingVertical: spacing.lg, alignItems: 'center',
               }}
             >
-              <Text style={[t.subhead, { color: colors.toolSecondary }]}>Velg skjemaene jobben trenger</Text>
+              <Text style={[t.subhead, { color: colors.secondaryLabel }]}>Velg skjemaene jobben trenger</Text>
             </Pressable>
           ) : (
             <View style={{ marginHorizontal: spacing.screen }}>
@@ -976,8 +981,8 @@ export default function OrderDetailScreen() {
                     onPress={() => router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: tpl.id } })}
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                      backgroundColor: colors.toolRaised,
-                      borderWidth: 1, borderColor: colors.toolBorder,
+                      backgroundColor: colors.bg,
+                      borderWidth: 1, borderColor: colors.separator,
                       borderTopWidth: i === 0 ? 1 : 0,
                       borderTopLeftRadius: i === 0 ? radius.lg : 0,
                       borderTopRightRadius: i === 0 ? radius.lg : 0,
@@ -988,12 +993,12 @@ export default function OrderDetailScreen() {
                   >
                     {fullfort
                       ? <Check size={17} color={colors.success} strokeWidth={2.6} />
-                      : <FileText size={17} color={colors.toolSecondary} strokeWidth={2} />}
-                    <Text style={[t.body, { flex: 1, color: colors.toolLabel }]} numberOfLines={1}>{tpl.name}</Text>
+                      : <FileText size={17} color={colors.secondaryLabel} strokeWidth={2} />}
+                    <Text style={[t.body, { flex: 1, color: colors.label }]} numberOfLines={1}>{tpl.name}</Text>
                     <Text style={[t.caption, { color: fullfort ? colors.success : colors.brand, fontWeight: '600' }]}>
                       {fullfort ? 'Fullført' : 'Utkast'}
                     </Text>
-                    <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
+                    <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
                   </Pressable>
                 )
               })}
@@ -1012,7 +1017,7 @@ export default function OrderDetailScreen() {
             og mer materiell, og begrepet står bare i veien. */}
         {!!order.quoteId && (
           <View style={{ marginBottom: spacing.lg }}>
-            <ToolCard>
+            <PapirCard>
               <Rad
                 ikon={<FilePlus2 size={18} color={colors.brand} strokeWidth={sizes.lucideStroke} />}
                 tittel="Tilleggsarbeid"
@@ -1023,7 +1028,7 @@ export default function OrderDetailScreen() {
                 forst
                 sist
               />
-            </ToolCard>
+            </PapirCard>
           </View>
         )}
 
@@ -1054,15 +1059,15 @@ export default function OrderDetailScreen() {
               marginHorizontal: spacing.screen + spacing.xs, paddingVertical: spacing.sm,
             }}
           >
-            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.toolTertiary, flex: 1 }]}>
+            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel, flex: 1 }]}>
               Kontor
             </Text>
-            <Text style={[t.footnote, { color: colors.toolTertiary }]}>
+            <Text style={[t.footnote, { color: colors.tertiaryLabel }]}>
               {kontorAapen ? 'Skjul' : 'Vis'}
             </Text>
             {kontorAapen
-              ? <ChevronDown size={16} color={colors.toolTertiary} strokeWidth={2} />
-              : <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={2} />}
+              ? <ChevronDown size={16} color={colors.tertiaryLabel} strokeWidth={2} />
+              : <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={2} />}
           </Pressable>
 
           {kontorAapen && (
@@ -1072,9 +1077,9 @@ export default function OrderDetailScreen() {
                   <AvtaltPrisKort quoteId={order.quoteId} />
                 </View>
               )}
-              <ToolCard>
+              <PapirCard>
                 <Rad
-                  ikon={<Receipt size={18} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />}
+                  ikon={<Receipt size={18} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />}
                   tittel="Fakturagrunnlag"
                   under={
                     !grunnlag ? 'Regner ut …'
@@ -1087,14 +1092,14 @@ export default function OrderDetailScreen() {
                   forst
                 />
                 <Rad
-                  ikon={<PenLine size={18} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />}
+                  ikon={<PenLine size={18} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />}
                   tittel="Kundesignatur"
                   under={signaturer.length === 0 ? 'Bevis på at arbeidet er godtatt' : undefined}
                   verdi={signaturer.length > 0 ? String(signaturer.length) : '—'}
                   onPress={() => router.push({ pathname: '/(app)/ordre/signatur', params: { id } })}
                 />
                 <Rad
-                  ikon={<Users size={18} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />}
+                  ikon={<Users size={18} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />}
                   tittel="Deltakere"
                   verdi={antallMedlemmer > 0 ? String(antallMedlemmer) : '—'}
                   onPress={() => router.push({ pathname: '/(app)/ordre/deltakere', params: { id } })}
@@ -1114,7 +1119,7 @@ export default function OrderDetailScreen() {
                     sist
                   />
                 )}
-              </ToolCard>
+              </PapirCard>
             </>
           )}
 
@@ -1132,7 +1137,7 @@ export default function OrderDetailScreen() {
               }}
             >
               <UserPlus size={17} color={colors.warning} strokeWidth={2.1} />
-              <Text style={[t.footnote, { flex: 1, color: colors.toolSecondary }]}>
+              <Text style={[t.footnote, { flex: 1, color: colors.secondaryLabel }]}>
                 Ordren mangler kunde i registeret
               </Text>
               <Text style={[t.footnote, { color: colors.brand, fontWeight: '700' }]}>Velg</Text>
@@ -1178,11 +1183,11 @@ export default function OrderDetailScreen() {
         {/* Detaljer — metadata nederst, minst viktig */}
         <View>
           <SectionHeader>Detaljer</SectionHeader>
-          <ToolCard>
+          <PapirCard>
             <MetaRow label="Ordrenummer" value={order.orderNumber ? `#${order.orderNumber}` : 'Tildeles ved synk'} />
             <MetaRow label="Opprettet" value={formatDateTime(order.createdAt) ?? '–'} />
             <MetaRow label="Sist endret" value={formatDateTime(order.updatedAt) ?? '–'} last />
-          </ToolCard>
+          </PapirCard>
         </View>
       </ScrollView>
 
@@ -1215,11 +1220,11 @@ export default function OrderDetailScreen() {
               // stedet i appen fargen brukes som flate og ikke som aksent —
               // derfor leses den umiddelbart som handlingen.
               height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.brand,
-              shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
+              shadowColor: '#503719', shadowOpacity: 0.25, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
             }}
           >
-            <Check size={19} color="#fff" strokeWidth={2.4} />
-            <Text style={[t.headline, { color: '#fff' }]}>{hovedhandling.tekst}</Text>
+            <Check size={19} color={colors.ctaLabel} strokeWidth={2.4} />
+            <Text style={[t.headline, { color: colors.ctaLabel }]}>{hovedhandling.tekst}</Text>
           </Pressable>
         </View>
       )}
