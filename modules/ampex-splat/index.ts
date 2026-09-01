@@ -17,6 +17,7 @@ export type RebakeResult = { glbPath: string; filledFraction: number | null; ms:
 type NativeModule = {
   presentMeshScan(companyId: string, roomId: string): Promise<MeshScanResult>
   rebakeMeshScan(framesDirPath: string, flags: Record<string, string>): Promise<RebakeResult>
+  buildSplat(framesDirPath: string, targetCount: number, topK: number): Promise<SplatResult>
 }
 
 let native: NativeModule | null = null
@@ -58,6 +59,25 @@ export async function rebakeMeshScan(
 ): Promise<RebakeResult> {
   if (!native) throw new Error('AmpexSplat native module not available')
   return native.rebakeMeshScan(framesDirPath, flags)
+}
+
+export type SplatResult = { plyPath: string; bytes: number | null; ms: number }
+
+/**
+ * KONSTRUERT gaussian-splat mot samme fixture som `rebakeMeshScan` — ingen trening, ingen
+ * ny skanning. Punkter samples arealvektet over meshen og farges av de `topK` beste
+ * sikt-linjene, score-vektet. Skriver splat.ply (3DGS) i framesDir.
+ *
+ * `topK = 1` gir winner-take-all, altså teksturbakens oppførsel — bruk den som A/B-referanse
+ * mot standard 4, som blander der to bilder er jevnbyrdige.
+ */
+export async function buildSplat(
+  framesDirPath: string,
+  targetCount = 0,
+  topK = 0,
+): Promise<SplatResult> {
+  if (!native) throw new Error('AmpexSplat native module not available')
+  return native.buildSplat(framesDirPath, targetCount, topK)
 }
 
 // ── PDF-side → raster (DrawingPane/multiview eier transformen selv — se

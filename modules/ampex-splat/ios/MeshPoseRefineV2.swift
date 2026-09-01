@@ -16,7 +16,9 @@ enum MeshPoseRefineV2 {
     // 8×5: aggressivt finere (12×8, løsere λ) SENKET residualen men REV opp blanke vegger —
     // teksturløse flater har ikke gradient å justere mot, så løsere regularisering lot punktene
     // drive og rive. Residual er IKKE en trygg proxy for utseende (device 2026-08-25).
-    static let warpGridW = 8, warpGridH = 5
+    // 12×8 er trygt FORDI reguleringen nå er adaptiv (se warpLambda i refine). Uten den
+    // rev dette opp blanke vegger — kommentaren over gjaldt fast λ.
+    static let warpGridW = 12, warpGridH = 8
 
     private struct Frame {
         var w2c: simd_float4x4
@@ -59,7 +61,20 @@ enum MeshPoseRefineV2 {
         }
         let nV = verts.count
 
-        // ── Luma-cache (480px thumbs ≈ 0,5 MB/frame — hele settet får plass i RAM)
+        // ── Luma-cache.
+        //
+        // OPPLØSNINGEN ER WARPENS SYNSGRENSE (2026-09-01). 480 px var valgt for minne, men
+        // originalene er 3840: en misalignment på to piksler i full oppløsning er en KVART
+        // piksel her, altså under det gradientene kan måle. Warpen kunne dermed ikke se
+        // feilen den er satt til å rette — og det er grunnen til at hverken finere
+        // warp-rutenett, adaptiv regularisering eller flere iterasjoner ga synlig utslag.
+        //
+        // 960 px koster ~2 MB/frame i Float, altså ~290 MB for 139 frames. Det får plass
+        // fordi TSDF-volumet er frigjort før dette punktet (VoxelStore deinit etter surface
+        // nets). Blir det trangt på svakere enheter, er neste steg å lagre luma som UInt8 og
+        // konvertere i `sample` — det firedobler kapasiteten uten å tape presisjon som betyr
+        // noe, siden kilden er 8-bits. meshscan.warppx overstyrer.
+        let lumaMaxPx = Int(UserDefaults.standard.string(forKey: "meshscan.warppx") ?? "") ?? 960
         func mat(_ a: [Float]) -> simd_float4x4 {
             simd_float4x4(columns: (SIMD4(a[0], a[1], a[2], a[3]), SIMD4(a[4], a[5], a[6], a[7]),
                                     SIMD4(a[8], a[9], a[10], a[11]), SIMD4(a[12], a[13], a[14], a[15])))
@@ -68,7 +83,7 @@ enum MeshPoseRefineV2 {
         frames.reserveCapacity(keyframes.count)
         var frameKF: [Int] = [] // frames[i] ↔ keyframes[frameKF[i]]
         for (ki, k) in keyframes.enumerated() {
-            guard let cg = MeshImageIO.loadCGImageThumb(framesDir, k.file, maxPx: 480),
+            guard let cg = MeshImageIO.loadCGImageThumb(framesDir, k.file, maxPx: lumaMaxPx),
                   let rgba = MeshImageIO.rgbaBytes(cg) else { continue }
             let lw = cg.width, lh = cg.height
             var luma = [Float](repeating: 0, count: lw * lh)
@@ -341,8 +356,20 @@ enum MeshPoseRefineV2 {
             // Regularisering holder kontrollpunkter i tekstur-fattige felt (blank vegg) fra å
             // drive fritt og rive warpen. For lav = wobble/riving; for høy = kollapser til
             // rigid. Startverdi — TUNE på fixture (docs, felle #3).
-            let warpLambda: Float = 0.02  // fast nok til at blanke vegger ikke rives (0.008 rev)
-            let warpStepClamp: Float = 2.0 // piksler per steg — større (4.0) rev blanke vegger
+            // ADAPTIV regularisering (2026-09-01). Den gamle faste λ måtte settes etter det
+            // VERSTE tilfellet — blank vegg — og var dermed for stiv over alt som faktisk har
+            // struktur. Derfor senket 12×8 residualen, men rev opp veggene: rutenettet ble
+            // finere overalt, også der det ikke fantes gradient å styre etter.
+            // Nå er λ per kontrollpunkt: fri der bildet har struktur, låst der det er blankt.
+            // Det er det som gjør et finere rutenett trygt.
+            let warpLambda: Float = 0.012    // gulv, brukes der det ER struktur
+            let warpLambdaMax: Float = 0.10  // tak, brukes over teksturløse flater
+            // Steget er i PIKSLER, så det må skaleres med luma-oppløsningen: 2.0 var satt
+            // for 480 px, og da bildene ble doblet til 960 halverte den samme konstanten
+            // effektivt hvor langt warpen får flytte seg per iterasjon (forbedringen falt
+            // 8,0 % → 5,5 %). Grensen på 4.0 som «rev blanke vegger» gjaldt 480 px med FAST
+            // regularisering — begge deler er endret siden.
+            let warpStepClamp: Float = 2.0 * Float(lumaMaxPx) / 480
             var warpResBefore: Float = -1, warpResAfter: Float = 0
             let warpIters = 8
             for witer in 0..<warpIters {
@@ -377,6 +404,12 @@ enum MeshPoseRefineV2 {
                                 let grid = warpsCopy[fi]
                                 var H = [Float](repeating: 0, count: warpN * warpN)
                                 var b = [Float](repeating: 0, count: warpN)
+                                // Bildestruktur under hvert kontrollpunkt. Et punkt over blank
+                                // vegg har ingen gradient å styre etter og MÅ holdes fast;
+                                // et punkt over en vinduskarm kan flytte seg fritt. Uten dette
+                                // skillet må reguleringen settes etter det verste tilfellet,
+                                // og da blir warpen for stiv til å rette opp smøringen.
+                                var gradE = [Float](repeating: 0, count: warpGW * warpGH)
                                 var rSum: Float = 0; var rN = 0
                                 for i in 0..<nV where wsum[i] > 1e-4 {
                                     guard let pr = project(f, verts[i], vnorms[i]) else { continue }
@@ -391,9 +424,11 @@ enum MeshPoseRefineV2 {
                                     let wArr = [wgt.0, wgt.1, wgt.2, wgt.3]
                                     var cols = [Int](repeating: 0, count: 8)
                                     var jv = [Float](repeating: 0, count: 8)
+                                    let gmag = s.gx * s.gx + s.gy * s.gy
                                     for k in 0..<4 {
                                         cols[k * 2] = cpArr[k] * 2;     jv[k * 2] = s.gx * wArr[k]
                                         cols[k * 2 + 1] = cpArr[k] * 2 + 1; jv[k * 2 + 1] = s.gy * wArr[k]
+                                        gradE[cpArr[k]] += gmag * wArr[k]
                                     }
                                     for a in 0..<8 {
                                         b[cols[a]] += jv[a] * r
@@ -403,13 +438,26 @@ enum MeshPoseRefineV2 {
                                 FR[fi] = rSum; FN[fi] = rN
                                 guard rN > 200 else { return }
                                 // Glatthetsregularisering: naborutenett (horisontal + vertikal).
+                                // Median-normalisert struktur: punkter under snittet strammes
+                                // opp mot warpLambdaMax, punkter over slippes mot warpLambda.
+                                var gs = gradE.filter { $0 > 0 }.sorted()
+                                let gMed = gs.isEmpty ? 1 : max(gs[gs.count / 2], 1e-8)
+                                func lamAt(_ k: Int) -> Float {
+                                    let rel = gradE[k] / gMed
+                                    // rel ≥ 1 (mye struktur) → warpLambda; rel → 0 (blankt) → maks.
+                                    let t = min(1, rel)
+                                    return warpLambdaMax + (warpLambda - warpLambdaMax) * t
+                                }
                                 func reg(_ k: Int, _ m: Int) {
+                                    // Paret bindes av den STIVESTE av de to: en fri nabo skal
+                                    // ikke kunne dra et låst punkt over blank vegg med seg.
+                                    let lamR = max(lamAt(k), lamAt(m))
                                     for comp in 0..<2 {
                                         let ci = k * 2 + comp, cj = m * 2 + comp
-                                        H[ci * warpN + ci] += warpLambda; H[cj * warpN + cj] += warpLambda
-                                        H[ci * warpN + cj] -= warpLambda; H[cj * warpN + ci] -= warpLambda
+                                        H[ci * warpN + ci] += lamR; H[cj * warpN + cj] += lamR
+                                        H[ci * warpN + cj] -= lamR; H[cj * warpN + ci] -= lamR
                                         let diff = grid[k][comp] - grid[m][comp]
-                                        b[ci] += warpLambda * diff; b[cj] -= warpLambda * diff
+                                        b[ci] += lamR * diff; b[cj] -= lamR * diff
                                     }
                                 }
                                 for gy in 0..<warpGH {

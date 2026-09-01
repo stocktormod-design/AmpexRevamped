@@ -17,7 +17,7 @@ import { MeshMarker } from '../../lib/db/models/mesh-marker'
 import { SYMBOLS, getSymbol, symbolSvg } from '../../lib/symbols'
 import { useUserId } from '../../lib/auth-user'
 import * as FileSystem from 'expo-file-system/legacy'
-import { NativeMeshViewer, nativeSplatAvailable, presentMeshScan, rebakeMeshScan, resolveScanPath, type MeshScanResult } from '../../lib/splat'
+import { NativeMeshViewer, nativeSplatAvailable, presentMeshScan, rebakeMeshScan, buildSplat, resolveScanPath, type MeshScanResult } from '../../lib/splat'
 import { ensureScanLocal, ensureScanUploaded } from '../../lib/scan-storage'
 import { colors, spacing, radius, type as t } from '../../lib/theme'
 
@@ -341,26 +341,19 @@ function Cta({ label, onPress, disabled }: { label: string; onPress: () => void;
 /**
  * A/B-sele for teksturbaken (KUN __DEV__). Lister skann-bundlene som ligger igjen på
  * enheten (`Documents/scan-frames/*` med fixture-mesh.bin) og baker den samme bundlen på
- * nytt med valgt `meshscan.stasted`-modus. Poenget er å kunne sammenligne to bake-varianter
- * av NØYAKTIG samme skann — knottene skal dømmes på fixtures, ikke på nye skann der
- * håndbevegelsen er en ukontrollert variabel.
- *   on     = topp-K beholdt, men begrenset til det valgte ståstedet (dagens)
- *   legacy = multiband AV på alle re-plukkede flater (oppførselen før 2026-08-23)
- *   off    = ståsted-valget hoppes over helt
- * «farge»-bryteren står på tvers av de tre og styrer ICM-glatthetstermen
- * (`meshscan.icmcolor`): på = fargeforskjell over sømmen, av = gammel flertallsstemme.
- * Kombinasjonen som svarer på om ståstedet spiser gevinsten er farge=på + off, med
- * farge=av + off som kontroll.
+ * nytt — poenget er å sammenligne to bake-varianter av NØYAKTIG samme skann, ikke nye
+ * skann der håndbevegelsen er en ukontrollert variabel.
+ *
+ * To knapper, null valg (flagg-matrisen ble «mindless» — brukerdom 2026-08-27):
+ *   ny     = ingen flagg → dagens defaulter (hybrid multiband + warp + tone-trim + frynse-trim)
+ *   gammel = dagens nits skrudd av (tonetrim/fringetrim off) → gårsdagens bake som referanse
+ * Trenger en finere matrise igjen (enkeltflagg, terskler), sett flaggene her midlertidig —
+ * mekanismen (rebakeMeshScan tar vilkårlige meshscan.*-strenger) står urørt.
  */
 function RebakeAB({ onResult }: { onResult: (glbPath: string) => void }) {
   const [bundles, setBundles] = useState<string[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
-  const [icmColor, setIcmColor] = useState(true)
-  const [warp, setWarp] = useState(false)
-  // Speiler bake-defaulten (blend=all er PÅ i målebygget) så panelet viser det et vanlig
-  // skann faktisk gjør; «vinner» er fallback-armen i A/B-matrisen (warp av/på × vinner/snitt).
-  const [blendAll, setBlendAll] = useState(true)
 
   useEffect(() => {
     const dir = (FileSystem.documentDirectory ?? '') + 'scan-frames'
@@ -378,18 +371,99 @@ function RebakeAB({ onResult }: { onResult: (glbPath: string) => void }) {
 
   if (bundles.length === 0) return null
 
-  const run = async (name: string, mode: string) => {
+  const run = async (name: string, variant: 'ny' | 'jevn' | 'splat') => {
     const path = ((FileSystem.documentDirectory ?? '') + 'scan-frames/' + name).replace('file://', '')
-    setBusy(`${name}:${mode}`)
+    setBusy(`${name}:${variant}`)
     setNote(null)
     try {
-      const r = await rebakeMeshScan(path, {
-        'meshscan.stasted': mode,
-        'meshscan.icmcolor': icmColor ? 'on' : 'off',
-        'meshscan.warp': warp ? 'on' : 'off',
-        'meshscan.blend': blendAll ? 'all' : 'winner',
-      })
-      setNote(`${mode} · farge ${icmColor ? 'på' : 'av'} · warp ${warp ? 'på' : 'av'} · ${blendAll ? 'snitt' : 'vinner'} · ${(r.ms / 1000).toFixed(1)}s · fylt ${r.filledFraction === null ? '–' : Math.round(r.filledFraction * 100) + '%'}`)
+      // Splat er ikke en bake: den skriver splat.ply ved siden av fixturen og har ingen GLB
+      // å vise i mesh-vieweren ennå. Hent fila med devicectl og se på den utenfor appen.
+      if (variant === 'splat') {
+        const s = await buildSplat(path)
+        setNote(`splat · ${(s.ms / 1000).toFixed(1)}s · ${s.bytes === null ? '?' : Math.round(s.bytes / 1024 / 1024)}MB`)
+        onResult(s.plyPath) // vieweren kjenner .ply igjen og laster den som punktsky
+        return
+      }
+      // «jevn» går etter FARGEVARIASJON mellom flater: gain-klemmen åpnes fra ±25 % til
+      // ±40 % (loggene viser at gainene slår i den gamle klemmen, altså at utjevningen
+      // stopper for tidlig), og tone-trimmen slås av så flere syn er med i lavfrekvens-
+      // snittet. Prisen er at semi-gloss-sheen kan komme tilbake som svake bloom-flekker,
+      // og at ekte lysforskjeller (skygge under et bord) dras litt mot hverandre.
+      // Mild forenkling i BEGGE: TSDF-nett har 600k+ trekanter, og xatlas henger i mange
+      // minutter på det. 250k er halvparten bort, som er nesten gratis på et surface-nets-nett
+      // (flate vegger har like tett triangulering som detaljerte lister). Det HARDE taket
+      // «on» (60k) er noe annet — det ga fasetter i taket da det ble prøvd i august.
+      // Begge bygger geometrien fra RÅ LiDAR-dybde («tsdf») i stedet for ARKit-nettet.
+      // Forskjellen er FARGE-utjevning, i to trinn:
+      //   ny   = gain-klemme ±40 % + tone-trim av. Dette var «jevn», og er nå standard fordi
+      //          den gamle standarden ga fire-fem lyshetsfelt med rette kanter på én hvit vegg.
+      //   jevn = blend=raw: HELE teksturen er et warp-justert fullfrekvens-snitt.
+      //
+      // Dette er den manglende halvdelen av sub-pixel-planen. Warpen har kjørt hele tiden,
+      // men multiband bruker den KUN i lavfrekvensen (final = vinner + blur(snitt) −
+      // blur(vinner)) — altså på nøyaktig det som deretter blurres bort. Detaljen, der
+      // smøringen mellom bilder faktisk synes, kommer fra ETT bilde uten warp. Derfor ga
+      // hverken finere warp-rutenett eller adaptiv regularisering synlig utslag.
+      // «raw» dropper vinnervalget og lar det warp-justerte snittet bære alle frekvenser.
+      // Prisen ifølge koden: tonelapper der topp-K-settet skifter.
+      //
+      // TONE-TRIM ER SLÅTT PÅ IGJEN i «ny» (2026-09-01). Den ble laget 26. august mot
+      // «oily vegg» — semi-gloss sheen flytter seg med synsvinkelen, så tre syn gir tre
+      // svake bloom-flekker i lavfrekvensen, og trimmen midler kun de synene som er
+      // FARGEMESSIG enige med vinneren. Jeg slo den av for å styrke eksponeringsutjevningen
+      // mens gain-solven fortsatt drev. Nå som normaliseringen fjerner driften, er den
+      // hjelpen ikke lenger nødvendig — og oljesmøren kom tilbake uten trimmen.
+      //
+      // FRI KLEMME ER PRØVD OG FORKASTET (device 2026-08-31): med normaliseringen på plass
+      // ga «off» gain-lum 0.62–1.72, altså 2,8× spredning mellom lyseste og mørkeste bilde.
+      // Enkeltbilder får da ekstreme gains som lager NYE flekker på veggen — verre enn det
+      // klemmen på 0.4 ga (0.60–0.82, 1,4× spredning). Normaliseringen fjerner driften;
+      // klemmen må fortsatt begrense SPREDNINGEN. De løser to ulike ting.
+      // GAIN-KLEMMEN ER FERDIG UTFORSKET (2026-09-01). Målt: ved 0.4 slår gainene i BEGGE
+      // grenser (0.60–1.40), ved 0.7 lander de fritt på 0.68–1.44. Solven har altså
+      // KONVERGERT — den vil ikke utligne mer selv når den får lov. 0.7 er standard fordi
+      // klemmen da ikke lenger kutter av noe.
+      //
+      // KONSEKVENS: fargeforskjeller som STÅR IGJEN er ikke eksponering mellom bilder. De er
+      // ekte lys bakt inn i teksturen (sollys på en vegg gjorde den faktisk lysere der).
+      // Ingen gain-utjevning kan fjerne det; det krever delighting — å skille albedo fra
+      // lyssetting — som er en helt annen og mye større jobb. Ikke tune denne knotten videre.
+      //
+      // «jevn» er nå ett hakk mykere blanding (topk 3) for de flatene der to syn er for få.
+      const shared = {
+        'meshscan.geometry': 'tsdf',
+        // 400k, ikke 250k: taket er rommets flateste flate og kollapses hardest av
+        // kvadrikk-decimeringen — det er der fasettene dukker opp først (kodens egen
+        // august-notat om «synlige store fasetter i taket»). 250k ble satt da xatlas tok
+        // 99 s; med blokk-parallelliseringen tar den 10 s, så prisen for flere trekanter
+        // er nå små sekunder i stedet for minutter.
+        'meshscan.simplify': '400000',
+        'meshscan.blend': 'raw',
+        'meshscan.blendsharp': '12',
+      }
+      // A/B PÅ DEPTH SUPER-RES (JBU), etter at dybde-termen kom inn.
+      //   ny   = JBU på (×3) med dybde-term: bildet OG dybden må være enige om en kant
+      //   jevn = JBU helt av (kontroll — gir rent tak, men mister kantpresisjon på detaljer)
+      // BEKREFTET på enhet: uten dybde-term utvidet JBU rommets bounding box med 2,4 m og
+      // la falske flak foran taket. Med den skal detaljene (klokke, lister, karmer) beholdes.
+      // Hypotese: JBU styrer dybdeinterpolasjonen etter kanter i RGB. Et hvitt tak har ingen
+      // tekstur, men lysgradienter og skygger — leses de som kanter, lager JBU dybdesprang
+      // som ikke finnes, og resultatet er flak som flyter foran taket.
+      //
+      // TIDLIGERE FORKASTET som årsak til de hvite flakene: decimering, viewer-lyssetting
+      // (materialet er .constant), overeksponering, UV-blokker, frynse-trim. De hvite flakene i taket passer kodens egen beskrivelse av en
+      // frynse: «åpne grenseflater med grazing-tekstur» — flater på skanngrensen som ingen
+      // kamera så ordentlig, og som derfor får strukket, utsmurt tekstur. Trimmen er AVBRUTT
+      // fordi 3,9 % kvalifiserer mot en vakt på 3 %.
+      //   ny   = trim av (vakten avbryter) — dagens utseende
+      //   jevn = terskel 5 %, altså trimmen får kjøre
+      // Merk at 12 % ble prøvd tidligere og ga avflassing over hele rommet: da fjernet den
+      // 6,3 % av flatene, altså ekte geometri. 5 % er akkurat nok til å slippe disse
+      // gjennom uten å åpne for det.
+      const r = await rebakeMeshScan(path, variant === 'ny'
+        ? { ...shared, 'meshscan.gainclamp': '0.7', 'meshscan.topk': '2' }
+        : { ...shared, 'meshscan.gainclamp': '0.7', 'meshscan.topk': '2', 'meshscan.jbu': '1' })
+      setNote(`${variant} · ${(r.ms / 1000).toFixed(1)}s · fylt ${r.filledFraction === null ? '–' : Math.round(r.filledFraction * 100) + '%'}`)
       onResult(r.glbPath)
     } catch (e: any) {
       setNote(`feilet: ${e?.message ?? e}`)
@@ -400,59 +474,21 @@ function RebakeAB({ onResult }: { onResult: (glbPath: string) => void }) {
 
   return (
     <View style={{ marginTop: spacing.xl, alignSelf: 'stretch', gap: spacing.sm }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-        <Text style={[t.footnote, { color: 'rgba(255,255,255,0.4)' }]}>A/B-rebake (dev)</Text>
-        <Pressable haptic="light" pressScale={0.96} disabled={busy !== null}
-          onPress={() => setIcmColor(v => !v)}
-          style={{
-            paddingHorizontal: spacing.sm, height: 26, borderRadius: radius.md,
-            alignItems: 'center', justifyContent: 'center',
-            backgroundColor: icmColor ? colors.brand : 'rgba(255,255,255,0.1)',
-            opacity: busy !== null ? 0.4 : 1,
-          }}>
-          <Text style={[t.caption, { color: '#fff', fontWeight: '600' }]}>
-            {icmColor ? 'farge på' : 'farge av'}
-          </Text>
-        </Pressable>
-        <Pressable haptic="light" pressScale={0.96} disabled={busy !== null}
-          onPress={() => setWarp(v => !v)}
-          style={{
-            paddingHorizontal: spacing.sm, height: 26, borderRadius: radius.md,
-            alignItems: 'center', justifyContent: 'center',
-            backgroundColor: warp ? colors.brand : 'rgba(255,255,255,0.1)',
-            opacity: busy !== null ? 0.4 : 1,
-          }}>
-          <Text style={[t.caption, { color: '#fff', fontWeight: '600' }]}>
-            {warp ? 'warp på' : 'warp av'}
-          </Text>
-        </Pressable>
-        <Pressable haptic="light" pressScale={0.96} disabled={busy !== null}
-          onPress={() => setBlendAll(v => !v)}
-          style={{
-            paddingHorizontal: spacing.sm, height: 26, borderRadius: radius.md,
-            alignItems: 'center', justifyContent: 'center',
-            backgroundColor: blendAll ? colors.brand : 'rgba(255,255,255,0.1)',
-            opacity: busy !== null ? 0.4 : 1,
-          }}>
-          <Text style={[t.caption, { color: '#fff', fontWeight: '600' }]}>
-            {blendAll ? 'snitt' : 'vinner'}
-          </Text>
-        </Pressable>
-      </View>
+      <Text style={[t.footnote, { color: 'rgba(255,255,255,0.4)' }]}>A/B-rebake (dev)</Text>
       {bundles.map(name => (
         <View key={name} style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: radius.lg, padding: spacing.sm, gap: spacing.xs }}>
           <Text style={[t.caption, { color: 'rgba(255,255,255,0.5)' }]} numberOfLines={1}>{name}</Text>
           <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-            {['on', 'legacy', 'off'].map(mode => (
-              <Pressable key={mode} haptic="light" pressScale={0.96} disabled={busy !== null}
-                onPress={() => run(name, mode)}
+            {(['ny', 'jevn', 'splat'] as const).map(variant => (
+              <Pressable key={variant} haptic="light" pressScale={0.96} disabled={busy !== null}
+                onPress={() => run(name, variant)}
                 style={{
                   flex: 1, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: busy === `${name}:${mode}` ? colors.brand : 'rgba(255,255,255,0.1)',
-                  opacity: busy !== null && busy !== `${name}:${mode}` ? 0.4 : 1,
+                  backgroundColor: busy === `${name}:${variant}` ? colors.brand : 'rgba(255,255,255,0.1)',
+                  opacity: busy !== null && busy !== `${name}:${variant}` ? 0.4 : 1,
                 }}>
                 <Text style={[t.footnote, { color: '#fff', fontWeight: '600' }]}>
-                  {busy === `${name}:${mode}` ? 'baker…' : mode}
+                  {busy === `${name}:${variant}` ? 'baker…' : variant}
                 </Text>
               </Pressable>
             ))}
