@@ -286,8 +286,13 @@ enum MeshBakeV2 {
         // så et snitt av 6 syn arver spredningen mellom alle seks. To syn gir to pikslers
         // uskarphet; seks gir mye mer. Vinkelvekting alene skiller for dårlig når synene ser
         // flaten fra omtrent samme vinkel — da er facing nesten lik uansett eksponent.
+        // 2 syn i snittet er STANDARD: hvert ekstra syn legger sin egen misalignment til
+        // uskarpheten, og vinkelvekting skiller for dårlig når synene ser flaten fra omtrent
+        // samme retning. Målt på enhet: 6 syn ga tydelig blur, 2 ga skarphet uten at sømmene
+        // kom tilbake (fordi raw-snittet ikke VELGER, det vekter).
+        topK = min(2, topK)
         if let s = UserDefaults.standard.string(forKey: "meshscan.topk"), let v = Int(s), v >= 1 {
-            topK = min(v, topK)
+            topK = v
             MeshLog.log("V2 topK overstyrt → \(topK)")
         }
 
@@ -318,14 +323,42 @@ enum MeshBakeV2 {
         // søyle-smuss dratt inn på veggen av lavt rangerte syn) beholdes som "raw" for A/B.
         // "winner"/"off" = ren vinnervei. blend tvinger warpen på (snittet sampler gjennom den).
         // Se docs/SUBPIXEL_ALIGN_PLAN.md.
+        // STANDARD ER «raw» (2026-09-01, etter en kveld med A/B på enhet): hele teksturen er
+        // et warp-justert fullfrekvens-snitt. Multiband bruker warpen KUN i lavfrekvensen —
+        // altså på det som deretter blurres bort — så sub-pixel-alignmentet fikk aldri virke
+        // der smøringen mellom bilder faktisk synes. «winner»/«off» er A/B-armene.
         let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend")
         let blendAll = blendFlag != "off" && blendFlag != "winner"
-        let blendRaw = blendFlag == "raw"
+        let blendRaw = blendAll && blendFlag != "multiband"
         var warpGrids = [[SIMD2<Float>]]()
         if UserDefaults.standard.string(forKey: "meshscan.poserefine") != "off" {
             ARMeshGlbExporter.progress?("Justerer kameraer…")
-            MeshPoseRefineV2.refine(keyframes: &kfUse, positions: meshIn.positions, normals: meshIn.normals,
-                                    framesDir: framesDir, forceWarp: blendAll, warpGridsByKF: &warpGrids)
+            // GROV-TIL-FIN (2026-09-01). Refinen måler hvert bilde mot en proxy som er et
+            // SNITT av alle syn — er synene uenige, er proxyen utsmurt, og da kan refinen
+            // ikke se en feil som er mindre enn uskarpheten. Kjøres den rett på full
+            // oppløsning, konvergerer den i et lokalt minimum: målt residual flatet ut på
+            // 0.0538 og var ufølsom for både 8× finere proxy og lyshetskompensasjon.
+            //
+            // Ved å starte kraftig nedskalert er bare den STORE feilen synlig, og den kan
+            // lukkes uten å bli forstyrret av detaljer. Hver runde skjerper proxyen, som
+            // igjen lar neste runde se finere. meshscan.refinesteps = "off" for én runde.
+            // MÅLT OG FORKASTET (2026-09-01): grov-til-fin [240, 480, 960] gjorde det VERRE
+            // — spredningen mellom bilder gikk fra 16,7 til 26,5 px. På grove bilder er det
+            // for lite informasjon til at Gauss-Newton finner riktig løsning, og de finere
+            // rundene klarer ikke å rette opp det den grove låste seg til. Én runde på full
+            // oppløsning er bedre. Sett meshscan.refinesteps = "pyramid" for å prøve igjen.
+            let steps: [Int] = UserDefaults.standard.string(forKey: "meshscan.refinesteps") == "pyramid"
+                ? [240, 480, 960] : [960]
+            for (si, px) in steps.enumerated() {
+                UserDefaults.standard.set(String(px), forKey: "meshscan.warppx")
+                MeshPoseRefineV2.refine(keyframes: &kfUse, positions: meshIn.positions, normals: meshIn.normals,
+                                        framesDir: framesDir,
+                                        // Warpen er bare nyttig på siste, skarpeste runde:
+                                        // på grove bilder ville den bruke frihetsgrader på
+                                        // støy, og de rigide stegene er det som teller der.
+                                        forceWarp: blendAll && si == steps.count - 1,
+                                        warpGridsByKF: &warpGrids)
+            }
         }
 
         // ── Geometri-stadium: ANCHOR-MESH ER DEFAULT (scan #8-fasiten, brukerdom 2026-08-13
@@ -405,7 +438,7 @@ enum MeshBakeV2 {
         let bigMesh = mesh.indices.count / 3 > 400_000
         var didSimplify = false
         var simplifyFlag = UserDefaults.standard.string(forKey: "meshscan.simplify")
-        if simplifyFlag == nil, bigMesh { simplifyFlag = "250000" }
+        if simplifyFlag == nil, bigMesh { simplifyFlag = "400000" }
         if simplifyFlag != nil, simplifyFlag != "off", mesh.indices.count / 3 > 24_000 {
             didSimplify = true
             ARMeshGlbExporter.progress?("Forenkler mesh…")
@@ -551,7 +584,10 @@ enum MeshBakeV2 {
             // Videre klemme flater mer, men risikerer å dra ekte lysforskjeller (skygge under
             // et bord er ikke en eksponeringsfeil) mot hverandre. meshscan.gainclamp = tall
             // (avstand fra 1, f.eks. 0.35 → 0.65–1.35) eller "off" for helt fri.
-            var gainLo: Float = 0.8, gainHi: Float = 1.25
+            // 0.7 (0.30–1.70) er STANDARD: målt at solven konvergerer på 0.68–1.44 av seg
+            // selv, altså at en smalere klemme kutter av en reell rest. Fargeforskjeller som
+            // står igjen etter dette er ekte lys, ikke eksponering.
+            var gainLo: Float = 0.3, gainHi: Float = 1.7
             switch UserDefaults.standard.string(forKey: "meshscan.gainclamp") {
             case "off": gainLo = 0.3; gainHi = 3.0
             case let s? where Float(s) != nil:
@@ -685,7 +721,17 @@ enum MeshBakeV2 {
             }
             let d2 = max(simd_length_squared(c.camPos - centroid), 0.25)
             var score = facing / d2 * (0.3 + 0.7 * c.quality)
-            if depthEdge { score *= 0.05 }
+            // Dybdekant-straffen var 0.05, altså nesten diskvalifiserende. Den finnes for å
+            // hindre at forgrunnens kantfarge blør over på flaten bak — men en flate som
+            // LIGGER på en geometrikant er ved en dybdekant i HVERT bilde, og ender dermed
+            // uten brukbar vinner i det hele tatt. Da males den aldri, og resultatet er hvite
+            // flak langs bord-, gulv- og møbelkanter (målt 2026-09-01: 7,6 % av synlige
+            // flater, med normal UV-størrelse — altså ikke nåler, bare umalte).
+            // En mild straff lar dem få det beste tilgjengelige bildet: litt kantblødning er
+            // langt bedre enn ingen tekstur. meshscan.edgepenalty.
+            if depthEdge {
+                score *= Float(UserDefaults.standard.string(forKey: "meshscan.edgepenalty") ?? "") ?? 0.35
+            }
             // Kant-avfall: linsekanten er fortegnet/vignettert — foretrekk sentral sikt.
             let bfx = min(u, c.imgW - u) / (c.imgW * 0.12)
             let bfy = min(vv, c.imgH - vv) / (c.imgH * 0.12)
@@ -1407,8 +1453,13 @@ enum MeshBakeV2 {
             // plan-tildelingen), og 0,08 rakk ikke å lukke spranget mellom to fotos av samme
             // vegg. Additivt, så det kan ikke smøre; arealvekt-forankringen står igjen som vern
             // mot «blomstrende utvasking» (scan #4).
+            let regionOfsLim = Float(UserDefaults.standard.string(forKey: "meshscan.regionofs") ?? "") ?? 0.40
             for i in 0..<regionOfs.count {
-                regionOfs[i] = simd_clamp(regionOfs[i], SIMD3(repeating: -0.13), SIMD3(repeating: 0.13))
+                // Hvor langt en region får flyttes i nivå. For stramt lar store tonesprang
+                // stå igjen som trekantede felt på flate flater (gulv er verst: det sees i
+                // grazing fra alle syn, så nabo-regioner får svært ulik bildemiks).
+                // meshscan.regionofs.
+                regionOfs[i] = simd_clamp(regionOfs[i], SIMD3(repeating: -regionOfsLim), SIMD3(repeating: regionOfsLim))
             }
             MeshLog.log("V2 søm-nivellering — \(regionFrame.count) regioner, \(trustedPairs)/\(pairAcc.count) grensepar brukt")
 
@@ -1810,7 +1861,7 @@ enum MeshBakeV2 {
         // uskarpt fordi warpen ikke er presis nok til å holde detaljen på tvers av syn.
         // Eksponenten lar det beste synet dominere gradvis i stedet for binært: 4 var den
         // gamle faste verdien, 10–14 gir merkbart skarpere raw-bake med litt mer søm.
-        let blendSharp = Float(UserDefaults.standard.string(forKey: "meshscan.blendsharp") ?? "") ?? 4
+        let blendSharp = Float(UserDefaults.standard.string(forKey: "meshscan.blendsharp") ?? "") ?? 12
         let gW = MeshPoseRefineV2.warpGridW, gH = MeshPoseRefineV2.warpGridH
         var gdim = SIMD2<Int32>(Int32(gW), Int32(gH))
         let zeroGrid = [SIMD2<Float>](repeating: .zero, count: gW * gH)
@@ -1863,6 +1914,26 @@ enum MeshBakeV2 {
             }
             guard !idxAll.isEmpty, let ibufA = device.makeBuffer(bytes: idxAll, length: idxAll.count * 4) else { return nil }
 
+            // SØM-NIVELLERING I RAW-GRENEN (2026-09-01). Nivelleringen har to ledd: et
+            // REGION-NIVÅ (uniformen `c.ofs`) og en per-hjørne-forfining (`in.ofs` fra
+            // vertex-bufferen). Denne grenen tegner per BILDE, ikke per region, så uniformen
+            // kan ikke bære nivået — og den ble derfor satt til null. Resultatet var at
+            // regionene beholdt hvert sitt tonenivå: store trekantede felt med ulik lyshet
+            // på én flat hvit vegg, med skarpe kanter mellom.
+            // Nivået legges nå inn i vertex-dataene, der forfiningen allerede ligger, slik at
+            // begge ledd følger flaten uansett hvilket bilde som tegner den.
+            var vdataRaw = vdata
+            for t in 0..<triCount {
+                let r = Int(region[t])
+                guard regionOfs.indices.contains(r) else { continue }
+                let ro = regionOfs[r]
+                for j in 0..<3 {
+                    let o = (t * 3 + j) * 8
+                    vdataRaw[o + 5] += ro.x; vdataRaw[o + 6] += ro.y; vdataRaw[o + 7] += ro.z
+                }
+            }
+            guard let vbufRaw = device.makeBuffer(bytes: vdataRaw, length: vdataRaw.count * 4) else { return nil }
+
             var firstA = true
             for (bi, fr) in frRange.enumerated() {
                 let k = kfUse[fr.frame]
@@ -1894,7 +1965,7 @@ enum MeshBakeV2 {
                 rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
                 guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { continue }
                 enc.setRenderPipelineState(waPipe)
-                enc.setVertexBuffer(vbuf, offset: 0, index: 0)
+                enc.setVertexBuffer(vbufRaw, offset: 0, index: 0)
                 enc.setFragmentBytes(&cam, length: MemoryLayout<CamV2>.stride, index: 0)
                 enc.setFragmentBytes(&grid, length: MemoryLayout<SIMD2<Float>>.stride * gW * gH, index: 1)
                 enc.setFragmentBytes(&gdim, length: MemoryLayout<SIMD2<Int32>>.stride, index: 2)

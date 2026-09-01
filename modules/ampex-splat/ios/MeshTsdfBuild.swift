@@ -157,6 +157,9 @@ enum MeshTsdfBuild {
         // Leses de som kanter, oppstår dybdesprang som ikke finnes — flak som flyter foran
         // taket. meshscan.jbu = 1 slår den av.
         if let j = Int(UserDefaults.standard.string(forKey: "meshscan.jbu") ?? "") { options.jbuScale = max(1, j) }
+        if let s = UserDefaults.standard.string(forKey: "meshscan.voxel"), let v = Float(s), v >= 0.006 {
+            options.voxel = v
+        }
         if let s = UserDefaults.standard.string(forKey: "meshscan.tsdftrunc"), let v = Float(s), v > 0.5 {
             options.truncVoxels = min(8, v)
         }

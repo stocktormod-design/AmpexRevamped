@@ -9,7 +9,7 @@ import { Pressable } from '../../../components/pressable'
 import { Slider } from '../../../components/slider'
 import { SectionHeader } from '../../../components/ui'
 import { ScanCard } from '../../../components/scan-card'
-import { deleteScanFiles, clearRevisions } from '../../../lib/scan-revisions'
+import { deleteScanFiles, clearRevisions, archiveRevision } from '../../../lib/scan-revisions'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Room, overallProgress, type RoomProgress } from '../../../lib/db/models/room'
@@ -110,6 +110,11 @@ export default function RomDetailScreen() {
               await database.write(async () => { await room.update(r => { r.scanPath = null }) })
               syncQuietly()
             } : undefined}
+            onRebuilt={async path => {
+              if (room.scanPath) await archiveRevision(room.id, room.scanPath)
+              await database.write(async () => { await room.update(r => { r.scanPath = path }) })
+              syncQuietly()
+            }}
           />
         </View>
         <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
