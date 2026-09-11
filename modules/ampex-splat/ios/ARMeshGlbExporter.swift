@@ -11,6 +11,9 @@ import ImageIO
 enum ARMeshGlbExporter {
     /// Fase-rapportering til skanner-UI-et under baking («Pakker UV-atlas…» osv.).
     nonisolated(unsafe) static var progress: ((String) -> Void)?
+    /// Ombaking («Bygg skarpere modell») kjører uten tidsbudsjett — der har
+    /// brukeren bedt om kvalitet og telefonen ligger gjerne på lading.
+    nonisolated(unsafe) static var isRebake = false
 
     enum ExportError: LocalizedError {
         case noMeshData
@@ -127,14 +130,14 @@ enum ARMeshGlbExporter {
             let nOffset = nSource.offset
 
             for i in 0..<vertCount {
-                let vp = vBuf.advanced(by: vOffset + i * vStride).assumingMemoryBound(to: SIMD3<Float>.self).pointee
+                let vp = les3Float(vBuf, vOffset + i * vStride)
                 let world4 = transform * SIMD4<Float>(vp.x, vp.y, vp.z, 1)
                 let world = SIMD3<Float>(world4.x, world4.y, world4.z)
                 positions.append(world.x)
                 positions.append(world.y)
                 positions.append(world.z)
 
-                let np = nBuf.advanced(by: nOffset + i * nStride).assumingMemoryBound(to: SIMD3<Float>.self).pointee
+                let np = les3Float(nBuf, nOffset + i * nStride)
                 let wn = simd_normalize(normalMatrix * np)
                 normals.append(wn.x)
                 normals.append(wn.y)
@@ -330,9 +333,14 @@ enum ARMeshGlbExporter {
                     // Overlevelse måles mot bestanden FØR pass 1 (tot + prev), ikke bare mot
                     // det pass 1 lot ligge igjen — det er dét som stanser 0.8×0.8-erosjonen.
                     let prev = prevDropped[cell] ?? 0
-                    if survive < 0.2 * (tot + prev) {
+                    // 0,2 → 0,45 (2026-09-05): grå slisse tvers over en soveromsvegg langs
+                    // anchor-grensa, selv med vakten. Ved en ekte dobbel flate er bestanden
+                    // 2× og vinnerlaget beholder ~50 % — det passerer fortsatt. Ved en
+                    // anchor-GRENSE (ett lag, sjakkmønster) mister cellen mer enn halvparten,
+                    // og DA skal droppet angres. Hullfyllet tar ikke lange slisser.
+                    if survive < 0.45 * (tot + prev) {
                         starves = true
-                        byLedger = survive >= 0.2 * tot // hadde overlevd uten den delte boken
+                        byLedger = survive >= 0.45 * tot // hadde overlevd uten den delte boken
                         break
                     }
                 }
@@ -719,7 +727,8 @@ enum ARMeshGlbExporter {
     /// Fyller planære hull (vindusglass, TV-skjermer, mørkt stoff — ingen LiDAR-retur) med en
     /// vifte fra løkke-sentroiden. Kjøres FØR unwrap så lappene får UV-charts og bakes projektivt
     /// fra keyframene: vinduet/skjermen males med sitt faktiske fotoinnhold. Konservative vakter
-    /// så vi aldri dikter geometri: lukket grenseløkke uten kryss, 3–500 kanter, < 1,5 m radius,
+    /// så vi aldri dikter geometri: lukket grenseløkke (kryss følges gjennom triangelviften,
+    /// se BEdge-dokken), 3–500 kanter, < 2,2 m radius (4 m for slisser under 35 cm brede),
     /// planær (RMS < 3 cm mot Newell-planet). Ytre skanngrense er enorm og skjev → aldri fylt.
     static func fillPlanarHoles(positions: inout [Float], colors: inout [Float], indices: inout [UInt32], triAnchor: inout [UInt32]) {
         let triCount = indices.count / 3
@@ -753,48 +762,89 @@ enum ARMeshGlbExporter {
             edgeCount[ekey(w1, w2), default: 0] += 1
             edgeCount[ekey(w2, w0), default: 0] += 1
         }
-        // Rettede grensekanter (a→b slik de står i triangelet) → utgående per weld-id.
-        // Weld-id med >1 utgående = non-manifold kryss → løkker gjennom det droppes.
-        struct BEdge { let toW: Int32; let fromV: UInt32; let toV: UInt32; let anchor: UInt32 }
-        var outgoing = [Int32: BEdge](minimumCapacity: 4096)
-        var junction = Set<Int32>()
+        // Rettede grensekanter (a→b slik de står i triangelet), OG rettet kant → triangel.
+        // KRYSSVERTEKSER (2026-09-09): den gamle regelen var «én utgående kant per weld-id,
+        // alt annet er kryss → dropp løkka». Et TSDF-nett har nettopp kryss: slissene i en
+        // vegg møtes, og HELE nettet av slisser henger sammen i én grense. Målt på soverommet
+        // var 150,8 m av 203,8 m grense én eneste sammenhengende komponent — den ble aldri
+        // forsøkt fylt, og det er sprekkene man ser over veggen. Nå følges løkka slik den
+        // faktisk går: rotér rundt endepunktet gjennom triangelviften til neste grensekant.
+        // Det gir riktige, atskilte løkker også der to slisser krysser hverandre.
+        struct BEdge { let fromW: Int32; let toW: Int32; let fromV: UInt32; let toV: UInt32; let anchor: UInt32 }
+        func dkey(_ a: Int32, _ b: Int32) -> Int64 { (Int64(a) << 32) | Int64(UInt32(bitPattern: b)) }
+        var wTri = [SIMD3<Int32>](repeating: SIMD3(-1, -1, -1), count: triCount)
+        var triOfDirected = [Int64: Int32](minimumCapacity: triCount * 3)
+        var bEdgeOf = [Int64: BEdge](minimumCapacity: 4096)
+        var bEdges = [BEdge]()          // i triangelrekkefølge → deterministisk fyllrekkefølge
         for t in 0..<triCount {
-            let a = triAnchor.indices.contains(t) && trackAnchors ? triAnchor[t] : 0
+            let a = trackAnchors ? triAnchor[t] : 0
+            let v0 = indices[t * 3], v1 = indices[t * 3 + 1], v2 = indices[t * 3 + 2]
+            let w0 = weldOf[Int(v0)], w1 = weldOf[Int(v1)], w2 = weldOf[Int(v2)]
+            if w0 == w1 || w1 == w2 || w2 == w0 { continue }
+            wTri[t] = SIMD3(w0, w1, w2)
+            let vs = [v0, v1, v2], ws = [w0, w1, w2]
             for k in 0..<3 {
-                let v0 = indices[t * 3 + k], v1 = indices[t * 3 + (k + 1) % 3]
-                let w0 = weldOf[Int(v0)], w1 = weldOf[Int(v1)]
-                if w0 == w1 || edgeCount[ekey(w0, w1)] != 1 { continue }
-                if outgoing[w0] != nil { junction.insert(w0) } else {
-                    outgoing[w0] = BEdge(toW: w1, fromV: v0, toV: v1, anchor: a)
-                }
+                let wa = ws[k], wb = ws[(k + 1) % 3]
+                if triOfDirected[dkey(wa, wb)] == nil { triOfDirected[dkey(wa, wb)] = Int32(t) }
+                guard edgeCount[ekey(wa, wb)] == 1 else { continue }
+                let e = BEdge(fromW: wa, toW: wb, fromV: vs[k], toV: vs[(k + 1) % 3], anchor: a)
+                if bEdgeOf[dkey(wa, wb)] == nil { bEdgeOf[dkey(wa, wb)] = e; bEdges.append(e) }
             }
+        }
+        // Neste hjørne i triangelets vinding etter `from` (−1 om `from` ikke er i triangelet).
+        func nextInTri(_ t: Int32, _ from: Int32) -> Int32 {
+            let w = wTri[Int(t)]
+            if w[0] == from { return w[1] }
+            if w[1] == from { return w[2] }
+            if w[2] == from { return w[0] }
+            return -1
+        }
+        /// Neste grensekant etter `e`: stå i endepunktet og rotér gjennom viften av triangler
+        /// til kanten ut av punktet er en grensekant. Én runde er nok — vakten stopper bare
+        /// patologiske vifter (ikke-manifolde nett).
+        func successor(of e: BEdge) -> BEdge? {
+            guard var t = triOfDirected[dkey(e.fromW, e.toW)] else { return nil }
+            let hub = e.toW
+            for _ in 0..<64 {
+                let x = nextInTri(t, hub)
+                if x < 0 { return nil }
+                if let nb = bEdgeOf[dkey(hub, x)] { return nb }
+                guard let back = triOfDirected[dkey(x, hub)], back != t else { return nil }
+                t = back
+            }
+            return nil
         }
         func pos(_ v: UInt32) -> SIMD3<Float> {
             let i = Int(v) * 3
             return SIMD3(positions[i], positions[i + 1], positions[i + 2])
         }
-        var visited = Set<Int32>()
+        var visited = Set<Int64>()
         var loopsFilled = 0, trisAdded = 0
+        var loopsFound = 0, avvistÅpen = 0, sammenfalt = 0, avvistStor = 0, avvistSkjev = 0
         // 500/1.5m (var 240/0.9m): fillete takhull etter sparsom dekning har lange, taggete
         // grenseløkker — de er fortsatt PLANÆRE (RMS-vakten består), bare store. Ytre skanngrense
         // stoppes fortsatt av radius + planaritet.
         let maxLoopEdges = 500, maxTotalTris = 24_000
-        for start in outgoing.keys {
-            if visited.contains(start) || trisAdded >= maxTotalTris { continue }
-            // Følg rettede kanter til vi er tilbake ved start (lukket løkke) eller feiler.
+        for start in bEdges {
+            let startKey = dkey(start.fromW, start.toW)
+            if visited.contains(startKey) || trisAdded >= maxTotalTris { continue }
+            // Følg grensekantene rundt hullet til vi er tilbake ved start (lukket løkke).
             var loop = [BEdge]()
-            var w = start
+            var e = start
             var ok = false
+            var merged = false
             while loop.count <= maxLoopEdges {
-                if junction.contains(w) { break }
-                guard let e = outgoing[w] else { break }
                 loop.append(e)
-                w = e.toW
-                if w == start { ok = true; break }
-                if visited.contains(w) { break } // treffer annen (behandlet) løkke → skjev topologi
+                visited.insert(dkey(e.fromW, e.toW))
+                guard let n = successor(of: e) else { break } // ikke-manifold kant → blindvei
+                let nk = dkey(n.fromW, n.toW)
+                if nk == startKey { ok = true; break }
+                if visited.contains(nk) { merged = true; break } // hører til en løkke vi alt tok
+                e = n
             }
-            for e in loop { visited.insert(weldOf[Int(e.fromV)]) }
-            visited.insert(start)
+            // `sammenfalt` er bokføring, ikke tapte hull: kantene tilhører en løkke som alt er
+            // behandlet. Bare `avvistÅpen` (blindvei eller over kanttaket) er reelt uforsøkt.
+            if ok { loopsFound += 1 } else if merged { sammenfalt += 1 } else { avvistÅpen += 1 }
             guard ok, loop.count >= 3, loop.count <= maxLoopEdges else { continue }
             // Vakter: utstrekning + planaritet (Newell-normal over polygonet).
             var c = SIMD3<Float>(0, 0, 0)
@@ -812,11 +862,26 @@ enum ARMeshGlbExporter {
             // henger sammen) har maxR ~1.5–1.6m fra sentroiden og gled akkurat under gamle
             // taket (device 2026-08-26). Planaritets-vakten (RMS 3cm) bærer fortsatt sikkerheten
             // mot å fylle den ytre skanngrensen.
-            guard maxR <= 2.2, nLen > 1e-6 else { continue }
+            guard nLen > 1e-6 else { continue }
             n /= nLen
+            // SLISSE-UNNTAK (2026-09-05): en dedup-slisse tvers over en hel vegg er 3–4 m
+            // lang men bare 10–20 cm bred. Den skal fylles selv om den er lengre enn
+            // taket på 2,2 m — dørhull og vinduer er aldri så smale, så tynnheten er
+            // vakten. Utstrekning måles i planet (to akser normalt på n).
+            let t1 = simd_normalize(abs(n.y) < 0.9 ? simd_cross(n, SIMD3<Float>(0, 1, 0)) : simd_cross(n, SIMD3<Float>(1, 0, 0)))
+            let t2 = simd_cross(n, t1)
+            var lo1 = Float.greatestFiniteMagnitude, hi1 = -Float.greatestFiniteMagnitude
+            var lo2 = Float.greatestFiniteMagnitude, hi2 = -Float.greatestFiniteMagnitude
+            for e in loop {
+                let p = pos(e.fromV) - c
+                let a = simd_dot(p, t1), b = simd_dot(p, t2)
+                lo1 = min(lo1, a); hi1 = max(hi1, a); lo2 = min(lo2, b); hi2 = max(hi2, b)
+            }
+            let tynn = min(hi1 - lo1, hi2 - lo2) <= 0.35
+            guard maxR <= (tynn ? 4.0 : 2.2) else { avvistStor += 1; continue }
             var sq: Float = 0
             for e in loop { let d = simd_dot(pos(e.fromV) - c, n); sq += d * d }
-            guard (sq / Float(loop.count)).squareRoot() <= 0.03 else { continue }
+            guard (sq / Float(loop.count)).squareRoot() <= 0.03 else { avvistSkjev += 1; continue }
             // Fyll: sentroid-verteks + vifte. Rettet kant a→b står som a→b i nabotriangelet,
             // så lappen bruker b→a (b, a, C) — samme vinding som omgivelsene (bake-facing OK).
             let cIdx = UInt32(positions.count / 3)
@@ -834,8 +899,10 @@ enum ARMeshGlbExporter {
             }
             loopsFilled += 1
         }
-        if loopsFilled > 0 || trisAdded > 0 {
-            MeshLog.log("hole fill — løkker=\(loopsFilled) tris+=\(trisAdded)")
+        if loopsFilled > 0 || trisAdded > 0 || avvistÅpen > 0 {
+            MeshLog.log("hole fill — løkker=\(loopsFilled)/\(loopsFound) tris+=\(trisAdded) "
+                + "(avvist: stor \(avvistStor), skjev \(avvistSkjev), åpen \(avvistÅpen); "
+                + "\(sammenfalt) kantstart falt sammen med behandlet løkke)")
         }
     }
 
@@ -1130,7 +1197,7 @@ enum ARMeshGlbExporter {
         return UVUnwrapResult(positions: outPos, normals: outNorm, uvs: outUV, indices: outIdx, chartCount: used.count, atlasSize: 2048)
     }
 
-    private static func writeGlb(positions: [Float], normals: [Float], colors: [Float], indices: [UInt32], to url: URL) throws {
+    static func writeGlb(positions: [Float], normals: [Float], colors: [Float], indices: [UInt32], to url: URL) throws {
         let hasColor = !colors.isEmpty && colors.count == (positions.count / 3) * 4
 
         var bin = Data()
@@ -1226,6 +1293,114 @@ enum ARMeshGlbExporter {
     }
 
     // MARK: - Textured GLB writer (step 4)
+    /// Skriver en GLB med ÉN primitiv per teksturflis. Hver flis er et eget bilde, eget
+    /// materiale og egen vertekskopi, så et felt aldri krysser en flisgrense.
+    /// Bakgrunn: ett 8192-atlas rommer ~1055 texel/m over et rom på 60 m², og de prosjektive
+    /// feltene må derfor skalere kildepikslene til ~0,43 (§72). Fire fliser gir fire ganger
+    /// arealet uten at noen enkelt tekstur blir større enn GPU-en tåler.
+    /// `tileOf` sier hvilken flis hver trekant hører til; `uvs` er alt kroppet til flisens [0,1].
+    static func writeTiledGlb(
+        positions: [Float], normals: [Float], uvs: [Float], indices: [UInt32],
+        tileOf: [Int], tiles: [Data], to url: URL
+    ) throws {
+        struct Flis { var pos: [Float] = []; var nrm: [Float] = []; var uv: [Float] = []; var idx: [UInt32] = [] }
+        var deler = [Flis](repeating: Flis(), count: tiles.count)
+        // SVEISING (2026-09-11). Denne løkka ga tidligere hver trekant sine EGNE tre
+        // vertekser. Kvalitetsveien leverer allerede hjørne-vis geometri (prosjektive UV-er
+        // er per hjørne), så uten sveising ble hver delte verteks skrevet 4–6 ganger: målt
+        // 748 287 vertekser der bare 20–23 % var unike, og 25,7 MB av en 61 MB GLB var
+        // duplisert posisjon/normal/UV. Nøkkelen er de EKSAKTE bitmønstrene til alle åtte
+        // flyttallene, så sveisingen er tapsfri — to hjørner slås bare sammen når de er
+        // identiske i alle attributter, og en UV-søm eller normalbrudd deler dem fortsatt.
+        // Ordbøkene brukes kun til oppslag og fylles i trekantrekkefølge, så utdata er
+        // deterministisk (§81).
+        struct Hjørne: Hashable { var p: SIMD3<UInt32>; var n: SIMD3<UInt32>; var t: SIMD2<UInt32> }
+        var kart = [[Hjørne: UInt32]](repeating: [:], count: tiles.count)
+        for t in 0..<(indices.count / 3) {
+            let f = tileOf[t]
+            guard f >= 0, f < tiles.count else { continue }
+            for j in 0..<3 {
+                let v = Int(indices[t * 3 + j])
+                let nøkkel = Hjørne(
+                    p: SIMD3(positions[v * 3].bitPattern, positions[v * 3 + 1].bitPattern, positions[v * 3 + 2].bitPattern),
+                    n: SIMD3(normals[v * 3].bitPattern, normals[v * 3 + 1].bitPattern, normals[v * 3 + 2].bitPattern),
+                    t: SIMD2(uvs[v * 2].bitPattern, uvs[v * 2 + 1].bitPattern))
+                if let eksisterende = kart[f][nøkkel] {
+                    deler[f].idx.append(eksisterende)
+                    continue
+                }
+                let ny = UInt32(deler[f].pos.count / 3)
+                kart[f][nøkkel] = ny
+                deler[f].idx.append(ny)
+                deler[f].pos.append(contentsOf: positions[v * 3..<(v * 3 + 3)])
+                deler[f].nrm.append(contentsOf: normals[v * 3..<(v * 3 + 3)])
+                deler[f].uv.append(contentsOf: uvs[v * 2..<(v * 2 + 2)])
+            }
+        }
+        var bin = Data()
+        var views: [[String: Any]] = []
+        func legg(_ d: Data, target: Int?) -> Int {
+            let off = bin.count
+            bin.append(d)
+            let pad = (4 - (bin.count % 4)) % 4
+            if pad > 0 { bin.append(Data(repeating: 0, count: pad)) }
+            var v: [String: Any] = ["buffer": 0, "byteOffset": off, "byteLength": d.count]
+            if let target { v["target"] = target }
+            views.append(v)
+            return views.count - 1
+        }
+        var accessors: [[String: Any]] = []
+        var primitives: [[String: Any]] = []
+        var materials: [[String: Any]] = []
+        var textures: [[String: Any]] = []
+        var images: [[String: Any]] = []
+        for (i, del) in deler.enumerated() where !del.idx.isEmpty {
+            var minP = [Float](repeating: .greatestFiniteMagnitude, count: 3)
+            var maxP = [Float](repeating: -.greatestFiniteMagnitude, count: 3)
+            for k in stride(from: 0, to: del.pos.count, by: 3) {
+                for j in 0..<3 { minP[j] = min(minP[j], del.pos[k + j]); maxP[j] = max(maxP[j], del.pos[k + j]) }
+            }
+            let n = del.pos.count / 3
+            let vp = legg(del.pos.withUnsafeBufferPointer { Data(buffer: $0) }, target: 34962)
+            let vn = legg(del.nrm.withUnsafeBufferPointer { Data(buffer: $0) }, target: 34962)
+            let vu = legg(del.uv.withUnsafeBufferPointer { Data(buffer: $0) }, target: 34962)
+            let vi = legg(del.idx.withUnsafeBufferPointer { Data(buffer: $0) }, target: 34963)
+            let a0 = accessors.count
+            accessors.append(["bufferView": vp, "componentType": 5126, "count": n, "type": "VEC3", "min": minP, "max": maxP])
+            accessors.append(["bufferView": vn, "componentType": 5126, "count": n, "type": "VEC3"])
+            accessors.append(["bufferView": vu, "componentType": 5126, "count": n, "type": "VEC2"])
+            accessors.append(["bufferView": vi, "componentType": 5125, "count": del.idx.count, "type": "SCALAR"])
+            let bildeView = legg(tiles[i], target: nil)
+            images.append(["bufferView": bildeView, "mimeType": "image/jpeg"])
+            textures.append(["source": images.count - 1, "sampler": 0])
+            materials.append([
+                "pbrMetallicRoughness": ["baseColorTexture": ["index": textures.count - 1],
+                                         "metallicFactor": 0.0, "roughnessFactor": 1.0],
+                "name": "scan_flis_\(i)",
+            ])
+            primitives.append(["attributes": ["POSITION": a0, "NORMAL": a0 + 1, "TEXCOORD_0": a0 + 2],
+                               "indices": a0 + 3, "material": materials.count - 1, "mode": 4])
+        }
+        guard !primitives.isEmpty else { throw NSError(domain: "ampex.glb", code: 2) }
+        let json: [String: Any] = [
+            "asset": ["version": "2.0", "generator": "Ampex ARMesh Tiled GLB Exporter"],
+            "scene": 0, "scenes": [["nodes": [0]]], "nodes": [["mesh": 0]],
+            "meshes": [["primitives": primitives]],
+            "materials": materials, "textures": textures, "images": images,
+            "samplers": [["magFilter": 9729, "minFilter": 9987, "wrapS": 33071, "wrapT": 33071]],
+            "accessors": accessors, "bufferViews": views,
+            "buffers": [["byteLength": bin.count]],
+        ]
+        var jsonData = try JSONSerialization.data(withJSONObject: json)
+        while jsonData.count % 4 != 0 { jsonData.append(0x20) }
+        var ut = Data()
+        func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { ut.append(contentsOf: $0) } }
+        u32(0x46546C67); u32(2); u32(UInt32(12 + 8 + jsonData.count + 8 + bin.count))
+        u32(UInt32(jsonData.count)); u32(0x4E4F534A); ut.append(jsonData)
+        u32(UInt32(bin.count)); u32(0x004E4942); ut.append(bin)
+        try ut.write(to: url, options: .atomic)
+    }
+
     /// Writes a GLB with POSITION/NORMAL/TEXCOORD_0 + a PBR material whose baseColorTexture is the
     /// embedded PNG atlas. No Draco yet (would need the C++ encoder wired into the target).
     static func writeTexturedGlb(

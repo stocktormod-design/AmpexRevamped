@@ -55,7 +55,24 @@ enum MeshImageIO {
         guard let cg = makeCGImage(pixels, size) else { return nil }
         let out = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(out as CFMutableData, "public.jpeg" as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, cg, [kCGImageDestinationLossyCompressionQuality as String: 0.90] as CFDictionary)
+        // Atlas-JPEG. MÅLT 2026-09-11 (§83): 0,90 → 0,80 tar teksturen fra 35,5 til 26,8 MB
+        // på en 8192-kvalitetsmodell, og de to er ikke til å skille på 3× nærmeste-nabo-zoom
+        // i det mest detaljerte feltet i atlaset. Selv 0,72 var uskillelig, men 0,80 beholder
+        // margin mot zoom i vieweren. Veggmålene er uendret innenfor støyen.
+        // meshscan.jpegkvalitet er A/B-armen.
+        var q = 0.80
+        if let s = UserDefaults.standard.string(forKey: "meshscan.jpegkvalitet"), let v = Double(s), v >= 0.3, v <= 1 { q = v }
+        CGImageDestinationAddImage(dest, cg, [kCGImageDestinationLossyCompressionQuality as String: q] as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+        return out as Data
+    }
+
+    /// Fixture-only lossless readback: separates atlas sampling from JPEG loss.
+    static func pngData(_ pixels: [UInt8], _ size: Int) -> Data? {
+        guard let cg = makeCGImage(pixels, size) else { return nil }
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out as CFMutableData, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, cg, nil)
         guard CGImageDestinationFinalize(dest) else { return nil }
         return out as Data
     }

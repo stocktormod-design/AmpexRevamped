@@ -45,14 +45,25 @@ enum MeshSimplify {
     }
 
     /// Minimal binærheap (min på cost).
+    /// DETERMINISME (2026-09-11): rekkefølgen må være TOTAL, ikke bare på cost. Et TSDF-nett
+    /// er fullt av like kvadrikk-feil (plane flater gir identisk kostnad på titusenvis av
+    /// kanter), og med bare `cost` avgjøres likhetene av innsettingsrekkefølgen. Den var i
+    /// sin tur hash-rekkefølgen til et Set (se nabo-løkka nedenfor), som Swift randomiserer
+    /// per prosess — så to identiske bakes av samme skann kollapset ulike kanter og ga ulikt
+    /// nett: målt 249 418–249 427 trekanter og 50 931–50 934 kollaps over seks kjøringer.
     private struct Heap {
         var items: [Candidate] = []
+        @inline(__always) static func før(_ x: Candidate, _ y: Candidate) -> Bool {
+            if x.cost != y.cost { return x.cost < y.cost }
+            if x.a != y.a { return x.a < y.a }
+            return x.b < y.b
+        }
         mutating func push(_ c: Candidate) {
             items.append(c)
             var i = items.count - 1
             while i > 0 {
                 let p = (i - 1) / 2
-                if items[p].cost <= items[i].cost { break }
+                if !Heap.før(items[i], items[p]) { break }
                 items.swapAt(p, i); i = p
             }
         }
@@ -65,8 +76,8 @@ enum MeshSimplify {
                 while true {
                     let l = i * 2 + 1, r = i * 2 + 2
                     var s = i
-                    if l < items.count && items[l].cost < items[s].cost { s = l }
-                    if r < items.count && items[r].cost < items[s].cost { s = r }
+                    if l < items.count && Heap.før(items[l], items[s]) { s = l }
+                    if r < items.count && Heap.før(items[r], items[s]) { s = r }
                     if s == i { break }
                     items.swapAt(i, s); i = s
                 }
@@ -78,7 +89,13 @@ enum MeshSimplify {
     /// Forenkler meshen in place ned mot `targetTris`, men aldri forbi `errorLimit`
     /// (sum kvadrert avstand, m² — kvalitetstaket som freder kanter/detaljer).
     /// positions/normals/indices/triAnchor/faceClass holdes konsistente; planes urørt.
-    static func simplify(mesh: inout MeshBakeV2.MergedMesh, targetTris: Int, errorLimit: Float) {
+    static func simplify(mesh: inout MeshBakeV2.MergedMesh, targetTris: Int, errorLimit: Float,
+                         // KANTTAK (2026-09-02): uten det kollapser plan-snappede gulv og tak til
+                         // meterstore trekanter (kvadrikkfeilen er null), og søm-nivelleringens
+                         // per-hjørne-korreksjon interpoleres da lineært over en hel meter — synlig
+                         // som store trekantede tonefasetter på gulvet. Kanter over dette får ikke
+                         // kollapses. meshscan.simplifyedge overstyrer (meter; "off" = ingen grense).
+                         maxEdge: Float = 0.30) {
         let t0 = CFAbsoluteTimeGetCurrent()
         let srcTriCount = mesh.indices.count / 3
         guard srcTriCount > targetTris, srcTriCount > 0 else { return }
@@ -212,6 +229,18 @@ enum MeshSimplify {
                 if f.x == c.a || f.y == c.a || f.z == c.a { sharedFaces += 1; continue }
             }
             if sharedFaces > 2 { continue } // ikke-manifold vifte rundt kanten
+            if maxEdge > 0 {
+                var tooLong = false
+                for nb in neighborScratch where simd_distance(pos[Int(nb)], c.pos) > maxEdge { tooLong = true; break }
+                if !tooLong {
+                    for fi in vFaces[b] where faceAlive[Int(fi)] {
+                        let f = faces[Int(fi)]
+                        for v in [f.x, f.y, f.z] where v != c.a && v != c.b && simd_distance(pos[Int(v)], c.pos) > maxEdge { tooLong = true }
+                        if tooLong { break }
+                    }
+                }
+                if tooLong { continue }
+            }
             for fi in vFaces[b] where faceAlive[Int(fi)] {
                 let f = faces[Int(fi)]
                 for v in [f.x, f.y, f.z] where v != c.b && neighborScratch.contains(v) {
@@ -267,7 +296,10 @@ enum MeshSimplify {
                 if f.y != c.a { neighborScratch.insert(f.y) }
                 if f.z != c.a { neighborScratch.insert(f.z) }
             }
-            for nb in neighborScratch where vAlive[Int(nb)] { pushEdge(c.a, nb) }
+            // SORTERT: `neighborScratch` er et Set, og Swift randomiserer hash-rekkefølgen
+            // per prosess. Uten sortering blir kandidatene lagt inn i ulik rekkefølge hver
+            // kjøring — kilden til at samme skann ga ulikt nett (se Heap over).
+            for nb in neighborScratch.sorted() where vAlive[Int(nb)] { pushEdge(c.a, nb) }
         }
 
         // ── 5) Kompakter tilbake til MergedMesh-layout.

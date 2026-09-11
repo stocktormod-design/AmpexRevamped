@@ -278,39 +278,70 @@ enum AmpexGlbLoader {
             let d = slice(view: vi) else { return nil }
       return (d, count)
     }
-    guard let pos = accessorData(0), let norm = accessorData(1),
-          let uv = accessorData(2), let idx = accessorData(3) else { return nil }
-
-    let posSrc = SCNGeometrySource(
-      data: pos.data, semantic: .vertex, vectorCount: pos.count, usesFloatComponents: true,
-      componentsPerVector: 3, bytesPerComponent: 4, dataOffset: 0, dataStride: 12)
-    let normSrc = SCNGeometrySource(
-      data: norm.data, semantic: .normal, vectorCount: norm.count, usesFloatComponents: true,
-      componentsPerVector: 3, bytesPerComponent: 4, dataOffset: 0, dataStride: 12)
-    let uvSrc = SCNGeometrySource(
-      data: uv.data, semantic: .texcoord, vectorCount: uv.count, usesFloatComponents: true,
-      componentsPerVector: 2, bytesPerComponent: 4, dataOffset: 0, dataStride: 8)
-    let element = SCNGeometryElement(
-      data: idx.data, primitiveType: .triangles, primitiveCount: idx.count / 3, bytesPerIndex: 4)
-
-    let geo = SCNGeometry(sources: [posSrc, normSrc, uvSrc], elements: [element])
-    let mat = SCNMaterial()
-    // Teksturen ER lyset (bakt fra foto) — konstant belysning viser den ærlig.
-    mat.lightingModel = .constant
-    mat.isDoubleSided = true
-    if let imgVi = ((json["images"] as? [[String: Any]])?.first?["bufferView"]) as? Int,
-       let texData = slice(view: imgVi), let img = UIImage(data: texData) {
-      mat.diffuse.contents = img
-      mat.diffuse.wrapS = .clamp
-      mat.diffuse.wrapT = .clamp
-      mat.diffuse.mipFilter = .linear
-      // Anisotropi: uten denne mipmap-blurres alle flater sett skrått (vegger langs rommet)
-      // — verifisert offline å gi tydelig skarpere paneler/stoff i grazing-vinkler.
-      mat.diffuse.maxAnisotropy = 16
-    } else {
-      mat.diffuse.contents = UIColor(white: 0.7, alpha: 1) // fallback: uteksturert
+    // Én primitiv per teksturflis (2026-09-10). Kvalitetsmodellen pakker teksturen i fire
+    // fliser à 8192 — ett atlas rommer bare ~1055 texel/m over et rom på 60 m², og da må
+    // kildepikslene skaleres til 0,43 (§72). Denne leseren tok tidligere KUN accessor 0-3 og
+    // det FØRSTE bildet, så en flismodell ble vist med én tekstur på hele nettet.
+    // Én GLB med én primitiv leses nøyaktig som før.
+    func lagMateriale(_ bildeIndeks: Int?) -> SCNMaterial {
+      let mat = SCNMaterial()
+      // Teksturen ER lyset (bakt fra foto) — konstant belysning viser den ærlig.
+      mat.lightingModel = .constant
+      mat.isDoubleSided = true
+      let bilder = json["images"] as? [[String: Any]] ?? []
+      if let bi = bildeIndeks, bi < bilder.count,
+         let imgVi = bilder[bi]["bufferView"] as? Int,
+         let texData = slice(view: imgVi), let img = UIImage(data: texData) {
+        mat.diffuse.contents = img
+        mat.diffuse.wrapS = .clamp
+        mat.diffuse.wrapT = .clamp
+        mat.diffuse.mipFilter = .linear
+        // Anisotropi: uten denne mipmap-blurres alle flater sett skrått (vegger langs rommet)
+        // — verifisert offline å gi tydelig skarpere paneler/stoff i grazing-vinkler.
+        mat.diffuse.maxAnisotropy = 16
+      } else {
+        mat.diffuse.contents = UIColor(white: 0.7, alpha: 1) // fallback: uteksturert
+      }
+      return mat
     }
-    geo.materials = [mat]
-    return SCNNode(geometry: geo)
+    // Materialets bilde: materials[i] → textures[j] → images[k]. Faller tilbake på samme
+    // rekkefølge som materialet selv om oppslaget mangler.
+    let materialer = json["materials"] as? [[String: Any]] ?? []
+    let teksturer = json["textures"] as? [[String: Any]] ?? []
+    func bildeFor(material mi: Int) -> Int? {
+      guard mi < materialer.count,
+            let pbr = materialer[mi]["pbrMetallicRoughness"] as? [String: Any],
+            let bct = pbr["baseColorTexture"] as? [String: Any],
+            let ti = bct["index"] as? Int, ti < teksturer.count,
+            let src = teksturer[ti]["source"] as? Int else { return mi }
+      return src
+    }
+    let primitiver = ((json["meshes"] as? [[String: Any]])?.first?["primitives"] as? [[String: Any]]) ?? []
+    let rot = SCNNode()
+    var laget = 0
+    for (pi, prim) in primitiver.enumerated() {
+      guard let attr = prim["attributes"] as? [String: Any],
+            let ap = attr["POSITION"] as? Int, let an = attr["NORMAL"] as? Int,
+            let au = attr["TEXCOORD_0"] as? Int, let ai = prim["indices"] as? Int,
+            let pos = accessorData(ap), let norm = accessorData(an),
+            let uv = accessorData(au), let idx = accessorData(ai) else { continue }
+      let posSrc = SCNGeometrySource(
+        data: pos.data, semantic: .vertex, vectorCount: pos.count, usesFloatComponents: true,
+        componentsPerVector: 3, bytesPerComponent: 4, dataOffset: 0, dataStride: 12)
+      let normSrc = SCNGeometrySource(
+        data: norm.data, semantic: .normal, vectorCount: norm.count, usesFloatComponents: true,
+        componentsPerVector: 3, bytesPerComponent: 4, dataOffset: 0, dataStride: 12)
+      let uvSrc = SCNGeometrySource(
+        data: uv.data, semantic: .texcoord, vectorCount: uv.count, usesFloatComponents: true,
+        componentsPerVector: 2, bytesPerComponent: 4, dataOffset: 0, dataStride: 8)
+      let element = SCNGeometryElement(
+        data: idx.data, primitiveType: .triangles, primitiveCount: idx.count / 3, bytesPerIndex: 4)
+      let geo = SCNGeometry(sources: [posSrc, normSrc, uvSrc], elements: [element])
+      geo.materials = [lagMateriale(bildeFor(material: (prim["material"] as? Int) ?? pi))]
+      rot.addChildNode(SCNNode(geometry: geo))
+      laget += 1
+    }
+    guard laget > 0 else { return nil }
+    return rot
   }
 }

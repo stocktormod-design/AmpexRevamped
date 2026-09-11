@@ -31,3 +31,22 @@ enum MeshLog {
         }
     }
 }
+
+
+/// Leser 3 × Float (12 byte) fra en rå ARKit-buffer. ALDRI som `SIMD3<Float>` — den er
+/// 16 byte og leser 4 byte forbi siste element (segfault på sidegrense, 2026-09-07).
+@inline(__always) func les3Float(_ base: UnsafeMutableRawPointer, _ offset: Int) -> SIMD3<Float> {
+    let f = base.advanced(by: offset).assumingMemoryBound(to: Float.self)
+    return SIMD3<Float>(f[0], f[1], f[2])
+}
+
+
+import os
+/// os_proc_available_memory() gir 0 i simulatoren (Mac-harness) — da later vi som 2,5 GB
+/// så budsjettet (atlas/maxKF/topK) og GPU-fusjonen blir som på telefonen.
+enum MeshSimMem {
+    static func available() -> Int {
+        let v = os_proc_available_memory()
+        return v == 0 ? 2500 * 1024 * 1024 : v
+    }
+}

@@ -1,5 +1,7 @@
 import Foundation
 import simd
+import Metal
+import os // os_proc_available_memory — ekte headroom, ikke total RAM
 import CoreGraphics
 import ImageIO
 
@@ -21,6 +23,10 @@ import ImageIO
 @available(iOS 14.0, *)
 enum MeshTsdfBuild {
 
+    /// Diagnose-utløp (kun Mac-CLI): får se volumet (sdf, vekt, dim, lo, voxel) rett før
+    /// flatene trekkes ut. nil på enhet.
+    static var volumeProbe: ((UnsafeMutablePointer<Float>, UnsafeMutablePointer<Float>, SIMD3<Int>, SIMD3<Float>, Float) -> Void)? = nil
+
     struct Options {
         /// Voxelstørrelse i meter. 20 mm er valgt fordi volumet da blir ~150 MB for et vanlig
         /// rom mot 625 MB ved 15 mm — 15 mm gir litt finere detalj, men sprenger minnetaket
@@ -36,11 +42,31 @@ enum MeshTsdfBuild {
         /// 3.2 er kompromisset: sonen dekker typisk pose-uenighet uten å viske ut hjørnet.
         /// Overstyres med meshscan.tsdftrunc.
         var truncVoxels: Float = 3.2
+        /// Trunkering BAK flaten, i voxler. MÅLT OG FORKASTET som kur mot tynne objekter
+        /// (2026-09-02): 1.5 voxler bak ga hull og avflassing over hele rommet (putekant,
+        /// stolbein, gulv), fordi voxlene rett bak flaten da får for få observasjoner til å
+        /// passere minWeight når dybdestøyen flytter flaten ±2 cm. Stolryggenes hull kom
+        /// dessuten ikke av dette. Står som samme verdi som foran; meshscan.tsdfbehind for A/B.
+        var truncBehindVoxels: Float = 3.2
+        /// Kantfilterets radius (LiDAR-piksler): 1 = fire naboer. 2 (to radier) fjernet 13–22 %
+        /// av pikslene og ga hull; 1 er praktisk talt likt den gamle høyre/ned-testen, men
+        /// symmetrisk. Se meshscan.tsdfedge.
+        var edgeRadius: Int = 1
         /// Minste akkumulerte vekt før en voxel regnes som ekte flate. Lavt gir krøllete
-        /// falske flater der bare én-to stråler har vært innom; høyt spiser hull. Hevet fra
-        /// 3 til 4 sammen med trunkeringen: det svakeste laget i en dobbeltflate har typisk
-        /// få observasjoner, så terskelen luker det bort der trunkeringen ikke rekker.
-        var minWeight: Float = 4
+        /// falske flater der bare én-to stråler har vært innom; høyt spiser hull. Var 4 (hevet
+        /// fra 3 sammen med trunkeringen, mot det svakeste laget i en dobbeltflate).
+        /// SENKET TIL 2,5 (2026-09-09) etter måling mot Scaniverse-eksporten. 4 var kalibrert
+        /// på tette skann; på et helt rom med tynnere dybdestrøm spiste den flate:
+        ///   stue-fixturen  minw 4 → 45,4 m² flate og 4,98 m åpen rand/m²
+        ///                  minw 2,5 → 68,0 m² og 3,87    minw 1,5 → 88,0 m² og 3,71
+        ///   soveromsbundel minw 4 → 30,4 m² og 3,46      minw 2,5 → 31,8 m² og 3,38
+        /// Referansen ligger på 3,70. Prisen er målt og liten: veggens RMS-avvik fra planet
+        /// går 2,4 → 2,8 mm (Scaniverse selv ligger på 30,1 mm), sporkontrast og brudd på
+        /// panelveggen er uendret (0,755 → 0,751 % og 0,0392 → 0,0395 %), og areal i biter
+        /// under 0,05 m² går NED (0,39 → 0,27 %). 1,5 lukker enda mer, men brudd i sporene
+        /// stiger til 0,046 % — derfor brukes 1,5 bare der dybden faktisk er tynn, se
+        /// tetthetsregelen i `build`. meshscan.tsdfminw overstyrer alt dette.
+        var minWeight: Float = 2.5
         /// Blur-passeringer på SELVE VOLUMET før nettet trekkes ut. Taubin på det ferdige
         /// nettet er utilstrekkelig — støyen sitter i SDF-en, ikke i vertekstplasseringen.
         var volumeBlur: Int = 1
@@ -55,6 +81,22 @@ enum MeshTsdfBuild {
         /// 1 = av. Keyframene er det eneste stedet med både 4K-bilde og eget dybdekart
         /// perfekt synkronisert. Gir kantpresisjon; dense-framene gir dekning.
         var jbuScale: Int = 3
+        /// FRIROM-UTSKJÆRING (space carving). En stråle som treffer en flate på avstand zr har
+        /// per definisjon fritt rom hele veien dit (utenfor trunkeringssonen). Klassisk TSDF
+        /// skriver ingenting der, så en falsk flate FORAN den ekte — flygende piksler, en frame
+        /// med posedrift, et tynt objekt sett fra siden — blir stående så lenge noen få stråler
+        /// har lagt den der. Målt (stue 2026-09-02): i en typisk frame så 6 % av pikslene en
+        /// mesh-flate foran LiDAR-flaten, i de verste 25 %. Her telles frirom-stemmer i et
+        /// grovere volum, og voxels der frirommet vinner klart over flatevekten fjernes.
+        /// 0 = av. Verdien er hvor mange ganger flatevekten frirommet må overstige.
+        /// Målt 2026-09-02 (kf65, andel LiDAR-piksler med falsk flate FORAN): av 13,5 % ·
+        /// ratio 8: 3,2 % · ratio 4: 1,0 % (men begynte å skjære i stolarmer og putekanter) ·
+        /// ratio 2: gulv og vegger fikk hull. 8 er valgt som den forsiktige siden.
+        /// 2026-09-07 (Mac-harness, soverom 20:05, A/B 8 · 20 · 40 · av): utskjæringen tok
+        /// hylla, sengekanten, TV-en og pulten — tynne/skrå flater med mange stråler GJENNOM
+        /// gapene — og ga ingen synlig spøkelsesgevinst i rendret innenfra/utenfra. Av som
+        /// standard; `meshscan.carve 8` slår den på igjen ved falske flater.
+        var carveRatio: Float = 0.0
         /// Tak for antall voxels. Over dette økes voxelstørrelsen automatisk — et stort rom
         /// skal ikke kunne ta ned appen.
         var maxVoxels: Int = 40_000_000
@@ -98,19 +140,20 @@ enum MeshTsdfBuild {
     /// ingenting. TSDF-integrering har dessuten god lokalitet — en stråle treffer voxels som
     /// ligger nær hverandre — så selv når sider må hentes inn er treffraten høy.
     private final class VoxelStore {
-        let sdf: UnsafeMutablePointer<Float>
-        let wgt: UnsafeMutablePointer<Float>
+        let planes: [UnsafeMutablePointer<Float>]
+        var sdf: UnsafeMutablePointer<Float> { planes[0] }
+        var wgt: UnsafeMutablePointer<Float> { planes[1] }
         private let bytes: Int
         private let urls: [URL]
         private let fds: [Int32]
 
-        init?(count: Int, dir: URL) {
+        init?(count: Int, dir: URL, names: [String] = ["tsdf-sdf.bin", "tsdf-wgt.bin"]) {
             // LOKAL kopi: brukes den lagrede egenskapen inne i opprydnings-closurene under,
             // fanger de self før alle medlemmer er satt, og Swift avviser det.
             let nb = count * MemoryLayout<Float>.stride
             var ptrs: [UnsafeMutableRawPointer] = []
             var us: [URL] = [], fs: [Int32] = []
-            for name in ["tsdf-sdf.bin", "tsdf-wgt.bin"] {
+            for name in names {
                 let u = dir.appendingPathComponent(name)
                 try? FileManager.default.removeItem(at: u)
                 let fd = open(u.path, O_RDWR | O_CREAT | O_TRUNC, 0o644)
@@ -132,15 +175,13 @@ enum MeshTsdfBuild {
                 ptrs.append(p); us.append(u); fs.append(fd)
             }
             bytes = nb
-            sdf = ptrs[0].bindMemory(to: Float.self, capacity: count)
-            wgt = ptrs[1].bindMemory(to: Float.self, capacity: count)
+            planes = ptrs.map { $0.bindMemory(to: Float.self, capacity: count) }
             // ftruncate gir en fil full av nuller, som er nøyaktig startverdien vi vil ha.
             urls = us; fds = fs
         }
 
         deinit {
-            munmap(UnsafeMutableRawPointer(sdf), bytes)
-            munmap(UnsafeMutableRawPointer(wgt), bytes)
+            for p in planes { munmap(UnsafeMutableRawPointer(p), bytes) }
             fds.forEach { close($0) }
             urls.forEach { try? FileManager.default.removeItem(at: $0) }
         }
@@ -150,7 +191,172 @@ enum MeshTsdfBuild {
 
     /// Fusjonerer all rå dybde i `framesDir` og returnerer et mesh i samme form som
     /// `MeshBakeV2.mergeAnchors` gir, klart for unwrap og bake. nil om dataene mangler.
-    static func build(framesDir: URL, options optionsIn: Options = Options()) -> MeshBakeV2.MergedMesh? {
+
+    // MARK: - GPU-fusjon (2026-09-05)
+    //
+    // Polycam-veien. Nøyaktig samme MODELL som CPU-fusjonen over: samme kantfilter
+    // per piksel, samme 1/d-vekt med gulv, samme tillit og JBU-normalisering, samme
+    // trunkering foran og bak flaten. Forskjellen er samplingen: CPU-veien marsjerer
+    // hver stråle i halve voxelsteg og skriver voxlene den treffer; GPU-veien besøker
+    // hver voxel én gang og spør «hvilken måling ser meg?». Det er den samme
+    // avstandsfunksjonen evaluert på et renere rutenett — ingen doble treff nær
+    // kameraet, ingen hull mellom strålene langt unna.
+    //
+    // Kappløp finnes ikke: to summer (Σ w·d og Σ w) akkumuleres med atomiske
+    // float-add per voxel, og S = Σwd/Σw regnes ut til slutt. Det er det VEKTEDE
+    // SNITTET CPU-veien tilnærmer med sitt løpende snitt; taket på 40 legges på W
+    // etterpå så terskler og glatting nedstrøms ser den samme skalaen.
+    private static let integrateMSL = """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct P {
+        float4x4 w2c;
+        float3 lo; float voxel;
+        int3 dims; float trunc;
+        float truncBehind; float fx, fy, cx;
+        float cy; int dw, dh; float wf0;   // wf0 = trust * jbuNorm (per kart)
+        int edgeRadius, jbuScale, _p0, _p1;
+    };
+    inline float dep(device const float* d, int x, int y, int w) { return d[y * w + x]; }
+    kernel void ampex_integrate(device atomic_float* sumWD [[buffer(0)]],
+                                device atomic_float* sumW  [[buffer(1)]],
+                                device const float* depth  [[buffer(2)]],
+                                constant P& p              [[buffer(3)]],
+                                uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= (uint)p.dims.x || gid.y >= (uint)p.dims.y || gid.z >= (uint)p.dims.z) return;
+        float3 wp = p.lo + (float3(gid) + 0.5) * p.voxel;
+        float4 pc = p.w2c * float4(wp, 1.0);
+        float zc = -pc.z;
+        if (zc < 0.3) return;
+        // Samme projeksjon som CPU-veiens unprojeksjon, bare baklengs.
+        float u = p.fx * pc.x / zc + p.cx;
+        float v = -p.fy * pc.y / zc + p.cy;
+        int x = int(u), y = int(v);
+        if (x < 1 || y < 1 || x >= p.dw - 1 || y >= p.dh - 1) return;
+        float z = dep(depth, x, y, p.dw);
+        if (z <= 0.3 || z >= 5.0) return;
+        // Kantfilter — identisk med CPU-veien (edgeRadius 0/1/2, skalert med JBU).
+        float lim = max(0.04, 0.03 * z);
+        bool edge = false;
+        if (p.edgeRadius <= 0) {
+            float dz = max(fabs(dep(depth, x + 1, y, p.dw) - z), fabs(dep(depth, x, y + 1, p.dw) - z));
+            edge = dz > lim;
+        } else {
+            int r1 = p.jbuScale, r2 = 2 * p.jbuScale;
+            int nx[8] = { x + r1, x - r1, x, x, x + r2, x - r2, x, x };
+            int ny[8] = { y, y, y + r1, y - r1, y, y, y + r2, y - r2 };
+            int n = p.edgeRadius >= 2 ? 8 : 4;
+            for (int k = 0; k < n && !edge; k++) {
+                if (nx[k] < 0 || ny[k] < 0 || nx[k] >= p.dw || ny[k] >= p.dh) continue;
+                float dn = dep(depth, nx[k], ny[k], p.dw);
+                if (dn > 0.3 && fabs(dn - z) > lim) edge = true;
+            }
+        }
+        if (edge) return;
+        // sceneDepth er Z-dybde: langs pikselens stråle er avstanden z·len, og voxelen
+        // ligger ved zc·len. Signert avstand langs strålen = (z − zc)·len.
+        float3 ray = float3((float(x) - p.cx) / p.fx, -(float(y) - p.cy) / p.fy, -1.0);
+        float len = length(ray);
+        float sdf = (z - zc) * len;
+        if (sdf > p.trunc || sdf < -p.truncBehind) return;
+        float d = clamp(sdf / p.trunc, -1.0, 1.0);
+        float wf = max(0.25, min(1.5, 1.5 / max(z, 0.4))) * p.wf0;
+        uint i = (gid.z * p.dims.y + gid.y) * p.dims.x + gid.x;
+        atomic_fetch_add_explicit(&sumWD[i], d * wf, memory_order_relaxed);
+        atomic_fetch_add_explicit(&sumW[i],  wf,     memory_order_relaxed);
+    }
+    """
+
+    private struct GPUParams {
+        var w2c: simd_float4x4
+        var lo: SIMD3<Float>; var voxel: Float
+        var dims: SIMD3<Int32>; var trunc: Float
+        var truncBehind: Float; var fx: Float, fy: Float, cx: Float
+        var cy: Float; var dw: Int32, dh: Int32; var wf0: Float
+        var edgeRadius: Int32, jbuScale: Int32, p0: Int32, p1: Int32
+    }
+
+    /// Fusjonerer alle dybdekart på GPU og skriver S/W. nil = GPU utilgjengelig
+    /// eller for lite minne — kalleren tar CPU-veien. Ingen kvalitetsforskjell i
+    /// modellen; se kommentaren over integrateMSL.
+    private static func integrateGPU(frames: [DFrame], lo: SIMD3<Float>, vox: Float, dim: SIMD3<Int>,
+                                     trunc: Float, truncBehind: Float, options: Options,
+                                     S: UnsafeMutablePointer<Float>, W: UnsafeMutablePointer<Float>) -> Int? {
+        let total = dim.x * dim.y * dim.z
+        // To flyttallsplan ekstra i RAM (Σwd, Σw). På en presset telefon er dette det
+        // som avgjør om vi kjører GPU eller CPU — ikke kvaliteten.
+        let trenger = UInt64(total) * 8 * 2
+        if MeshSimMem.available() < trenger {
+            MeshLog.log("GPU-fusjon: for lite ledig minne (\(Int(MeshSimMem.available() >> 20)) MB) — CPU-vei")
+            return nil
+        }
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let queue = device.makeCommandQueue(),
+              let lib = try? device.makeLibrary(source: integrateMSL, options: nil),
+              let fn = lib.makeFunction(name: "ampex_integrate"),
+              let pipe = try? device.makeComputePipelineState(function: fn),
+              let wdBuf = device.makeBuffer(length: total * 4, options: .storageModeShared),
+              let wBuf = device.makeBuffer(length: total * 4, options: .storageModeShared) else {
+            MeshLog.log("GPU-fusjon: Metal utilgjengelig — CPU-vei")
+            return nil
+        }
+        memset(wdBuf.contents(), 0, total * 4)
+        memset(wBuf.contents(), 0, total * 4)
+        let jbuRaw = UserDefaults.standard.string(forKey: "meshscan.jbuweight") == "raw"
+        let tg = MTLSize(width: 8, height: 8, depth: 4)
+        let grid = MTLSize(width: dim.x, height: dim.y, depth: dim.z)
+        var kart = 0
+        let t0 = CFAbsoluteTimeGetCurrent()
+        // Flere kart per kommandobuffer: GPU-en jobber mens CPU-en laster neste kart.
+        var cb = queue.makeCommandBuffer()
+        var iBatch = 0
+        for (fi, f) in frames.enumerated() {
+            if fi % 25 == 0 { ARMeshGlbExporter.progress?("Bygger geometri fra LiDAR… \(fi * 100 / max(frames.count, 1)) %") }
+            guard let dep = f.load(), let dBuf = device.makeBuffer(bytes: dep, length: dep.count * 4, options: .storageModeShared) else { continue }
+            let norm: Float = (jbuRaw || f.jbuScale <= 1) ? 1 : 1 / Float(f.jbuScale * f.jbuScale)
+            var P = GPUParams(w2c: f.c2w.inverse, lo: lo, voxel: vox,
+                              dims: SIMD3<Int32>(Int32(dim.x), Int32(dim.y), Int32(dim.z)), trunc: trunc,
+                              truncBehind: truncBehind, fx: f.fx, fy: f.fy, cx: f.cx,
+                              cy: f.cy, dw: Int32(f.w), dh: Int32(f.h), wf0: f.trust * norm,
+                              edgeRadius: Int32(options.edgeRadius), jbuScale: Int32(f.jbuScale), p0: 0, p1: 0)
+            guard let c = cb, let enc = c.makeComputeCommandEncoder() else { continue }
+            enc.setComputePipelineState(pipe)
+            enc.setBuffer(wdBuf, offset: 0, index: 0)
+            enc.setBuffer(wBuf, offset: 0, index: 1)
+            enc.setBuffer(dBuf, offset: 0, index: 2)
+            enc.setBytes(&P, length: MemoryLayout<GPUParams>.stride, index: 3)
+            enc.dispatchThreads(grid, threadsPerThreadgroup: tg)
+            enc.endEncoding()
+            kart += 1; iBatch += 1
+            if iBatch >= 8 {
+                c.commit(); c.waitUntilCompleted()
+                cb = queue.makeCommandBuffer(); iBatch = 0
+            }
+        }
+        if let c = cb, iBatch > 0 { c.commit(); c.waitUntilCompleted() }
+        // Σwd/Σw → S, tak på W som før.
+        let wd = wdBuf.contents().bindMemory(to: Float.self, capacity: total)
+        let ww = wBuf.contents().bindMemory(to: Float.self, capacity: total)
+        DispatchQueue.concurrentPerform(iterations: 8) { sl in
+            let a = sl * total / 8, b = (sl + 1) * total / 8
+            for i in a..<b {
+                let w = ww[i]
+                S[i] = w > 0 ? wd[i] / w : 0
+                W[i] = min(w, 40)
+            }
+        }
+        MeshLog.log(String(format: "GPU-fusjon: %d dybdekart på %.1fs", kart, CFAbsoluteTimeGetCurrent() - t0))
+        return kart
+    }
+
+    /// `tillegg` er ARKit-nettet fra SAMME økt. TSDF-en er bedre der den har dybde, men på et
+    /// helt rom har den store tomrom der dybdestrømmen var tynn eller flaten aldri fikk nok
+    /// målinger — målt mot Scaniverse-eksporten: 4,66–5,77 m åpen rand per m² mot referansens
+    /// 3,70, og 153 av 224 m av vår rand lå i TRE store løkker. ARKit fusjonerer sin egen mesh
+    /// over hele økten og dekker nettopp de områdene. Trianglene derfra tas KUN der TSDF-en
+    /// ikke har flate i nærheten, så de to kan ikke legge doble skall over hverandre.
+    static func build(framesDir: URL, options optionsIn: Options = Options(),
+                      tillegg: MeshBakeV2.MergedMesh? = nil) -> MeshBakeV2.MergedMesh? {
         var options = optionsIn
         // JBU kan lage FALSK geometri på teksturløse flater: den lar dybden hoppe der GUIDEN
         // har en kant, og et hvitt tak har ingen tekstur men vel lysgradienter og skygger.
@@ -163,10 +369,48 @@ enum MeshTsdfBuild {
         if let s = UserDefaults.standard.string(forKey: "meshscan.tsdftrunc"), let v = Float(s), v > 0.5 {
             options.truncVoxels = min(8, v)
         }
+        if let s = UserDefaults.standard.string(forKey: "meshscan.tsdfbehind"), let v = Float(s), v > 0.5 {
+            options.truncBehindVoxels = min(8, v)
+        }
+        if let s = UserDefaults.standard.string(forKey: "meshscan.carve"), let v = Float(s), v >= 0 {
+            options.carveRatio = v
+        }
+        if let s = UserDefaults.standard.string(forKey: "meshscan.tsdfminw"), let v = Float(s), v >= 1 {
+            options.minWeight = v
+        }
+        // Kantfilterets radius i LiDAR-piksler: 0 = gammel test (bare høyre/ned), 1 = fire
+        // naboer, 2 = fire naboer i to radier.
+        if let s = UserDefaults.standard.string(forKey: "meshscan.tsdfedge"), let v = Int(s) { options.edgeRadius = v }
         let t0 = CFAbsoluteTimeGetCurrent()
         ARMeshGlbExporter.progress?("Leser dybdedata…")
         var frames = loadDense(framesDir, maxVelocity: options.maxVelocity)
-        if options.jbuScale > 1 {
+        // For få dybdekart gir ingen flate uansett — da er super-res og fusjon bortkastet
+        // (målt 2026-09-05: 96 s JBU + fusjon for «1/1 dense-frames» → «null verts»).
+        if frames.count < 20 {
+            MeshLog.log("TSDF: bare \(frames.count) dybdekart i bundelen — for lite for LiDAR-geometri, bruker ARKit-nettet")
+            return nil
+        }
+
+        // TERMIKK-BUDSJETT (2026-09-05): 758 dybdebilder tok 507 s å fusjonere på en
+        // strupet telefon, og hele baken 17 min. Dense-kartene ligger på 5 Hz og
+        // overlapper kraftig, så vi TYNNER dem jevnt i stedet for å hoppe over
+        // LiDAR-geometrien: kantene skal fortsatt være skarpe (det var hele grunnen
+        // til at denne banen ble standard 2026-09-01). Keyframene beholdes alltid —
+        // det er de skarpeste kildene vi har.
+        let termikk = ProcessInfo.processInfo.thermalState
+        let budsjett = termikk == .critical ? 200 : (termikk == .serious ? 320 : Int.max)
+        if frames.count > budsjett {
+            let steg = Double(frames.count) / Double(budsjett)
+            let tynnet = (0..<budsjett).map { frames[min(frames.count - 1, Int(Double($0) * steg))] }
+            MeshLog.log("TSDF: termikk \(termikk.rawValue) → tynner dense \(frames.count) → \(tynnet.count) dybdekart")
+            frames = tynnet
+        }
+
+        // JBU-oppskaleringen er dyr og kan lage falsk geometri på teksturløse flater.
+        // På en kokende telefon er den det første som ryker.
+        if options.jbuScale > 1 && termikk == .critical {
+            MeshLog.log("TSDF: termikk kritisk → hopper over depth super-res")
+        } else if options.jbuScale > 1 {
             ARMeshGlbExporter.progress?("Skjerper dybdekanter…")
             frames += loadKeyframesJBU(framesDir, scale: options.jbuScale)
         }
@@ -203,7 +447,24 @@ enum MeshTsdfBuild {
             vox *= 1.25
             MeshLog.log("TSDF: volum for stort → voxel \(Int(vox * 1000))mm")
         }
+        // TETTHETSREGEL (2026-09-09): terskelen for «ekte flate» må følge hvor mange
+        // dybdekart volumet faktisk har fått. Et helt rom skannet raskt får under ett kart
+        // per m³, og da rekker ingen voxel 2,5 i vekt — flate spises. Måltall: stue-fixturen
+        // 0,41 kart/m³ (166 kart, 402 m³) mot soveromsbundelens 2,2 (182 kart, 83 m³).
+        // Under 1,0 kart/m³ senkes terskelen til 1,5, som er målt til å gi referansenivå
+        // (3,71 mot 3,70 m rand/m²) på nettopp de tynne rommene. En eksplisitt meshscan.tsdfminw
+        // overstyrer regelen — den skal kunne slås av i en måling.
+        if UserDefaults.standard.string(forKey: "meshscan.tsdfminw") == nil {
+            let volumM3 = Double((hi.x - lo.x) * (hi.y - lo.y) * (hi.z - lo.z))
+            let tetthet = volumM3 > 1 ? Double(frames.count) / volumM3 : 99
+            if tetthet < 1.0 {
+                options.minWeight = min(options.minWeight, 1.5)
+                MeshLog.log(String(format: "TSDF: tynn dybde (%.2f kart/m³) → vektterskel %.1f",
+                                   tetthet, options.minWeight))
+            }
+        }
         let trunc = vox * options.truncVoxels
+        let truncBehind = vox * min(options.truncBehindVoxels, options.truncVoxels)
         let total = dim.x * dim.y * dim.z
         MeshLog.log(String(format: "TSDF: %d frames · %.1f×%.1f×%.1f m · voxel %dmm · %.1fM voxels (%dMB)",
                            frames.count, hi.x - lo.x, hi.y - lo.y, hi.z - lo.z,
@@ -214,64 +475,273 @@ enum MeshTsdfBuild {
             return nil
         }
         let S = store.sdf, W = store.wgt
-        var used = 0
+        let jbuRaw = UserDefaults.standard.string(forKey: "meshscan.jbuweight") == "raw"
+        func jbuNorm(_ f: DFrame) -> Float {
+            jbuRaw || f.jbuScale <= 1 ? 1 : 1 / Float(f.jbuScale * f.jbuScale)
+        }
 
-        do {
-            for (fi, f) in frames.enumerated() {
-                // Fusjonen er den lengste stille perioden i hele baken (~10 s). Uten
-                // framdrift står teksten frosset og leses som at appen henger.
-                if fi % 25 == 0 {
-                    ARMeshGlbExporter.progress?("Bygger geometri fra LiDAR… \(fi * 100 / max(frames.count, 1)) %")
-                }
-                guard let dep = f.load() else { continue }
-                let org = f.c2w.columns.3.xyz
-                for y in 1..<(f.h - 1) {
-                    for x in 1..<(f.w - 1) {
-                        let z = dep[y * f.w + x]
-                        guard z > 0.3, z < 5.0 else { continue }
-                        // Dybdekant: LiDAR «flyr» der dybden hopper og legger igjen falske
-                        // flak i lufta. Trolig det som drepte de tidligere fusion-forsøkene.
-                        let dz = max(abs(dep[y * f.w + x + 1] - z), abs(dep[(y + 1) * f.w + x] - z))
-                        if dz > max(0.04, 0.03 * z) { continue }
-                        used += 1
-                        let pc = SIMD3<Float>((Float(x) - f.cx) / f.fx, -(Float(y) - f.cy) / f.fy, -1)
-                        let raw = (f.c2w * SIMD4(pc, 0)).xyz
-                        // sceneDepth er Z-DYBDE, ikke radiell avstand. Marsjerer man `z` meter
-                        // langs en NORMALISERT stråle, havner punktene for nær langs kantene —
-                        // ved hjørnet er strålen 1,28× lengre, altså 85 cm feil på tre meter,
-                        // og flate vegger buler mot kameraet som et fisheye.
-                        let len = simd_length(raw)
-                        let dir = raw / len
-                        let zr = z * len
-                        // Avstandsvekt med GULV: ren 1/d² lot fjerne flater falle under
-                        // vektterskelen uansett hvor mange ganger de var sett, og gulvet midt
-                        // i rommet forsvant i et svart hull.
-                        let wf = max(0.25, min(1.5, 1.5 / max(z, 0.4))) * f.trust
-                        var t = zr - trunc
-                        let tEnd = zr + trunc
-                        while t <= tEnd {
-                            let p = org + dir * t
-                            let gx = Int((p.x - lo.x) / vox), gy = Int((p.y - lo.y) / vox), gz = Int((p.z - lo.z) / vox)
-                            if gx >= 0, gy >= 0, gz >= 0, gx < dim.x, gy < dim.y, gz < dim.z {
-                                let i = (gz * dim.y + gy) * dim.x + gx
-                                let d = max(-1, min(1, (zr - t) / trunc))
-                                let ow = W[i]
-                                S[i] = (S[i] * ow + d * wf) / (ow + wf)
-                                W[i] = min(ow + wf, 40)
+        // GPU først (Polycam-veien). Faller stille tilbake på CPU hvis Metal eller
+        // minnet ikke strekker til — samme modell begge veier.
+        var gpuKart: Int? = nil
+        if UserDefaults.standard.string(forKey: "meshscan.gpu") != "off" {
+            gpuKart = integrateGPU(frames: frames, lo: lo, vox: vox, dim: dim, trunc: trunc,
+                                   truncBehind: truncBehind, options: options, S: S, W: W)
+        }
+        if gpuKart == nil {
+        // PARALLELL FUSJON (2026-09-05). Nøyaktig samme regnestykke som før — bare
+        // rekkefølgen er endret. Målt 507 s énkjernet på et 11×11 m rom, og det er
+        // grunnen til at en bake tok 17 minutter.
+        //
+        // To pass per dybdekart:
+        //   1) Rader parallelt → kantfilter og projeksjon gjøres ÉN gang per piksel,
+        //      resultatet legges i en måleliste (radene skriver til hver sine plasser).
+        //   2) Voxelvolumet deles i skiver langs z, én tråd per skive. Hver tråd går
+        //      gjennom målelista, men marsjerer bare den delen av strålen som treffer
+        //      SIN skive — ingen to tråder rører samme voxel, så ingen låser og ingen
+        //      kappløp. Uten skivedelingen ville trådene skrevet oppå hverandre i det
+        //      løpende snittet (S og W), og resultatet blitt tilfeldig.
+        struct Maaling { var org: SIMD3<Float>; var dir: SIMD3<Float>; var zr: Float; var wf: Float }
+        let skiver = max(1, min(8, ProcessInfo.processInfo.activeProcessorCount))
+        let brukt = UnsafeMutablePointer<Int>.allocate(capacity: 1); brukt.pointee = 0
+        defer { brukt.deallocate() }
+
+        for (fi, f) in frames.enumerated() {
+            // Fusjonen er den lengste stille perioden i baken — uten framdrift leses
+            // den som at appen henger.
+            if fi % 25 == 0 {
+                ARMeshGlbExporter.progress?("Bygger geometri fra LiDAR… \(fi * 100 / max(frames.count, 1)) %")
+            }
+            guard let dep = f.load() else { continue }
+            let org = f.c2w.columns.3.xyz
+            let bredde = f.w - 2
+            let rader = max(0, f.h - 2)
+            if rader <= 0 || bredde <= 0 { continue }
+
+            var maalinger = [Maaling](repeating: Maaling(org: .zero, dir: .zero, zr: 0, wf: 0), count: rader * bredde)
+            var antallPerRad = [Int](repeating: 0, count: rader)
+
+            maalinger.withUnsafeMutableBufferPointer { mbuf in
+                antallPerRad.withUnsafeMutableBufferPointer { abuf in
+                    DispatchQueue.concurrentPerform(iterations: rader) { ri in
+                        let y = ri + 1
+                        var n = 0
+                        for x in 1..<(f.w - 1) {
+                            let z = dep[y * f.w + x]
+                            guard z > 0.3, z < 5.0 else { continue }
+                            let lim = max(0.04, 0.03 * z)
+                            var edge = false
+                            if options.edgeRadius <= 0 {
+                                let dz = max(abs(dep[y * f.w + x + 1] - z), abs(dep[(y + 1) * f.w + x] - z))
+                                edge = dz > lim
+                            } else {
+                                let r1 = f.jbuScale, r2 = 2 * f.jbuScale
+                                var nb = [(x + r1, y), (x - r1, y), (x, y + r1), (x, y - r1)]
+                                if options.edgeRadius >= 2 { nb += [(x + r2, y), (x - r2, y), (x, y + r2), (x, y - r2)] }
+                                for (nx, ny) in nb {
+                                    guard nx >= 0, ny >= 0, nx < f.w, ny < f.h else { continue }
+                                    let dn = dep[ny * f.w + nx]
+                                    if dn > 0.3, abs(dn - z) > lim { edge = true; break }
+                                }
                             }
-                            t += vox * 0.5
+                            if edge { continue }
+                            let pc = SIMD3<Float>((Float(x) - f.cx) / f.fx, -(Float(y) - f.cy) / f.fy, -1)
+                            let raw = (f.c2w * SIMD4(pc, 0)).xyz
+                            let len = simd_length(raw)
+                            let wf = max(0.25, min(1.5, 1.5 / max(z, 0.4))) * f.trust * jbuNorm(f)
+                            mbuf[ri * bredde + n] = Maaling(org: org, dir: raw / len, zr: z * len, wf: wf)
+                            n += 1
+                        }
+                        abuf[ri] = n
+                    }
+                }
+            }
+
+            let antall = antallPerRad.reduce(0, +)
+            brukt.pointee += antall
+
+            maalinger.withUnsafeBufferPointer { mbuf in
+                DispatchQueue.concurrentPerform(iterations: skiver) { sl in
+                    let gzFra = sl * dim.z / skiver
+                    let gzTil = (sl + 1) * dim.z / skiver
+                    if gzFra >= gzTil { return }
+                    // z-vinduet skiva dekker i verdenskoordinater
+                    let zLo = lo.z + Float(gzFra) * vox
+                    let zHi = lo.z + Float(gzTil) * vox
+                    for ri in 0..<rader {
+                        let n = antallPerRad[ri]
+                        if n == 0 { continue }
+                        for k in 0..<n {
+                            let m = mbuf[ri * bredde + k]
+                            var t = m.zr - trunc
+                            let tEnd = m.zr + truncBehind
+                            // Hopp rett til den delen av strålen som treffer skiva.
+                            if abs(m.dir.z) > 1e-6 {
+                                let t1 = (zLo - m.org.z) / m.dir.z
+                                let t2 = (zHi - m.org.z) / m.dir.z
+                                let tInn = min(t1, t2), tUt = max(t1, t2)
+                                if tUt < t || tInn > tEnd { continue }
+                                if tInn > t {
+                                    // Behold rutenettet på vox*0.5 så stegene er identiske med før.
+                                    let hopp = floor((tInn - t) / (vox * 0.5))
+                                    t += hopp * (vox * 0.5)
+                                }
+                            } else if m.org.z < zLo || m.org.z >= zHi {
+                                continue
+                            }
+                            while t <= tEnd {
+                                let p = m.org + m.dir * t
+                                let gz = Int((p.z - lo.z) / vox)
+                                if gz >= gzTil { break }
+                                if gz >= gzFra {
+                                    let gx = Int((p.x - lo.x) / vox), gy = Int((p.y - lo.y) / vox)
+                                    if gx >= 0, gy >= 0, gz >= 0, gx < dim.x, gy < dim.y, gz < dim.z {
+                                        let i = (gz * dim.y + gy) * dim.x + gx
+                                        let d = max(-1, min(1, (m.zr - t) / trunc))
+                                        let ow = W[i]
+                                        S[i] = (S[i] * ow + d * m.wf) / (ow + m.wf)
+                                        W[i] = min(ow + m.wf, 40)
+                                    }
+                                }
+                                t += vox * 0.5
+                            }
                         }
                     }
                 }
             }
         }
+        let used = brukt.pointee
         MeshLog.log(String(format: "TSDF: %d målinger fusjonert på %.1fs", used, CFAbsoluteTimeGetCurrent() - t0))
+        } // CPU-vei
 
-        ARMeshGlbExporter.progress?("Glatter volum…")
-        blurVolume(S, wgt: W, count: total, dim: dim, passes: options.volumeBlur, minW: options.minWeight)
-        ARMeshGlbExporter.progress?("Trekker ut flater…")
-        return surfaceNets(sdf: S, wgt: W, dim: dim, lo: lo, vox: vox,
-                           minW: options.minWeight, smoothPasses: options.smoothPasses)
+        // ── ARKIT-NETTET INN I VOLUMET (2026-09-09). Å sy sammen to FERDIGE flater virket ikke:
+        // TSDF alene ga 4,98 m rand/m² på stue-fixturen, ARKit alene 5,17 — men unionen 6,64,
+        // fordi de to flatene møtes uten å henge sammen og hver skjøt teller dobbelt rand.
+        // Riktig sted er volumet: der fusjonen ikke har målinger i det hele tatt (vekt 0)
+        // skrives ARKit-triangelet inn som avstandsfelt, og Surface Nets trekker ÉN
+        // sammenhengende flate ut av begge kildene. Fortegnet tas fra retningen mot volumets
+        // sentrum (rommets innside), ikke fra ARKit-normalen, som ikke er pålitelig orientert.
+        // Skriver ALDRI i en voxel som alt har vekt — den ekte dybden vinner uansett.
+        // meshscan.tsdftillegg = "volum" slår den på.
+        if let ark = tillegg, !ark.indices.isEmpty,
+           UserDefaults.standard.string(forKey: "meshscan.tsdftillegg") == "volum" {
+            let t1 = CFAbsoluteTimeGetCurrent()
+            let senter = lo + SIMD3<Float>(Float(dim.x), Float(dim.y), Float(dim.z)) * (vox * 0.5)
+            var skrevet = 0
+            func punkt3(_ arr: [Float], _ i: Int) -> SIMD3<Float> {
+                let j = i * 3
+                return SIMD3<Float>(arr[j], arr[j + 1], arr[j + 2])
+            }
+            let trunk = vox * 2.5
+            for t in 0..<(ark.indices.count / 3) {
+                let pa = punkt3(ark.positions, Int(ark.indices[t * 3]))
+                let pb = punkt3(ark.positions, Int(ark.indices[t * 3 + 1]))
+                let pc = punkt3(ark.positions, Int(ark.indices[t * 3 + 2]))
+                let e1 = pb - pa, e2 = pc - pa
+                let kryss = simd_cross(e1, e2)
+                let l = simd_length(kryss)
+                guard l > 1e-9 else { continue }
+                var n = kryss / l
+                let midt = (pa + pb + pc) / 3
+                if simd_dot(n, senter - midt) < 0 { n = -n }   // positiv side = rommets innside
+                // Punktprøver over triangelet, halv voxel mellom hver.
+                let steg = max(1, Int((max(simd_length(e1), simd_length(e2)) / (vox * 0.5)).rounded(.up)))
+                guard steg <= 64 else { continue }
+                for i in 0...steg {
+                    for j in 0...(steg - i) {
+                        let u = Float(i) / Float(steg), v = Float(j) / Float(steg)
+                        let p = pa + e1 * u + e2 * v
+                        var d = -trunk
+                        while d <= trunk {
+                            let q = p + n * d
+                            let gx = Int(((q.x - lo.x) / vox).rounded())
+                            let gy = Int(((q.y - lo.y) / vox).rounded())
+                            let gz = Int(((q.z - lo.z) / vox).rounded())
+                            d += vox
+                            guard gx >= 0, gy >= 0, gz >= 0, gx < dim.x, gy < dim.y, gz < dim.z else { continue }
+                            let k = (gz * dim.y + gy) * dim.x + gx
+                            guard W[k] <= 0 else { continue }     // ekte dybde vinner
+                            S[k] = simd_dot(q - p, n)
+                            W[k] = options.minWeight * 1.5
+                            skrevet += 1
+                        }
+                    }
+                }
+            }
+            if skrevet > 0 {
+                MeshLog.log(String(format: "TSDF: ARKit-nettet skrevet inn i %d tomme voxels på %.1fs",
+                                   skrevet, CFAbsoluteTimeGetCurrent() - t1))
+            }
+        }
+
+        func blurAndExtract() -> MeshBakeV2.MergedMesh? {
+            ARMeshGlbExporter.progress?("Glatter volum…")
+            blurVolume(S, wgt: W, count: total, dim: dim, passes: options.volumeBlur, minW: options.minWeight)
+            volumeProbe?(S, W, dim, lo, vox)
+            ARMeshGlbExporter.progress?("Trekker ut flater…")
+            return surfaceNets(sdf: S, wgt: W, dim: dim, lo: lo, vox: vox,
+                               minW: options.minWeight, smoothPasses: options.smoothPasses,
+                               tillegg: tillegg)
+        }
+
+        if options.carveRatio > 0 {
+            ARMeshGlbExporter.progress?("Rydder falske flater…")
+            let tc = CFAbsoluteTimeGetCurrent()
+            // Frirom-stemmer telles i SAMME finmaskede grid som flatene, og bare i voxels som
+            // faktisk har flatevekt. Et grovere grid ble prøvd først: da smittet luften rett
+            // over gulvet over på gulvvoxlene, og gulv og vegger ble skåret bort.
+            // Stemmen kalibreres til flatevektens enhet: én stråle legger ~2·wf i en voxel den
+            // treffer (to halvvoxel-steg), så en frirom-stråle teller 2·wf·stride², og
+            // `carveRatio` blir da direkte «hvor mange ganger flere stråler ser GJENNOM enn
+            // ser flaten».
+            // Stemmene ligger i en mmap-et fil som volumet (146 MB på heap ville vært en
+            // drapsrisiko på telefon — se VoxelStore).
+            guard let freeStore = VoxelStore(count: total, dir: framesDir, names: ["tsdf-free.bin"]) else {
+                MeshLog.log("TSDF: frirom-utskjæring hoppet over — fikk ikke plass til stemmefila")
+                return blurAndExtract()
+            }
+            let freeBuf = freeStore.planes[0]
+            for f in frames {
+                guard let dep = f.load() else { continue }
+                let org = f.c2w.columns.3.xyz
+                let stepPx = max(1, 2 * f.jbuScale)
+                var y = 1
+                while y < f.h - 1 {
+                    var x = 1
+                    while x < f.w - 1 {
+                        let z = dep[y * f.w + x]
+                        let px = x
+                        x += stepPx
+                        guard z > 0.3, z < 5.0 else { continue }
+                        let pc = SIMD3<Float>((Float(px) - f.cx) / f.fx, -(Float(y) - f.cy) / f.fy, -1)
+                        let raw = (f.c2w * SIMD4(pc, 0)).xyz
+                        let len = simd_length(raw)
+                        let dir = raw / len
+                        let wf = max(0.25, min(1.5, 1.5 / max(z, 0.4))) * f.trust * jbuNorm(f)
+                        let vote = 2 * wf * Float(stepPx * stepPx)
+                        // Stopp godt før trunkeringssonen, så flaten selv aldri stemmes bort.
+                        let tEnd = z * len - trunc * 1.5
+                        var t: Float = 0.25
+                        while t < tEnd {
+                            let p = org + dir * t
+                            let gx = Int((p.x - lo.x) / vox), gy = Int((p.y - lo.y) / vox), gz = Int((p.z - lo.z) / vox)
+                            if gx >= 0, gy >= 0, gz >= 0, gx < dim.x, gy < dim.y, gz < dim.z {
+                                let i = (gz * dim.y + gy) * dim.x + gx
+                                if W[i] > 0 { freeBuf[i] += vote }
+                            }
+                            t += vox
+                        }
+                    }
+                    y += stepPx
+                }
+            }
+            var carved = 0
+            for i in 0..<total where W[i] > 0 && freeBuf[i] > options.carveRatio * W[i] {
+                W[i] = 0; S[i] = 0; carved += 1
+            }
+            MeshLog.log(String(format: "TSDF: frirom-utskjæring fjernet %d voxels (ratio %.1f) på %.1fs", carved, options.carveRatio, CFAbsoluteTimeGetCurrent() - tc))
+        }
+
+        return blurAndExtract()
     }
 
     // MARK: - Volum-blur
@@ -289,14 +759,18 @@ enum MeshTsdfBuild {
         for _ in 0..<passes {
             for axis in 0..<3 {
                 let step = axis == 0 ? 1 : (axis == 1 ? dim.x : dim.x * dim.y)
+                let axisSize = dim[axis]
                 tmp.update(from: sdf, count: n)
                 DispatchQueue.concurrentPerform(iterations: 8) { slice in
                     let lo = n * slice / 8, hi = n * (slice + 1) / 8
                     for i in lo..<hi {
                         guard wgt[i] > minW else { continue }
                         var acc = tmp[i] * 0.5, wsum: Float = 0.5
-                        if i >= step, wgt[i - step] > minW { acc += tmp[i - step] * 0.25; wsum += 0.25 }
-                        if i + step < n, wgt[i + step] > minW { acc += tmp[i + step] * 0.25; wsum += 0.25 }
+                        // Linear-buffer neighbors can wrap into another row/slice.
+                        // Only mix cells adjacent along this actual 3D axis.
+                        let coordinate = (i / step) % axisSize
+                        if coordinate > 0, wgt[i - step] > minW { acc += tmp[i - step] * 0.25; wsum += 0.25 }
+                        if coordinate + 1 < axisSize, wgt[i + step] > minW { acc += tmp[i + step] * 0.25; wsum += 0.25 }
                         sdf[i] = acc / wsum
                     }
                 }
@@ -310,7 +784,8 @@ enum MeshTsdfBuild {
     /// stedet for opptil fem, og bedre formede trekanter.
     private static func surfaceNets(sdf: UnsafeMutablePointer<Float>, wgt: UnsafeMutablePointer<Float>, dim: SIMD3<Int>,
                                     lo: SIMD3<Float>, vox: Float, minW: Float,
-                                    smoothPasses: Int) -> MeshBakeV2.MergedMesh? {
+                                    smoothPasses: Int,
+                                    tillegg: MeshBakeV2.MergedMesh? = nil) -> MeshBakeV2.MergedMesh? {
         let t0 = CFAbsoluteTimeGetCurrent()
         var cell = [Int32](repeating: -1, count: dim.x * dim.y * dim.z)
         var verts: [SIMD3<Float>] = []
@@ -339,7 +814,10 @@ enum MeshTsdfBuild {
                     }
                     guard n > 0 else { continue }
                     cell[(z * dim.y + y) * dim.x + x] = Int32(verts.count)
-                    verts.append(lo + (SIMD3<Float>(Float(x), Float(y), Float(z)) + acc / Float(n)) * vox)
+                    // SDF entries describe voxel centers (integrateMSL: gid + 0.5),
+                    // not grid corners. Omitting this offset displaced every extracted
+                    // surface by -vox/2 on all axes: 10 mm/axis at the default 20 mm.
+                    verts.append(lo + (SIMD3<Float>(Float(x), Float(y), Float(z)) + SIMD3<Float>(repeating: 0.5) + acc / Float(n)) * vox)
                 }
             }
         }
@@ -401,6 +879,79 @@ enum MeshTsdfBuild {
         var pos = [Float](); pos.reserveCapacity(verts.count * 3)
         for v in verts { pos += [v.x, v.y, v.z] }
 
+        // ── TILLEGG FRA ARKIT-NETTET der TSDF-en ikke har flate (2026-09-09).
+        // Avstandsvakten er en 8 cm romhash over TSDF-verteksene: et ARKit-triangel slippes
+        // inn bare når INGEN av hjørnene har en TSDF-verteks innen 8 cm. Da kan de to ikke
+        // ligge som doble skall over hverandre — og det er dobbeltskallene, ikke hullene,
+        // som har vært den dyre feilen på denne banen (se «dobbeltflate» i ARMeshGlbExporter).
+        // Slås av med meshscan.tsdftillegg = "off".
+        if let ark = tillegg, !ark.indices.isEmpty,
+           UserDefaults.standard.string(forKey: "meshscan.tsdftillegg") == "on" {
+            // Volumvakt: ARKit fusjonerer også gjennom dører og vinduer, og utenfor TSDF-volumet
+            // er det ikke rommet vi skanner. Bare triangler helt innenfor dybdevolumet slipper inn.
+            let hi = lo + SIMD3<Float>(Float(dim.x), Float(dim.y), Float(dim.z)) * vox
+            func iVolum(_ p: SIMD3<Float>) -> Bool {
+                p.x >= lo.x && p.y >= lo.y && p.z >= lo.z && p.x <= hi.x && p.y <= hi.y && p.z <= hi.z
+            }
+            let celle: Float = 0.08
+            var hash = [Int64: [Int32]](minimumCapacity: pos.count / 3)
+            func nøkkel(_ x: Float, _ y: Float, _ z: Float) -> Int64 {
+                (Int64((x / celle).rounded(.down)) & 0x1FFFFF)
+                    | ((Int64((y / celle).rounded(.down)) & 0x1FFFFF) << 21)
+                    | ((Int64((z / celle).rounded(.down)) & 0x1FFFFF) << 42)
+            }
+            for v in 0..<(pos.count / 3) {
+                let q = punkt(pos, v)
+                hash[nøkkel(q.x, q.y, q.z), default: []].append(Int32(v))
+            }
+            func punkt(_ arr: [Float], _ i: Int) -> SIMD3<Float> {
+                let j = i * 3
+                return SIMD3<Float>(arr[j], arr[j + 1], arr[j + 2])
+            }
+            func harNaboFlate(_ p: SIMD3<Float>) -> Bool {
+                for dx in -1...1 { for dy in -1...1 { for dz in -1...1 {
+                    let k = nøkkel(p.x + Float(dx) * celle, p.y + Float(dy) * celle, p.z + Float(dz) * celle)
+                    guard let liste = hash[k] else { continue }
+                    for v in liste {
+                        let q = punkt(pos, Int(v))
+                        if simd_distance_squared(p, q) < celle * celle { return true }
+                    }
+                } } }
+                return false
+            }
+            var nyPos = pos
+            var nyIdx = idx
+            var kart = [Int32: UInt32]()   // ARKit-verteks → ny indeks
+            var lagtTil = 0
+            var areal: Float = 0
+            for t in 0..<(ark.indices.count / 3) {
+                let a = Int(ark.indices[t * 3]), b = Int(ark.indices[t * 3 + 1]), c = Int(ark.indices[t * 3 + 2])
+                let pa = punkt(ark.positions, a)
+                let pb = punkt(ark.positions, b)
+                let pc = punkt(ark.positions, c)
+                let kryss = simd_cross(pb - pa, pc - pa)
+                let l = simd_length(kryss)
+                guard l > 1e-9 else { continue }
+                guard iVolum(pa), iVolum(pb), iVolum(pc) else { continue }
+                if harNaboFlate(pa) || harNaboFlate(pb) || harNaboFlate(pc) { continue }
+                for (vi, p) in [(a, pa), (b, pb), (c, pc)] {
+                    if kart[Int32(vi)] == nil {
+                        kart[Int32(vi)] = UInt32(nyPos.count / 3)
+                        nyPos.append(p.x); nyPos.append(p.y); nyPos.append(p.z)
+                    }
+                }
+                nyIdx.append(kart[Int32(a)]!); nyIdx.append(kart[Int32(b)]!); nyIdx.append(kart[Int32(c)]!)
+                lagtTil += 1
+                areal += l * 0.5
+            }
+            if lagtTil > 0 {
+                pos = nyPos
+                idx = nyIdx
+                MeshLog.log(String(format: "TSDF: +%d ARKit-triangler (%.1f m²) der fusjonen manglet flate",
+                                   lagtTil, areal))
+            }
+        }
+
         // ── DOMINANTPLAN. Uten disse er `MergedMesh.planes` tom, og da hopper baken over
         // hele plan-tildelingen (`break planeAssign`). Konsekvensen er at hver flate velger
         // vinnerfoto helt fritt: to bilder som er omtrent like gode på samme vegg gir
@@ -408,7 +959,33 @@ enum MeshTsdfBuild {
         // vært én sammenhengende flate. Plan-lås binder hele veggen til ETT foto når det
         // dekker den godt nok — det er kuren mot akkurat det.
         // Kallet retter samtidig verteksene inn mot planene, så vegger blir virkelig flate.
-        let planes = ARMeshGlbExporter.snapDominantPlanes(positions: &pos, indices: idx)
+        // Diagnostic ablation: retain plane metadata for the same texture policy,
+        // but inspect the fused surface before geometric flattening (§28 follow-up).
+        let unsnapped = UserDefaults.standard.string(forKey: "meshscan.tsdfsnap") == "off" ? pos : nil
+        var planes = ARMeshGlbExporter.snapDominantPlanes(positions: &pos, indices: idx)
+        if let original = unsnapped { pos = original }
+
+        // ── HULLFYLLING (2026-09-09). Surface Nets legger bare flate der voxlene er observert,
+        // så et TSDF-nett kommer ut med slisser der dybden falt ut: langs panelspor, i glansen
+        // fra vinduet, under møbler. Anchor-veien har kjørt planær hullfylling siden scan #9,
+        // men TSDF-veien — som er standard siden 2026-09-01 — har ALDRI gjort det. Målt på
+        // soverommet: 203,8 m åpen grense på 36 m² flate, mot 235,3 m på 63,6 m² i Scaniverse-
+        // eksporten, og 150,8 m av vår grense var ÉN sammenhengende sprekk. Det er de svarte
+        // rissene over veggen i renderne, ikke tekstur. Fylles FØR normaler/UV-blokker, slik
+        // at lappene får normal, chart og projisert foto som resten av veggen.
+        // Av med meshscan.tsdfholefill = "off" (A/B mot samme bundle).
+        if UserDefaults.standard.string(forKey: "meshscan.tsdfholefill") != "off" {
+            let førTris = idx.count / 3
+            var noColors = [Float]()
+            var noAnchors = [UInt32]()
+            ARMeshGlbExporter.fillPlanarHoles(positions: &pos, colors: &noColors, indices: &idx,
+                                              triAnchor: &noAnchors)
+            // Re-snap etter lapping: lappene skal ligge PÅ planet, ikke i sentroidens
+            // gjennomsnittshøyde — og planene som sendes videre skal beskrive sluttflaten.
+            if idx.count / 3 != førTris {
+                planes = ARMeshGlbExporter.snapDominantPlanes(positions: &pos, indices: idx)
+            }
+        }
 
         let nrm = ARMeshGlbExporter.recomputeNormals(positions: pos, indices: idx)
 
@@ -439,7 +1016,7 @@ enum MeshTsdfBuild {
             else { let id = UInt32(blockIds.count); blockIds[key] = id; anchors[t] = id }
         }
         MeshLog.log(String(format: "TSDF: surface nets %d verts, %d tris, %d UV-blokker på %.1fs",
-                           verts.count, idx.count / 3, blockIds.count, CFAbsoluteTimeGetCurrent() - t0))
+                           pos.count / 3, idx.count / 3, blockIds.count, CFAbsoluteTimeGetCurrent() - t0))
         // PLAN-LÅSEN ER AV for TSDF-nett (brukerdom 2026-09-01). Planene brukes til å RETTE
         // geometrien over — det er ren gevinst, vegger blir virkelig flate — men de sendes
         // IKKE videre til baken, for der gjorde de vondt verre:
@@ -447,10 +1024,12 @@ enum MeshTsdfBuild {
         //   · uten deling faller taket til per-region-valg og får store toneflater
         // Årsaken er at TSDF-planene er finere oppdelt enn ARKits og sjelden dekkes 90 % av
         // ett enkelt foto. `meshscan.planelock=on` sender dem likevel, for A/B.
+        // 2026-09-07: planene sendes nå ALLTID (plan-snittet i baken trenger «ligger på plan»),
+        // men planeLock styrer om baken også får låse dem til ett foto.
         let sendPlanes = UserDefaults.standard.string(forKey: "meshscan.planelock") == "on"
-        MeshLog.log("TSDF: \(planes.count) plan snappet i geometrien, plan-lås \(sendPlanes ? "PÅ" : "av")")
+        MeshLog.log("TSDF: \(planes.count) plan snappet i geometrien, plan-lås \(sendPlanes ? "PÅ" : "av") (plan-snitt på)")
         return MeshBakeV2.MergedMesh(positions: pos, normals: nrm, indices: idx,
-                                     triAnchor: anchors, planes: sendPlanes ? planes : [], faceClass: [])
+                                     triAnchor: anchors, planes: planes, faceClass: [], planeLock: sendPlanes)
     }
 
     // MARK: - Innlesing
@@ -522,27 +1101,36 @@ enum MeshTsdfBuild {
         guard let kd = try? Data(contentsOf: dir.appendingPathComponent("fixture-kf.json")),
               let kfs = try? JSONDecoder().decode([MeshScanPresenter.Keyframe].self, from: kd)
         else { return [] }
-        var out: [DFrame] = []
-        for k in kfs {
+        // PARALLELT (2026-09-05): målt 96 s for 61 keyframes énkjernet — hver JBU er
+        // uavhengig av de andre, så de kjøres på alle kjerner og legges i hver sin plass.
+        let slots = UnsafeMutablePointer<DFrame?>.allocate(capacity: kfs.count)
+        slots.initialize(repeating: nil, count: kfs.count)
+        defer { slots.deinitialize(count: kfs.count); slots.deallocate() }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        DispatchQueue.concurrentPerform(iterations: kfs.count) { i in
+            let k = kfs[i]
             guard let df = k.depthFile,
                   let dd = try? Data(contentsOf: dir.appendingPathComponent(df)),
                   dd.count == k.depthWidth * k.depthHeight * 4,
                   let g = loadLuma(dir.appendingPathComponent(k.file), maxW: k.depthWidth * scale)
-            else { continue }
+            else { return }
             let low = dd.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
             let up = jbu(depth: low, dw: k.depthWidth, dh: k.depthHeight, guide: g.y, gw: g.w, gh: g.h)
             let s = Float(g.w) / Float(k.width)
             let m = k.transform
-            out.append(DFrame(w: g.w, h: g.h,
+            slots[i] = DFrame(w: g.w, h: g.h,
                               fx: k.intrinsics[0] * s, fy: k.intrinsics[1] * s,
                               cx: k.intrinsics[2] * s, cy: k.intrinsics[3] * s,
                               c2w: simd_float4x4(columns: (SIMD4(m[0], m[1], m[2], m[3]),
                                                            SIMD4(m[4], m[5], m[6], m[7]),
                                                            SIMD4(m[8], m[9], m[10], m[11]),
                                                            SIMD4(m[12], m[13], m[14], m[15]))),
-                              url: nil, inline: up, trust: 1, jbuGuide: nil, jbuScale: scale))
+                              url: nil, inline: up, trust: 1, jbuGuide: nil, jbuScale: scale)
         }
-        MeshLog.log("TSDF: depth super-res på \(out.count) keyframes (JBU ×\(scale))")
+        var out: [DFrame] = []
+        out.reserveCapacity(kfs.count)
+        for i in 0..<kfs.count { if let f = slots[i] { out.append(f) } }
+        MeshLog.log(String(format: "TSDF: depth super-res på %d keyframes (JBU ×%d) på %.1fs", out.count, scale, CFAbsoluteTimeGetCurrent() - t0))
         return out
     }
 
