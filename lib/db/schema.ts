@@ -4,7 +4,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 36,
+  version: 37,
   tables: [
     tableSchema({
       name: 'product_prices',
@@ -382,6 +382,20 @@ export const schema = appSchema({
         { name: 'pin_x', type: 'number', isOptional: true }, // normalisert 0..1 på tegningen
         { name: 'pin_y', type: 'number', isOptional: true },
         { name: 'synlighet', type: 'string', isOptional: true }, // null/'tildelt' = kun tildelt bruker ser pinnen
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      // Hvem oppgaven ble SENDT til. `assigned_to` er den ene ansvarlige; dette er
+      // de informerte. En kommaseparert streng ville ikke kunnet spørres på, og
+      // ansvar og informasjon er ikke det samme. (v37, flettet fra grossist-og-pool.)
+      name: 'task_mottakere',
+      columns: [
+        { name: 'task_id', type: 'string', isIndexed: true },
+        { name: 'user_id', type: 'string', isIndexed: true },
+        { name: 'user_navn', type: 'string', isOptional: true },
+        { name: 'created_by', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],

@@ -1,0 +1,71 @@
+-- `revoke execute … from anon` gjør ikke det det ser ut som.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Funnet
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- En ny funksjon får `GRANT EXECUTE TO PUBLIC` automatisk. PUBLIC er ikke en
+-- rolle man kan trekke fra en annen rolle — det er alle, inkludert `anon`.
+-- Å trekke `anon` fjerner bare et grant som ble gitt til `anon` DIREKTE, og
+-- lar det som kom via PUBLIC stå.
+--
+-- Målt på basen etter at 20260822120000 var kjørt:
+--
+--   proacl = {=X/postgres, postgres=X/postgres, authenticated=X/postgres, …}
+--            ^^^^^^^^^^^^
+--            dette er PUBLIC, og det er derfor anon fortsatt kom gjennom
+--
+-- Det gjelder ikke bare denne runden. Tretten av funksjonene
+-- 20260821230000_sikkerhet.sql mente å stenge for `anon`, er fortsatt åpne for
+-- `anon`: `log_audit_event`, `company_settings_for_me`, `kan_godkjenne_faglig`,
+-- `kan_fryses`, `oppbevaring_til`, `audit_actor_name`, `watermelon_pull`,
+-- `watermelon_push`, `audit_row`, `handle_new_user`, `profiles_vern` med flere.
+-- `get_company_ai_key` og `set_company_ai_key` er de eneste som faktisk ble
+-- stengt.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Hvorfor det likevel ikke lekker noe — bortsett fra ÉN
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Å kunne KALLE en funksjon er ikke det samme som å få noe ut av den. De
+-- gamle deler seg i tre, og alle tre holder av en annen grunn enn granten:
+--
+--   `watermelon_pull/push`, `sync_*`   IKKE security definer. De kjører som
+--                                      kalleren, og RLS gir anon null rader.
+--   `audit_row`, `handle_new_user`,    returnerer `trigger`. PostgREST lager
+--   `profiles_vern`                    ikke endepunkt av dem i det hele tatt.
+--   `log_audit_event`, `kan_*`,        security definer, men leser
+--   `company_settings_for_me`          `auth.uid()`/`current_company_id()`
+--                                      selv. `log_audit_event` KASTER på
+--                                      manglende firma.
+--
+-- Belte og bukseseler, der beltet aldri ble festet og selene holdt. Det er
+-- ikke det samme som at det er greit, men det er grunnen til at dette er en
+-- opprydding og ikke et hull som må lukkes i natt.
+--
+-- Unntaket er MIN egen fra forrige migrasjon. `finn_bruker_paa_epost` ER
+-- security definer, leser `auth.users`, og har ingen intern sesjonssjekk — det
+-- er hele poenget med den. Med PUBLIC-granten stående var den et endepunkt
+-- hvem som helst på internett kunne spørre «finnes denne e-postadressen hos
+-- Ampex?». Den lukkes her, og det er den ene linja i denne fila som haster.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Riktig form
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+--   revoke execute on function … from public;   -- ta bort standardgranten
+--   grant  execute on function … to authenticated;  -- gi tilbake til dem som skal
+--
+-- `service_role` har sitt eget grant fra Supabase og påvirkes ikke av at
+-- PUBLIC trekkes.
+--
+-- De gamle funksjonene røres IKKE her. `watermelon_pull` er montørappens
+-- livsnerve, og en grant-endring på den skal gjøres med appen foran seg — ikke
+-- på slutten av en runde om invitasjoner.
+
+-- Skal kun nås av service_role, altså fra Edge Functions.
+revoke execute on function public.finn_bruker_paa_epost(text) from public, anon, authenticated;
+
+-- Skal nås av innloggede, og bare dem.
+revoke execute on function public.firmaets_ansatte() from public, anon;
+grant execute on function public.firmaets_ansatte() to authenticated;

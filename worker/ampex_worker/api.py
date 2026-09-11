@@ -90,7 +90,20 @@ class Api:
     # ── innmelding ──────────────────────────────────────────────────────────
     @staticmethod
     def enroll(supabase_url: str, anon_key: str, code: str,
-               hostname: str, gpu_name: str, version: str) -> str:
+               hostname: str, gpu_name: str, version: str,
+               vram_mb: int | None = None,
+               compute_capability: str | None = None) -> str:
+        """Meld inn maskinen og få node-tokenet tilbake.
+
+        Kjøres FØR noden har et token — derfor anon-nøkkelen. Hemmeligheten er
+        innmeldingskoden, som er engangs og utløper. Se `enroll_worker_node` i
+        migrasjonen 20260822140000.
+
+        VRAM og compute capability er valgfrie hele veien ned, og skal være
+        det: klarer ikke driveren å svare, skal maskinen fortsatt komme seg inn
+        i poolen. Et tomt felt i nodelista er et lite problem. En PC som nekter
+        å melde seg inn fordi nvidia-smi ikke fantes, er et stort.
+        """
         with httpx.Client(base_url=supabase_url.rstrip("/"), timeout=60.0,
                           headers={"apikey": anon_key,
                                    "Authorization": f"Bearer {anon_key}",
@@ -100,20 +113,32 @@ class Api:
                 "p_hostname": hostname,
                 "p_gpu_name": gpu_name,
                 "p_worker_version": version,
+                "p_vram_mb": vram_mb,
+                "p_compute_capability": compute_capability,
             })
             r.raise_for_status()
             return r.json()
 
     # ── R2 via presignerte URL-er ───────────────────────────────────────────
-    def presign(self, job_id: str, action: str, key: str | None = None) -> dict:
+    def presign(self, job_id: str, action: str, name: str | None = None) -> dict:
         """Edge Function 'scan-blobs' bytter node-token mot kortlevde URL-er.
-        action: 'download' (hele input_prefix) eller 'upload' (én nøkkel)."""
-        r = self._c.post("/functions/v1/scan-blobs", json={
+
+        Worker-en har to grener der, og de er bevisst atskilte:
+          'download'  GET-URL-er for hele input_prefix
+          'output'    én PUT-URL for resultatet, under et ANNET prefiks
+
+        Skillet er ikke kosmetisk: uten det kan en node skrive over rammene den
+        nettopp lastet ned, og da kan en mislykket bake ikke kjøres om.
+        Telefonens 'upload'/'finish' krever brukersesjon og nås ikke herfra.
+        """
+        body: dict = {
             "node_token": self.cfg.node_token,
             "job_id": job_id,
             "action": action,
-            "key": key,
-        })
+        }
+        if name is not None:
+            body["files"] = [{"name": name}]
+        r = self._c.post("/functions/v1/scan-blobs", json=body)
         r.raise_for_status()
         return r.json()
 
@@ -131,7 +156,7 @@ class Api:
         return dest
 
     def upload_glb(self, job_id: str, glb: Path) -> str:
-        info = self.presign(job_id, "upload", key=glb.name)
+        info = self.presign(job_id, "output", name=glb.name)
         with glb.open("rb") as fh:
             r = httpx.put(info["url"], content=fh.read(), timeout=600.0,
                           headers={"Content-Type": "model/gltf-binary"})

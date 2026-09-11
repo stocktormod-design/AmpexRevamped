@@ -13,6 +13,9 @@ import { FormTemplate } from '../db/models/form-template'
 import { Project } from '../db/models/project'
 import { Room } from '../db/models/room'
 import { findByOrderNumber } from '../orders'
+import { byggLag1, byggLag2, byggLag3 } from './instruks'
+import { verktoyrettigheter } from './verktoy-tilgang'
+import { nyNonce } from './vask'
 import {
   addOrderMember,
   findColleagueByName,
@@ -430,30 +433,51 @@ export class LiveSession {
   }
 
 
+  /**
+   * Lag 1 + lag 2. Se `lib/ai/instruks.ts` for hvorfor de er skilt.
+   *
+   * Kort: context caching er en PREFIKS-mekanisme. Da denne funksjonen limte
+   * brukernavn, skjerm og påminnelser inn i den samme strengen, var hele
+   * strengen unik per bruker, og det fantes ingen felles prefiks å cache —
+   * uansett hvor mye statisk innhold som lå foran.
+   *
+   * Lag 3 (vær, aktiv ordre, påminnelser, notater) ligger IKKE her lenger. Det
+   * er observasjoner, ikke regler, og de sendes som innhold i samtalen.
+   */
+  /**
+   * Én nonce per økt. Innholdet i basen kan ikke kjenne den, og kan derfor
+   * ikke lukke konvolutten sin egen og late som det som følger er systemets ord.
+   * En ordre importert fra Tripletex i fjor kjenner ingen nonce fra i dag.
+   */
+  private readonly dataNonce = nyNonce()
+
   private buildSystemInstruction(): string {
     const ctx = this.routeContext
-    const screenInfo =
-      ctx.screen === 'prosjekt'
-        ? `Brukeren står inne på et prosjekt — prosjekt_status uten navn gjelder dette prosjektet.`
-        : ctx.screen === 'ordre'
-          ? 'Brukeren står på ordrelisten.'
-          : 'Brukeren er et sted i appen uten spesiell kontekst.'
-    const userInfo = this.user
-      ? `BRUKER: ${this.user.name || 'ukjent navn'} (rolle: ${this.user.role || 'ukjent'}). Du handler alltid PÅ VEGNE AV denne brukeren og kan aldri gjøre mer enn rollen deres tillater.`
-      : ''
-    const catalog =
-      this.templateCatalog.length > 0
-        ? `\nTILGJENGELIGE SKJEMAMALER (bruk mal_id ordrett):\n${this.templateCatalog.map(t => `- ${t.id}: ${t.name} (${t.source})`).join('\n')}`
-        : ''
-    const reminders =
-      this.dueReminders.length > 0
-        ? `\nPÅMINNELSER SOM FORFALLER I DAG/ER FORFALT — nevn dem kort i din FØRSTE replikk: ${this.dueReminders.join('; ')}`
-        : ''
-    const notes =
-      this.userNotes.length > 0
-        ? `\nHUKOMMELSE OM BRUKEREN (bruk naturlig, ikke les opp; slett med glem_notat om brukeren ber om det):\n${this.userNotes.map(n => `- [${n.id}] ${n.content}`).join('\n')}`
-        : ''
-    return `${SYSTEM_INSTRUCTION}\n\n${userInfo}\nNÅVÆRENDE SKJERM: ${screenInfo}${catalog}${reminders}${notes}`
+    const skjerm = ctx.screen === 'prosjekt' ? 'prosjekt' : ctx.screen === 'ordre' ? 'ordre' : 'annet'
+    return [
+      byggLag1(SYSTEM_INSTRUCTION),
+      byggLag2({
+        bruker: this.user ? { navn: this.user.name, rolle: this.user.role } : null,
+        skjerm,
+        maler: this.templateCatalog.map(t => ({ id: t.id, navn: t.name, kilde: t.source })),
+        rettigheter: verktoyrettigheter(this.user?.role),
+      }),
+    ].join('\n\n')
+  }
+
+  /**
+   * Lag 3 — situasjonen akkurat nå, som INNHOLD og aldri som instruks.
+   *
+   * Returnerer en tur som legges foran hilsenen. At den kommer som en melding
+   * og ikke som en instruks er poenget: endrer været seg, kommer den nye
+   * meldingen ETTER den gamle, og modellen ser rekkefølgen. Bygges instruksen
+   * om i stedet, mister den at noe endret seg.
+   */
+  private byggSituasjon(): { role: 'user'; parts: { text: string }[] } | null {
+    return byggLag3({
+      paaminnelser: this.dueReminders,
+      notater: this.userNotes.map(n => ({ id: n.id, innhold: n.content })),
+    })
   }
 
   /** Telefon-mot-øret: rut lyden til ørehøyttaleren (privat, som en samtale) i stedet for speaker. */
@@ -574,10 +598,12 @@ export class LiveSession {
       // Modellen venter ELLERS stille på at brukeren snakker først — uten en hørbar
       // hilsen virker økten død og brukeren rister den i senk. Tekst-turn her gir
       // umiddelbar talerespons og beviser samtidig hele lydkjeden ned til høyttaler.
+      const situasjon = this.byggSituasjon()
       this.ws?.send(
         JSON.stringify({
           clientContent: {
             turns: [
+              ...(situasjon ? [situasjon] : []),
               {
                 role: 'user',
                 parts: [

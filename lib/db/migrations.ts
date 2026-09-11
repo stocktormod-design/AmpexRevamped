@@ -5,6 +5,36 @@ import { byggReparasjonsSql, TABELLER_V30 } from './id-repair'
 export const migrations = schemaMigrations({
   migrations: [
     {
+      // Oppgave-mottakere og backfill av synlighet (fra grossist-og-pool, flettet
+      // 2026-09-11). Serverside 20260824100000. Lå der som v32, men v32-v36 var
+      // alt tatt av tegnings- og skann-arbeidet på denne linja, og telefoner som
+      // har kjørt v36 ville aldri fått tabellen. Derfor v37.
+      //
+      // MÅ følge serveren: `sync_pull_columns` leser kolonnene fra
+      // information_schema, så nye serverkolonner sendes til appen enten vi vil
+      // eller ei — og en kolonne WatermelonDB ikke kjenner avviser HELE raden.
+      toVersion: 37,
+      steps: [
+        createTable({
+          name: 'task_mottakere',
+          columns: [
+            { name: 'task_id', type: 'string', isIndexed: true },
+            { name: 'user_id', type: 'string', isIndexed: true },
+            // Navnet lagres ved siden av id-en, som ellers i basen: en oppgave fra
+            // i fjor skal kunne leses selv om personen har sluttet.
+            { name: 'user_navn', type: 'string', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        // `synlighet` er not null på serveren med default 'tildelt'. addColumns i
+        // v32 fylte eksisterende rader med null, og null der er verken tildelt
+        // eller prosjekt.
+        unsafeExecuteSql("update tasks set synlighet = 'tildelt' where synlighet is null;"),
+      ],
+    },
+    {
       // Mapper for tegninger: bygg → fag → tegninger (2026-09-06).
       toVersion: 36,
       steps: [

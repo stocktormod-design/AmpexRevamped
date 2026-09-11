@@ -167,11 +167,6 @@ async function addScan(orderId: string, kind: ScanKind, index: number): Promise<
 
 const scanKinds: ScanKind[] = ['planlegging', 'dokumentasjon']
 
-const scanHints: Record<ScanKind, string> = {
-  planlegging: 'Skann før jobben. Grunnlag for planlegging og mengder.',
-  dokumentasjon: 'Skann as-built. Et ekstra lag dokumentasjon på det utførte.',
-}
-
 /**
  * LiDAR — samme mønster som materiell og dokumentasjon: en liten seksjonstittel
  * med ÉN handling til høyre, og innholdet under, ledet av seg selv.
@@ -709,7 +704,6 @@ export default function OrderDetailScreen() {
       <ChoiceSheet<string>
         synlig={velgerSkjema}
         tittel="Legg til dokumentasjon"
-        forklaring="Skjemaet legges på ordren og kan fylles ut nå eller senere."
         valg={remainingTemplates.map(tpl => ({ verdi: tpl.id, etikett: tpl.name }))}
         onVelg={velgSkjema}
         onAvbryt={() => setVelgerSkjema(false)}

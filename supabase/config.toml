@@ -149,11 +149,28 @@ max_indexes = 5
 
 [auth]
 enabled = true
-# The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
-# in emails.
-site_url = "http://127.0.0.1:3000"
+# ADVARSEL: det HOSTEDE prosjektet leser ikke denne fila. Verdiene under gjelder
+# den lokale stacken (`supabase start`), og naar noen kjoerer `supabase config
+# push`. Paa vymgogzcicbaizjlaurr settes de samme to feltene i dashbordet, under
+# Authentication -> URL Configuration, og de MAA vaere like.
+#
+# Sto som Supabase' standard (127.0.0.1:3000) helt til 22. august. Det gjorde at
+# den foerste ekte invitasjonen fra Ampex Kontor virket teknisk — engangskoden
+# ble innloest, kontoen bekreftet — men GoTrue avviste `redirectTo` fordi
+# https://www.ampex.no ikke sto i lista, og sendte i stedet brukeren til Site URL.
+# Altsaa til localhost:3000, der ingenting lytter. Tokenene laa i URL-en til en
+# side som ikke fantes, og andre klikk ga «otp_expired» fordi koden var brukt opp.
+#
+# `redirectTo` som ikke staar i lista blir ikke en feil. Den blir stille byttet
+# ut, og det er verre.
+site_url = "https://www.ampex.no"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# Kontoret kjoerer paa 5174 i utvikling (desktop/vite.config.ts, strictPort).
+additional_redirect_urls = [
+  "https://www.ampex.no",
+  "https://ampex.no",
+  "http://localhost:5174",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).

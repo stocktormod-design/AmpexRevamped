@@ -13,7 +13,7 @@
 
 // Ukevelgeren er FELLES med timelista. To ulike svar på «hvilken uke er dette»
 // ville vært umulig å forklare.
-export { DAGER, flyttUke, ukeEtikett, ukenummer, ukeSlutt, ukeStart } from './timesheet-calc'
+export { arbeidsperiode, DAGER, flyttUke, ukeEtikett, ukenummer, ukeSlutt, ukeStart } from './timesheet-calc'
 
 /** Strukturell inndata, ikke WatermelonDB — UI-et får de ekte radene tilbake. */
 export type AvtaltJobb = { scheduledAt: Date | null }

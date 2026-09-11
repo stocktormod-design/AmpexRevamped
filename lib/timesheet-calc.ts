@@ -51,6 +51,28 @@ export function ukeEtikett(start: Date, naa = new Date()): string {
   return `Uke ${ukenummer(start)}`
 }
 
+/**
+ * Overskriften over en ukeflate: «Arbeidsperiode Uke 35».
+ *
+ * Skilt fra `ukeEtikett` med vilje. `ukeEtikett` svarer relativt — «Denne
+ * uken», «Forrige uke» — fordi det er det man vil vite når man blar. Denne
+ * svarer med tallet, fordi det er tallet folk fører timer mot, skriver på en
+ * timeliste og sier til hverandre. «Denne uken» er ikke noe man kan skrive på
+ * et bilag.
+ *
+ * Uka det blas TIL er den som navngis, ikke dagens. Står du på neste uke og
+ * overskriften sier 35, viser den noe annet enn det som står under den.
+ * Relativ-ordet henges på når de to ikke er samme uke, så man ser at man har
+ * blad seg vekk uten å måtte regne ut hvilken uke det er i dag.
+ */
+export function arbeidsperiode(start: Date, naa = new Date()): string {
+  const grunn = `Arbeidsperiode Uke ${ukenummer(start)}`
+  const relativ = ukeEtikett(start, naa)
+  return relativ.startsWith('Uke ') || start.getTime() === ukeStart(naa).getTime()
+    ? grunn
+    : `${grunn} · ${relativ}`
+}
+
 // Inndata er strukturelle, ikke WatermelonDB-modeller — men generiske, så
 // UI-et får de ekte radene tilbake i `linjer` og kan navigere fra dem.
 export type TimeLinje = {

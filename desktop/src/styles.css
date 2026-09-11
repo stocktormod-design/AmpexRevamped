@@ -1,0 +1,879 @@
+@import '@fontsource/schibsted-grotesk/500.css';
+@import '@fontsource/schibsted-grotesk/600.css';
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/500.css';
+
+/*
+ * Kontorflaten — papir.
+ *
+ * Systemet er hentet fra DESIGN.md: lyst lerret, HÅRLINJER i stedet for
+ * skygger, tett monokrom typografi som gjør det strukturelle arbeidet, og ÉN
+ * aksentfarge som snakker. Kort er flate og defineres av en 1 px kant, ikke av
+ * dybde. Radiusvokabularet er stramt og har fire trinn, ikke sytten.
+ *
+ * ── Fargene er Ampex', ikke Dubs ──────────────────────────────────────────
+ *
+ * Electric blue og deep sapphire er byttet mot KOBBER. Alt annet er hentet rett
+ * fra `lib/tokens.js` sin papirpalett — den som allerede fantes, og som regel 9
+ * beskriver som «det du ser når du står INNE I et dokument».
+ *
+ * Kontoret har BEGGE, og skillet er regel 9 sitt eget: **kromet er brunt,
+ * innholdet er papir.** Sidemenyen er verktøyet du navigerer med — den er brun,
+ * som hele montørappen. Flaten til høyre er dokumentet du leser og skriver — den
+ * er papir. Kontrasten mellom dem er ikke pynt; den forteller hva som er hva.
+ *
+ *   #EFEAE1  paperCanvas     lerretet
+ *   #FFFFFF  paperBg         kort
+ *   #E5DDCE  paperFill       inputfyll, hover
+ *   #DED6C7  paperSeparator  hårlinja — den mest brukte enkeltverdien i systemet
+ *   #CDC4B1  paperBorder     sterkere kant
+ *   #2E281F  paperLabel      brødtekst
+ *   #5C5340  paperIcon       sekundærtekst
+ *   #96896F  paperSecondary  hjelpetekst
+ *   #C9C0AC  paperTertiary   plassholder
+ *   #A97C4F  brand           KOBBER — lenker, aktiv tilstand, den ene fylte handlingen
+ *
+ * Semantikken er den samme, men mørknet: `#34C759` er valgt for å lyse på en
+ * brun flate og er uleselig på hvitt. Samme betydning, annen lyshet — samme
+ * argument som da kobberet ble lysnet for den mørke flaten.
+ *
+ * ── Typografi: tre snitt, delt etter FUNKSJON ─────────────────────────────
+ *
+ *   Schibsted Grotesk   overskrifter og store tall
+ *   Geist Sans          grensesnitt, brødtekst, etiketter
+ *   Geist Mono          data: kroner, timer, el-numre, ordrenumre, datoer
+ *
+ * `lib/fonts.ts` forteller at appen PRØVDE to fonter og forkastet det: «to
+ * fonter i samme grensesnitt leses som to grensesnitt — og paret serif+grotesk
+ * er nettopp det paret øyet plukker opp raskest». Innvendingen er riktig, og
+ * derfor er dette ikke et serif+grotesk-par.
+ *
+ * Skillet her er funksjonelt. Schibsted Grotesk og Geist er to grotesker i
+ * samme formfamilie — forskjellen leses som autoritet, ikke som to
+ * grensesnitt. Og monoen er ikke et tredje uttrykk: den er tall med faste
+ * bredder, brukt ett sted, på kolonner der øret i 1 388,80 skal stå under øret
+ * i 415,52.
+ *
+ * Regel 8 gjelder montørappen og mekanismen i `components/text.tsx` (vekt →
+ * fontfil). Kontoret har ikke den mekanismen, og valget her er tatt eksplisitt.
+ *
+ * Skalaen er DESIGN.md sin: 11 / 14 / 16 / 18 / 20 / 24 / 30 / 36. Vekt 500 på
+ * overskrifter — halvfet, og aldri fet.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  /* Flater */
+  --lerret: #EFEAE1;
+  --papir: #FFFFFF;
+  --dis: #F7F4EE;
+  --fyll: #E5DDCE;
+
+  /* Hårlinjene. Kanten er systemet — ikke skyggen. */
+  --kant: #DED6C7;
+  --kant-sterk: #CDC4B1;
+
+  /* Blekk.
+   *
+   * `paperSecondary #96896F` og `paperTertiary #C9C0AC` er mørknet. De er valgt
+   * for en telefonskjerm man holder 30 cm unna; på en kontorskjerm i et opplyst
+   * rom lander de på 3,4:1 og 1,9:1 mot hvitt, altså under kravet. Samme rolle,
+   * justert for underlaget — tredje gang samme argument brukes i denne fila,
+   * og alltid samme vei: fargen skal LESES der den står. */
+  --blekk: #2E281F;    /* 13,1:1 */
+  --blekk-2: #5C5340;  /*  7,6:1 — sekundærtekst */
+  --blekk-3: #776B55;  /*  5,3:1 — hjelpetekst, var #96896F */
+  --blekk-4: #9A8E76;  /*  3,6:1 — kun plassholder og deaktivert, aldri innhold */
+
+  /* Den ene aksenten. Erstatter electric blue og deep sapphire. */
+  --kobber: #A97C4F;      /* ikon og kanter */
+  --kobber-dyp: #7A5630;  /* 4,8:1 mot hvitt — all kobbertekst */
+  --kobber-flate: rgba(169, 124, 79, 0.10);
+  --kobber-kant: rgba(169, 124, 79, 0.34);
+
+  /* Semantikk, mørknet for papir. Betydningen er uendret. */
+  --gronn: #1E7A40;
+  --gronn-flate: rgba(30, 122, 64, 0.10);
+  --gul: #9A5B00;
+  --gul-flate: rgba(154, 91, 0, 0.10);
+  --rod: #A32B22;
+  --rod-flate: rgba(163, 43, 34, 0.09);
+  --skifer: #3F4B5C;
+
+  /* Radius: fire trinn, ingen ad hoc-avrunding. */
+  --r-input: 6px;
+  --r-knapp: 8px;
+  --r-kort: 12px;
+  --r-stor: 16px;
+  --r-pille: 9999px;
+
+  /* Skygger. Tre tilfeller, ikke flere. */
+  --skygge-knapp: rgba(46, 40, 31, 0.06) 0 1px 2px 0;
+  --skygge-ring: rgba(46, 40, 31, 0.08) 0 0 0 4px;
+
+  /* ── Kromet er BRUNT ────────────────────────────────────────────────────
+   *
+   * Regel 9 sier at brunt er verktøyflaten og kremet papir er dokumentet. Det
+   * er nøyaktig skillet mellom sidemenyen og innholdet: menyen er verktøyet du
+   * navigerer med, flaten til høyre er dokumentet du leser og skriver.
+   *
+   * Verdiene er montørappens egne (`tokens.js`: canvas, label, secondaryLabel,
+   * tertiaryLabel, border). Kobberet er lysnet fra #A97C4F til #B98A5C, samme
+   * kulør — det er den samme justeringen som gjøres andre veien på papiret, og
+   * grunnen er at #A97C4F forsvinner mot brunt.
+   */
+  --krom: #211C15;
+  --krom-hev: rgba(255, 255, 255, 0.06);
+  --krom-kant: rgba(255, 255, 255, 0.08);
+  --krom-blekk: #F6F1E8;
+  --krom-blekk-2: rgba(246, 241, 232, 0.58);
+  --krom-blekk-3: rgba(246, 241, 232, 0.34);
+  --krom-kobber: #B98A5C;
+  --krom-kobber-flate: rgba(185, 138, 92, 0.16);
+
+  --f-display: 'Schibsted Grotesk', 'Geist Sans', system-ui, sans-serif;
+  --f-ui: 'Geist Sans', system-ui, sans-serif;
+  --f-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --rail: 236px;
+  --rad: 44px;
+
+  color-scheme: light;
+}
+
+html, body, #rot { height: 100%; margin: 0; }
+
+body {
+  background: var(--lerret);
+  color: var(--blekk);
+  font-family: var(--f-ui);
+  font-size: 14px;
+  line-height: 1.43;
+  -webkit-font-smoothing: antialiased;
+  /* Kontorappen er ikke en nettside: ingenting skal dra-velges ved uhell.
+     Tekst som SKAL kunne kopieres merkes med .valgbar. */
+  user-select: none;
+}
+
+.valgbar { user-select: text; }
+
+/* Displaysnittet bærer overskriftene. */
+h1, h2, h3 { margin: 0; font-family: var(--f-display); font-weight: 500; letter-spacing: -0.02em; }
+h1 { font-size: 30px; line-height: 1.2; }
+h2 { font-size: 20px; line-height: 1.4; }
+h3 { font-size: 16px; line-height: 1.5; }
+p { margin: 0; }
+
+/* Tall i kolonner. Faste bredder er hele grunnen til at monoen er med. */
+.tall, .stat-tall, .sum-verdi, .oppgave-tall, .oppgave-nr, .hero-nr, .ordrerad-nr,
+.ordrerad-dato, .filter-tall, .teller, .uke-tall, .uke-jobb-tid, .linjer .h {
+  font-family: var(--f-mono); font-variant-numeric: tabular-nums;
+}
+
+code {
+  font-family: var(--f-mono); font-size: 13px;
+  background: var(--dis); border: 1px solid var(--kant); padding: 1px 5px; border-radius: var(--r-input);
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: none; background: none; padding: 0; }
+button:disabled { cursor: default; opacity: 0.4; }
+:focus-visible { outline: 2px solid var(--kobber); outline-offset: 2px; border-radius: var(--r-input); }
+
+.dempet { color: var(--blekk-2); }
+.dempet-mer { color: var(--blekk-3); }
+.tall { font-variant-numeric: tabular-nums; text-align: right; }
+.rad { display: flex; align-items: center; gap: 8px; }
+.strekk { flex: 1; }
+.stabel { display: flex; flex-direction: column; gap: 16px; }
+
+/* Skallet ---------------------------------------------------------------- */
+
+.skall { height: 100%; }
+.skjerm { height: 100%; display: flex; background: var(--lerret); }
+
+/* Sidemenyen: brun verktøyflate. Kontrasten mot papiret til høyre er hele
+   poenget — du ser med én gang hva som er krom og hva som er dokument. */
+.rail {
+  width: var(--rail); flex: none;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 12px;
+  background: var(--krom);
+  color: var(--krom-blekk-2);
+  border-right: 1px solid var(--krom);
+}
+
+.merke {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 8px 20px; text-align: left; color: inherit;
+}
+.merke-ikon { display: grid; place-items: center; color: var(--krom-kobber); flex: none; }
+.merke-navn { font-family: var(--f-display); font-weight: 600; font-size: 16px; letter-spacing: -0.02em; color: var(--krom-blekk); }
+
+/* Menyen fyller kolonnen. Gruppene deler høyden i forhold til antall valg,
+   og valgene strekker seg innenfor gruppa — men aldri under 38 px (for trangt
+   å treffe) eller over 60 px (da leses de som knapper, ikke som en meny). */
+.rail-bolk { display: flex; flex-direction: column; flex-basis: 0; min-height: 0; }
+.rail-bolk .rail-lenke { flex: 1 1 0; min-height: 38px; max-height: 60px; }
+
+.rail-gruppe {
+  color: var(--krom-blekk-3); font-size: 11px; font-weight: 500;
+  padding: 14px 8px 6px; flex: none;
+}
+
+/* Aktivt valg: myk kobberflate, ikke en fet stolpe i kanten. DESIGN.md er
+   uttrykkelig på dette — «soft chromatic fill rather than a bold left-border». */
+.rail-lenke {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 36px; padding: 0 8px; border-radius: var(--r-knapp);
+  color: var(--krom-blekk-2); text-align: left; width: 100%;
+  transition: background 100ms ease, color 100ms ease;
+}
+.rail-lenke:hover { background: var(--krom-hev); color: var(--krom-blekk); }
+.rail-lenke[aria-current='page'] { background: var(--krom-kobber-flate); color: var(--krom-kobber); font-weight: 500; }
+.rail-bunn { margin-top: auto; }
+
+.flate {
+  flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 24px;
+}
+.flate-rull { overflow: auto; }
+.smal { max-width: 1200px; }
+
+/* Sidehodet */
+.sidehode { display: flex; align-items: center; gap: 20px; flex: none; }
+.sidehode-tekst { min-width: 0; }
+.sidehode-under { color: var(--blekk-3); margin-top: 4px; font-size: 14px; }
+.sidehode-hoyre { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+.ikonknapp {
+  width: 36px; height: 36px; border-radius: var(--r-pille); flex: none;
+  display: grid; place-items: center;
+  background: var(--papir); border: 1px solid var(--kant); color: var(--blekk-2);
+  transition: background 100ms ease, color 100ms ease, border-color 100ms ease;
+}
+.ikonknapp:hover { background: var(--dis); color: var(--blekk); border-color: var(--kant-sterk); }
+
+.bruker { display: flex; align-items: center; gap: 10px; padding-left: 4px; }
+.bruker-merke {
+  width: 34px; height: 34px; border-radius: var(--r-pille); flex: none;
+  background: var(--kobber-flate); border: 1px solid var(--kobber-kant); color: var(--kobber-dyp);
+  display: grid; place-items: center; font-size: 12px; font-weight: 600;
+}
+.bruker-navn { font-weight: 500; line-height: 1.3; }
+.bruker-rolle { color: var(--blekk-3); font-size: 12px; line-height: 1.3; }
+
+/* Kort: hvitt, 1 px kant, 12 px radius, ingen skygge ---------------------- */
+
+.kort {
+  background: var(--papir); border: 1px solid var(--kant);
+  border-radius: var(--r-kort); padding: 16px;
+}
+.kort-tett { padding: 12px 16px; }
+.kort-flat { padding: 0; overflow: hidden; }
+.kort-hode { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.kort-hode-tekst { min-width: 0; }
+.kort-merkelapp { color: var(--blekk-3); font-size: 12px; }
+.kort-tittel { font-family: var(--f-display); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.kort-verktoy { margin-left: auto; display: flex; gap: 8px; }
+.kort-hjelp { color: var(--blekk-2); max-width: 70ch; line-height: 1.5; }
+
+/* Nøkkeltall */
+.statrad { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; flex: none; }
+.stat-tall {
+  font-size: 30px; font-weight: 500; letter-spacing: -0.03em; line-height: 1.2;
+  font-variant-numeric: tabular-nums; margin-top: 10px;
+}
+.stat-tall-ord { font-size: 20px; color: var(--blekk-2); letter-spacing: -0.02em; }
+.stat-under { color: var(--blekk-3); font-size: 12px; margin-top: 8px; }
+.stat-aksent { color: var(--kobber-dyp); }
+
+/* Arbeidsflate: et kort som fyller resten av høyden */
+.arbeidsflate {
+  flex: 1; min-height: 0; display: flex; overflow: hidden;
+  background: var(--papir); border: 1px solid var(--kant); border-radius: var(--r-stor);
+}
+
+/* Knapper ---------------------------------------------------------------- */
+
+.knapp {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 36px; padding: 0 16px; border-radius: var(--r-knapp);
+  font-weight: 500; white-space: nowrap;
+  transition: background 100ms ease, border-color 100ms ease, filter 100ms ease;
+}
+/* Den ene fylte handlingen per flate. Kobber, ikke nesten-svart: det er Ampex'
+   forpliktende farge, og den skal fortjene oppmerksomheten. */
+.knapp-merke { background: var(--kobber); color: #FFFFFF; box-shadow: var(--skygge-knapp); }
+.knapp-merke:hover:not(:disabled) { background: var(--kobber-dyp); }
+.knapp-primar { background: var(--blekk); color: var(--papir); box-shadow: var(--skygge-knapp); }
+.knapp-primar:hover:not(:disabled) { filter: brightness(1.25); }
+/* Arbeidshesten: hvit flate, hårlinje, mørk tekst. */
+.knapp-stille { background: var(--papir); color: var(--blekk); border: 1px solid var(--kant); }
+.knapp-stille:hover:not(:disabled) { background: var(--dis); border-color: var(--kant-sterk); }
+.knapp-naken { color: var(--blekk-2); padding: 0 10px; }
+.knapp-naken:hover:not(:disabled) { color: var(--blekk); }
+
+/* Felt ------------------------------------------------------------------- */
+
+.felt { display: flex; flex-direction: column; gap: 6px; }
+.felt-etikett { color: var(--blekk-2); font-size: 13px; font-weight: 500; }
+input.felt-inn { height: 36px; }
+.felt-inn {
+  padding: 0 12px; border-radius: var(--r-pille);
+  background: var(--papir); border: 1px solid var(--kant-sterk); width: 100%;
+  transition: border-color 100ms ease, box-shadow 100ms ease;
+}
+.felt-inn:hover { border-color: var(--blekk-4); }
+.felt-inn:focus { outline: none; border-color: var(--kobber); box-shadow: 0 0 0 3px var(--kobber-flate); }
+.felt-inn::placeholder { color: var(--blekk-4); }
+.felt-hjelp { color: var(--blekk-3); font-size: 12px; }
+/* Skjemafelt inne i et kort er firkantet. Pillen hører til søk. */
+.felt-firkant .felt-inn { border-radius: var(--r-input); }
+.felt-firkant input.felt-inn { height: 36px; }
+
+/* Felt med et verktoey inni: passordets oeye. Knappen ligger OVER inputen, og
+   inputen faar plass til den i stedet for aa la teksten loepe under. */
+.felt-med-knapp { position: relative; display: block; }
+.felt-med-knapp .felt-inn { padding-right: 40px; }
+.felt-vis {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  display: grid; place-items: center; width: 30px; height: 30px;
+  border-radius: var(--r-input); color: var(--blekk-3);
+  transition: color 100ms ease, background 100ms ease;
+}
+.felt-vis:hover { color: var(--blekk); background: var(--dis); }
+/* Caps Lock er en advarsel, ikke en hjelpetekst. Den skal ses. */
+.felt-caps { color: var(--gul); font-weight: 500; }
+
+textarea.skrivefelt {
+  height: 300px; padding: 12px; border-radius: var(--r-input);
+  resize: vertical; line-height: 1.6; font-family: inherit;
+}
+textarea.skrivefelt-lav { height: 110px; }
+
+.velger {
+  height: 36px; padding: 0 10px; border-radius: var(--r-input);
+  background: var(--papir); border: 1px solid var(--kant-sterk); color: var(--blekk);
+  max-width: 100%;
+}
+.velger:hover { border-color: var(--blekk-4); }
+.velger:focus { outline: none; border-color: var(--kobber); box-shadow: 0 0 0 3px var(--kobber-flate); }
+
+/* Merkelapper: pille, tonet flate, mørk tekst ---------------------------- */
+
+.merkelapp {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 10px; border-radius: var(--r-pille);
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+.merkelapp-ny { background: var(--gronn-flate); color: var(--gronn); }
+.merkelapp-endret { background: var(--kobber-flate); color: var(--kobber-dyp); }
+.merkelapp-varsel { background: var(--gul-flate); color: var(--gul); }
+.merkelapp-feil { background: var(--rod-flate); color: var(--rod); }
+.merkelapp-noytral { background: var(--dis); color: var(--blekk-2); border: 1px solid var(--kant); }
+
+.beskjed { padding: 12px 14px; border-radius: var(--r-knapp); border: 1px solid; }
+.beskjed-feil { background: var(--rod-flate); border-color: rgba(163, 43, 34, 0.2); color: var(--rod); }
+.beskjed-varsel { background: var(--gul-flate); border-color: rgba(154, 91, 0, 0.2); color: var(--gul); }
+.beskjed-ok { background: var(--gronn-flate); border-color: rgba(30, 122, 64, 0.2); color: var(--gronn); }
+
+.teller {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px;
+  padding: 0 6px; border-radius: var(--r-pille);
+  background: var(--dis); border: 1px solid var(--kant); color: var(--blekk-2);
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
+
+/* Tabeller: rader som puster, hårlinje under hver ------------------------ */
+
+.tabell { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.tabell-hode, .tabell-rad { display: grid; align-items: center; gap: 16px; padding: 0 20px; }
+.tabell-hode {
+  height: 40px; flex: none; color: var(--blekk-3); font-size: 12px; font-weight: 500;
+  border-bottom: 1px solid var(--kant); background: var(--dis);
+}
+.tabell-kropp { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.tabell-rad { height: var(--rad); border-bottom: 1px solid var(--kant); }
+.tabell-rad:hover { background: var(--dis); }
+.tabell-celle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.linjer { width: 100%; border-collapse: collapse; }
+.linjer th {
+  text-align: left; font-weight: 500; padding: 0 0 10px;
+  color: var(--blekk-3); font-size: 12px;
+  border-bottom: 1px solid var(--kant);
+}
+.linjer td { padding: 12px 0; border-bottom: 1px solid var(--kant); vertical-align: baseline; }
+.linjer tbody tr:last-child td { border-bottom: none; }
+.linjer .h { text-align: right; font-variant-numeric: tabular-nums; }
+.linjer td + td, .linjer th + th { padding-left: 20px; }
+
+/* Invitasjon: skjemaet under en liste ------------------------------------ */
+
+/* Ligger inne i kortet, under tabellen, med en haarlinje mellom. Et eget kort
+   for tre felt ville lagt et nytt panel paa flata for noe som handler om lista
+   rett over. */
+.inviter-boks { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--kant); }
+.kort > .inviter-boks:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
+/* Feltene deler bredden og brekker naar det blir trangt. Firmaflata staar i en
+   1fr-spalte ved siden av en 300 px-kolonne, og der er det trangt fort. */
+.inviter-felt {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+/* Fjern-knappen paa en rad. `align-self: end` holder den paa linje med
+   feltene selv paa den foerste raden, som er den ene som har etiketter. */
+.inviter-fjern {
+  align-self: end;
+  display: grid; place-items: center;
+  width: 36px; height: 36px; flex: none;
+  border-radius: var(--r-input); color: var(--blekk-3);
+  border: 1px solid var(--kant);
+  transition: color 100ms ease, border-color 100ms ease, background 100ms ease;
+}
+.inviter-fjern:hover { color: var(--rod); border-color: rgba(163, 43, 34, 0.3); background: var(--rod-flate); }
+
+/* ── Totrinnsbekreftelse ─────────────────────────────────────────────────── */
+
+/* QR-koden ved siden av forklaringen. Brekker under paa smale flater. */
+.qr-rad { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+
+/* Supabase leverer QR-en som SVG i en data-URI. Hvit ramme rundt er ikke pynt:
+   en QR paa kremet bakgrunn har for lav kontrast for enkelte kameraer. */
+.qr {
+  width: 168px; height: 168px; flex: none;
+  background: #FFFFFF; padding: 8px;
+  border: 1px solid var(--kant); border-radius: var(--r-kort);
+}
+.qr-rad .stabel { flex: 1; min-width: 220px; gap: 8px; }
+
+/* Kvitteringen: én linje per person i bunken. */
+.kvittering { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.kvittering li { line-height: 1.5; }
+.inviter-felt .velger { width: 100%; }
+
+/* Adressen under navnet i ansattlista. */
+.ansatt-epost { display: block; font-size: 12px; color: var(--blekk-3); }
+
+/* Slippsone -------------------------------------------------------------- */
+
+.slipp-ramme { display: grid; place-items: center; padding: 24px 0; }
+.slipp {
+  width: 100%; max-width: 640px;
+  display: grid; place-items: center; gap: 10px;
+  padding: 48px 28px; text-align: center;
+  border: 1px dashed var(--kant-sterk); border-radius: var(--r-stor);
+  background: var(--papir); color: var(--blekk-2);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.slipp:hover { border-color: var(--kobber); }
+.slipp-aktiv { border-color: var(--kobber); background: var(--kobber-flate); color: var(--blekk); }
+.slipp-ikon {
+  width: 48px; height: 48px; border-radius: var(--r-stor); display: grid; place-items: center;
+  background: var(--kobber-flate); color: var(--kobber-dyp);
+}
+
+/* Tomme tilstander ------------------------------------------------------- */
+
+.tomt, .tomt-mykt {
+  display: grid; place-items: center; align-content: center; gap: 6px;
+  padding: 64px 24px; text-align: center; color: var(--blekk-3);
+}
+.tomt-mykt { flex: 1; }
+
+/* Innlogging ------------------------------------------------------------- */
+
+/* ── Innlogging ──────────────────────────────────────────────────────────────
+   Den eneste skjermen uten sidemeny. Da blir kromet hele flaten og kortet er
+   papiret — samme forhold som resten av appen, bare uten moebelet rundt. Det
+   gjoer ogsaa at fargene er sett foer man er innenfor.
+
+   Sto tidligere paa `--lerret` med et kort uten bakgrunn, fordi klassen
+   `panel` aldri har eksistert i denne fila. Krem paa krem. */
+.logginn {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 32px;
+  /* Kobberet ligger som et svakt lys bak kortet i stedet for aa staa i en
+     kant. Det er samme fargen som ellers, brukt til aa gi flaten en retning:
+     oeyet finner midten uten at noe er tegnet opp. */
+  background:
+    radial-gradient(88% 62% at 50% 0%, var(--krom-kobber-flate), transparent 68%),
+    var(--krom);
+}
+/* Vokser ikke, men krymper: kontorskjermer er store, og en delt nettleser i
+   halv bredde skal fortsatt vise hele kortet. */
+.logginn-boks { width: 372px; max-width: 100%; }
+.logginn-merke {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 26px;
+}
+.logginn-merke svg { color: var(--krom-kobber); }
+.logginn-navn {
+  font-family: var(--f-display);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--krom-blekk);
+}
+.logginn-under { font-size: 13px; color: rgba(246, 241, 232, 0.68); }
+.logginn-kort {
+  padding: 26px;
+  background: var(--papir);
+  border: 1px solid var(--kant);
+  border-radius: var(--r-stor);
+  /* Loefter papiret fra kromet. Uten skyggen ser kortet klistret ut. */
+  box-shadow: rgba(0, 0, 0, 0.32) 0 20px 44px -14px;
+}
+/* Knappene fyller kortet. Et halvbredt «Logg inn» ville vaert det eneste
+   elementet paa skjermen som ikke fulgte kolonna. */
+.logginn-kort .knapp { width: 100%; justify-content: center; }
+
+/* Overskrift inne i kortet — «Glemt passord» og «Velg et nytt passord».
+   Innlogginga selv har ingen: kortet ER innlogginga, og en tittel som gjentar
+   merket over den er stoey. */
+.logginn-tittel { display: flex; flex-direction: column; gap: 4px; }
+
+/* «Glemt passord?» hoerer til passordfeltet, ikke til knappen. Den negative
+   marginen tar igjen luften stabelen legger inn, saa lenka blir liggende
+   inntil feltet den handler om. */
+.logginn-rad { display: flex; justify-content: flex-end; margin-top: -10px; }
+.logginn-lenke {
+  font-size: 13px; font-weight: 500; color: var(--kobber-dyp);
+  border-radius: var(--r-input);
+}
+.logginn-lenke:hover { text-decoration: underline; }
+
+/* Beskjedfeltet staar alltid i DOM-en — det er et `aria-live`-omraade, og et
+   omraade som settes inn samtidig med teksten sin blir ikke lest opp.
+   Tomt tas det derfor UT AV FLYTEN i stedet for aa skjules: det slutter aa
+   spise 16 px av stabelen, men blir vaerende i tilgjengelighetstreet. */
+.logginn-meldinger { display: flex; flex-direction: column; gap: 12px; }
+.logginn-meldinger:empty { position: absolute; }
+.logginn-bunn {
+  margin: 20px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: rgba(246, 241, 232, 0.58);
+}
+
+/* Ordre: liste og detalj ------------------------------------------------- */
+
+.delt { display: grid; grid-template-columns: 320px 1fr; flex: 1; min-height: 0; width: 100%; }
+
+.liste { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--kant); background: var(--dis); }
+.liste-verktoy { padding: 14px; flex: none; border-bottom: 1px solid var(--kant); }
+.liste-kropp { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+
+.ordrerad {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 12px; border-radius: var(--r-knapp); margin-bottom: 2px;
+  border: 1px solid transparent;
+  transition: background 100ms ease;
+}
+.ordrerad:hover { background: var(--papir); }
+.ordrerad[aria-selected='true'] { background: var(--papir); border-color: var(--kant); }
+.ordrerad-topp { display: flex; align-items: baseline; gap: 8px; }
+.ordrerad-nr {
+  color: var(--kobber-dyp); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 12px;
+}
+.ordrerad-tittel {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 500;
+}
+.ordrerad-bunn { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.ordrerad-kunde {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--blekk-3); font-size: 12px;
+}
+.ordrerad-dato { color: var(--blekk-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Statusprikk. Farge = MENING, aldri pynt. Kobber er derfor ikke med her. */
+.prikk { width: 7px; height: 7px; border-radius: var(--r-pille); flex: none; }
+.prikk-mottatt { background: var(--blekk-4); }
+.prikk-planlagt { background: var(--skifer); }
+.prikk-pagaar { background: var(--gul); }
+.prikk-fakturaklar { background: var(--gronn); }
+.prikk-fakturert { background: var(--kant-sterk); }
+
+.filter { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.filter-knapp {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 28px; padding: 0 10px; border-radius: var(--r-pille);
+  color: var(--blekk-2); font-size: 12px; white-space: nowrap;
+  border: 1px solid transparent;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+.filter-knapp:hover { background: var(--papir); color: var(--blekk); }
+.filter-knapp[aria-pressed='true'] { background: var(--papir); border-color: var(--kant-sterk); color: var(--blekk); font-weight: 500; }
+.filter-tall { color: var(--blekk-3); font-variant-numeric: tabular-nums; font-size: 11px; }
+
+/* Detaljflaten */
+.detalj { display: flex; flex-direction: column; min-height: 0; min-width: 0; flex: 1; background: var(--papir); }
+.detalj-kropp { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Ingen dekorativ gradient. DESIGN.md er uttrykkelig: farge brukes ikke til
+   pynt på UI-elementer. Toppen holdes av en hårlinje, som alt annet. */
+.hero { flex: none; padding: 20px 24px; border-bottom: 1px solid var(--kant); }
+.hero-topp { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.hero-nr {
+  color: var(--kobber-dyp); font-weight: 600; font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  background: var(--kobber-flate); border: 1px solid var(--kobber-kant);
+  padding: 2px 10px; border-radius: var(--r-pille);
+}
+.hero-tittel { font-family: var(--f-display); font-size: 24px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.33; }
+.hero-linje { display: flex; align-items: center; gap: 8px 20px; margin-top: 10px; color: var(--blekk-3); flex-wrap: wrap; font-size: 13px; }
+.hero-linje > span { display: inline-flex; align-items: center; gap: 6px; }
+.hero-handling { position: absolute; top: 20px; right: 24px; display: flex; gap: 8px; }
+.detalj .hero { position: relative; }
+
+.faner { display: flex; gap: 4px; padding: 0 20px; flex: none; border-bottom: 1px solid var(--kant); background: var(--dis); }
+.fane {
+  height: 40px; padding: 0 12px; color: var(--blekk-2);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  display: inline-flex; align-items: center; gap: 8px;
+  transition: color 100ms ease;
+}
+.fane:hover { color: var(--blekk); }
+.fane[aria-selected='true'] { color: var(--kobber-dyp); font-weight: 500; border-bottom-color: var(--kobber); }
+.fane-tall {
+  color: var(--blekk-3); font-variant-numeric: tabular-nums; font-size: 11px;
+  background: var(--dis); border: 1px solid var(--kant);
+  padding: 0 6px; border-radius: var(--r-pille); line-height: 17px;
+}
+
+.to-spalter { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+@media (max-width: 1180px) { .to-spalter { grid-template-columns: minmax(0, 1fr); } }
+
+/* Seksjon = et kort inne i detaljen. Samme regel: kant, ikke skygge. */
+.seksjon {
+  background: var(--papir); border: 1px solid var(--kant);
+  border-radius: var(--r-kort); padding: 16px;
+}
+.seksjon-hode { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.seksjon-hode .seksjon-tittel { margin-bottom: 0; }
+.seksjon-hode > .knapp, .seksjon-hode > .merkelapp + .knapp { margin-left: auto; }
+.seksjon-tittel { font-family: var(--f-display); font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+/* Skrivemodus. Kobberkant og -ring: du endrer noe. */
+.seksjon-redigerer { border-color: var(--kobber-kant); box-shadow: 0 0 0 3px var(--kobber-flate); }
+
+.fakta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
+.fakta-navn { color: var(--blekk-3); font-size: 12px; }
+.fakta-verdi { margin-top: 2px; font-weight: 500; }
+
+/* Rutinen slik den gjelder. Linjeskift beholdes. */
+.dokument {
+  white-space: pre-wrap; line-height: 1.6; max-width: 72ch;
+  padding: 16px; border-radius: var(--r-input);
+  background: var(--dis); border: 1px solid var(--kant);
+}
+.dokument-tom {
+  display: grid; gap: 8px; justify-items: start;
+  padding: 20px 16px; border-radius: var(--r-input);
+  border: 1px dashed var(--kant-sterk); color: var(--blekk-3);
+}
+
+/* Summeblokka */
+.sum { margin-top: 16px; background: var(--dis); border: 1px solid var(--kant); border-radius: var(--r-kort); padding: 16px; }
+.sum-rad { display: flex; justify-content: space-between; gap: 24px; padding: 3px 0; color: var(--blekk-2); }
+.sum-verdi { font-variant-numeric: tabular-nums; color: var(--blekk); }
+.sum-rad-total {
+  border-top: 1px solid var(--kant-sterk); margin-top: 10px; padding-top: 12px;
+  font-size: 20px; font-weight: 600; color: var(--blekk); letter-spacing: -0.02em;
+}
+.sum-db { color: var(--skifer); margin-top: 6px; }
+.sum-db .sum-verdi { color: var(--skifer); }
+
+/* Historikk -------------------------------------------------------------- */
+
+.tidslinje { list-style: none; margin: 0; padding: 0; position: relative; }
+.tidslinje::before {
+  content: ''; position: absolute; left: 11px; top: 12px; bottom: 12px;
+  width: 1px; background: var(--kant);
+}
+.tidslinje-rad { display: flex; gap: 12px; padding: 8px 0; position: relative; }
+.tidslinje-prikk {
+  width: 23px; height: 23px; flex: none; border-radius: var(--r-pille);
+  display: grid; place-items: center;
+  background: var(--papir); border: 1px solid var(--kant); position: relative; z-index: 1;
+}
+.tidslinje-innhold { min-width: 0; flex: 1; }
+.tidslinje-topp { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tidslinje-tekst { line-height: 1.4; }
+.tidslinje-under { color: var(--blekk-3); font-size: 12px; margin-top: 2px; }
+
+/* Venter på deg ---------------------------------------------------------- */
+
+.oppgaver { display: flex; flex-direction: column; }
+.oppgave {
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 4px; text-decoration: none; color: inherit;
+  border-bottom: 1px solid var(--kant);
+}
+.oppgave:last-child { border-bottom: none; }
+.oppgave:hover .oppgave-pil { color: var(--kobber); transform: translateX(3px); }
+.oppgave-tall {
+  min-width: 40px; font-size: 24px; font-weight: 500; letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums; color: var(--blekk-2);
+}
+.oppgave-tall-haster { color: var(--kobber-dyp); }
+.oppgave-tekst { flex: 1; }
+.oppgave-pil { color: var(--blekk-4); transition: color 100ms ease, transform 100ms ease; }
+
+.liste-gruppe {
+  color: var(--blekk-3); font-size: 11px; font-weight: 500;
+  padding: 14px 12px 4px;
+}
+
+/* Assistenten ------------------------------------------------------------ */
+
+.skuff-bak {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(46, 40, 31, 0.28);
+  display: flex; justify-content: flex-end;
+}
+.skuff {
+  width: 400px; max-width: 92vw; height: 100%;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--papir); border-left: 1px solid var(--kant-sterk);
+  box-shadow: rgba(46, 40, 31, 0.10) -10px 0 30px 0;
+}
+.skuff-hode { display: flex; align-items: center; gap: 12px; padding: 20px 20px 16px; }
+.skuff-merke {
+  width: 36px; height: 36px; border-radius: var(--r-knapp); flex: none;
+  display: grid; place-items: center;
+  background: var(--kobber-flate); border: 1px solid var(--kobber-kant); color: var(--kobber-dyp);
+}
+.skuff-tittel { font-family: var(--f-display); font-weight: 600; font-size: 16px; }
+.skuff-under { color: var(--blekk-3); font-size: 12px; }
+.skuff-sok {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 16px; padding: 0 12px; height: 40px;
+  background: var(--papir); border: 1px solid var(--blekk); border-radius: var(--r-input);
+}
+.skuff-felt { flex: 1; border: none; background: none; outline: none; }
+.skuff-felt::placeholder { color: var(--blekk-4); }
+.skuff-liste { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; }
+.skuff-rad {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  height: 38px; padding: 0 12px; border-radius: var(--r-knapp);
+  color: var(--blekk-2); text-align: left;
+}
+.skuff-rad[aria-selected='true'] { background: var(--kobber-flate); color: var(--kobber-dyp); }
+.skuff-rad-navn { font-weight: 500; }
+.skuff-rad-gruppe { margin-left: auto; color: var(--blekk-3); font-size: 12px; }
+.skuff-bunn { padding: 14px 20px 20px; border-top: 1px solid var(--kant); }
+
+/* Rullefelt -------------------------------------------------------------- */
+
+*::-webkit-scrollbar { width: 12px; height: 12px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--kant-sterk); border-radius: var(--r-pille);
+  border: 3.5px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--blekk-4); background-clip: content-box; }
+.rail::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); background-clip: content-box; }
+.rail::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.24); background-clip: content-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+/* Uka på forsiden -------------------------------------------------------- */
+
+.uke { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--kant); border: 1px solid var(--kant); border-radius: var(--r-kort); overflow: hidden; }
+.uke-dag { background: var(--papir); min-height: 120px; display: flex; flex-direction: column; }
+.uke-dag-idag { background: var(--kobber-flate); }
+.uke-hode { display: flex; align-items: baseline; gap: 6px; padding: 10px 12px 8px; }
+.uke-navn { color: var(--blekk-3); font-size: 11px; font-weight: 500; }
+.uke-tall { font-variant-numeric: tabular-nums; font-weight: 500; }
+.uke-dag-idag .uke-tall, .uke-dag-idag .uke-navn { color: var(--kobber-dyp); }
+.uke-jobber { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 10px; }
+.uke-tom { color: var(--blekk-4); padding: 0 4px; }
+.uke-jobb {
+  display: block; text-decoration: none; color: inherit;
+  padding: 6px 8px; border-radius: var(--r-input);
+  background: var(--dis); border: 1px solid var(--kant);
+}
+.uke-jobb:hover { border-color: var(--kobber-kant); }
+.uke-jobb-tid { display: block; color: var(--blekk-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.uke-jobb-tittel {
+  display: block; font-size: 12px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Venter på deg: nummer, sak, tilstand */
+.oppgave-nr {
+  min-width: 52px; color: var(--kobber-dyp); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.oppgave-merke { font-size: 12px; font-weight: 500; margin-left: auto; }
+
+/* Snarveier */
+.snarveier { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.snarvei {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-radius: var(--r-kort);
+  background: var(--dis); border: 1px solid var(--kant);
+  text-decoration: none; color: inherit; font-weight: 500;
+  transition: border-color 100ms ease, background 100ms ease;
+}
+.snarvei:hover { border-color: var(--kobber-kant); background: var(--papir); }
+.snarvei svg { color: var(--kobber); }
+
+/* Folkene i et firma, utvidet under firmaraden på Ampex-flata. Innrykket og
+   den svakere flaten gjør at den indre tabellen leser som en forklaring på
+   raden over, ikke som en ny liste ved siden av den. */
+.linjer .folk-rad > td {
+  padding: 0 0 16px 24px;
+  border-bottom: 1px solid var(--kant);
+}
+.folk-rad .linjer td { padding: 10px 0; border-bottom: none; }
+.folk-rad .beskjed { margin-bottom: 4px; }
+
+/* Rutinene under et internkontroll-kapittel. Hver er sitt eget lille dokument
+   — egen tekst, egen versjon, eget vedtak — og rammen sier nettopp det: de er
+   sidestilte under punktet, ikke avsnitt i én rutine. */
+.rutine {
+  border: 1px solid var(--kant);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: var(--dis);
+}
+.rutine-redigerer { border-color: var(--kobber-kant); background: var(--kobber-flate); }
+.rutine-hode { display: flex; align-items: center; gap: 10px; }
+.rutine-navn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 500;
+  color: var(--blekk);
+  text-align: left;
+  cursor: pointer;
+}
+.rutine-navn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rutine-navn:hover > span { color: var(--kobber); }
+.rutine .dokument, .rutine .dokument-tom { margin-top: 12px; }
