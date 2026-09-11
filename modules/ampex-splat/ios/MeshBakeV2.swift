@@ -316,6 +316,13 @@ enum MeshBakeV2 {
     /// Les et tall-flagg. A/B-selen sender String, en defaults-write fra terminalen gir Double;
     /// leser man bare den ene, faller knotten stille tilbake til standardverdien i nettopp den
     /// veien man måler i (målt 2026-09-09 på meshscan.icmpotts).
+    /// Avvignettering: K i `1 + K·(x²+y²)·4`, altså hvor mye hjørnene lysnes.
+    /// 0,15 (30 % i hjørnet) sto hardkodet fem steder uten at noen hadde målt om det
+    /// stemmer for iPhone-linsa. Er den feil, blir hvert foto over- eller underkorrigert
+    /// mot kanten, og der to foto møtes står det et systematisk bånd som ingen
+    /// atlasendring, tonelag eller avskygging kan fjerne. meshscan.devig er A/B-armen.
+    static var devigK: Float { flaggTall("meshscan.devig", 0.15) }
+
     static func flaggTall(_ key: String, _ standard: Float) -> Float {
         let d = UserDefaults.standard
         if let s = d.string(forKey: key), let v = Double(s) { return Float(v) }
@@ -729,7 +736,7 @@ enum MeshBakeV2 {
                     var lin = SIMD3(pow(s.x, 2.2), pow(s.y, 2.2), pow(s.z, 2.2))
                     if lin.x + lin.y + lin.z < 0.02 || max(lin.x, max(lin.y, lin.z)) > 0.92 { continue } // sort/utbrent gir null signal
                     let qx = u / c.imgW - 0.5, qy = vv / c.imgH - 0.5
-                    lin *= 1.0 + 0.15 * (qx * qx + qy * qy) * 4.0 // samme avvignettering som shaderen
+                    lin *= 1.0 + MeshBakeV2.devigK * (qx * qx + qy * qy) * 4.0 // samme avvignettering som shaderen
                     obs.append(Obs(frame: Int32(fi), c: lin))
                 }
                 if obs.count >= 2 { pointObs.append(obs) }
@@ -1382,7 +1389,7 @@ enum MeshBakeV2 {
             let ty = min(c.th - 1, Int(vv / c.imgH * Float(c.th)))
             let px = (ty * c.tw + tx) * 4
             let qx = u / c.imgW - 0.5, qy = vv / c.imgH - 0.5
-            let devig = 1.0 + 0.15 * (qx * qx + qy * qy) * 4.0 // samme avvignettering som shaderen
+            let devig = 1.0 + MeshBakeV2.devigK * (qx * qx + qy * qy) * 4.0 // samme avvignettering som shaderen
             let lin = SIMD3(srgbLin[Int(c.thumb[px])], srgbLin[Int(c.thumb[px + 1])], srgbLin[Int(c.thumb[px + 2])])
             return lin * devig * gains[Int(fi)]
         }
@@ -1904,7 +1911,7 @@ enum MeshBakeV2 {
                 let px = (ty * c.tw + tx) * 4
                 let s = SIMD3(Float(c.thumb[px]), Float(c.thumb[px + 1]), Float(c.thumb[px + 2])) / 255
                 let qx = u / c.imgW - 0.5, qy = vv / c.imgH - 0.5
-                let devig = 1.0 + 0.15 * (qx * qx + qy * qy) * 4.0 // samme avvignettering som shaderen
+                let devig = 1.0 + MeshBakeV2.devigK * (qx * qx + qy * qy) * 4.0 // samme avvignettering som shaderen
                 return SIMD3(pow(s.x, 2.2), pow(s.y, 2.2), pow(s.z, 2.2)) * devig
             }
             struct Acc { var d = SIMD3<Float>.zero; var n: Float = 0 }
@@ -2402,7 +2409,7 @@ enum MeshBakeV2 {
             let col = (px(x0, y0) * (1 - ax) + px(x0 + 1, y0) * ax) * (1 - ay)
                     + (px(x0, y0 + 1) * (1 - ax) + px(x0 + 1, y0 + 1) * ax) * ay
             let qx = u / c.imgW - 0.5, qy = vv / c.imgH - 0.5
-            let devig = 1 + 0.15 * (qx * qx + qy * qy) * 4
+            let devig = 1 + MeshBakeV2.devigK * (qx * qx + qy * qy) * 4
             let g = gains.indices.contains(fi) ? gains[fi] : SIMD3<Float>(1, 1, 1)
             return col * devig * g
         }
@@ -3341,7 +3348,11 @@ enum MeshBakeV2 {
     ) -> Data? {
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue(),
-              let lib = try? device.makeLibrary(source: shaderSource, options: nil),
+              // DEVIG_K settes ved kompilering av shaderen, så Swift- og Metal-veien
+              // alltid bruker samme tall. Se `devigK`.
+              let lib = try? device.makeLibrary(
+                source: shaderSource.replacingOccurrences(of: "DEVIG_K", with: String(format: "%.4f", MeshBakeV2.devigK)),
+                options: nil),
               let vfn = lib.makeFunction(name: "bakev2_vertex"),
               let ffn = lib.makeFunction(name: diagnosticRawColor ? "bakev2_raw_fragment" : "bakev2_fragment"),
               let afn = lib.makeFunction(name: "bakev2_avg_fragment"),
@@ -4437,7 +4448,7 @@ enum MeshBakeV2 {
         // Avvignettering (~cos⁴-falloff, K=0.15): iPhone-fotos mørkner mot hjørnene — to
         // lapper fra ulike deler av ulike fotos var uenige selv med perfekt global gain.
         float2 q = uvN - 0.5;
-        float devig = 1.0 + 0.15 * dot(q, q) * 4.0;
+        float devig = 1.0 + DEVIG_K * dot(q, q) * 4.0;
         // Gain (multiplikativ) + søm-nivellering (additiv) i LINEÆRT rom — sRGB-teksturen
         // sampler lineært, render-target skriver sRGB tilbake. c.ofs er region-konstanten
         // (nivået), in.ofs er den interpolerte per-hjørne-forfiningen (overgangen).
@@ -4462,7 +4473,7 @@ enum MeshBakeV2 {
         float2 uvN = clamp(float2(u / c.img.x, vv / c.img.y), 0.0, 1.0);
         uvN = bakev2_scoped_uv(uvN, grid, gdim, in.warpEnabled);
         float2 q = uvN - 0.5;
-        float devig = 1.0 + 0.15 * dot(q, q) * 4.0;
+        float devig = 1.0 + DEVIG_K * dot(q, q) * 4.0;
         float3 col = clamp(frame.sample(s, uvN).rgb * devig * c.wb.rgb + c.ofs.rgb, 0.0, 1.0);
         float a = 0.5 * (1.0 - smoothstep(0.0, max(c.ofs.w, 1e-4), in.seamDist));
         return float4(col * a, a);   // premultiplisert, additivt lag
@@ -4480,7 +4491,7 @@ enum MeshBakeV2 {
         float vv = c.intr.y * (-pc.y / z) + c.intr.w;
         float2 uvN = clamp(float2(u / c.img.x, vv / c.img.y), 0.0, 1.0);
         float2 q = uvN - 0.5;
-        float devig = 1.0 + 0.15 * dot(q, q) * 4.0;
+        float devig = 1.0 + DEVIG_K * dot(q, q) * 4.0;
         return float4(frame.sample(s, uvN).rgb * devig * c.wb.rgb, 1.0);
     }
 
@@ -4502,7 +4513,7 @@ enum MeshBakeV2 {
         // Bilineær warp-offset fra rutenettet (indeksert av uvN).
         uvN = bakev2_scoped_uv(uvN, grid, gdim, in.warpEnabled);
         float2 q = uvN - 0.5;
-        float devig = 1.0 + 0.15 * dot(q, q) * 4.0;
+        float devig = 1.0 + DEVIG_K * dot(q, q) * 4.0;
         // Vinkelvekting: flaten som dette synet ser mest HEAD-ON (ortogonalt) skal dominere
         // snittet — grazing-syn bærer parallakse og gir spøkelser (LED-lenke to steder).
         // Normalen hentes fra skjermrom-deriverte av verdensposisjonen (ingen verteks-normal
@@ -4533,7 +4544,7 @@ enum MeshBakeV2 {
         float2 uvN = clamp(float2(u / c.img.x, vv / c.img.y), 0.0, 1.0);
         uvN = bakev2_scoped_uv(uvN, grid, gdim, in.warpEnabled);
         float2 q = uvN - 0.5;
-        float devig = 1.0 + 0.15 * dot(q, q) * 4.0;
+        float devig = 1.0 + DEVIG_K * dot(q, q) * 4.0;
         float edge = min(min(uvN.x, 1.0 - uvN.x), min(uvN.y, 1.0 - uvN.y));
         float w = (max(faceW[pid], 0.0) + 1e-5) * smoothstep(0.0, 0.08, edge);
         return float4(frame.sample(s, uvN).rgb * devig * c.wb.rgb * faceG[pid].rgb * w, w);
@@ -4559,7 +4570,7 @@ enum MeshBakeV2 {
         float2 uvN = clamp(float2(u / c.img.x, vv / c.img.y), 0.0, 1.0);
         uvN = bakev2_scoped_uv(uvN, grid, gdim, in.warpEnabled);
         float2 q = uvN - 0.5;
-        float devig = 1.0 + 0.15 * dot(q, q) * 4.0;
+        float devig = 1.0 + DEVIG_K * dot(q, q) * 4.0;
         float3 col = frame.sample(s, uvN).rgb * devig * c.wb.rgb * faceG[pid].rgb;
         float edge = min(min(uvN.x, 1.0 - uvN.x), min(uvN.y, 1.0 - uvN.y));
         // Texelens egen posisjon i atlaset = fragmentets skjermposisjon (render-target = atlas).

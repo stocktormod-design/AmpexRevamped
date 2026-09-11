@@ -3560,3 +3560,52 @@ uansett for flater som ligger på et plan, fordi tonelaget eier dem. Den virker 
 Bit-identisk resultat på veggen (0,0 % endrede piksler).
 
 `meshscan.kvalitettone = "off"` og `meshscan.kvalitetfjaering = "off"` gir §75-oppførselen.
+
+## 88. «Squares på HELE veggen» — fire mistenkte avkreftet, én funnet, 2026-09-11
+
+Tormod på sitt eget skann: *«det er bra kvalitet men det er squares på HELE veggen»*.
+Forsterker man lavfrekvensen (gauss 2 minus gauss 26) på en veggrendring, er de der:
+vannrette bånd tvers over hele flaten i tre-fire høyder, og noen loddrette blokkskiller.
+
+**Avkreftet, i denne rekkefølgen:**
+
+- *Mipmapping.* Rendret samme GLB med og uten mip: 28,28 mot 28,41 i lavfrekvent
+  kontrast, og båndene står i begge. Ikke atlasfiltrering.
+- *De prosjektive fotofeltene.* `meshscan.projektivfelt region` fjerner rutenettet
+  helt — båndene står i nøyaktig samme høyder. Ikke feltinndelingen.
+- *Tonelaget og avskyggingen* (§87, §79). Begge testet av og på tidligere samme dag;
+  de endrer flekkene, ikke båndene.
+- *Gain-utjevningen.* Løsnet fra ±5 % til ±25 %: ingen forskjell.
+
+At de overlever ALLE atlasendringer betyr at de er bakt inn i fargen som samples,
+ikke i pakkingen.
+
+**Funnet: avvignetteringen var en hardkodet gjetning.** `devig = 1 + 0,15·(x²+y²)·4`
+sto likt fem steder i Swift og Metal, uten flagg og uten at noen hadde målt om
+0,15 stemmer for iPhone-linsa. Den lysner hjørnet med 30 %.
+
+Målt på Tormods skann, lavfrekvent variasjon på veggen:
+
+| K | variasjon |
+|---|---|
+| 0 (av) | **3,95 %** |
+| 0,15 (dagens) | 4,26 % |
+| 0,30 | 4,60 % |
+
+Monotont, og visuelt er båndene tydelig svakest ved K=0. Altså OVERkorrigerer vi —
+konsistent med at iPhone alt korrigerer linsefall i sin egen bildekjede, så vår
+ekstra 30 % er ren feil lagt oppå.
+
+**Standarden er IKKE endret.** Kontrollfixturene er uavgjort: soverommet går
+8,37 → 9,03 % median sporkontrast (bedre) men 4,12 → 3,91 % svakeste femtedel
+(verre); nyskann motsatt vei. Ett skanns bevis er ikke nok, og nettopp disse
+målene har pekt feil vei flere ganger i dag (§80, §81, §82).
+
+`meshscan.devig` er lagt inn som A/B-arm og settes inn i shaderen ved kompilering,
+så Swift- og Metal-veien alltid bruker samme tall.
+
+**Neste steg er å MÅLE fallet, ikke gjette K.** Dataene ligger i bundelen: finn et
+veggpunkt som sees nær sentrum i ett foto og nær kanten i et annet, og forholdet
+mellom målt lysstyrke gir den ekte vignetteringskurven. Da er K et tall og ikke en
+antakelse. Båndene forsvinner uansett ikke helt av dette alene — devignetteringen
+er en bidragsyter, ikke hele forklaringen.
