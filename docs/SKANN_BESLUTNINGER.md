@@ -3609,3 +3609,59 @@ veggpunkt som sees nær sentrum i ett foto og nær kanten i et annet, og forhold
 mellom målt lysstyrke gir den ekte vignetteringskurven. Da er K et tall og ikke en
 antakelse. Båndene forsvinner uansett ikke helt av dette alene — devignetteringen
 er en bidragsyter, ikke hele forklaringen.
+
+## 89. Båndene forsvant da vi SNITTET i stedet for å VELGE, 2026-09-12
+
+Tormod stilte spørsmålet som løste det: «kan vi ikke gjennomsnitte? det ser man at
+Scaniverse gjør aktivt mens du går rundt og scanner, mørke blir likere det lyse og
+vice versa».
+
+### Hvorfor det virker
+
+Vinnerveien gir hver flate fargen fra ÉTT foto. Naboflater ender ofte på ulike foto,
+og da flytter hele tonen i ett sprang akkurat der byttet skjer. Det er de vannrette
+båndene — ikke vignettering, ikke atlaskanter, ikke eksponering.
+
+Snitter man over topp-K i stedet, deler naboflatene K−1 av K foto. Ett bytte flytter
+da 1/K av fargen i stedet for hele. Steget blir en gradvis overgang. Det er samme
+grunn til at et snitt av mange målinger er roligere enn av to.
+
+Prisen er uskarphet: fotoene er litt uenige om HVOR detaljene ligger (registrering,
+og ekte relieff sett fra to vinkler). Mikrokontrasten betaler det tilbake.
+
+### Målt på tre fixturer
+
+| fixture | før (winner) | etter (snitt + mikro 1,6) |
+|---|---|---|
+| nyskann | bånd 0,176, skarphet 8,0 | **bånd 0,078**, skarphet 8,0 |
+| enhetsskann | bånd 0,206, skarphet 6,0 | bånd 0,144, skarphet 6,0 |
+| soverom | bånd 0,519, skarphet 17,0 | **bånd 0,132**, skarphet 20,0 |
+
+Scaniverse ligger på bånd 0,091. Nyskann er nå under.
+
+### To feil hadde skjult dette siden 2026-09-02
+
+Raw-snittet ble forkastet i §72 fordi flat hvit vegg ble en trekantmosaikk. Det var
+ikke snittets skyld:
+
+1. **Søm-nivelleringen nådde aldri grenen.** Den tegner per BILDE, ikke per region, så
+   regionnivået lå i en uniform som var satt til null. Rettet 2026-09-01 (nivået ligger
+   nå i vertex-dataene).
+2. **Mikrokontrasten kjørte aldri i grenen.** Snitt-grenen returnerer FØR vinnerløkka
+   og nådde derfor aldri skarpingen lenger nede. En A/B av mikrokontrast på denne veien
+   målte nøyaktig ingenting, fordi den aldri kjørte. Rettet nå.
+
+Lærdommen er den samme som i §80–§82: når en A/B måler «ingen forskjell», sjekk at
+armen faktisk kjørte før du tror på tallet.
+
+### Krasjen på det store skannet
+
+Første forsøk døde på 77 % i nyskann (103 bilder). Løkka laster et fullt kildefoto per
+syn (~14 MB CGImage + RGBA) og slapp det aldri — 1,4 GB oppå atlaset, og jetsam tok
+appen. `autoreleasepool` per bilde; toppen er nå ett foto om gangen.
+
+### Standard nå
+
+`meshscan.blend` = `raw`, mikrokontrast 1,6 i grenen. `winner`/`multiband`/`off` er
+A/B-armene. `meshscan.topk` er fortsatt 2 — flere syn midler bort mer bånd, men koster
+mer skarphet; ikke målt med mikrokontrasten på plass ennå.

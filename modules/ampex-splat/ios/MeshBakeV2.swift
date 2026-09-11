@@ -442,12 +442,16 @@ enum MeshBakeV2 {
         // et warp-justert fullfrekvens-snitt. Multiband bruker warpen KUN i lavfrekvensen —
         // altså på det som deretter blurres bort — så sub-pixel-alignmentet fikk aldri virke
         // der smøringen mellom bilder faktisk synes. «winner»/«off» er A/B-armene.
-        // STANDARD ER «winner» (2026-09-02, målt på Mac mot stue-bundlet): raw-snittet brukte
-        // per-flate topp-2 etter RÅ score — ICM-regulariseringen nådde aldri teksturen — og
-        // flat hvit flate ble en mosaikk av trekanter der topp-2-settet vippet. Vinnerveien
-        // gir store én-foto-regioner (taket = én region), søm-nivelleringen retter nivået, og
-        // fjæringen (under) myker selve kuttet. «raw»/«multiband» er A/B-armer.
-        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "winner"
+        // STANDARD ER «raw» IGJEN (2026-09-11, §89 — se docs/SKANN_BESLUTNINGER.md).
+        // Vinnerveien er den som lager de vannrette båndene: naboflater henter fargen fra
+        // ULIKE foto, og et bytte flytter hele tonen i ett sprang. Snittet lar naboene dele
+        // det meste av settet sitt, så byttet blir en gradvis overgang i stedet for et hopp.
+        // Mosaikken som felte raw i september var to andre feil — søm-nivelleringen nådde
+        // ikke grenen (rettet 2026-09-01) og mikrokontrasten kjørte aldri der (rettet nå).
+        // Målt på tre fixturer: båndenergi 0,176 → 0,078 / 0,206 → 0,144 / 0,519 → 0,132,
+        // med skarphet uendret eller bedre. Scaniverse ligger på 0,091.
+        // «winner»/«multiband»/«off» er A/B-armene.
+        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "raw"
         let blendAll = blendFlag != "off" && blendFlag != "winner"
         let blendRaw = blendAll && blendFlag != "multiband"
         var warpGrids = [[SIMD2<Float>]]()
@@ -2760,8 +2764,18 @@ enum MeshBakeV2 {
             }
             // Fjæringen (naboens foto over sømmen) bærer naboens REGIONNIVÅ, ikke hjørne-
             // korreksjonen — på plan-flater ville den dra tonen tilbake mot vinnerens. Av der.
+            //
+            // MEN (2026-09-11, §89): det er nettopp på plan-flater båndene synes. Målt mot
+            // Scaniverse på samme vegg har vi DOBBELT så mye vannrett båndenergi (0,206 mot
+            // 0,091) selv om vi er flatere totalt (3,81 mot 7,29 i lavfrekvent std) — deres
+            // ujevnhet er strukturløs, vår står som rette kanter tvers over veggen. Deres
+            // teksturering blander over sømmene; vår gjør det overalt UNNTATT der det synes.
+            // meshscan.planfjaering = "on" beholder fjæringen på plan, som A/B.
             let before = featherFaces.count
-            featherFaces.removeAll { onPlane[Int($0.tri)] || (sharedTone && cornerHas[Int($0.tri)]) }
+            let fjærPlan = UserDefaults.standard.string(forKey: "meshscan.planfjaering") == "on"
+            if !fjærPlan {
+                featherFaces.removeAll { onPlane[Int($0.tri)] || (sharedTone && cornerHas[Int($0.tri)]) }
+            }
             if sharedTone {
                 MeshLog.log("V2 felles veggtone — \(nodeTarget.lazy.compactMap { $0 }.count)/\(toneNodes.count) felles hjørner, \(cornerClamped.reduce(0) { $0 + Int($1) }) korrigeringsklemmer")
             }
@@ -3566,9 +3580,13 @@ enum MeshBakeV2 {
             guard let vbufRaw = device.makeBuffer(bytes: vdataRaw, length: vdataRaw.count * 4) else { return nil }
 
             var firstA = true
-            for (bi, fr) in frRange.enumerated() {
+            // AUTORELEASEPOOL PER BILDE (2026-09-11, §89). Hvert syn laster et fullt
+            // kildefoto (CGImage + RGBA-Data, ~14 MB). Uten pool holdes alle igjen til
+            // løkka er ferdig: 103 bilder = 1,4 GB oppå atlaset, og appen ble drept av
+            // jetsam på 77 % i det store skannet. `return` her er løkkas `continue`.
+            for (bi, fr) in frRange.enumerated() { autoreleasepool {
                 let k = kfUse[fr.frame]
-                guard let cg = MeshImageIO.loadCGImage(framesDir, k.file), let rgba = MeshImageIO.rgbaBytes(cg) else { continue }
+                guard let cg = MeshImageIO.loadCGImage(framesDir, k.file), let rgba = MeshImageIO.rgbaBytes(cg) else { return }
                 // MIPMAPS PÅ KILDEBILDET (2026-09-10). Atlaset har 887–1220 texel per meter
                 // vegg mot fotoets ~1900 px/m, altså 1,5–2× NEDSKALERING. Kilden ble samplet
                 // med ETT bilineært tapp uten mipmaps, og det er aliasing, ikke filtrering:
@@ -3585,7 +3603,7 @@ enum MeshBakeV2 {
                                                                      width: cg.width, height: cg.height,
                                                                      mipmapped: vilHaMip)
                 fdesc.usage = .shaderRead
-                guard let ftex = device.makeTexture(descriptor: fdesc) else { continue }
+                guard let ftex = device.makeTexture(descriptor: fdesc) else { return }
                 rgba.withUnsafeBytes { raw in
                     ftex.replace(region: MTLRegionMake2D(0, 0, cg.width, cg.height), mipmapLevel: 0,
                                  withBytes: raw.baseAddress!, bytesPerRow: cg.width * 4)
@@ -3606,13 +3624,13 @@ enum MeshBakeV2 {
                     // meshscan.blendsharp: 4 er den gamle faste verdien.
                     camPos: SIMD4(k.transform[12], k.transform[13], k.transform[14], blendSharp))
                 var grid = (fr.frame < warpGrids.count && warpGrids[fr.frame].count == gW * gH) ? warpGrids[fr.frame] : zeroGrid
-                guard let cb = queue.makeCommandBuffer() else { continue }
+                guard let cb = queue.makeCommandBuffer() else { return }
                 let rp = MTLRenderPassDescriptor()
                 rp.colorAttachments[0].texture = avgFull
                 rp.colorAttachments[0].loadAction = firstA ? .clear : .load
                 rp.colorAttachments[0].storeAction = .store
                 rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-                guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { continue }
+                guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
                 enc.setRenderPipelineState(waPipe)
                 enc.setVertexBuffer(vbufRaw, offset: 0, index: 0)
                 enc.setFragmentBytes(&cam, length: MemoryLayout<CamV2>.stride, index: 0)
@@ -3625,7 +3643,7 @@ enum MeshBakeV2 {
                 cb.commit(); cb.waitUntilCompleted()
                 firstA = false
                 if bi % 16 == 0 { ARMeshGlbExporter.progress?("Snitter alle syn… \(bi * 100 / max(frRange.count, 1)) %") }
-            }
+            } }
             // Normaliser (÷ dekning) → atlasB (srgb), så dilate atlasB→atlasA og les tilbake.
             if let cb = queue.makeCommandBuffer(), let enc = cb.makeComputeCommandEncoder() {
                 enc.setComputePipelineState(normPipe)
@@ -3645,6 +3663,26 @@ enum MeshBakeV2 {
                                          threadsPerThreadgroup: tg)
                 enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
                 swap(&bsrc, &bdst)
+            }
+            // MIKROKONTRAST OGSÅ HER (2026-09-11, §89). Snitt-grenen returnerer før
+            // vinnerløkka og nådde derfor aldri skarpingen lenger nede — en A/B av
+            // mikrokontrast på denne veien målte nøyaktig ingenting, fordi den aldri kjørte.
+            // Snittet er nettopp veien som TRENGER den: det fjerner en tredel av båndene
+            // (0,206 → 0,142 i båndenergi) og betaler med uskarphet.
+            let bMikro = MeshBakeV2.flaggTall("meshscan.mikrokontrast", 1.6)
+            if bMikro > 0.01,
+               let mfn = lib.makeFunction(name: "bakev2_mikro"),
+               let mpipe = try? device.makeComputePipelineState(function: mfn),
+               let cb = queue.makeCommandBuffer(), let enc = cb.makeComputeCommandEncoder() {
+                enc.setComputePipelineState(mpipe)
+                enc.setTexture(bsrc, index: 0); enc.setTexture(bdst, index: 1)
+                var par = SIMD2<Float>(bMikro, max(1, MeshBakeV2.flaggTall("meshscan.mikroradius", 3)))
+                enc.setBytes(&par, length: MemoryLayout<SIMD2<Float>>.size, index: 0)
+                let n = MTLSize(width: (atlasSize + 15) / 16, height: (atlasSize + 15) / 16, depth: 1)
+                enc.dispatchThreadgroups(n, threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
+                enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+                swap(&bsrc, &bdst)
+                MeshLog.log(String(format: "V2 blend=raw — mikrokontrast %.2f", bMikro))
             }
             let bpr = atlasSize * 4
             guard let readBuf = device.makeBuffer(length: bpr * atlasSize, options: .storageModeShared),
