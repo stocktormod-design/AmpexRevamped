@@ -8,11 +8,23 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { supabase } from '../lib/supabase'
 import { syncQuietly } from '../lib/db/sync'
-import { abonnerPalett, bruk, lagretPalett } from '../lib/palett'
+import { lastOppVentende } from '../lib/foto'
+import { planleggAlle } from '../lib/varsler'
+import { oppfriskFirma } from '../lib/firma'
 import { useAmpexFonts } from '../lib/fonts'
 import { colors } from '../lib/theme'
 import { enforceCompanyBoundary } from '../lib/db/company-guard'
 import { seedAktiviteter } from '../lib/activities'
+import { LogBox } from 'react-native'
+
+// Kjente, ufarlige dev-advarsler som ellers legger et gult banner over docken
+// på hvert skjermbilde. Ekte feil slipper fortsatt gjennom.
+LogBox.ignoreLogs([
+  'InteractionManager has been deprecated',
+  'You are trying to sync a collection named task_mottakere',
+  '[Reanimated] Reading from `value` during component render',
+  'EXGL: gl.pixelStorei',
+])
 import { retryPendingAiEnrichment, registerDraftHandler } from '../lib/ai/retry'
 import { useVoiceSession, VoiceSessionProvider } from '../lib/ai/voice-session'
 import { VoiceAssistantOverlay } from '../components/voice-assistant-overlay'
@@ -141,17 +153,10 @@ function VoiceAssistant() {
 }
 
 export default function RootLayout() {
-  // MIDLERTIDIG (palettprøving, se lib/palett.ts). `nokkel` re-monterer treet
-  // når paletten byttes — fargene leses ved render, så alt må tegnes på nytt.
-  // Slettes sammen med velgeren når én palett er valgt.
-  const [nokkel, setNokkel] = useState('naavaerende')
+  // Palettprøvingen (lib/palett.ts) er FJERNET 2026-09-02: den overskrev
+  // tokens.js ved oppstart med paletter fra før papir-og-messing ble låst, og
+  // ga mørk primærknapp på én skjerm og messing på den neste. Én kilde nå.
   const fonterKlare = useAmpexFonts()
-  useEffect(() => {
-    // Kun når en prøve FAKTISK er valgt — uten lagret valg står tokens.js
-    // (den brune grunnflaten) urørt. Se lagretPalett().
-    lagretPalett().then(id => { if (id) { bruk(id); setNokkel(id) } }).catch(() => {})
-    return abonnerPalett(id => { bruk(id); setNokkel(id) })
-  }, [])
 
   useEffect(() => {
     // Firma-grensen sjekkes FØR synk: hvis et annet firma har eid den lokale
@@ -160,6 +165,15 @@ export default function RootLayout() {
       enforceCompanyBoundary().then(() => {
         syncQuietly()
         retryPendingAiEnrichment()
+        // Bilder som ikke kom fram (tatt uten dekning) og påminnelser som skal
+        // ringe. Begge hører til her og ingen andre steder: forgrunn og
+        // nettverksretur er de eneste øyeblikkene appen har lov til å jobbe
+        // av seg selv (regel 10 — ingen polling).
+        void lastOppVentende()
+        void planleggAlle()
+        // Brevhodet på PDF-ene. Cachet lokalt, så en utskrift i kjelleren
+        // aldri venter på nett.
+        void oppfriskFirma()
         // Timeføring uten aktivitet får ingen pris. Seedingen er idempotent og
         // kjører bare når tabellen er tom, så den kan stå her uten kostnad.
         seedAktiviteter()
@@ -199,7 +213,7 @@ export default function RootLayout() {
   }, [])
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }} key={`${nokkel}-${fonterKlare}`}>
+    <GestureHandlerRootView style={{ flex: 1 }} key={String(fonterKlare)}>
       <SafeAreaProvider>
         <StatusBar style="light" />
         <VoiceSessionProvider>

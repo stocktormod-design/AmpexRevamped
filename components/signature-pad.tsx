@@ -6,18 +6,11 @@ import { runOnJS } from 'react-native-reanimated'
 import { Canvas, Path } from '@shopify/react-native-skia'
 import { Pressable } from './pressable'
 import type { SignaturStrok } from '../lib/db/models/order-signature'
+import { signaturSti } from '../lib/signature-path'
+export { signaturSti }
 import { colors, spacing, radius, paperType as t } from '../lib/theme'
 
 /** Punkter (0–1) → SVG-sti i piksler. Delt av tegneflaten og gjengivelsen. */
-export function signaturSti(points: [number, number][], w: number, h: number): string {
-  if (points.length === 0) return ''
-  let d = `M${points[0][0] * w} ${points[0][1] * h}`
-  for (let i = 1; i < points.length; i++) d += ` L${points[i][0] * w} ${points[i][1] * h}`
-  // Ett enkelt punkt (en prikk) tegner ingen linje — gi den en minimal lengde,
-  // ellers forsvinner en signatur som bare er en prikk helt.
-  if (points.length === 1) d += ` L${points[0][0] * w + 0.6} ${points[0][1] * h}`
-  return d
-}
 
 /**
  * Skrivbar signaturflate.

@@ -2,7 +2,12 @@ import { Model } from '@nozbe/watermelondb'
 import { text, field, date, readonly } from '@nozbe/watermelondb/decorators'
 
 /** Node på en sløyfe: en utsatt enhet i normaliserte side-koord (0..1). `sym` = symbol-id. */
-export type LoopNode = { x: number; y: number; sym?: string; label?: string }
+export type LoopNode = {
+  x: number; y: number; sym?: string; label?: string
+  /** Noden sitter PÅ en brannkomponent — sløyfa kjeder detektor til detektor,
+   *  og rekkefølgen her er den adresserte rekkefølgen på sløyfa. */
+  deviceId?: string
+}
 
 /** Sløyfe (detektorsløyfe/kurs): rute av tilkoblede noder på en tegning. As-built, delt. */
 export class DrawingLoop extends Model {

@@ -5,6 +5,128 @@ import { byggReparasjonsSql, TABELLER_V30 } from './id-repair'
 export const migrations = schemaMigrations({
   migrations: [
     {
+      // Mapper for tegninger: bygg → fag → tegninger (2026-09-06).
+      toVersion: 36,
+      steps: [
+        createTable({
+          name: 'drawing_folders',
+          columns: [
+            { name: 'project_id', type: 'string', isIndexed: true },
+            { name: 'parent_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'name', type: 'string' },
+            { name: 'sort_order', type: 'number' },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        addColumns({
+          table: 'drawings',
+          columns: [{ name: 'folder_id', type: 'string', isOptional: true, isIndexed: true }],
+        }),
+      ],
+    },
+    {
+      // Bestilling til grossist. En bestilling i UTKAST er handlelista — to
+      // begreper ville betydd kopiering mellom dem, og noe å glemme.
+      toVersion: 35,
+      steps: [
+        createTable({
+          name: 'purchase_orders',
+          columns: [
+            { name: 'grossist', type: 'string' },
+            { name: 'grossist_epost', type: 'string', isOptional: true },
+            { name: 'kundenummer', type: 'string', isOptional: true },
+            { name: 'status', type: 'string' },
+            { name: 'order_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'location_id', type: 'string', isOptional: true },
+            { name: 'referanse', type: 'string', isOptional: true },
+            { name: 'merknad', type: 'string', isOptional: true },
+            { name: 'sendt_at', type: 'number', isOptional: true },
+            { name: 'sendt_av', type: 'string', isOptional: true },
+            { name: 'ekstern_ordrenr', type: 'string', isOptional: true },
+            { name: 'mottatt_at', type: 'number', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'purchase_order_lines',
+          columns: [
+            { name: 'purchase_order_id', type: 'string', isIndexed: true },
+            { name: 'product_id', type: 'string', isOptional: true },
+            { name: 'elnummer', type: 'string', isOptional: true },
+            { name: 'beskrivelse', type: 'string' },
+            { name: 'antall', type: 'number' },
+            { name: 'enhet', type: 'string' },
+            { name: 'mottatt_antall', type: 'number' },
+            { name: 'sort_order', type: 'number' },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      // Serviceavtaler — det gjentakende arbeidet (årskontroll, internkontroll).
+      // Ordren får en peker tilbake, så hver utførelse er en helt vanlig ordre.
+      toVersion: 34,
+      steps: [
+        createTable({
+          name: 'service_agreements',
+          columns: [
+            { name: 'customer_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'tittel', type: 'string' },
+            { name: 'beskrivelse', type: 'string', isOptional: true },
+            { name: 'adresse', type: 'string', isOptional: true },
+            { name: 'intervall_maneder', type: 'number' },
+            { name: 'neste_forfall', type: 'number' },
+            { name: 'varsel_dager', type: 'number' },
+            { name: 'skjema_mal_id', type: 'string', isOptional: true },
+            { name: 'estimert_timer', type: 'number', isOptional: true },
+            { name: 'aktiv', type: 'boolean' },
+            { name: 'sist_utfort_at', type: 'number', isOptional: true },
+            { name: 'sist_ordre_id', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        addColumns({
+          table: 'orders',
+          columns: [{ name: 'service_agreement_id', type: 'string', isOptional: true, isIndexed: true }],
+        }),
+      ],
+    },
+    {
+      // Avvik — fagkravet som manglet. Egen tabell fordi et avvik har sin egen
+      // livssyklus (funnet → lukket med tiltak), ikke et felt på ordren.
+      toVersion: 33,
+      steps: [
+        createTable({
+          name: 'deviations',
+          columns: [
+            { name: 'order_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'project_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'document_id', type: 'string', isOptional: true },
+            { name: 'tittel', type: 'string' },
+            { name: 'beskrivelse', type: 'string', isOptional: true },
+            { name: 'alvorlighet', type: 'string' },
+            { name: 'status', type: 'string' },
+            { name: 'frist_at', type: 'number', isOptional: true },
+            { name: 'sted', type: 'string', isOptional: true },
+            { name: 'funnet_av', type: 'string', isOptional: true },
+            { name: 'funnet_at', type: 'number' },
+            { name: 'tiltak', type: 'string', isOptional: true },
+            { name: 'lukket_av', type: 'string', isOptional: true },
+            { name: 'lukket_at', type: 'number', isOptional: true },
+            { name: 'foto_nokler', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
       // Tegning fase 0 (docs/TEGNING_MULTIVIEW_PLAN.md): oppgave-pins (speiler
       // serverkolonner som ALLEREDE fantes i liva-DB-en), markup-rader (kind/
       // created_by), fire_devices-registeret og drawings.source.

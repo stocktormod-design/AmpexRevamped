@@ -10,12 +10,13 @@ import { Drawing, disciplines, disciplineLabel, type Discipline } from '../../..
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 export default function TegningNyScreen() {
-  const { projectId } = useLocalSearchParams<{ projectId: string }>()
+  const { projectId, folderId } = useLocalSearchParams<{ projectId: string; folderId?: string }>()
   const [plan, setPlan] = useState('')
   const [discipline, setDiscipline] = useState<Discipline>('elkraft')
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
-  const canSave = name.trim().length > 0 && plan.trim().length > 0 && !saving
+  // Plan er valgfri når tegningen legges i en mappe — mappa ER planen/bygget.
+  const canSave = name.trim().length > 0 && (plan.trim().length > 0 || !!folderId) && !saving
 
   async function create() {
     if (!canSave || !projectId) return
@@ -26,6 +27,7 @@ export default function TegningNyScreen() {
         d.plan = plan.trim()
         d.discipline = discipline
         d.name = name.trim()
+        d.folderId = folderId || null
         d.filePath = null // PDF lastes opp senere
         d.pageCount = null
       }),
@@ -45,7 +47,7 @@ export default function TegningNyScreen() {
       </View>
 
       <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
-        <TextInput value={plan} onChangeText={setPlan} placeholder="Plan (f.eks. 1. etasje)" placeholderTextColor={colors.tertiaryLabel} autoFocus
+        <TextInput value={plan} onChangeText={setPlan} placeholder={folderId ? "Plan (valgfritt)" : "Plan (f.eks. 1. etasje)"} placeholderTextColor={colors.tertiaryLabel} autoFocus
           style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, borderBottomWidth: 0.5, borderBottomColor: colors.separator }]} />
         <TextInput value={name} onChangeText={setName} placeholder="Navn (f.eks. Kursopplegg)" placeholderTextColor={colors.tertiaryLabel}
           style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }]} />

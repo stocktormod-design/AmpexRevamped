@@ -49,3 +49,11 @@ worker/fixture/
 # Kompilert output fra tools/-skript
 .tmp/
 supabase/.temp/
+.bilmodeller-cache/
+
+# Python-cache fra tools/-skriptene
+tools/__pycache__/
+# Sikkerhetskopier av kompilerte Metal-biblioteker
+*.metallib.bak-*
+# Plugin-installerte skills (gjenopprettes fra skills-lock.json)
+.claude/skills/

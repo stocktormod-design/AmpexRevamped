@@ -30,7 +30,16 @@ async function skrivHelse(h: SynkHelse) {
  * Usynlig synk (regel #2): kalles ved innlogging, app-til-forgrunn og
  * nettverksretur — aldri fra en knapp, aldri på timer.
  * Protokoll: WatermelonDB pull/push mot Postgres-RPC (watermelon_pull/push),
- * RLS scoper alt til brukerens firma. Last-write-wins.
+ * RLS scoper alt til brukerens firma.
+ *
+ * KONFLIKTER løses på FELTNIVÅ, ikke radnivå (2026-08-30). WatermelonDB sender
+ * `_changed` med hver rad — sin egen liste over hvilke kolonner enheten faktisk
+ * rørte — og serveren skriver bare dem. To montører som endrer hvert sitt felt
+ * på samme ordre beholder derfor begge endringene. Før dette skrev hver push
+ * hele raden, og den siste slettet den førstes arbeid uten spor.
+ * Endrer to enheter SAMME felt, vinner den siste; der finnes ikke noe riktig
+ * svar. Sletting vinner over en samtidig endring.
+ * Dekket av `npm run verify:e2e` steg 7b.
  */
 export function sync(): Promise<void> {
   // Dedup: en synk som alt kjører gjenbrukes i stedet for å køes

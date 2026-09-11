@@ -7,7 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, runOnJS } from 'react-native-reanimated'
-import { Canvas, Path } from '@shopify/react-native-skia'
+import { Canvas, Group, Path } from '@shopify/react-native-skia'
 import { SvgXml } from 'react-native-svg'
 import { ChevronLeft, Hand, Pen, Square, Waypoints, Plus, Undo2, Trash2, CloudUpload } from 'lucide-react-native'
 import { SYMBOLS, symbolSvg } from '../../../lib/symbols'
@@ -16,9 +16,10 @@ import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Drawing } from '../../../lib/db/models/drawing'
 import { DrawingMarkup, type Stroke } from '../../../lib/db/models/drawing-markup'
-import { Room, type RoomShape } from '../../../lib/db/models/room'
+import { Room, omsluttende, type RoomShape } from '../../../lib/db/models/room'
 import { DrawingLoop, type LoopNode } from '../../../lib/db/models/drawing-loop'
 import { getLocalPdf } from '../../../lib/drawings-storage'
+import { finnRomPaaTegning, kanDeleIRom } from '../../../lib/rom-fra-tegning'
 import { loadDraft, saveDraft, clearDraft } from '../../../lib/markup-drafts'
 import { colors, spacing, radius, sizes, shadows, paperType as t } from '../../../lib/theme'
 import { usePapirStatuslinje } from '../../../components/tool-surface'
@@ -34,6 +35,22 @@ const WORKSPACE = '#E7E7EC'
 const PANEL = 'rgba(252,252,253,0.96)'
 const sheetShadow = { shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 22, shadowOffset: { width: 0, height: 10 } } as const
 
+/** Farge per rom — stabil på id, så et rom beholder fargen sin. */
+const ROOM_COLORS = ['#FF3B30', '#0A84FF', '#34C759', '#FF9F0A', '#BF5AF2', '#00C7BE', '#FF375F', '#8E8E93']
+function romFarge(id: string): string {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+  return ROOM_COLORS[h % ROOM_COLORS.length]
+}
+
+/** Lukket path av normaliserte punkter. */
+function svgPoly(pts: [number, number][], W: number, H: number): string {
+  if (pts.length < 3) return ''
+  let d = `M${pts[0][0] * W} ${pts[0][1] * H}`
+  for (let i = 1; i < pts.length; i++) d += ` L${pts[i][0] * W} ${pts[i][1] * H}`
+  return d + ' Z'
+}
+
 /** Bygg en SVG-path-streng av punkter (px). */
 function svgFrom(points: [number, number][]): string {
   if (points.length === 0) return ''
@@ -41,6 +58,26 @@ function svgFrom(points: [number, number][]): string {
   let d = `M${x0} ${y0}`
   for (let i = 1; i < points.length; i++) d += ` L${points[i][0]} ${points[i][1]}`
   return d
+}
+
+/** Ett drahåndtak på et romhjørne. Egen komponent så gesten holder sin egen start. */
+function RomHandtak({ x, y, farge, onFlytt, onSlutt }: {
+  x: number; y: number; farge: string
+  onFlytt: (dx: number, dy: number) => void
+  onSlutt: () => void
+}) {
+  const gest = useMemo(() => Gesture.Pan()
+    .minDistance(0)
+    .onUpdate(e => { 'worklet'; runOnJS(onFlytt)(e.translationX, e.translationY) })
+    .onEnd(() => { 'worklet'; runOnJS(onSlutt)() }), [onFlytt, onSlutt])
+  const R = 11
+  return (
+    <GestureDetector gesture={gest}>
+      <View style={{ position: 'absolute', left: x - R, top: y - R, width: R * 2, height: R * 2, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 13, height: 13, borderRadius: 7, backgroundColor: '#fff', borderWidth: 2.5, borderColor: farge }} />
+      </View>
+    </GestureDetector>
+  )
 }
 
 export default function TegningEdit() {
@@ -57,6 +94,10 @@ export default function TegningEdit() {
   const [publishing, setPublishing] = useState(false)
   const [mode, setMode] = useState<Mode>('draw')
   const [rooms, setRooms] = useState<Room[]>([])
+  const [valgtRom, setValgtRom] = useState<string | null>(null)   // rommet som redigeres
+  const [dragPts, setDragPts] = useState<[number, number][] | null>(null) // live form under dra
+  const [maalestokk, setMaalestokk] = useState(50)
+  const [deler, setDeler] = useState(false)
   const [loops, setLoops] = useState<DrawingLoop[]>([])
   const [activeLoopId, setActiveLoopId] = useState<string | null>(null)
   const [deviceSym, setDeviceSym] = useState('royk') // hvilken enhet sløyfe-verktøyet setter ut
@@ -225,6 +266,91 @@ export default function TegningEdit() {
     })
     syncQuietly()
   }
+  const valgtRomObj = rooms.find(r => r.id === valgtRom) ?? null
+  const valgtRomPts = valgtRomObj ? (dragPts ?? valgtRomObj.shapePoints) : null
+  const dragStart = useRef<[number, number][] | null>(null)
+
+  /** Flytter ett hjørne i det valgte rommet. dx/dy er skjermpiksler. */
+  function flyttHjørne(i: number, dx: number, dy: number) {
+    const rom = rooms.find(r => r.id === valgtRom); if (!rom) return
+    if (!dragStart.current) dragStart.current = rom.shapePoints
+    const base = dragStart.current; if (!base) return
+    const { W: bredde, H: høyde } = sizeRef.current
+    const s = scale.value || 1
+    const neste = base.map((p, k) => (k === i
+      ? [Math.min(1, Math.max(0, p[0] + dx / (bredde * s))), Math.min(1, Math.max(0, p[1] + dy / (høyde * s)))] as [number, number]
+      : p))
+    setDragPts(neste)
+  }
+
+  /** Skriver den dratte formen til basen. */
+  function lagreDrag() {
+    const rom = rooms.find(r => r.id === valgtRom)
+    const pts = dragPts
+    dragStart.current = null
+    setDragPts(null)
+    if (rom && pts) void lagreForm(rom, pts)
+  }
+
+  /** Kjører romdelingen på tegningen og lager ett rom per forslag. */
+  async function delIRom() {
+    if (!drawing || !localUri || !page || deler) return
+    const start = async () => {
+      setDeler(true)
+      try {
+        const forslag = await finnRomPaaTegning(localUri, { sidebreddePt: page.w, maalestokk })
+        if (!forslag.length) {
+          Alert.alert('Fant ingen rom', 'Sjekk at målestokken stemmer med tegningen.')
+          return
+        }
+        forslag.sort((a, b) => b.areal - a.areal)
+        await database.write(async () => {
+          await database.batch(
+            ...forslag.map((f, i) => database.get<Room>('rooms').prepareCreate(r => {
+              r.projectId = drawing.projectId
+              r.drawingId = drawing.id
+              r.plan = drawing.plan
+              r.name = f.navn ?? `Rom ${i + 1}`
+              r.shape = JSON.stringify({ points: f.punkter })
+            })),
+          )
+        })
+        syncQuietly()
+      } catch (e) {
+        Alert.alert('Romdelingen stoppet', e instanceof Error ? e.message : String(e))
+      } finally {
+        setDeler(false)
+      }
+    }
+    if (rooms.length) {
+      Alert.alert('Tegningen har rom fra før', `${rooms.length} rom finnes. Forslagene legges til på toppen.`, [
+        { text: 'Avbryt', style: 'cancel' },
+        { text: 'Legg til', onPress: () => void start() },
+      ])
+      return
+    }
+    void start()
+  }
+
+  /** Sletter det valgte rommet. */
+  function slettValgtRom() {
+    const rom = valgtRomObj
+    if (!rom) return
+    Alert.alert('Slette rommet?', rom.name, [
+      { text: 'Avbryt', style: 'cancel' },
+      { text: 'Slett', style: 'destructive', onPress: async () => {
+        await database.write(async () => { await rom.markAsDeleted() })
+        setValgtRom(null); setDragPts(null); syncQuietly()
+      } },
+    ])
+  }
+
+  /** Lagrer formen til et rom (polygon). */
+  async function lagreForm(room: Room, pts: [number, number][]) {
+    await database.write(async () => { await room.update(r => { r.shape = JSON.stringify({ points: pts }) }) })
+    syncQuietly()
+  }
+
   function promptCreateRoom(shape: RoomShape) {
     const go = (name?: string) => createRoom((name ?? '').trim() || 'Nytt rom', shape)
     if (Platform.OS === 'ios' && Alert.prompt) {
@@ -372,6 +498,19 @@ export default function TegningEdit() {
                           strokeWidth={l.id === activeLoopId ? 3 : 2.5} strokeCap="round" strokeJoin="round" />
                       )
                     })}
+                    {/* Rom — fylt polygon i romfargen */}
+                    {rooms.map(rm => {
+                      const pts = rm.id === valgtRom && dragPts ? dragPts : rm.shapePoints
+                      if (!pts) return null
+                      const d = svgPoly(pts, W, H); if (!d) return null
+                      const c = romFarge(rm.id)
+                      return (
+                        <Group key={`rom${rm.id}`}>
+                          <Path path={d} style="fill" color={c} opacity={rm.id === valgtRom ? 0.3 : 0.16} />
+                          <Path path={d} style="stroke" color={c} strokeWidth={rm.id === valgtRom ? 2.5 : 1.5} strokeJoin="round" />
+                        </Group>
+                      )
+                    })}
                     {/* Publisert (delt) markup — base */}
                     {published.map((s, i) => (
                       <Path
@@ -400,27 +539,42 @@ export default function TegningEdit() {
                   </Canvas>
                 </GestureDetector>
 
-                {/* Rom-firkanter — tappbare i Flytt-modus, gjennomsiktige for penn ellers */}
+                {/* Rom: navnelapp + treffområde. Formen selv tegnes i lerretet over. */}
                 {rooms.map(rm => {
-                  const s = rm.shapeRect
-                  if (!s) return null
+                  const pts = rm.id === valgtRom && dragPts ? dragPts : rm.shapePoints
+                  if (!pts) return null
+                  const b = omsluttende(pts)
+                  const c = romFarge(rm.id)
                   return (
                     <View
                       key={rm.id}
-                      pointerEvents={mode === 'pan' ? 'box-none' : 'none'}
-                      style={{
-                        position: 'absolute', left: s.x * W, top: s.y * H, width: s.w * W, height: s.h * H,
-                        borderWidth: 1.5, borderColor: '#0A84FF', backgroundColor: 'rgba(10,132,255,0.10)', borderRadius: 3,
-                      }}
+                      pointerEvents={mode === 'pan' || mode === 'room' ? 'box-none' : 'none'}
+                      style={{ position: 'absolute', left: b.x * W, top: b.y * H, width: b.w * W, height: b.h * H }}
                     >
-                      <Pressable onPress={() => router.push({ pathname: '/(app)/prosjekter/rom', params: { roomId: rm.id } })} style={{ flex: 1 }}>
-                        <Text numberOfLines={1} style={{ alignSelf: 'flex-start', maxWidth: '100%', fontSize: 11, fontWeight: '700', color: '#0A84FF', backgroundColor: 'rgba(255,255,255,0.9)', paddingHorizontal: 4, borderBottomRightRadius: 3 }}>
+                      <Pressable
+                        onPress={() => {
+                          if (mode === 'room') setValgtRom(id => (id === rm.id ? null : rm.id))
+                          else router.push({ pathname: '/(app)/prosjekter/rom', params: { roomId: rm.id } })
+                        }}
+                        style={{ flex: 1 }}
+                      >
+                        <Text numberOfLines={1} style={{ alignSelf: 'flex-start', maxWidth: '100%', fontSize: 11, fontWeight: '700', color: c, backgroundColor: 'rgba(255,255,255,0.9)', paddingHorizontal: 4, borderBottomRightRadius: 3 }}>
                           {rm.name}
                         </Text>
                       </Pressable>
                     </View>
                   )
                 })}
+
+                {/* Håndtak på det valgte rommet — dra et hjørne for å strekke */}
+                {mode === 'room' && valgtRomObj && (valgtRomPts ?? []).map((pt, i) => (
+                  <RomHandtak
+                    key={`h${valgtRomObj.id}-${i}`}
+                    x={pt[0] * W} y={pt[1] * H} farge={romFarge(valgtRomObj.id)}
+                    onFlytt={(dx, dy) => flyttHjørne(i, dx, dy)}
+                    onSlutt={() => lagreDrag()}
+                  />
+                ))}
 
                 {/* Sløyfe-noder — utsatte enheter (symbol) langs ruta */}
                 {loops.map(l => l.nodeList.map((n, i) => {
@@ -574,7 +728,42 @@ export default function TegningEdit() {
               </Pressable>
             </View>
           ) : mode === 'room' ? (
-            <Text style={[t.subhead, { color: colors.paperSecondary, textAlign: 'center' }]}>Dra en firkant over rommet · trykk et rom for framdrift</Text>
+            valgtRomObj ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Text numberOfLines={2} style={[t.subhead, { flex: 1, color: colors.paperSecondary }]}>
+                  Dra i hjørnene for å endre {valgtRomObj.name} · trykk rommet igjen for å låse
+                </Text>
+                <Pressable haptic="medium" pressScale={0.9} onPress={slettValgtRom}
+                  style={{ width: 38, height: 38, borderRadius: radius.lg, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
+                  <Trash2 size={18} color="#FF3B30" strokeWidth={2} />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={{ gap: spacing.sm }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                  {[50, 100, 200].map(m => {
+                    const aktiv = m === maalestokk
+                    return (
+                      <Pressable key={m} haptic="light" pressScale={0.95} onPress={() => setMaalestokk(m)}
+                        style={{ paddingHorizontal: spacing.sm + 2, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: aktiv ? colors.paperLabel : colors.paperFill }}>
+                        <Text style={[t.footnote, { fontWeight: '700', color: aktiv ? '#fff' : colors.paperSecondary }]}>1:{m}</Text>
+                      </Pressable>
+                    )
+                  })}
+                  <View style={{ flex: 1 }} />
+                  {kanDeleIRom && (
+                    <Pressable haptic="medium" pressScale={0.95} onPress={delIRom} disabled={deler || !page}
+                      style={{ paddingHorizontal: spacing.md, height: 34, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.paperLabel, opacity: deler || !page ? 0.4 : 1 }}>
+                      {deler ? <ActivityIndicator size="small" color="#fff" /> : <Square size={15} color="#fff" strokeWidth={2.5} />}
+                      <Text style={[t.subhead, { color: '#fff', fontWeight: '700' }]}>{deler ? 'Deler inn …' : 'Del inn i rom'}</Text>
+                    </Pressable>
+                  )}
+                </View>
+                <Text style={[t.footnote, { color: colors.paperTertiary, textAlign: 'center' }]}>
+                  Dra en firkant for å lage et rom selv · trykk et rom for å endre form
+                </Text>
+              </View>
+            )
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={[t.footnote, { color: colors.paperTertiary }]}>To fingre for å zoome og panorere</Text>

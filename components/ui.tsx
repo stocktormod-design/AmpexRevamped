@@ -1,3 +1,4 @@
+import React from 'react'
 import { View } from 'react-native'
 import { Text } from './text'
 import { BlurView } from 'expo-blur'
@@ -57,7 +58,7 @@ export function SectionHeader({ children, tone = 'default' }: { children: string
 export function GlassCard({ children, onPress }: { children: React.ReactNode; onPress?: () => void }) {
   const inner = (
     <BlurView
-      tint="dark"
+      tint="light"
       intensity={40}
       style={{
         borderRadius: radius.hero,
@@ -124,5 +125,19 @@ export function Chip({ label, selected, onPress }: { label: string; selected: bo
         {label}
       </Text>
     </Pressable>
+  )
+}
+
+/** Glass-liste: kort med hårlinjekant og varm skygge, rader inni. Brukt på prosjektsidene. */
+export function GlassListGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={[{ marginHorizontal: spacing.screen, borderRadius: radius.hero }, shadows.card]}>
+      <View style={{
+        backgroundColor: colors.cardGlassStrong, borderRadius: radius.hero, overflow: 'hidden',
+        borderWidth: 0.5, borderColor: colors.glassEdge,
+      }}>
+        {children}
+      </View>
+    </View>
   )
 }

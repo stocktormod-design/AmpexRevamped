@@ -14,7 +14,16 @@
 import '@supabase/functions-js/edge-runtime.d.ts'
 import { withSupabase } from 'npm:@supabase/server'
 
-type Mode = 'gap_check' | 'order_lookup' | 'project_status' | 'classify_intent' | 'live_token' | 'form_import'
+type Mode =
+  | 'gap_check'
+  | 'order_lookup'
+  | 'project_status'
+  | 'classify_intent'
+  | 'live_token'
+  | 'form_import'
+  | 'mind'
+  | 'tale'
+  | 'voice_usage'
 
 type AiVoiceRequest = {
   mode: Mode
@@ -26,6 +35,25 @@ type AiVoiceRequest = {
   ulaast?: boolean
   /** form_import: PDF eller bilde av firmaets eget skjema. */
   dokument?: { base64: string; mimeType: string }
+  /**
+   * mind: hele kontrakten kommer fra klienten — systeminstruks OG verktøyskjema.
+   * Samme begrunnelse som for Live (se liveConnectConstraints): verktøyene
+   * IMPLEMENTERES på klienten mot WatermelonDB, så deklarasjonene hører hjemme
+   * ved siden av implementasjonen. Serveren er en tynn proxy som holder nøkkelen.
+   */
+  systemInstruction?: string
+  tools?: unknown[]
+  /**
+   * Tidligere turer i samtalen, i Geminis `contents`-format. Klienten sender en
+   * KOMPAKT tilstand, ikke en voksende transkripsjon — se lib/ai/mind.ts.
+   */
+  historikk?: Record<string, unknown>[]
+  /**
+   * voice_usage: klienten rapporterer forbruket ved øktslutt. Bruker og firma
+   * utledes av JWT-en i SQL (voice_usage_add), så en klient kan aldri skrive på
+   * andres teller — bare på sin egen, og bare oppover.
+   */
+  forbruk?: { speech_sec: number; in_tok: number; out_tok: number }
 }
 
 type GeminiSpec = {
@@ -34,7 +62,10 @@ type GeminiSpec = {
 }
 
 const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash'
-const GEMINI_LIVE_MODEL = Deno.env.get('GEMINI_LIVE_MODEL') ?? 'gemini-3.1-flash-live-preview'
+// native-audio, ikke 3.1-flash-live. De to er ulike motorer, og forskjellen er
+// hørbar på norsk: testet side om side 2026-09-04, native-audio vant klart.
+// Prisen er den samme ($3/1M inn, $12/1M ut) — så det er ingen avveining.
+const GEMINI_LIVE_MODEL = Deno.env.get('GEMINI_LIVE_MODEL') ?? 'gemini-2.5-flash-native-audio-latest'
 // Prebuilt-stemme for Live (bytt uten app-utrulling: supabase secrets set GEMINI_LIVE_VOICE=Orus).
 //
 // STANDARD ER MANN, og det er et kvalitetsvalg, ikke et smaksvalg: de kvinnelige
@@ -44,6 +75,69 @@ const GEMINI_LIVE_MODEL = Deno.env.get('GEMINI_LIVE_MODEL') ?? 'gemini-3.1-flash
 // Kvinnelige finnes fortsatt i velgeren under Meg: Kore, Aoede, Leda, Zephyr.
 const GEMINI_LIVE_VOICE = Deno.env.get('GEMINI_LIVE_VOICE') ?? 'Charon'
 const GEMINI_TIMEOUT_MS = 20_000
+
+// Turbasert assistent («mind»): lyd inn, verktøykall ut. Erstatteren for Live.
+//
+// Flash-Lite er valgt fordi den er BILLIGST PÅ LYD, ikke fordi den er svakest:
+// lyd inn koster $0,50/1M — dobbelt av tekst, men en femtedel av Live sin
+// lyd-UT-pris ($12/1M). Vi ber aldri modellen snakke; den returnerer et
+// verktøykall, og telefonen setter setningen sammen selv.
+//
+// thinkingLevel settes IKKE her: MINIMAL er allerede standard på Flash-Lite, og
+// et feilstavet felt gir 400 i stedet for en tregere modell. Skal du opp på
+// gemini-3-flash (som IKKE defaulter til minimal), sett GEMINI_MIND_THINKING=minimal.
+const GEMINI_MIND_MODEL = Deno.env.get('GEMINI_MIND_MODEL') ?? 'gemini-3.1-flash-lite'
+const GEMINI_MIND_THINKING = Deno.env.get('GEMINI_MIND_THINKING') ?? ''
+// Kortere enn GEMINI_TIMEOUT_MS: dette er en samtaletur, ikke en dokumentjobb.
+// Brukeren står med telefonen i hånda — 12s er allerede langt forbi «gi opp».
+const GEMINI_MIND_TIMEOUT_MS = 12_000
+
+// Talesyntese for cachen (lib/ai/tale-cache.ts).
+//
+// Gemini TTS og IKKE Google Cloud Text-to-Speech, av én tvingende grunn:
+// Gemini-nøkler MÅ være låst til «Generative Language API» (Google avviste
+// urestrikterte nøkler fra 19. juni 2026), og en nøkkel låst dit kan IKKE kalle
+// texttospeech.googleapis.com. Cloud TTS ville krevd en helt separat nøkkel med
+// egen livssyklus. Gemini TTS ligger på samme endepunkt som resten av
+// assistenten og virker med nøkkelen vi allerede har.
+//
+// Stemmen er den SAMME som Live brukte (GEMINI_LIVE_VOICE, standard Charon), så
+// migrasjonen ikke endrer hvordan assistenten høres ut. Begrunnelsen for at
+// standarden er en mannsstemme står ved den konstanten.
+//
+// Utdata er rå PCM16 @ 24 kHz mono — klienten pakker det i WAV med
+// wavBase64FromPcm16 (lib/ai/pcm.ts) før den lagrer. Serveren slipper å
+// duplisere den koden.
+//
+// Modellen er Lives EGEN native-audio-motor, ikke TTS-API-et. Det er to ulike
+// modeller, og forskjellen er hørbar: TTS-API-et (gemini-3.1-flash-tts-preview)
+// leser tekst og høres ut som en opplesning, mens native-audio er den samme
+// motoren som gjorde at Live hørtes menneskelig ut. Testet side om side på
+// norsk — native-audio vant klart.
+//
+// Prisen følger med: $12/1M lyd-tokens mot $20/1M for TTS-API-et. Native-audio
+// er altså BÅDE bedre og billigere her; det eneste den koster oss er at den må
+// snakkes med over WebSocket (bidiGenerateContent) i stedet for en POST.
+//
+// ~113 lyd-tokens for en fire sekunders bekreftelse = under to hundredeler av
+// en cent, og aldri igjen for den samme setningen takket være cachen.
+const GEMINI_TALE_MODEL = Deno.env.get('GEMINI_TALE_MODEL') ?? 'gemini-2.5-flash-native-audio-latest'
+const TTS_RATE = 24000
+const TTS_TIMEOUT_MS = 20_000
+const TTS_MAKS_TEGN = 400
+
+// Tonen er ikke pynt. Uten den legger modellen på en blid kundeservice-stemme
+// med trykk på siste ord — «... på ordre 19292, MONTASJE?» — som er feil for en
+// elektriker med hendene i en tavle.
+//
+// Merk formuleringen «ETT drag, uten pauser»: første forsøk ba om «rolig, som å
+// lese av en måler», og modellen tok det bokstavelig og la inn opptil 0,6 sek
+// nøling MIDT i setningen. Be om flat tone, ikke om ro.
+const TALE_TONE = `Du er stemmen til Ampex-assistenten for norske elektrikere.
+Snakk standard østnorsk bokmål med klar, nøytral uttale.
+Si replikken i ETT drag, uten pauser inne i setningen. Jevnt tempo, normal hastighet, aldri nølende.
+Nøytralt toneleie — verken blid eller dyster. Ingen entusiasme, ingen trykk på enkeltord.
+Bare si det, som en beskjed over radioen.`
 
 // Skjemaimport er en SJELDEN operasjon med varig resultat: en mal leses inn én
 // gang og brukes så på hver eneste jobb i årevis. Da er det riktig å bruke den
@@ -162,6 +256,228 @@ async function createLiveToken(
 // og evt. bytte til WAV/PCM-opptak (kun bekreftet MediaRecorder-støtte på Android
 // via omveier — se plan: Åpne risikoer).
 const AUDIO_MIME_FALLBACK = 'audio/aac'
+
+/**
+ * Rendrer én setning til tale for talecachen. Returnerer WAV som base64.
+ *
+ * Kalles KUN ved cachebom, altså én gang per unik setning i hele systemet —
+ * klienten laster resultatet opp til R2 etterpå, og alle andre henter det
+ * derfra. Derfor er ikke latensen her kritisk: brukeren har allerede fått
+ * svaret sitt lest opp av systemstemmen mens dette skjer i bakgrunnen.
+ *
+ * Lengdegrensen er en kostnadssperre, ikke en teknisk grense. Assistentens
+ * bekreftelser er én til to setninger; kommer det noe på 2000 tegn hit, er det
+ * en bug et annet sted, og den skal ikke bli dyr.
+ */
+async function callTale(apiKey: string, body: AiVoiceRequest): Promise<Record<string, unknown>> {
+  const tekst = (body.text ?? '').trim()
+  if (!tekst) throw new Error('tale krever text')
+  if (tekst.length > TTS_MAKS_TEGN) throw new Error(`tale: for lang tekst (${tekst.length} tegn)`)
+
+  // Live-motoren snakkes med over WebSocket, ikke REST. Vi kjører en kort
+  // engangsøkt: sett opp, send replikken, samle lydbitene, lukk.
+  const url =
+    'wss://generativelanguage.googleapis.com/ws/' +
+    'google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent' +
+    `?key=${encodeURIComponent(apiKey)}`
+
+  const biter: string[] = []
+
+  await new Promise<void>((resolve, reject) => {
+    const ws = new WebSocket(url)
+    // Egen timeout: en WebSocket som aldri svarer henger til plattformen dreper
+    // funksjonen, og da får klienten ingen feil å falle tilbake på.
+    const timeout = setTimeout(() => {
+      try { ws.close() } catch { /* allerede lukket */ }
+      reject(new Error(`tale: tidsavbrudd etter ${TTS_TIMEOUT_MS} ms`))
+    }, TTS_TIMEOUT_MS)
+
+    const ferdig = (feil?: Error) => {
+      clearTimeout(timeout)
+      try { ws.close() } catch { /* allerede lukket */ }
+      feil ? reject(feil) : resolve()
+    }
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        setup: {
+          model: `models/${GEMINI_TALE_MODEL}`,
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            // Lav temperatur: vi vil ha samme replikk levert likt hver gang, ikke
+            // variasjon. Cachen lagrer én lydfil per setning uansett.
+            temperature: 0.75,
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_LIVE_VOICE } } },
+          },
+          systemInstruction: { parts: [{ text: TALE_TONE }] },
+        },
+      }))
+    }
+
+    ws.onmessage = async (ev: MessageEvent) => {
+      try {
+        // Deno gir Blob for binære rammer; Gemini svarer med JSON i begge former.
+        const rå = typeof ev.data === 'string' ? ev.data : await (ev.data as Blob).text()
+        const melding = JSON.parse(rå)
+
+        if (melding.setupComplete) {
+          // «Din replikk» og ikke «Si dette» eller teksten rå. Målt på samme
+          // setning: denne formuleringen ga 77 % taletid og null pauser inne i
+          // setningen, mot 75 %/0 for «Si dette» og 73 %/1 for rå tekst.
+          // Modellen leverer linja som SIN egen replikk i stedet for å lese den.
+          ws.send(JSON.stringify({
+            clientContent: {
+              turns: [{ role: 'user', parts: [{ text: `Din replikk: «${tekst}»` }] }],
+              turnComplete: true,
+            },
+          }))
+          return
+        }
+
+        const deler = melding?.serverContent?.modelTurn?.parts ?? []
+        for (const del of deler) {
+          const data = del?.inlineData?.data
+          if (typeof data === 'string') biter.push(data)
+        }
+        if (melding?.serverContent?.turnComplete) ferdig()
+      } catch (e) {
+        ferdig(e instanceof Error ? e : new Error(String(e)))
+      }
+    }
+
+    ws.onerror = () => ferdig(new Error('tale: WebSocket-feil mot Gemini'))
+    ws.onclose = () => {
+      // Lukket uten turnComplete: enten fikk vi lyd likevel (godt nok), eller
+      // ingenting (og da skal klienten få vite det).
+      clearTimeout(timeout)
+      biter.length > 0 ? resolve() : reject(new Error('tale: økten lukket uten lyd'))
+    }
+  })
+
+  if (biter.length === 0) throw new Error('tomt svar fra Gemini native-audio')
+
+  // Bitene er base64 av rå PCM16-segmenter. De skjøtes i binær form — å
+  // konkatenere base64-strenger direkte gir søppel når en bit ikke er delelig på 3.
+  const bytes = biter.map(b => Uint8Array.from(atob(b), c => c.charCodeAt(0)))
+  const total = bytes.reduce((n, b) => n + b.length, 0)
+  const samlet = new Uint8Array(total)
+  let offset = 0
+  for (const b of bytes) { samlet.set(b, offset); offset += b.length }
+
+  let binær = ''
+  for (const byte of samlet) binær += String.fromCharCode(byte)
+  const lyd = btoa(binær)
+
+  // Rå PCM16 — klienten legger på WAV-headeren. `rate` sendes med i stedet for
+  // å hardkodes to steder: bommer den, høres stemmen ut som den er på lystgass.
+  return { lyd, rate: TTS_RATE, format: 'pcm16', stemme: GEMINI_LIVE_VOICE, tegn: tekst.length }
+}
+
+/**
+ * Turbasert assistenttur: ett lydklipp inn, verktøykall (og eventuelt kort tekst) ut.
+ *
+ * Dette er hele erstatningen for Gemini Live-WebSocketen. Forskjellen er ikke
+ * modellen — det er taksameteret. Live fakturerer sesjonen, inkludert stillhet og
+ * sin egen tale. Her betaler vi for de tre sekundene brukeren faktisk snakket.
+ *
+ * KONTRAKTEN KOMMER FRA KLIENTEN. Vi validerer at den finnes, men tolker den ikke:
+ * verktøyene kjører mot WatermelonDB på telefonen, og et skjema serveren ikke kan
+ * håndheve er et skjema serveren ikke skal eie.
+ *
+ * `usageMetadata` sendes ALLTID tilbake. Klienten trenger det til én ting som ikke
+ * kan gjettes: `cachedContentTokenCount` forteller om den implisitte cachen faktisk
+ * traff. Bommer den, koster systeminstruksen full pris og turen blir 2-3x dyrere —
+ * uten at noe annet ser annerledes ut. Det er den eneste kostnadsantakelsen i hele
+ * designet som kan svikte stille, så den skal være målt, ikke antatt.
+ */
+async function callMind(apiKey: string, body: AiVoiceRequest): Promise<Record<string, unknown>> {
+  if (!body.audio && !body.text) throw new Error('mind krever audio eller text')
+  if (typeof body.systemInstruction !== 'string' || !body.systemInstruction) {
+    throw new Error('mind krever systemInstruction fra klienten')
+  }
+  if (!Array.isArray(body.tools) || body.tools.length === 0) {
+    throw new Error('mind krever tools fra klienten')
+  }
+
+  const parts: Record<string, unknown>[] = []
+  if (body.audio) {
+    parts.push({
+      inlineData: { mimeType: body.audio.mimeType || AUDIO_MIME_FALLBACK, data: body.audio.base64 },
+    })
+  }
+  if (body.text) parts.push({ text: body.text })
+
+  const contents = [...(body.historikk ?? []), { role: 'user', parts }]
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), GEMINI_MIND_TIMEOUT_MS)
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MIND_MODEL}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          contents,
+          systemInstruction: { parts: [{ text: body.systemInstruction }] },
+          tools: body.tools,
+          // AUTO, ikke ANY: assistenten MÅ kunne svare med ren tekst når brukeren
+          // spør om noe («hvor mange timer har jeg denne uka?») eller når den
+          // trenger en oppklaring. ANY ville tvunget fram et verktøykall også der.
+          toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+          generationConfig: {
+            ...(GEMINI_MIND_THINKING ? { thinkingConfig: { thinkingLevel: GEMINI_MIND_THINKING } } : {}),
+          },
+        }),
+        signal: controller.signal,
+      },
+    )
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      throw new Error(`Gemini svarte ${res.status}: ${errText.slice(0, 300)}`)
+    }
+
+    const json = await res.json()
+    const candidate = json?.candidates?.[0]
+    const responseParts: Record<string, unknown>[] = candidate?.content?.parts ?? []
+
+    const funksjonskall = responseParts
+      .filter(p => p && typeof p === 'object' && 'functionCall' in p)
+      .map(p => {
+        const fc = (p as { functionCall: { name?: string; args?: unknown } }).functionCall
+        return { navn: fc?.name ?? '', argumenter: fc?.args ?? {} }
+      })
+      .filter(k => k.navn)
+
+    const tekst = responseParts
+      .map(p => (p && typeof p === 'object' && 'text' in p ? String((p as { text: unknown }).text) : ''))
+      .join('')
+      .trim()
+
+    const bruk = json?.usageMetadata ?? {}
+
+    return {
+      funksjonskall,
+      tekst: tekst || null,
+      // Rå modellsvar-deler tilbake: klienten må sende dem UENDRET som
+      // `role: 'model'`-turn i neste kalls historikk, ellers mister Gemini
+      // sporet av sitt eget verktøykall og kaller det på nytt.
+      modellDeler: responseParts,
+      avslutning: candidate?.finishReason ?? null,
+      bruk: {
+        inn: bruk.promptTokenCount ?? 0,
+        cachet: bruk.cachedContentTokenCount ?? 0,
+        ut: bruk.candidatesTokenCount ?? 0,
+        totalt: bruk.totalTokenCount ?? 0,
+      },
+      modell: GEMINI_MIND_MODEL,
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 
 const CONFIDENCE_ENUM = ['high', 'medium', 'low']
 
@@ -473,7 +789,28 @@ export default {
       return Response.json({ ok: false, error: 'AI ikke konfigurert' })
     }
 
+    if (body.mode === 'voice_usage') {
+      const f = body.forbruk
+      if (!f) return Response.json({ ok: false, error: 'voice_usage krever forbruk' })
+      const { error } = await ctx.supabase.rpc('voice_usage_add', {
+        p_speech_sec: Math.round(f.speech_sec), p_in_tok: Math.round(f.in_tok),
+        p_out_tok: Math.round(f.out_tok), p_sessions: 1,
+      })
+      if (error) console.error('[ai-voice] voice_usage_add feilet:', error)
+      return Response.json({ ok: !error })
+    }
+
     if (body.mode === 'live_token') {
+      // Taket sjekkes HER, ved utstedelsen — det er det eneste stedet som ikke
+      // kan omgås av en klient. Over taket: ingen token, og klienten faller
+      // tilbake til den turbaserte assistenten med systemstemmen. Den slutter
+      // ikke å virke, den blir bare gratis resten av dagen.
+      const { data: kap, error: kapFeil } = await ctx.supabase.rpc('voice_cap_check')
+      const rad = Array.isArray(kap) ? kap[0] : kap
+      if (kapFeil) console.error('[ai-voice] voice_cap_check feilet, slipper gjennom:', kapFeil)
+      else if (rad && rad.allowed === false) {
+        return Response.json({ ok: false, reason: 'cap', tier: rad.tier, cap_sec: rad.cap_sec, used_sec: rad.used_sec })
+      }
       try {
         const { token, model, voice, laast } = await createLiveToken(apiKey, body.ulaast === true)
         // `laast` sier om tokenet FAKTISK fikk liveConnectConstraints — ikke om vi
@@ -482,6 +819,26 @@ export default {
         return Response.json({ ok: true, token, model, voice, laast })
       } catch (err) {
         console.error('[ai-voice] live_token feilet:', err)
+        return Response.json({ ok: false, error: err instanceof Error ? err.message : 'ukjent feil' })
+      }
+    }
+
+    if (body.mode === 'tale') {
+      try {
+        const result = await callTale(apiKey, body)
+        return Response.json({ ok: true, ...result })
+      } catch (err) {
+        console.error('[ai-voice] tale feilet:', err)
+        return Response.json({ ok: false, error: err instanceof Error ? err.message : 'ukjent feil' })
+      }
+    }
+
+    if (body.mode === 'mind') {
+      try {
+        const result = await callMind(apiKey, body)
+        return Response.json({ ok: true, ...result })
+      } catch (err) {
+        console.error('[ai-voice] mind feilet:', err)
         return Response.json({ ok: false, error: err instanceof Error ? err.message : 'ukjent feil' })
       }
     }

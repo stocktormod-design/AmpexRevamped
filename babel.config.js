@@ -6,6 +6,11 @@ module.exports = function (api) {
     ],
     overrides: [
       {
+        // pdf.js: bytt ut den dynamiske worker-importen Hermes ikke kan kompilere.
+        test: filename => !!filename && filename.includes('pdfjs-dist'),
+        plugins: [require('./scripts/babel-plugin-pdfjs-hermes')],
+      },
+      {
         // WatermelonDB models: legacy decorators + loose class fields.
         // KUN vår kode — loose-semantikk på node_modules knekker React Native-kjernen
         // ("Cannot assign to read-only property 'NONE'").

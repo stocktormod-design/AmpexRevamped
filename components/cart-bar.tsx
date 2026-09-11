@@ -41,13 +41,13 @@ export function CartBar() {
       <View
         style={{
           position: 'absolute', left: spacing.sm, right: spacing.sm,
-          bottom: sizes.tabBar + insets.bottom + spacing.sm,
+          bottom: (sizes.tabBar + insets.bottom + spacing.sm) + 36 /* over det hevede Ampex-merket i docken */,
         }}
         pointerEvents="box-none"
       >
         <View style={[{ borderRadius: radius.xl }, shadows.floating]}>
           <BlurView
-            tint="systemChromeMaterialDark"
+            tint="systemChromeMaterialLight"
             intensity={90}
             style={{
               borderRadius: radius.xl, overflow: 'hidden',

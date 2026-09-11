@@ -4,7 +4,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 32,
+  version: 36,
   tables: [
     tableSchema({
       name: 'product_prices',
@@ -220,6 +220,81 @@ export const schema = appSchema({
         { name: 'symbol_id', type: 'string' }, // id fra lib/symbols.ts
         { name: 'note', type: 'string', isOptional: true },
         { name: 'created_by', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'purchase_orders',
+      columns: [
+        { name: 'grossist', type: 'string' },
+        { name: 'grossist_epost', type: 'string', isOptional: true },
+        { name: 'kundenummer', type: 'string', isOptional: true },
+        { name: 'status', type: 'string' },  // utkast | sendt | mottatt | avbrutt
+        { name: 'order_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'location_id', type: 'string', isOptional: true },
+        { name: 'referanse', type: 'string', isOptional: true },
+        { name: 'merknad', type: 'string', isOptional: true },
+        { name: 'sendt_at', type: 'number', isOptional: true },
+        { name: 'sendt_av', type: 'string', isOptional: true },
+        { name: 'ekstern_ordrenr', type: 'string', isOptional: true },
+        { name: 'mottatt_at', type: 'number', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'purchase_order_lines',
+      columns: [
+        { name: 'purchase_order_id', type: 'string', isIndexed: true },
+        { name: 'product_id', type: 'string', isOptional: true },
+        { name: 'elnummer', type: 'string', isOptional: true },
+        { name: 'beskrivelse', type: 'string' },
+        { name: 'antall', type: 'number' },
+        { name: 'enhet', type: 'string' },
+        { name: 'mottatt_antall', type: 'number' },
+        { name: 'sort_order', type: 'number' },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'service_agreements',
+      columns: [
+        { name: 'customer_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'tittel', type: 'string' },
+        { name: 'beskrivelse', type: 'string', isOptional: true },
+        { name: 'adresse', type: 'string', isOptional: true },
+        { name: 'intervall_maneder', type: 'number' },
+        { name: 'neste_forfall', type: 'number' },   // epoch ms, midnatt lokal
+        { name: 'varsel_dager', type: 'number' },
+        { name: 'skjema_mal_id', type: 'string', isOptional: true },
+        { name: 'estimert_timer', type: 'number', isOptional: true },
+        { name: 'aktiv', type: 'boolean' },
+        { name: 'sist_utfort_at', type: 'number', isOptional: true },
+        { name: 'sist_ordre_id', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'deviations',
+      columns: [
+        { name: 'order_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'project_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'document_id', type: 'string', isOptional: true },
+        { name: 'tittel', type: 'string' },
+        { name: 'beskrivelse', type: 'string', isOptional: true },
+        { name: 'alvorlighet', type: 'string' }, // lav | middels | hoy | kritisk
+        { name: 'status', type: 'string' },      // apent | lukket
+        { name: 'frist_at', type: 'number', isOptional: true },
+        { name: 'sted', type: 'string', isOptional: true },
+        { name: 'funnet_av', type: 'string', isOptional: true },
+        { name: 'funnet_at', type: 'number' },
+        { name: 'tiltak', type: 'string', isOptional: true },
+        { name: 'lukket_av', type: 'string', isOptional: true },
+        { name: 'lukket_at', type: 'number', isOptional: true },
+        { name: 'foto_nokler', type: 'string', isOptional: true }, // JSON string[]
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
@@ -441,6 +516,19 @@ export const schema = appSchema({
         { name: 'file_path', type: 'string', isOptional: true }, // R2-nøkkel til PDF
         { name: 'page_count', type: 'number', isOptional: true },
         { name: 'source', type: 'string', isOptional: true }, // null/'lokal' | 'ekstern' (skrivebeskyttet grunnlag)
+        { name: 'folder_id', type: 'string', isOptional: true, isIndexed: true }, // mappe (bygg/fag); null = rot
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'drawing_folders',
+      columns: [
+        { name: 'project_id', type: 'string', isIndexed: true },
+        { name: 'parent_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'name', type: 'string' },
+        { name: 'sort_order', type: 'number' },
+        { name: 'created_by', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],

@@ -6,7 +6,7 @@ import { Pressable } from './pressable'
 import { Product } from '../lib/db/models/product'
 import { useVaresok, formatBeholdning } from '../lib/products'
 import { formatKr, tilOre } from '../lib/invoicing'
-import { colors, spacing, radius, sizes, type as papirType, toolType } from '../lib/theme'
+import { colors, spacing, radius, sizes, type as papirType, type } from '../lib/theme'
 
 /**
  * Gjenbrukbart varesøk. Brukes både ved uttak fra lager og ved materiell på
@@ -29,9 +29,9 @@ export function ProductPicker({ onVelg, onNy, autoFocus, flate = 'verktoy' }: {
   flate?: 'papir' | 'verktoy'
 }) {
   const morkt = flate === 'verktoy'
-  const t = morkt ? toolType : papirType
+  const t = morkt ? type : papirType
   const f = morkt
-    ? { felt: colors.toolRaisedStrong, kort: colors.toolRaised, kant: colors.toolBorder, hint: colors.toolTertiary, ikon: colors.toolSecondary }
+    ? { felt: colors.fill, kort: colors.bg, kant: colors.separator, hint: colors.tertiaryLabel, ikon: colors.secondaryLabel }
     : { felt: colors.fill, kort: colors.bg, kant: colors.border, hint: colors.tertiaryLabel, ikon: colors.iconMuted }
   const [sok, setSok] = useState('')
   const treff = useVaresok(sok)
