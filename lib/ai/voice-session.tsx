@@ -9,7 +9,6 @@ import { useAudioRecorderState } from 'expo-audio'
 import { speak } from './voice-speaker'
 import { hasMicrophonePermission, requestMicrophonePermission, useVoiceRecorder } from './voice-recorder'
 import { createDraft, loadDraft, addAudioSegment, clearDraft, type VoiceRouteContext } from './voice-drafts'
-import { MindSession } from './mind-session'
 import { LiveSession } from './live-session'
 import { syncLiveActivity } from './live-activity-control'
 import { useHasDynamicIsland } from '../has-dynamic-island'
@@ -83,20 +82,9 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
     return { screen: 'unknown' }
   }, [pathname, params])
 
-  const assistentRef = useRef<MindSession | LiveSession | null>(null)
+  const assistentRef = useRef<LiveSession | null>(null)
   const [liveOrderFound, setLiveOrderFound] = useState<Order | null>(null)
 
-  /**
-   * Samtale med den turbaserte assistenten (lib/ai/mind-session.ts) — dette er
-   * normalveien på mobil. Unntak: skjema-skjermen beholder det gamle
-   * opptak→gap_check-løpet (det fyller faktisk ut feltene), og web har ikke
-   * native mikrofontilgang. Stage-navnene gjenbrukes så overlay + Live Activity
-   * virker uendret: 'confirming' = starter opp, 'recording' = samtale pågår.
-   *
-   * Erstattet Gemini Live 2026-09-03. Live holdt en WebSocket åpen og fakturerte
-   * sesjonen — stillhet, tenketid og sin egen tale til 4x inngangsprisen. Nå
-   * sendes ett lydklipp per tur og svaret leses opp lokalt.
-   */
   /**
    * Live er tilbake (2026-09-04), men med klient-VAD: mikrofonen strømmer BARE
    * når det er tale, med activityStart/activityEnd rundt. Det som gjorde Live
@@ -125,9 +113,12 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
         if (error) speak(error)
       },
       onCapHit: () => {
-        // Ikke en feil for brukeren — bare en annen stemme i dag.
+        // Dagstaket er en regningsbrems, ikke en anledning til å bytte assistent.
+        // Den turbaserte veien med systemstemme er fjernet (Tormod 2026-09-11:
+        // «vi skal bruke Gemini live punktum»), så her sier vi det som det er.
         assistentRef.current = null
-        void startMindSession(routeContext)
+        setStage('idle')
+        speak('Stemmen har brukt opp dagens tid. Prøv igjen i morgen.')
       },
       onOrderFound: order => setLiveOrderFound(order),
       onOpenForm: (orderId, templateId) => {
@@ -137,37 +128,8 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
     })
     assistentRef.current = session
     void session.start()
-  }, []) // startMindSession refereres via lukking; begge er stabile useCallback uten deps
-
-  const startMindSession = useCallback(async (routeContext: VoiceRouteContext) => {
-    setStage('confirming')
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
-
-    const granted = (await hasMicrophonePermission()) || (await requestMicrophonePermission())
-    if (!granted) {
-      setStage('idle')
-      return
-    }
-
-    const session = new MindSession(routeContext, {
-      onStage: s => setStage(s === 'connecting' ? 'confirming' : 'recording'),
-      onEnd: error => {
-        assistentRef.current = null
-        setStage('idle')
-        // Økten er borte, så feilen må leses opp av noen andre enn den.
-        if (error) speak(error)
-      },
-      onOrderFound: order => setLiveOrderFound(order),
-      onOpenForm: (orderId, templateId) => {
-        // Modellen er ferdig å fylle — mennesket verifiserer/fullfører i skjemaet.
-        router.push({ pathname: '/(app)/ordre/skjema', params: { orderId, templateId } })
-      },
-      // Guide-navigasjon: modellen åpner skjermer direkte (opprettet ordre, vis_ordre).
-      onNavigate: path => router.push(path as never),
-    })
-    assistentRef.current = session
-    session.start()
   }, [])
+
 
   const beginSession = useCallback(async () => {
     if (stageRef.current !== 'idle') return
