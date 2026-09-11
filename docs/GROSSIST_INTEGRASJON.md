@@ -268,7 +268,7 @@ Rekkefølgen blir da:
 
 | Kilde | Dom |
 |-------|-----|
-| **EFObasen sine nettsider** | Nei. Offentlig å lese, men å høste dem og vise dem til mange firmaer er nøyaktig den videreformidlingen brukeravtalen forbyr. Samme felle som API-et, uten å ha betalt for det |
+| **EFObasen sine nettsider** | Nei å HØSTE. Offentlig å lese, men å hente feltene og tegne dem som våre egne rader er nøyaktig den videreformidlingen brukeravtalen forbyr — samme felle som API-et, uten å ha betalt for det. **Å RAMME INN siden i en WebView er noe annet**, se «EFObasen i to nivåer» nederst |
 | **Grossistens nettbutikk** | Nei. Samme problem, pluss botbeskyttelse og HTML som endrer seg |
 | **Produsentenes egne kataloger** | **Ja, på sikt.** ABB, Schneider, Nexans og Elko publiserer produktdata, og mange leverer BMEcat/ETIM-XML til partnere på forespørsel. Produsenten VIL at varene skal være synlige. Dette er den riktige veien for bilder og datablad spesifikt, og vi har allerede `fabrikat` + `type` på hver vare, så matching er mulig uten ny import |
 
@@ -439,3 +439,42 @@ forespørsel er sendt 2026-09-11. Første steg når den kommer er å kjøre den
 gjennom parseren og TELLE: antall varer, tekstmengde, hvor stor SQLite-fila
 faktisk blir, og hvor mye den komprimeres. Skjemaendringen gjøres på det tallet,
 ikke på anslaget over.
+
+## EFObasen i to nivåer — 2026-09-11
+
+Grensa i brukeravtalen går ikke på om dataene er offentlige. Den går på **hvem
+som henter dem og hvem sin flate de vises på**. Det gir to nivåer, og vi bygger
+det nederste først.
+
+### Nivå 1 — kunden har ikke EFObasen (standard)
+
+Varekortet bygges av prisfila. Der den ikke rekker — ETIM-attributter, og varer
+ingen grossist vi har fil fra fører — får kortet en **«Se i EFObasen»-knapp som
+åpner en WebView på deres egen side**. Nøkkelen har vi allerede: `efobase_id`
+parses fra `EFOBASE`-feltet i VX-posten og lagres på hver vare.
+
+Det er brukerens telefon som henter, og det er EFObasens side med deres
+merkevare som vises. Det er en nettleser i en ramme, ikke en kopi. Vi lagrer
+ingenting, vi tegner ingenting om, og vi videreformidler ingenting.
+
+Dette er BACKUP-en, ikke ambisjonen: den fyller hullet for den kunden som ikke
+har avtale, uten å koste noen noe.
+
+**Ikke gjør:** hente feltene ut av siden og vise dem som rader på vårt varekort.
+Det er samme handling som å bruke API-et uten å betale, og det er dessuten
+skjørt — HTML endres og de har botbeskyttelse.
+
+### Nivå 2 — kunden HAR EFObasen
+
+Da signerer vi på kundens avtale; EFO har tenkt på programvareleverandører i
+punkt 2. Først da kan ETIM-data ligge som ekte felter i varekortet.
+
+Arkitekturkravet fra avsnittet over gjelder fullt ut: aldri i app-bundlet, aldri
+blandet inn i vår egen varetabell, alltid per tenant og merket, slik at punkt 5
+om full sletting ved oppsigelse kan etterleves.
+
+### Uavklart til fila kommer
+
+Om `EFOBASE`-feltet er en ID eller en ferdig URL, og om produktsidene er åpne
+uten innlogging. Begge deler avgjøres av den første ekte V4-fila og ett klikk.
+Er de åpne, er nivå 1 en ettermiddags arbeid.
