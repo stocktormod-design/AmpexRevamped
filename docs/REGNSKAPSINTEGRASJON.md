@@ -1,6 +1,20 @@
 # Regnskapsintegrasjon — Fiken, Tripletex, PowerOffice Go
 
-Status 2026-08-18: undersøkt, ikke bygget. **Tripletex primært, Fiken nummer to.**
+Status 2026-09-07: **Tripletex-adapteren er bygget og verifisert ende til ende i
+Tripletex' sandkasse** (`lib/accounting/tripletex.ts`, `npm run verify:tripletex --fakturer`):
+økt → hvem er jeg → kunde → prosjekt → varer (el-nummer) → timer på prosjekt → ordre
+med produkt- og timelinjer → faktura → betaling → status «betalt». Alle synk-steg er
+idempotente (kunde på org.nr/navn, prosjekt og vare på nummer). Fiken-adapteren er
+skrevet, men ikke kjørt mot Fiken. Tokens ligger i `.env.local` (git-ignorert); testkontoen
+utløper mars 2027. Utviklervilkårene (Visma Developer Terms) er lest: pris krever signert
+addendum (2.2.9), 30 dagers oppsigelse (6.16).
+
+Domenemapping Tripletex: Ampex-utkast = Tripletex ORDRE (ordren er utkastet; mennesket
+utsteder via `fakturerOrdre`), beløp i kroner, MVA som VatType-ID slått opp fra `number`,
+aktiviteter opprettes som PROJECT_GENERAL_ACTIVITY (ellers «kan ikke benyttes» på prosjekt),
+`dateTo` i timesøk er eksklusiv, faktura krever org.nr + bankkonto på selskapet.
+
+Opprinnelig vurdering (2026-08-18) under: undersøkt, ikke bygget. **Tripletex primært, Fiken nummer to.**
 
 > Rekkefølgen ble snudd etter at ressursmodellen ble inspisert. Første vurdering
 > vektet registreringsporten; den er en ventetid som kan løpe parallelt.
