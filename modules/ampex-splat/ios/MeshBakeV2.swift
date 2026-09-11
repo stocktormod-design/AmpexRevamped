@@ -2122,14 +2122,16 @@ enum MeshBakeV2 {
             let målRG = flaggTall("meshscan.hvitmaalrg", 1.063)
             let målBG = flaggTall("meshscan.hvitmaalbg", 0.874)
             let rg = hvit.x / hvit.y, bg = hvit.z / hvit.y
-            // BARE BLÅ. Rød-aksen er slått av som standard etter måling: et skann med et ekte
-            // varmt tak (R/G 1,282) ble grått av å bli dratt til 1,063 — den korreksjonen
-            // fjerner ekte maling. Blå-MANGEL er derimot signaturen på kunstlys: et rom lyst
-            // av glødelampe/LED har for lite blått uansett hvilken farge flatene har.
-            // meshscan.hvitrod = "on" slår rød-armen på igjen.
+            // BLÅ FULLT, RØD MED GRENSE (justert 2026-09-11 etter Tormods tredje skann).
+            // Blå-mangel er signaturen på kunstlys og rettes helt. Rød er farligere: den kan
+            // være ekte maling. Et skann med tak på R/G 1,282 ble GRÅTT av full korreksjon
+            // (13,7 % rødkutt), mens et rom på 1,149 ble tydelig renere av 5,4 %. Grensen
+            // står derfor på 8 %: nok til å ta et vanlig varmt stikk, for lite til å bleke
+            // et rom som faktisk er varmt. Målt på veggen: metning 16,4 → 13,3 % mot
+            // referansens 8,0, uten at dyne, tre eller grønt tapte farge.
             let gB = bg < målBG ? målBG / max(bg, 1e-4) : 1
-            let gR = (UserDefaults.standard.string(forKey: "meshscan.hvitrod") == "on" && rg > målRG)
-                ? målRG / max(rg, 1e-4) : 1
+            let rødGulv = 1 - flaggTall("meshscan.hvitrodmaks", 0.08)
+            let gR = rg > målRG ? max(rødGulv, målRG / max(rg, 1e-4)) : 1
             let tak = flaggTall("meshscan.hvitbalansetak", 1.35)
             var wb = simd_clamp(SIMD3(gR, 1, gB), SIMD3(repeating: 1 / tak), SIMD3(repeating: tak))
             let lum = 0.299 * wb.x + 0.587 * wb.y + 0.114 * wb.z
@@ -2664,6 +2666,15 @@ enum MeshBakeV2 {
                     let m = c.sum / c.n
                     ruterPerPlan[slot, default: []].append(0.299 * m.x + 0.587 * m.y + 0.114 * m.z)
                 }
+                // FELLES REFERANSE (2026-09-11, §88). Hvert plan ble før flatet mot SIN EGEN
+                // median. Det gjør hvert plan jevnt, men kan ikke fjerne trinnet MELLOM to
+                // plan — og en vegg deles ofte i flere plan-slots av snappingen. Målt på
+                // Tormods rom: en lys loddrett stripe på 12,8 gråtoner overlevde både full
+                // utflating per plan, tonelagets klemme, avskyggingen og gain-utjevningen,
+                // fordi stripa var et eget plan som ble flatet mot sitt eget nivå.
+                // Nå deler alle vegg-/takplan én median, vektet etter hvor mange hjørner de
+                // har. meshscan.fellesnivaa = "off" gir per-plan tilbake.
+                let fellesNivaa = UserDefaults.standard.string(forKey: "meshscan.fellesnivaa") != "off"
                 var planMedian = [Int: Float](), planStyrke = [Int: Float]()
                 for (slot, var lum) in perPlan where lum.count >= 200 {
                     lum.sort()
@@ -2683,6 +2694,22 @@ enum MeshBakeV2 {
                     planStyrke[slot] = styrke
                     MeshLog.log(String(format: "V2 avskygging — plan %d: variasjon %.1f %% → styrke %.2f (%d hjørner)",
                                        slot, spredning, styrke, lum.count))
+                }
+                if fellesNivaa, !planMedian.isEmpty {
+                    // Vektet felles median over alle plan som faktisk fikk en styrke.
+                    var alle = [Float]()
+                    for (slot, med) in planMedian where (planStyrke[slot] ?? 0) > 0.02 {
+                        let vekt = max(1, (perPlan[slot]?.count ?? 1) / 100)
+                        for _ in 0..<vekt { alle.append(med) }
+                    }
+                    if alle.count >= 2 {
+                        alle.sort()
+                        let felles = alle[alle.count / 2]
+                        let før = planMedian.values.sorted()
+                        for slot in planMedian.keys where (planStyrke[slot] ?? 0) > 0.02 { planMedian[slot] = felles }
+                        MeshLog.log(String(format: "V2 avskygging — felles nivå %.3f for %d plan (spredte seg %.3f–%.3f)",
+                                           felles, planMedian.count, før.first ?? 0, før.last ?? 0))
+                    }
                 }
                 var flyttet = 0
                 for t in hybIdx where cornerHas[t] {

@@ -84,7 +84,7 @@
     "typecheck": "tsc --noEmit",
     "bygg:regnskap": "tsc tools/bygg-regnskap-funksjon.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/bygg-regnskap --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/bygg-regnskap/bygg-regnskap-funksjon.js",
     "verify:pricefile": "tsc tools/verify-pricefile.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/pricefile --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/pricefile/tools/verify-pricefile.js",
-    "verify:tripletex": "tsc tools/verify-tripletex.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/tripletex --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/tripletex/tools/verify-tripletex.js",
+    "verify:tripletex": "tsc tools/verify-tripletex.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/tripletex --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/tripletex/tools/verify-tripletex.js",
     "verify:prisfil-plan": "tsc tools/verify-prisfil-plan.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/prisfil-plan --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/prisfil-plan/tools/verify-prisfil-plan.js",
     "verify:kontor-tilgang": "tsc tools/verify-kontor-tilgang.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/kontor-tilgang --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/kontor-tilgang/tools/verify-kontor-tilgang.js",
     "verify:ik-skjelett": "tsc tools/verify-ik-skjelett.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/ik-skjelett --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/ik-skjelett/tools/verify-ik-skjelett.js",
@@ -92,7 +92,6 @@
     "verify:ordrebolk": "tsc tools/verify-ordrebolk.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/ordrebolk --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/ordrebolk/tools/verify-ordrebolk.js",
     "verify:ai-kontekst": "tsc tools/verify-ai-kontekst.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/ai-kontekst --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/ai-kontekst/tools/verify-ai-kontekst.js",
     "verify:invoicing": "tsc tools/verify-invoicing.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/invoicing --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/invoicing/tools/verify-invoicing.js",
-    "verify:tripletex": "tsc tools/verify-tripletex.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/tripletex --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/tripletex/tools/verify-tripletex.js",
     "verify:dokument": "tsc tools/verify-dokument.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/dokument --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/dokument/tools/verify-dokument.js",
     "verify:tripletex-csv": "tsc tools/verify-tripletex-csv.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/ttcsv --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/ttcsv/tools/verify-tripletex-csv.js",
     "verify:forms": "tsc tools/verify-forms.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/forms --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/forms/tools/verify-forms.js",
@@ -107,7 +106,8 @@
     "verify:arkiv": "tsc tools/verify-arkiv.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/arkiv --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/arkiv/tools/verify-arkiv.js",
     "verify:pdf": "tsc tools/verify-pdf.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/pdf --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/pdf/tools/verify-pdf.js",
     "verify:e2e": "tsc tools/verify-e2e.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/e2e --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/e2e/tools/verify-e2e.js",
-    "verify:service": "tsc tools/verify-service.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/service --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/service/tools/verify-service.js"
+    "verify:service": "tsc tools/verify-service.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/service --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/service/tools/verify-service.js",
+    "verify:boligmappa": "tsc tools/verify-boligmappa.ts lib/boligmappa/klient.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/boligmappa --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/boligmappa/tools/verify-boligmappa.js"
   },
   "private": true
 }
