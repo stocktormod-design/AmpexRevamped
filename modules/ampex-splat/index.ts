@@ -18,6 +18,7 @@ type NativeModule = {
   presentMeshScan(companyId: string, roomId: string): Promise<MeshScanResult>
   rebakeMeshScan(framesDirPath: string, flags: Record<string, string>): Promise<RebakeResult>
   buildSplat(framesDirPath: string, targetCount: number, topK: number): Promise<SplatResult>
+  addListener(event: 'onRebakeProgress', cb: (e: { message: string }) => void): { remove: () => void }
 }
 
 let native: NativeModule | null = null
@@ -61,6 +62,13 @@ export async function rebakeMeshScan(
   return native.rebakeMeshScan(framesDirPath, flags)
 }
 
+/** Fasemeldinger mens `rebakeMeshScan` kjører («Pakker UV-atlas…»). Returnerer avmelding. */
+export function subscribeRebakeProgress(cb: (message: string) => void): () => void {
+  if (!native) return () => {}
+  const sub = native.addListener('onRebakeProgress', e => cb(e.message))
+  return () => sub.remove()
+}
+
 export type SplatResult = { plyPath: string; bytes: number | null; ms: number }
 
 /**
@@ -83,7 +91,9 @@ export async function buildSplat(
 // ── PDF-side → raster (DrawingPane/multiview eier transformen selv — se
 // docs/TEGNING_MULTIVIEW_PLAN.md; 4 × react-native-pdf er en minnefelle) ──
 
-export type PdfPageRaster = { uri: string; width: number; height: number; pageCount: number }
+export type PdfPageRaster = { uri: string; width: number; height: number; pageCount: number
+  /** Sidens VISTE størrelse i punkt (rotasjon medregnet) — grunnlaget for måling. */
+  widthPt?: number; heightPt?: number }
 
 type PdfModule = { renderPage(pdfPath: string, page: number, maxPx: number): Promise<PdfPageRaster> }
 

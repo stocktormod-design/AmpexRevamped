@@ -44,6 +44,7 @@ Copyright (c) 2012 Brandon Pelfrey
 #include <condition_variable>
 #include <mutex>
 #include <thread>
+#include <cstdlib>
 #include <assert.h>
 #include <float.h> // FLT_MAX
 #include <limits.h>
@@ -3123,6 +3124,25 @@ struct Task
 	void *userData; // Passed to func as taskUserData.
 };
 
+// AMPEX: trådtall kan tvinges ned med AMPEX_XATLAS_THREADS. Grunnen er determinisme:
+// samme mesh ga 165 170–170 019 UV-vertekser over seks identiske bakes av det store
+// skannet, og chart-delingene styrer texeltettheten per flate — altså hvor skarp veggen
+// blir. MÅLT 2026-09-11: AMPEX_XATLAS_THREADS=1 bruker over ti minutter på det
+// samme nettet (mot 11 s parallelt), så én tråd er ikke en farbar vei til determinisme
+// — knappen står igjen for diagnose, ikke som innstilling.
+static uint32_t xaHardwareThreads()
+{
+	static const uint32_t n = [] {
+		uint32_t h = std::thread::hardware_concurrency();
+		if (const char *e = getenv("AMPEX_XATLAS_THREADS")) {
+			const int v = atoi(e);
+			if (v >= 1) h = (uint32_t)v;
+		}
+		return h == 0 ? 1u : h;
+	}();
+	return n;
+}
+
 #if XA_MULTITHREADED
 class TaskScheduler
 {
@@ -3131,7 +3151,7 @@ public:
 	{
 		m_threadIndex = 0;
 		// Max with current task scheduler usage is 1 per thread + 1 deep nesting, but allow for some slop.
-		m_maxGroups = std::thread::hardware_concurrency() * 4;
+		m_maxGroups = xaHardwareThreads() * 4;
 		m_groups = XA_ALLOC_ARRAY(MemTag::Default, TaskGroup, m_maxGroups);
 		for (uint32_t i = 0; i < m_maxGroups; i++) {
 			new (&m_groups[i]) TaskGroup();
@@ -3139,7 +3159,7 @@ public:
 			m_groups[i].ref = 0;
 			m_groups[i].userData = nullptr;
 		}
-		m_workers.resize(std::thread::hardware_concurrency() <= 1 ? 1 : std::thread::hardware_concurrency() - 1);
+		m_workers.resize(xaHardwareThreads() <= 1 ? 1 : xaHardwareThreads() - 1);
 		for (uint32_t i = 0; i < m_workers.size(); i++) {
 			new (&m_workers[i]) Worker();
 			m_workers[i].wakeup = false;
@@ -3168,7 +3188,7 @@ public:
 
 	uint32_t threadCount() const
 	{
-		return max(1u, std::thread::hardware_concurrency()); // Including the main thread.
+		return max(1u, xaHardwareThreads()); // Including the main thread.
 	}
 
 	// userData is passed to Task::func as groupUserData.
@@ -3424,7 +3444,7 @@ public:
 	ThreadLocal()
 	{
 #if XA_MULTITHREADED
-		const uint32_t n = std::thread::hardware_concurrency();
+		const uint32_t n = xaHardwareThreads();
 #else
 		const uint32_t n = 1;
 #endif
@@ -3436,7 +3456,7 @@ public:
 	~ThreadLocal()
 	{
 #if XA_MULTITHREADED
-		const uint32_t n = std::thread::hardware_concurrency();
+		const uint32_t n = xaHardwareThreads();
 #else
 		const uint32_t n = 1;
 #endif
