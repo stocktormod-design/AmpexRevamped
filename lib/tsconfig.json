@@ -1,0 +1,36 @@
+{
+  "//": [
+    "Frittstående tsconfig for den DELTE logikken.",
+    "",
+    "Finnes fordi rot-tsconfigen arver fra expo/tsconfig.base, og expo er",
+    "montørappens avhengighet. Kontorappen bygges på Vercel med `npm install`",
+    "kun i desktop/, så expo finnes ikke der. Uten denne fila går Vite oppover",
+    "i katalogtreet når den transformerer filene her, finner rot-tsconfigen, og",
+    "bygget dør med «Tsconfig not found expo/tsconfig.base».",
+    "",
+    "Den er samtidig riktig uavhengig av Vercel: lib/ er ren logikk som brukes",
+    "av BÅDE mobilappen og kontorappen, og skal derfor ikke arve React Native-",
+    "oppsettet til den ene av dem.",
+    "",
+    "Rot-tsconfigen kompilerer fortsatt lib/ som en del av montørappen — en",
+    "nested tsconfig påvirker ikke `tsc --noEmit` kjørt på rotprosjektet.",
+    "Endres innstillingene her, må de holdes forenlige med rotens."
+  ],
+  "compilerOptions": {
+    "strict": true,
+    "experimentalDecorators": true,
+    "strictPropertyInitialization": false,
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["esnext", "dom"],
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "paths": {
+      "@/*": ["../*"]
+    }
+  }
+}

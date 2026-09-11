@@ -336,7 +336,7 @@ export default function TilbudDetail() {
       <PromptSheet
         synlig={ark === 'hvem'}
         tittel="Hvem svarte?"
-        forklaring="Navnet på personen hos kunden. Tomt er lov, men da står det ingenting i en tvist."
+        forklaring="Tomt er lov, men da står det ingenting i en tvist."
         plassholder="F.eks. Kari Nordmann"
         knapp="Videre"
         onSvar={v => { setHvem(v); setArk('notat') }}

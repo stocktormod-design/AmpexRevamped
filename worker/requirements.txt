@@ -5,4 +5,17 @@ trimesh>=5
 pygltflib>=1.16
 xatlas>=0.0.11
 httpx>=0.28
-# GPU (Blackwell sm_120): pip install torch --index-url https://download.pytorch.org/whl/cu128
+
+# ── GPU ─────────────────────────────────────────────────────────────────────
+# Kjør `python tools/sjekk_gpu.py` for å se hva som mangler på en maskin.
+#
+# torch (Blackwell sm_120):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+#
+# gsplat — splat-trening. Hjulet er ren Python (py3-none-any); CUDA-kjernene
+# JIT-kompileres ved FØRSTE BRUK, ikke ved installasjon. Det krever CUDA
+# Toolkit (nvcc) og MSVC Build Tools. Mangler de, installeres gsplat fint,
+# skriver «No CUDA toolkit found» én gang på stderr, og krasjer først midt i en
+# bake med en AttributeError som ikke nevner verktøykjeden. Derfor står den her
+# og ikke over: den skal installeres bevisst, etter at sjekk_gpu.py er grønn.
+#   pip install gsplat

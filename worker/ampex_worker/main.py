@@ -17,22 +17,14 @@ from pathlib import Path
 
 from .api import Api, NodeConfig
 from .bake import BakeConfig, BakeResult, bake
+from .gpu import compute_capability, gpu_name, vram_mb
+from .konfig import DEFAULT_ANON_KEY, DEFAULT_SUPABASE_URL
 
 VERSION = "0.1.0"
 LEASE_SECONDS = 300
 IDLE_SLEEP = 15.0
 
 log = logging.getLogger("ampex.worker")
-
-
-def gpu_name() -> str:
-    try:
-        import torch
-        if torch.cuda.is_available():
-            return torch.cuda.get_device_name(0)
-    except Exception:  # noqa: BLE001 — kun kosmetikk i node-lista
-        pass
-    return "ukjent"
 
 
 class Heartbeat:
@@ -97,7 +89,8 @@ def cmd_run(_args) -> int:
         log.error("ikke innmeldt — kjør 'enroll' først")
         return 1
     api = Api(cfg)
-    log.info("worker %s klar (%s)", VERSION, gpu_name())
+    log.info("worker %s klar — %s", VERSION, gpu_name())
+    log.info("henter jobber fra %s", cfg.supabase_url)
     while True:
         try:
             job = api.claim(LEASE_SECONDS)
@@ -112,10 +105,44 @@ def cmd_run(_args) -> int:
 
 
 def cmd_enroll(args) -> int:
+    # Leses her og ikke i api.py: innmeldingen skal kunne testes uten en GPU,
+    # og et kall som spør driveren selv er et kall som ikke lar seg teste.
+    vram = vram_mb()
+    compute = compute_capability()
+
     token = Api.enroll(args.url, args.anon, args.code,
-                       socket.gethostname(), gpu_name(), VERSION)
+                       socket.gethostname(), gpu_name(), VERSION,
+                       vram_mb=vram, compute_capability=compute)
     NodeConfig(args.url, args.anon, token).save()
-    log.info("innmeldt som %s — token lagret", socket.gethostname())
+
+    # Skrives ut fordi det er DENNE avlesningen kontoret kommer til å vise, og
+    # den som setter opp maskinen skal kunne se med en gang om driveren svarte.
+    log.info("innmeldt som %s — %s, %s, compute %s — token lagret",
+             socket.gethostname(), gpu_name(),
+             f"{vram} MiB" if vram else "VRAM ukjent",
+             compute or "ukjent")
+    return 0
+
+
+def cmd_bake(args) -> int:
+    """Bak en mappe lokalt. Ingen kø, ingen R2, ingen innmelding.
+
+    Finnes fordi «virker denne PC-en» og «er den meldt inn riktig» er to helt
+    ulike spørsmål, og den som setter opp maskinen trenger å svare på det
+    første alene — før noe som helst er koblet til firmaets kø.
+    """
+    frames = Path(args.frames)
+    if not frames.is_dir():
+        log.error("%s finnes ikke", frames)
+        return 1
+    cfg = BakeConfig()
+    if args.atlas:
+        cfg.atlas_size = args.atlas
+    t0 = time.time()
+    res = bake(frames, Path(args.ut), cfg,
+               progress=lambda m, ms: log.info("  %s (%d ms)", m, ms))
+    log.info("ferdig: %s — fylt %.1f%%, %.1f s",
+             res.glb_path, res.filled_fraction * 100, time.time() - t0)
     return 0
 
 
@@ -126,13 +153,21 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     e = sub.add_parser("enroll", help="meld inn denne PC-en i firmaets pool")
-    e.add_argument("--url", required=True)
-    e.add_argument("--anon", required=True)
+    e.add_argument("--url", default=DEFAULT_SUPABASE_URL,
+                   help="Supabase-URL. Standard er Ampex sin.")
+    e.add_argument("--anon", default=DEFAULT_ANON_KEY,
+                   help="anon-nøkkel. Standard er Ampex sin (den er offentlig).")
     e.add_argument("--code", required=True, help="engangskode fra appen")
     e.set_defaults(fn=cmd_enroll)
 
     r = sub.add_parser("run", help="kjør bakes fra køen")
     r.set_defaults(fn=cmd_run)
+
+    b = sub.add_parser("bake", help="bak en mappe lokalt (selvtest, ingen kø)")
+    b.add_argument("frames", help="framesDir")
+    b.add_argument("ut", nargs="?", default="ut.glb")
+    b.add_argument("--atlas", type=int, default=None)
+    b.set_defaults(fn=cmd_bake)
 
     args = ap.parse_args()
     log.info("plattform: %s", platform.platform())

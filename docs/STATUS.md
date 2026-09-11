@@ -24,15 +24,74 @@ Branch **`grossist-og-pool`**, pushet. **34 commits** over `7633048`
 MeshBakeV2.swift` og `MeshScanPresenter.swift`, som er Tormods egen WIP fra før
 og skal ikke røres.
 
-**Grønt:** `npm run typecheck` og elleve selvtester — `verify:pricefile`,
+**Grønt:** `npm run typecheck` og tretten selvtester — `verify:pricefile`,
 `verify:invoicing`, `verify:forms`, `verify:quoting`, `verify:timesheet`,
 `verify:kalender`, `verify:varesok`, `verify:approvals`, `verify:arkiv`,
-`verify:id-repair`, `verify:form-import`. Skjema **v31**. iOS-bygget: 0 feil,
-1 advarsel. Hele appen bundler rent (`npx expo export --platform ios`).
+`verify:id-repair`, `verify:form-import`, `verify:prisfil-plan`,
+`verify:kontor-tilgang`. Skjema **v31**.
+iOS-bygget: 0 feil, 1 advarsel. Hele appen bundler rent
+(`npx expo export --platform ios`). Kontorappen bygger rent (`cd desktop &&
+npm run build`).
 
-**Sist inn: UI-runden 21. august kveld** — brun grunnflate i hele appen, én
-font (Geist), og ordrekalenderen. Se eget avsnitt rett under. Den runden er
-**ikke sett på en skjerm** — det er det første som bør gjøres.
+**Sist inn: firmaer og brukere.** `ampex_admins`, invitasjon fra Firma-flata,
+og en Ampex-flate for å opprette kunder. Eget avsnitt rett under — les
+«Ikke gjort, og det haster» der først. Runden før: innlogginga på ampex.no.
+
+**UI-runden 21. august kveld** — brun grunnflate i hele appen, én font (Geist),
+og ordrekalenderen — er fortsatt **ikke sett på en skjerm**. Det er det første
+som bør gjøres.
+
+### Faste beslutninger
+
+Dette er avgjørelser som gjelder til noen bevisst omgjør dem, i motsetning til
+loggen lenger ned som forteller hva som skjedde når. Flyttet hit fra
+`docs/SESSION_HANDOFF.md`, som ble slettet: to overleveringsdokumenter betyr at
+det ene blir gammelt uten at noen merker det, og det var akkurat det som hadde
+skjedd.
+
+**Stack.** Expo SDK 56 + Expo Router + TypeScript, NativeWind v4. Supabase
+(Postgres, Auth, RLS per `company_id`). Cloudflare R2 for filer; tegninger er
+R2-only. **WatermelonDB** som lokal SQLite — valgt over PowerSync 3. juli 2026,
+fordi den ikke koster noe løpende utover Supabase og R2. Ingen Capacitor; Expo
+Modules.
+
+**Arkitektur.**
+
+- Offline-først: mobilskjermer leser og skriver **kun** WatermelonDB. Synk er usynlig, og trigges ved innlogging, forgrunn og nettverksretur — ikke på timer.
+- Kontorappen skriver derimot rett til Supabase. Det er et bevisst brudd på regelen over, ikke en forglemmelse: en kontor-PC er ikke offline.
+- Soft delete overalt (`deleted_at`). Aldri hard `DELETE` på data.
+- Dokumenter er uforanderlige — ny versjon, aldri overskriving.
+- RLS per `company_id` er isolasjonen. Alt annet er høflighet.
+- Skann-revisjoner er ikke-destruktive (`lib/scan-revisions.ts`): en server-bake blir en ny revisjon, aldri en overskriving.
+
+**3D og skanning.** Skanning er iOS Pro only; Android er view-only.
+
+Retningen er **endret 21.–22. august** og motsier det som sto i
+`SESSION_HANDOFF.md`: der het det «kun teksturert mesh, splat-motoren er
+fjernet». Nå er svaret begge deler, med hver sin rolle:
+
+| Lag | Hva | Rolle |
+|---|---|---|
+| Splat | Gaussians | det du ser på — fotorealistisk |
+| Proxy-mesh | TSDF fra LiDAR | det du måler mot og fester stikk og kurser til |
+
+Grunnen til at de ikke konkurrerer: et splat har ingen flate, så du kan verken
+måle i det eller feste noe til det. LiDAR gir metrisk skala gratis (ARKit-poser
+er metriske), bedre initialisering enn SfM, og dybdeveiledning som hindrer at
+splatten faller fra hverandre utenfor kameravinklene den ble trent på.
+
+Teksturbaken i mesh-pipelinen blir dermed overflødig og skal fjernes — den
+finnes for å få et mesh til å se bra ut, og det klarer den aldri fra 1920 px.
+
+**GPU-pool.** To pooler, samme worker-binær: firmaets egne PC-er (ingen kostnad
+for Ampex) og en Ampex-drevet pool som overflow. Ampex-poolen er en **tredje
+utgiftspost** og opphever «kun Supabase + R2»-klausulen i `CLAUDE.md` når den
+tas i bruk. Den er opt-in per firma, fordi et skann som bakes der forlater
+firmaets egne maskiner.
+
+**Bil-som-lager** med Teltonika QR-onboarding, planlagt og delvis bygget. GPS-en
+er samtidig det mest uavklarte personvernpunktet — se `docs/PERSONVERN.md`.
+
 
 ### Det aller viktigste å ta med seg
 
@@ -145,6 +204,493 @@ en ny fane — det er forskjellen på å be om den og å foreslå den.)
 
 `modules/ampex-splat/ios/MeshBakeV2.swift` og `MeshScanPresenter.swift` er din
 WIP fra før. Urørt.
+
+---
+
+## Runden 22. august (4): poolen — én nodetabell
+
+### Kontoret leste en tabell ingenting skriver til
+
+Målt på basen, ikke antatt:
+
+| Tabell | Rader | Funksjoner som rører den |
+|---|---|---|
+| `scan_workers` | 0 | 0 |
+| `worker_nodes` | 0 | 7 |
+
+De sju er hele kjeden: `enroll_worker_node`, `worker_node_for_token`,
+`claim_scan_job`, `heartbeat_scan_job`, `complete_scan_job`, `fail_scan_job`,
+`scan_job_queue_position`. Alt en PC gjør fra den melder seg inn til den
+leverer en ferdig bake.
+
+Men `kontor-lager.ts` leste `scan_workers` til Firma-flata, mens
+`skann-lager.ts` leste `worker_nodes` til Skann-flata. Samme app, samme begrep,
+to tabeller.
+
+**En PC som meldte seg inn ville aldri dukket opp under «Bake-noder».** Ingen
+feilmelding, ingen spørring som klaget — bare en liste som så feil vei. Det er
+ikke oppdaget før nå fordi ingen har meldt inn en maskin ennå.
+
+`worker_nodes` vant, og det var ikke et myntkast: den har `token_hash` (nodens
+autentisering) og `is_public` (Ampex-poolen). Uten de to finnes verken
+innlogging for en worker eller et skille mellom firmaets egne maskiner og
+overflow. `scan_workers` er droppet — tom tabell, null lesere, og å la den stå
+ville vært å la neste person velge feil av to like tabeller en gang til.
+
+### Statusene var verdier tabellen ikke kan inneholde
+
+Firma-flata tegnet `online` / `paused` / annet. `worker_nodes.status` har en
+check-constraint på `idle | busy | offline`. Alt havnet altså på «Nede», også
+en maskin som sto midt i en bake. Nå: **Ledig**, **Baker**, **Nede**, og
+**Trukket** når `revoked_at` er satt. Ny kolonne for `is_public` — det er den
+ene innstillingen på en node som betyr noe utenfor firmaets egne vegger.
+
+### VRAM fylles nå ut
+
+Kortet viste en VRAM-kolonne som ingen skrev til. `worker_nodes` har fått
+`vram_mb` og `compute_capability`, `enroll_worker_node` tar imot dem, og
+worker-en leser dem av nvidia-smi ved innmelding — samme kall den allerede
+gjorde for navnet, ett felt til.
+
+Begge er valgfrie hele veien ned. Svarer ikke driveren, skal maskinen fortsatt
+komme seg inn i poolen: et tomt felt i nodelista er et lite problem, en PC som
+nekter å melde seg inn fordi `nvidia-smi` ikke fantes er et stort. De nye
+parameterne har `default null`, så en eldre exe ute i et verksted melder seg
+inn akkurat som før.
+
+Verifisert på Tormods egen maskin: `python -m ampex_worker.gpu` gir
+`NVIDIA GeForce RTX 5070 Ti`, `16303 MiB`, `compute 12.0`.
+
+### Det som fortsatt står
+
+**`scan-blobs` er ikke deployet.** Den deler ut presignerte R2-URL-er og er
+hele leddet telefon → kø → worker → R2. Den trenger `R2_BUCKET` som secret;
+`r2-sign` fra den gamle appen har bare de tre nøklene og hardkoder bucketen.
+
+Ingen PC er meldt inn ennå, så kjeden er aldri kjørt ende-til-ende.
+
+---
+
+## Runden 22. august (3): 2FA på invitasjoner, og firmabytte
+
+### Koden kreves hver gang, og serveren er den som teller
+
+Invitasjonen er den ene handlingen i kontoret som lager en NY dør inn i
+firmaet, og den som inviterer setter rollen — altså hvem som ser lønn,
+dekningsbidrag og kunderegister. Kaprer noen en eiers økt på en ulåst
+kontor-PC, er invitasjonsskjemaet den korteste veien til en permanent bakdør:
+en konto angriperen eier selv, i et firma som ikke er hans.
+
+Derfor: TOTP med autentiseringsapp, påmelding med QR første gang, og **kode på
+nytt ved hver invitasjon**.
+
+`aal2` alene holder ikke. Det sier bare at brukeren en gang i denne økta skrev
+en kode, og en økt lever i dager. `amr` i tokenet bærer et tidsstempel per
+autentiseringssteg, og `inviter-ansatt` krever at TOTP-steget er under fem
+minutter gammelt (`FERSK_S`). Klienten kan ikke jukse med det: funksjonen er
+deployet med `verify_jwt`, så plattformen har alt sjekket signaturen før koden
+vår leser innholdet.
+
+Kravet gjelder eier OG administrator. De to er likestilte i modellen — begge
+kan endre roller, begge kan invitere — så en sperre på bare den ene er en dør
+med håndtak på begge sider.
+
+### Ti om gangen, én kode
+
+Et firma ansetter i puljer. Å be om en ny kode per person ville gjort ti
+invitasjoner til ti anledninger til å taste feil, uten å gjøre noe tryggere:
+koden beviser hvem som sitter der, og han sitter der én gang.
+
+Bunken avbrytes ikke av at én rad feiler. Kvitteringen viser utfallet per
+person — `invitert`, `lagt-til`, `finnes` eller `avvist` med grunn.
+
+### Firmabytte for Ampex-admin
+
+`bytt-firma` i `ampex-admin` flytter Ampex-administratorens egen
+`profiles.company_id`. Det ER tenancy-endringen `profiles_vern` finnes for å
+hindre, og den er lov her fordi tre ting stemmer samtidig: den skjer med
+`service_role` (triggerens eget unntak), kalleren er slått opp i
+`ampex_admins`, og den gir ingen NY tilgang — en Ampex-admin leser allerede
+alle firmaer gjennom den funksjonen.
+
+Prisen står i revisjonssporet: rader han lager etterpå føres på det nye
+firmaet. Derfor logges byttet i BEGGE firmaene (`ampex.forlot`,
+`ampex.byttet_inn`), så et hopp i historikken har en forklaring ved siden av
+seg.
+
+Flata laster siden på nytt etter byttet. Alt som var hentet tilhørte det gamle
+firmaet, og å friske opp tolv spørringer i riktig rekkefølge er en feilkilde;
+én `location.assign` kan ikke ta feil.
+
+### Isolasjonen er verifisert
+
+Alle 39 tabeller med `company_id` har RLS på, og hver eneste policy er scopet
+mot `current_company_id()`. Supabase' egen sikkerhetsskanner finner null
+RLS-avvik. Arntsen Elservice hadde null rader i alt annet enn `profiles`,
+`company_settings` og to revisjonslinjer fra opprettelsen — eksempeldataene
+ligger på Ampex Test AS, som er et annet firma.
+
+Skanneren gjentar derimot funnet fra `20260822130000`: 29 SECURITY
+DEFINER-funksjoner er kallbare av `anon` gjennom PUBLIC-granten. Fortsatt ikke
+en lekkasje (de er enten ikke security definer, returnerer `trigger`, eller
+leser `auth.uid()` selv), men fortsatt ryddearbeid som venter.
+
+### Ryddet i testdataene
+
+To ordretitler i Ampex Test AS inneholdt grovt tullball, og de samme strengene
+lå i tre `audit_events.endringer`. Titlene er byttet ut; revisjonslinjene er
+**sladdet, ikke slettet** — en logg som kan fjernes er ingen logg. Null treff
+igjen i noen tekst- eller jsonb-kolonne i basen.
+
+---
+
+## Runden 22. august (2): firmaer og brukere
+
+Spørsmålet var «hvordan oppretter jeg firmaer og brukere til dem?», og svaret
+var ubehagelig: det gikk ikke. `companies` har ingen insert-policy, og
+`profiles.company_id` avvises av `profiles_vern` for enhver klient. Begge deler
+er RIKTIG — company_id er tenancy-modellen, og hele RLS-laget hviler på den —
+men konsekvensen var at både firma og ansatte måtte lages for hånd i
+SQL-editoren, med to innsettinger per firma fordi `company_settings` ikke har
+noen trigger som lager raden sin.
+
+### To nivåer, to veier inn
+
+**Firmaer opprettes av Ampex.** Ikke selvbetjening: et firma er en tenancy, og
+en registreringsside ville gjort «hvem er kunde» til noe man må telle rader for
+å svare på. Hvem som får gjøre det står i den nye tabellen `ampex_admins`, som
+er den eneste tabellen i basen uten `company_id`.
+
+Den er en egen tabell og ikke et flagg på `profiles`, og det er ikke smak:
+profiles er klient-oppdaterbar, `profiles_vern` passer bare på `id`,
+`company_id` og `role`, og et `ampex_admin`-flagg der ville vært en kolonne
+enhver innlogget bruker kunne satt på seg selv. Det er nøyaktig eskaleringen
+sikkerhetsrunden 21. august lukket, gjenåpnet et annet sted.
+
+**Ansatte inviteres av eier eller administrator**, fra Firma-flata.
+`supabase/templates/invite.html` har ligget ferdig i Ampex-drakt siden juni og
+har aldri vært i bruk. Nå er den det.
+
+### Klienten oppgir aldri et firma
+
+Verken invitasjonen eller firmaopprettelsen tar imot et `company_id`. Feltet
+finnes ikke i forespørselen. `inviter-ansatt` slår opp kallerens EGEN
+firmatilhørighet i basen og bruker den — kunne klienten oppgi det, ville
+invitasjonsskjemaet vært en vei inn i et fremmed firma.
+
+Fire utfall, og det siste er det viktige:
+
+| Utfall | Hva skjedde |
+|---|---|
+| `invitert` | ny konto, e-post sendt |
+| `lagt-til` | kontoen fantes uten firma, og er nå med |
+| `finnes` | står allerede i firmaet ditt |
+| avvist | adressen tilhører et ANNET firma |
+
+Det siste er en avvisning og ikke en flytting. Å flytte en person mellom
+firmaer er en tenancy-endring: timene, signaturene og samsvarserklæringene
+hennes ligger i det gamle firmaet. Det skal ikke skje fordi noen tastet feil
+adresse i et skjemafelt.
+
+### firmaets_ansatte()
+
+Firma-flata leste `profiles` rett, og kunne derfor ikke skille en som ble
+invitert i går fra en som har jobbet her i to år. Svaret står i `auth.users`
+(`invited_at`, `last_sign_in_at`), og det skjemaet når ingen klient. Ny
+security definer-funksjon, filtrert på `current_company_id()` inne i
+funksjonen — den som kaller skal ikke kunne oppgi hvilket firma hun spør om.
+Lista viser nå «Invitert» til personen faktisk har vært innom, og e-posten
+under navnet: når en invitasjon ikke kom fram, er den adressen det første man
+vil se på.
+
+### Invitasjonslenka lander i samme skjerm som «glemt passord»
+
+Begge er en innlogging uten passord, sendt på e-post. `lenkeType` leses ut av
+hash-en før supabase-js tømmer den, og `gjenoppretting` settes fra den — en
+invitasjon fyrer `SIGNED_IN` som enhver annen innlogging og er umulig å kjenne
+igjen på hendelsen alene. Ordene er ikke de samme: «velg et NYTT passord» til
+en som aldri har hatt et er feil på et vis som gjør folk usikre.
+
+### Ikke gjort, og det haster
+
+**`enable_signup` står på.** Hvem som helst kan lage konto på prosjektet i dag.
+De lander uten firma og RLS gir dem ingenting, så det er ikke et hull ennå —
+men det er en dør, og den blir farlig i det sekundet noe begynner å stole på
+`user_metadata`. Skru den av: Authentication → Sign In / Providers.
+
+**`test@ampex.no` er eier av Ampex Test AS, og passordet står i klartekst i
+`desktop/src/ruter/Logginn.tsx` i et OFFENTLIG repo.** Dev-knappen er borte fra
+produksjonsbundelen, men kontoen finnes fortsatt og passordet virker på
+ampex.no. Enten byttes passordet og fjernes fra koden, eller så settes kontoen
+i bero. Den skal uansett ALDRI inn i `ampex_admins`.
+
+### Rullet ut 22. august, og hva som faktisk er prøvd
+
+Migrasjonene er kjørt og begge Edge Functions er deployet på
+`vymgogzcicbaizjlaurr`. Verifisert i nettleseren, mot ekte data, som
+`test@ampex.no`:
+
+- Firma-flata henter ansatte gjennom `firmaets_ansatte()` og viser e-post og
+  «Har tilgang» / «Invitert»
+- invitasjonsskjemaet går hele veien: `  TEST@Ampex.no ` ble renset til
+  `test@ampex.no`, kallerens rolle og firma slått opp i basen, og svaret ble
+  `finnes` — uten at det ble sendt en e-post eller endret en rad
+- Ampex-ruta vises IKKE for en som ikke står i `ampex_admins`
+
+**Invitasjonen er kjørt for ekte etterpå.** `stocktormod@gmail.com` (Tormod
+Stokke) er invitert som eier i Ampex Test AS gjennom den nye flata, og satt inn
+i `ampex_admins`. Hele kjeden ga utslag: auth-bruker opprettet med
+`invited_at`, profilen fikk rolle og firma via service_role, og
+`bruker.invitert` står i revisjonssporet med Test Montør som aktør.
+
+**E-posten kom fram, og lenka virket — men landet feil sted.** Site URL på det
+hostede prosjektet sto fortsatt som Supabase' standard, `localhost:3000`, og
+`https://www.ampex.no` sto ikke i Redirect URLs. Da avviser GoTrue `redirectTo`
+og bytter den stille ut med Site URL. Engangskoden ble innløst — `email_confirmed_at`
+og `last_sign_in_at` ble satt 14:32 — men tokenene havnet i URL-en til
+`localhost:3000`, der ingenting lytter. Andre klikk ga `otp_expired`, fordi koden
+allerede var brukt opp.
+
+**En `redirectTo` som ikke står i lista blir ikke en feil. Den blir stille byttet
+ut.** Det er verre, fordi det ser ut som koden er gal.
+
+Rettet i dashbordet 22. august: Site URL er `https://www.ampex.no`, og
+Redirect URLs har `https://www.ampex.no/**`, `https://ampex.no/**` og
+`http://localhost:5174/**` (kontoret i utvikling). `supabase/config.toml` er
+satt til det samme, men den fila leser ikke det hostede prosjektet — den
+gjelder den lokale stacken og `supabase config push`.
+
+Kontoen er aktiv, men uten brukbart passord. Når URL-ene er rettet: «Glemt
+passord?» på ampex.no med `stocktormod@gmail.com`. Invitasjonen kan ikke sendes
+på nytt — den er brukt opp.
+
+### E-post er den neste ekte blokkeringen
+
+**Malene i `supabase/templates/` kan ikke tas i bruk.** Dashbordet sier det rett
+ut: «Set up custom SMTP to edit templates». Uten egen SMTP sender Supabase sine
+egne, engelske standardmaler, og emnefeltet blir «You've been invited».
+
+Verre: **grensa er 2 e-poster i timen for HELE prosjektet.** Ikke per bruker,
+per prosjekt. Den innebygde tjenesten er Supabase' egen testtjeneste, og den
+skal ikke brukes i produksjon. Med ekte kunder som inviterer ansatte betyr det
+at invitasjon nummer tre i samme time bare forsvinner — funksjonen svarer
+«sendt», og e-posten kommer aldri.
+
+**Valgt 22. august: Resend.** Gratisnivået er 3000 e-poster i måneden og 100 om
+dagen, som er rikelig for invitasjoner og passordlenker. Det er en tredje
+tjeneste ved siden av Supabase og R2, men uten løpende kostnad, så
+utgiftsklausulen står — se «Faste beslutninger».
+
+DNS-en for `ampex.no` ligger hos **Vercel** (`ns1/ns2.vercel-dns.com`), og
+domenet hadde ingen MX-post fra før. Postene er lagt inn 22. august under
+Vercel → Domains → ampex.no → DNS, med kommentar på hver:
+
+| Navn | Type | Verdi | Prio |
+|---|---|---|---|
+| `resend._domainkey` | TXT | `p=MIGfMA0GCSqGSIb3…WV2ThuQIDAQAB` (216 tegn) | |
+| `send` | MX | `feedback-smtp.eu-west-1.amazonses.com` | 10 |
+| `send` | TXT | `v=spf1 include:amazonses.com ~all` | |
+| `_dmarc` | TXT | `v=DMARC1; p=none;` | |
+
+DMARC står i overvåkingsmodus: den rapporterer, men avviser ingenting. Den skal
+ikke strammes til `p=quarantine` før SPF og DKIM har stått grønt en stund.
+
+**Click tracking er AV, og skal være det.** Resend kan skrive om hver lenke i
+e-posten til en sporings-URL. På en invitasjons- eller passordlenke er det
+direkte skadelig: sikkerhetsskannere hos Gmail og Outlook forhåndsåpner lenker,
+følger redirecten helt inn til Supabase, og innløser engangskoden. Brukeren får
+`otp_expired` — samme feil som 22. august, men med en årsak som er mye
+vanskeligere å finne. Og det er sporing av persondata vi ikke trenger.
+
+SMTP-verdiene i Supabase blir:
+
+| Felt | Verdi |
+|---|---|
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| Username | `resend` |
+| Password | API-nøkkelen fra Resend |
+| Sender email | `ikke-svar@ampex.no` |
+| Sender name | `Ampex` |
+
+**Ferdig 22. august.** SMTP står, og alle fire malene i `supabase/templates/`
+er limt inn under Authentication → Emails, med norske emnefelt:
+
+| Mal | Emne |
+|---|---|
+| Invite user | Du er invitert til Ampex |
+| Reset password | Tilbakestill passordet ditt |
+| Confirm sign up | Bekreft e-postadressen din |
+| Magic link or OTP | Logg inn på Ampex |
+
+Rate limit måtte ikke røres: Supabase hevet den selv fra 2 til **30 i timen** da
+egen SMTP ble slått på. De to var altså samme sperre hele tiden.
+
+**Verifisert ende-til-ende:** «Glemt passord?» på ampex.no for
+`stocktormod@gmail.com` ga `Delivered` i Resend-loggen, med emnet «Tilbakestill
+passordet ditt». Kjeden ampex.no → Supabase → Resend → Gmail går.
+
+Malene bor to steder nå, og det er verdt å vite: `supabase/templates/` +
+`config.toml` gjelder den lokale stacken og `supabase config push`, mens det
+hostede prosjektet har sin egen kopi i dashbordet. Endrer du en mal i repoet,
+er den ikke i drift før den også er limt inn der.
+
+### Lenkene peker på ampex.no, ikke på supabase.co
+
+`{{ .ConfirmationURL }}` peker på `<prosjekt-id>.supabase.co/auth/v1/verify`.
+Teknisk riktig, og helt feil for den som får den: en elektriker som får en lenke
+til et domene han aldri har hørt om, med en bokstavsuppe foran, skal IKKE klikke
+på den.
+
+Malene sender derfor `{{ .TokenHash }}` til vår egen adresse i stedet, og appen
+løser koden inn med `verifyOtp` — se `lesLenke` i `desktop/src/supabase.ts` og
+effekten i `auth.tsx`. Hele lenka står på ampex.no:
+
+```
+https://www.ampex.no/?token_hash=<64 tegn>&type=recovery
+```
+
+Supabase selger et eget auth-domene som løser det samme for ti dollar i
+måneden. Dette koster ingenting, og gjør i tillegg noe det betalte ikke gjør:
+**det tåler e-postskannere bedre.** Gmail og Outlook forhåndsåpner lenker for å
+sjekke dem. Peker lenka rett på `/auth/v1/verify`, blir engangskoden innløst av
+skanneren, og brukeren får «utløpt» når han selv klikker. Peker den på oss, må
+det kjøres JavaScript før koden brukes — og det gjør de færreste skannerne.
+
+Prisen er at innløsningen er et nettverkskall, og at en død lenke derfor kan
+komme fram ETTER første render. Derfor bor `lenkefeil` i auth-konteksten og ikke
+som en modulkonstant.
+
+Verifisert 22. august: `?token_hash=<tull>&type=recovery` på ampex.no gir
+«Lenka er utløpt eller allerede brukt. Be om en ny nedenfor.», adressen ryddes,
+og innloggingsskjemaet står under. Suksessgrenen er ikke prøvd — den ville
+brukt opp en ekte engangskode.
+
+**Ikke prøvd:** selve Ampex-flata (opprette et firma) — den krever at Tormod
+har kommet inn.
+
+### Revokene i sikkerhetsmigrasjonen bet aldri
+
+Funnet under utrullingen, og verdt å vite: `revoke execute on function … from
+anon` gjør ikke det det ser ut som. En ny funksjon får `GRANT EXECUTE TO
+PUBLIC` automatisk, og PUBLIC er ikke en rolle man kan trekke fra en annen
+rolle. Tretten av funksjonene `20260821230000_sikkerhet.sql` mente å stenge for
+`anon`, er fortsatt åpne for `anon`.
+
+Ingenting lekker likevel, og det er verdt å si presist hvorfor: `watermelon_*`
+og `sync_*` er ikke security definer, så RLS gir anon null rader.
+`audit_row`, `handle_new_user` og `profiles_vern` returnerer `trigger`, og
+PostgREST lager ikke endepunkt av dem. `log_audit_event` og `kan_*` leser
+`auth.uid()` selv, og den første kaster på manglende firma. Beltet ble aldri
+festet, og selene holdt.
+
+Min egen `finn_bruker_paa_epost` var unntaket — security definer, leser
+`auth.users`, ingen intern sjekk. Den var i praksis et endepunkt for å spørre
+«finnes denne adressen hos Ampex». Lukket i `20260822130000_revoke_traff_ikke.sql`,
+som også dokumenterer riktig form (`revoke … from public` + `grant … to
+authenticated`).
+
+**De gamle er ikke rørt.** `watermelon_pull` er montørappens livsnerve, og en
+grant-endring på den skal gjøres med appen foran seg — ikke på slutten av en
+runde om invitasjoner.
+
+### Slik kommer det i drift
+
+De to første er gjort. `AMPEX_NETTSTED` er IKKE satt — funksjonene faller
+tilbake på `https://www.ampex.no/`, som er riktig verdi, så det haster ikke:
+
+```
+supabase secrets set AMPEX_NETTSTED=https://www.ampex.no/
+```
+
+Den første Ampex-administratoren er satt opp. For nummer to, eller på et nytt
+prosjekt, kjøres dette én gang i SQL-editoren (brukeren må finnes i
+`auth.users` først):
+
+```sql
+insert into public.ampex_admins (user_id, notat)
+select id, 'Tormod' from auth.users where email = 'din@adresse.no'
+on conflict (user_id) do nothing;
+```
+
+Redirect-URL-ene må inneholde `https://www.ampex.no/**` — samme krav som
+gjenopprettingslenka fra forrige runde.
+
+### 2FA
+
+Ikke bygget, etter avtale. Retningen er TOTP med QR-kode (Supabase har det
+innebygd og gratis; `mfa.enroll` gir QR-koden ferdig som SVG), valgfritt for
+alle roller. SMS er valgt bort: det krever Twilio og en løpende kostnad, og
+bryter med «kun Supabase + R2».
+
+Den viktige delen når det skal gjøres er ikke QR-koden — den er et bilde. Det
+er at tvangen må ligge i RLS på `aal2` og ikke bare i skjermbildet: et stjålet
+passord går rett på PostgREST utenom hele grensesnittet. Mønsteret for et
+ekstra steg i innlogginga finnes allerede, i `gjenoppretting`-flagget.
+
+---
+
+## Runden 22. august: innlogging på ampex.no, og ikonet i fana
+
+Bare kontorflaten. Montørappens innlogging er urørt.
+
+### Glemt passord — hullet som gjorde installatøren til passordvakt
+
+Den som glemte passordet sitt hadde nøyaktig én utvei: ringe installatøren og
+be ham gå inn i Supabase. Nå ligger «Glemt passord?» under passordfeltet, som en
+**tilstand i det samme kortet** og ikke en egen rute — flaten har ingen
+adresselinje å rute med.
+
+Lenka som kommer på e-post er i praksis en innlogging uten passord, og det er
+hele grunnen til at `auth.tsx` har fått flagget `gjenoppretting`. Uten det ville
+`PASSWORD_RECOVERY` sluppet deg rett inn på Oversikt med det gamle passordet
+fortsatt gyldig. Flagget står foran sesjonssjekken i `App.tsx` og holder deg på
+`NyttPassord` til passordet faktisk er byttet.
+
+Skjemaet svarer det samme enten kontoen finnes eller ikke. «Fant ingen konto»
+forteller hvem som jobber i firmaet til hvem som helst som gidder å gjette
+adresser.
+
+**`detectSessionInUrl` er ikke lenger hardkodet `false`.** Den følger nå om vi
+kjører i nettleser eller i Tauri: tokenene fra e-postlenka lander i hash-en på
+ampex.no, og der må de plukkes opp. WebView2 har fortsatt ingen callback-URL, og
+der er svaret det samme som før.
+
+### Resten av innlogginga
+
+- **Feilmeldingene er norske.** `norsk()` i `Logginn.tsx` oversetter det
+  Supabase svarer. «Failed to fetch» er det verste av dem: det betyr at nettet
+  er nede, og sto til nå som en engelsk halvsetning på et innloggingsskjema.
+- **Adressen renses** — `trim().toLowerCase()`. «Ola@Ampex.no » med et
+  mellomrom fra utklippstavla er samme konto for et menneske, men ikke for
+  `signInWithPassword`.
+- **Adressen huskes, passordet aldri.** `localStorage`, og skrivemerket starter
+  i passordfeltet når adressen allerede står der.
+- **Caps Lock-varsel og øye på passordfeltet.** «Feil passord» tre ganger på rad
+  er nesten alltid den tasten.
+- **Beskjedene ligger i et `aria-live`-område** som står i DOM-en hele tiden.
+  Tomt tas det ut av flyten i stedet for å skjules — et område som settes inn
+  samtidig med teksten sin blir ikke lest opp.
+- Knappen er kobber og ikke nesten-svart, som regel 4 i runden 21. august sier.
+
+### Ikonet i fana
+
+Det var Vercel-trekanten som sto der, og grunnen var at `desktop/index.html`
+ikke hadde en eneste `<link rel="icon">`. Da spør nettleseren etter
+`/favicon.ico`, forespørselen treffer omskrivinga i `vercel.json`
+(`/(.*)` → `/`), får index.html tilbake med bildetype og faller ned på vertens
+eget merke.
+
+`desktop/public/favicon.svg` er nå den samme lyn-A-en som i appen, i kobber på
+krom. `apple-touch-icon.png` ligger ved siden av for iOS, som ikke tar SVG på
+hjemskjermen.
+
+### Ett oppsett som må gjøres i Supabase
+
+Redirect-URL-ene under **Authentication → URL Configuration** må inneholde
+`https://ampex.no/**`, ellers sender gjenopprettingslenka folk til Site URL i
+stedet. Selve lenkeflyten er ikke prøvd ende-til-ende — det krever en ekte
+e-post.
 
 ---
 
@@ -865,11 +1411,10 @@ den flyttes uendret til Ampex Desktop når den finnes.
     `drawing_markup`, `drawing_loops`, `rooms.shape` og tre skjermer under
     `prosjekter/`. Mindre urørt enn resten, og derfor riktig å ta etter
     ordresystemet.
-12. **Poolen må avklares.** `20260815120000_gpu_bake_worker_pool.sql` og
-    `20260817200000_ampex_public_pool.sql` er **aldri kjørt og kan ikke kjøres
-    slik de står** — `scan_jobs` finnes med et annet skjema, `worker_nodes`
-    overlapper med `scan_workers`. Enten skrives de om mot det som finnes, eller
-    så droppes `scan_workers`/`scan_jobs` og de kjøres rent.
+12. **Poolen — AVKLART 22. august.** Punktet sa at pool-migrasjonene aldri var
+    kjørt. Det stemte ikke: begge tabellene har stått i basen siden 21. august.
+    Det som stemte var overlappet, og det er nå borte. Se avsnittet
+    «Poolen: én nodetabell» lenger nede.
 
 ### Timeføring: si det, eller skriv det
 
@@ -1383,6 +1928,297 @@ Ordre, timer, materiell, faktura og varesøk virker fullt ut.
 
 ---
 
+## Ampex Kontor — skallet står (21. august)
+
+`desktop/` er en Tauri v2 + React + TS-app. Den kjører foreløpig som nettdel
+(`cd desktop && npm run dev`, port 5174); Rust-siden er skrevet, men **ikke
+kompilert** — `rustup` er ikke installert på maskinen, så `npm run tauri dev`
+er uprøvd. Full begrunnelse for stacken står i `docs/DESKTOP_OG_IMPORT.md`.
+
+**Ordre er hovedskjermen, og den virker.** Liste til venstre, detalj til
+høyre — formen kontorfolk kjenner fra Handyman Office og Cordel, fordi den er
+den eneste som lar deg gå gjennom en bunke uten å navigere fram og tilbake.
+Filtrering på status med tall per status, søk på ordrenummer/kunde/adresse,
+piltaster i lista, og fem faner: Oversikt, Materiell, Timer, Dokumentasjon,
+Fakturagrunnlag.
+
+Fakturagrunnlaget REGNES IKKE PÅ NYTT. `lib/invoicing.ts` gjør det, den er ren,
+den har `verify:invoicing`, og montørappen bruker den samme. To regnestykker på
+samme faktura er ett for mye. Det samme gjelder `finnAvvik()` fra
+`approvals-calc.ts`: godkjennes en ordre på 12 400 kr og noen fører to timer
+etterpå, står det «Godkjent, men endret siden» på skjermen.
+
+**Prisfil-import virker.** Det er den ene jobben som gjorde at Desktop måtte
+finnes i det hele tatt: montøren skal ikke ut på web for å laste opp en
+grossistfil. Tre steg — les fila lokalt, regn ut mot kartoteket, skriv — der
+steg to er sitt eget trykk fordi det koster nett.
+
+Regningen ligger i **`lib/pricefile/plan.ts`**, altså i den delte lib-en, ikke i
+desktop. Der har den selvtest (`verify:prisfil-plan`, 40 påstander), og der kan
+montørappen ta den i bruk senere uten en flytting. Skrivingen ligger i
+`desktop/src/lib/prisfil-lager.ts` og har ingen test, fordi den ikke inneholder
+regning — bare upsert.
+
+### Åtte flater, i tre grupper
+
+**ARBEID** — dagen kontoret jobber gjennom:
+
+| Flate | Hva den er |
+|-------|-----------|
+| Oversikt | Forsiden. Svarer på ett spørsmål: hva må noen gjøre noe med i dag? |
+| Ordre | Liste og detalj side om side. Hovedskjermen |
+| Prosjekter | Bygg med rom, tegninger og oppgaver. Kolonnene er rom og oppgaver, ikke kroner — pengene ligger på ordrene |
+| Tilbud | Det som ligger ute hos kunden og det som er sagt ja til. Summen fra `lib/quoting.ts`, statusen er den EFFEKTIVE (utløpt slår sendt) |
+| Timer | Hele firmaets timeliste, uke for uke, én rad per person og sju dagkolonner. Ukeinndelingen fra `lib/timesheet-calc.ts` |
+
+**REGISTER** — oppslagsverket bak:
+
+| Flate | Hva den er |
+|-------|-----------|
+| Kunder | Registeret SpeedyCraft-importen lander i. `source_system` vises som egen merkelapp, og org.nr har egen kolonne fordi det er den eneste harde dedup-nøkkelen |
+| Varer | Kartoteket med søk mot `search_text`, kostpris, utsalg og hvor mange grossister vi har pris fra |
+| Prisfiler | Importen, pluss «siste import per grossist» med alder — 94 dager gamle priser er ikke en teknisk detalj, det er feil dekningsbidrag |
+
+**KVALITET** — det som gjør at firmaet kan vise hva de gjør:
+
+| Flate | Hva den er |
+|-------|-----------|
+| Internkontroll | Firmaets IK-system, punkt for punkt. Den ENESTE flaten som skriver noe utenom prisfilimporten |
+| Skjemaer | Firmamalene, historikken deres, og hvilket IK-punkt hver av dem hører til |
+
+**Det finnes ingen endringslogg-flate, og det er en beslutning.** En tabell med
+alle firmaets hendelser er utviklerens utsyn på databasen. Det kontoret faktisk
+lurer på er «hva har skjedd med DENNE rutinen», så historikken står PÅ rutinen
+og PÅ malen. Se `desktop/src/ui/Historikk.tsx`.
+
+**FIRMA** — oppsettet man rører sjelden: innstillinger (oppbevaringstid, faglig
+ansvarlig, regnskapssystem), ansatte med rolle, og bake-nodene. Det siste er
+begynnelsen på poolens klientside, som hører hjemme her og ikke i montørappen.
+
+---
+
+## Internkontroll — bygget 21. august
+
+Faglig ansvarlig kan nå bygge firmaets IK-system fra kontoret. Migrasjonen
+`supabase/migrations/20260821180000_internkontroll.sql` er **kjørt**: tre nye
+tabeller (`ik_punkter`, `ik_revisjoner`, `ik_punkt_skjema`), RLS, og
+audit-triggere. Den rører ingen eksisterende tabell bortsett fra at
+`form_templates` og `form_template_revisions` endelig fikk `audit_row` — de
+manglet sporing helt. Rulles tilbake med `drop table`.
+
+### Hvorfor egne tabeller
+
+Et IK-punkt er en RUTINE med hjemmel, ansvarlig og gjennomgangsfrist. Et skjema
+er noe man fyller ut. De henger sammen — punktet «Sluttkontroll» peker på
+sluttkontrollskjemaet — men et kapittel presset inn i en skjemamal mister
+nettopp de feltene som gjør systemet levende.
+
+### Lesebekreftelse per person og per VERSJON
+
+`ik_lest` (migrasjon `20260821220000_ik_lest.sql`, kjørt). Hver ansatt krysser av
+for at hun har lest rutinen, og avkryssingen gjelder **én versjon**. Endres
+rutinen til v3, står alle som bare bekreftet v2 som uleste igjen — automatisk,
+uten at noen må huske å nullstille noe.
+
+Det er nettopp den mekanismen § 5 andre ledd nr. 2 ber om når den sier at folk
+skal ha kunnskap om HMS-arbeidet «herunder informasjon om **endringer**». At
+noen leste rutinen én gang sier ingenting om at de har lest den etter at den
+ble endret.
+
+To ting i RLS er med vilje: `insert` krever `user_id = auth.uid()` — en
+bekreftelse noen andre kan sette på dine vegne er ikke et bevis. Og det finnes
+**ingen update- eller delete-policy**: en avkryssing som kan redigeres bort i
+ettertid er ingen dokumentasjon.
+
+### Den levende delen er tre ting
+
+1. **Gjennomgangsfristen.** Hvert punkt har intervall og dato for sist
+   gjennomgang. Går fristen ut, sier punktet fra selv. «Gjennomgått i dag»
+   flytter fristen uten å lage revisjon — ingenting ble endret — men havner i
+   audit-loggen, så gjennomgangen kan dokumenteres.
+2. **Revisjonene.** Hver endring arkiveres med HELE teksten, ikke en diff, og
+   med påkrevd endringsnotat. Skal man dokumentere hva rutinen SA den dagen noe
+   skjedde, holder det ikke å vite hva den sier nå. `ik_revisjoner` har ingen
+   update-policy: historikk som kan redigeres er ingen historikk.
+3. **Historikken på hvert punkt.** Revisjonene og databasens audit-spor slås
+   sammen til én tidslinje av `lib/ik/hendelser.ts` (`verify:ik-hendelser`).
+   Den viktigste regelen der: én lagring skriver BÅDE en revisjonsrad og en
+   audit-rad, og skal telles én gang. Vises begge, står hver endring dobbelt,
+   og en historikk som teller dobbelt er en historikk ingen stoler på.
+
+   Tidslinja skiller også «vedtatt» og «gjennomgått, ingen endring» fra vanlige
+   feltendringer. En gjennomgang som så ut som en tilfeldig lagring ville ikke
+   dokumentert noe. Auditsporet vises bare til roller med `logg.les`;
+   revisjonene, som bærer endringsnotatet, er en del av dokumentet og leses av
+   alle som leser rutinen.
+
+### Skjelettet
+
+`lib/ik/skjelett.ts` gir fjorten punkter med formål og hjemmel, men **uten
+innhold**. Rutinene må firmaet skrive selv; et IK-system skrevet av
+leverandøren er nettopp den døde permen forskriften skal hindre.
+
+### To tall, ikke ett
+
+Flaten viser **«Skriftlige krav dekket 0 / 5»** og **«Punkter med rutine 0 / 14»**
+ved siden av hverandre, med en setning under som sier hvilket som er hvilket.
+
+Femtallet er de punktene internkontrollforskriften § 5 tredje ledd krever
+skriftlig, altså andre ledd nr. 4–8: mål, organisasjon, risikovurdering,
+avvikshåndtering og systematisk gjennomgang. Det er punkt 1–5 i skjelettet.
+
+Det ene tallet alene var misvisende, og en bruker spurte med én gang: «hvorfor
+står det 0/5 når det er 14?». Med bare det tallet ser det ut som fem er alt
+firmaet trenger. **Punkt 6–8 er nr. 1–3 i samme paragraf og like bindende** —
+de har bare ikke kravet om skriftlighet. **Punkt 9–13 følger av FEK og FEL**,
+der flere har egne dokumentasjonskrav, og det er faglig ansvarlig som må
+vurdere hvilke.
+
+Femtallet er likevel det som teller for «er systemet komplett»: et firma med
+fjorten fine kapitler og ingen avvikshåndtering har ikke et
+internkontrollsystem, og en samlet prosent som sa 93 % ville skjult det.
+Selvtestet i `verify:ik-skjelett`.
+
+**Hjemmelshenvisningene til § 5 er presise. De elektrofaglige punktene har
+INGEN paragraf**, med vilje: en feil paragrafhenvisning i et IK-system er verre
+enn ingen, og faglig ansvarlig er den som skal slå den opp i gjeldende
+forskrift. Feltet er fritekst nettopp derfor.
+
+**Ikke bygget ennå på ordreflaten:** å skrive fra kontoret. Alt er lesing.
+Å rette en føring, godkjenne faglig og markere fakturert er de tre neste, og de
+er i den rekkefølgen fordi den siste er sperret av databasen uten den midterste.
+
+### Roller: hva som vises, ikke hva som er lov
+
+`lib/kontor-tilgang.ts` er en matrise over ni rettigheter og sju roller, med
+selvtest (`verify:kontor-tilgang`). Den er **ikke sikkerhetsmodellen** — RLS,
+`krev_faglig_godkjenning` og `kan_godkjenne_faglig()` er det. Matrisen fjerner
+rot, ikke risiko.
+
+| Rolle | Kort sagt |
+|-------|-----------|
+| Eier, administrator | Alt |
+| Regnskapsfører | Alle ordrer, tilbud, timeliste, kunder, fakturagrunnlag og dekningsbidrag. Markerer fakturert. Retter ikke montørens føringer, importerer ikke prisfil |
+| Installatør | Hele firmaet, retter føringer, ser summen han godkjenner og hele timelista. Ikke dekningsbidrag, ikke fakturering, ikke firmaoppsettet |
+| Bas | Sine egne ordrer, prosjektene og kunderegisteret. Ingen priser ut mot kunde, og ikke firmaets timeliste |
+| Montør, lærling | Slippes ikke inn. Alt de trenger ligger i appen |
+
+Timelista er verdt en merknad: den er **lønnsgrunnlag**, og basen har den ikke.
+Timene han faktisk trenger står på ordrene hans, og en samlet oversikt over hva
+kollegaene har ført er noe annet enn å lede en jobb.
+
+To ting er verdt å huske. **Menyen viser bare det rollen kan bruke** — en
+regnskapsfører ser ikke «Prisfiler» og får beskjed om at hun ikke har lov, hun
+ser den ikke. Og **«kan godkjenne faglig» spør databasen**, ikke rollen:
+`company_settings.faglig_ansvarlig` peker på én person, og en installatør er
+ikke automatisk den personen.
+
+### Ampex-merket er inngangen til assistenten
+
+Sidemenyens topp er **den ekte logoen** (samme paths som `components/ampex-logo.tsx`
+og `assets/ampex-icon-black-on-white.svg`, portert til vanlig SVG i
+`desktop/src/ui/AmpexLogo.tsx`). Den er en KNAPP, ikke en dekorasjon: den åpner
+assistentskuffen, og Ctrl+K gjør det samme uten mus. Det er samme regel som i
+appen, der merket er den synlige inngangen.
+
+**Den talende assistenten er ikke koblet på kontoret ennå,** og skuffen later
+ikke som noe annet — den sier det rett ut i bunnen. Det som ligger der i dag er
+kommandopaletten: skriv hva du vil se, Enter. Samme inngang og samme vane, så
+den dagen modellen kobles på er det ingen ny plass å lære.
+
+Å koble den på krever tre beslutninger som ikke er tatt: tekst eller tale på
+kontoret, hvilke av appens 38 verktøy som gir mening her, og hvor konteksten
+skal komme fra. `supabase/functions/ai-voice` er en tynn Gemini-proxy der
+klienten sender all kontekst selv (appen har den lokalt via WatermelonDB), og
+kontoret har den ikke lokalt.
+
+### Forsiden
+
+`Oversikt` er ny og er første flate. «Venter på deg» står øverst og lister bare
+det som FAKTISK venter — en linje med tallet 0 er ikke informasjon, den er en
+linje man må lese for å finne ut at den ikke gjaldt. Er alt i orden, sier flaten
+det med én setning.
+
+Forsiden regner ikke penger. Fakturagrunnlaget må hentes per ordre og er dyrt;
+å gjøre det for hele porteføljen for ett tall ville gjort at flaten tok flere
+sekunder å åpne. Kroner står på ordredetaljen.
+
+### Tre valg som ble tatt her, og som ikke bør omgjøres uten grunn
+
+1. **Kontoret skriver rett mot Supabase, ikke gjennom WatermelonDB.** Regel 2 i
+   `CLAUDE.md` er en regel for montørappens skjermer: telefonen mister dekning i
+   en kjeller. Kontor-PC-en gjør ikke det, og skal ikke lagre en hel
+   grossistkatalog lokalt bare for å synke den opp igjen.
+2. **Delt logikk, aldri delt UI. Og kontoret er PAPIR, ikke brunt.**
+   `lib/` importeres med `@delt/…`. Paletten er fortsatt den låste, men kontoret
+   bruker `tokens.js` sin PAPIRdel — den regel 9 beskriver som «det du ser når du
+   står INNE I et dokument»:
+
+   ```
+   #EFEAE1 paperCanvas   lerret      #2E281F paperLabel      brødtekst
+   #FFFFFF paperBg       kort        #5C5340 paperIcon       sekundær
+   #E5DDCE paperFill     inputfyll   #96896F paperSecondary  hjelpetekst
+   #DED6C7 paperSeparator hårlinje   #C9C0AC paperTertiary   plassholder
+   #CDC4B1 paperBorder   sterk kant  #A97C4F brand           KOBBER, den ene aksenten
+   ```
+
+   Skillet er regel 9 sitt eget, og kontoret bruker BEGGE halvdelene:
+   **sidemenyen er brun** (`#211C15`, montørappens `canvas`) fordi den er
+   verktøyet du navigerer med, og **innholdet er papir** fordi det er dokumentet
+   du leser og skriver. Kontrasten mellom dem er ikke pynt — den forteller hva
+   som er krom og hva som er sak.
+
+   Semantikken er den samme, men **mørknet** for papir: `#34C759` er valgt for å
+   lyse på brunt og er uleselig på hvitt. Kobberet finnes av samme grunn i to
+   lysheter — `#A97C4F` på papir, `#B98A5C` på brunt. Samme kulør, justert for
+   underlaget.
+
+   **Formen følger `DESIGN.md`** (Dubs system, med Ampex-farger i stedet for
+   electric blue og deep sapphire): lyst lerret, **hårlinjer i stedet for
+   skygger**, tett monokrom typografi som gjør det strukturelle arbeidet, og én
+   aksent som snakker. Kort er hvite med 1 px `#DED6C7`-kant og ingen skygge —
+   kanten er systemet.
+
+   Radiusvokabularet er stramt og har fire trinn: 6 input, 8 knapp, 12 kort,
+   16 store kort, 9999 piller. Ad hoc-avrunding bryter rytmen.
+
+   Skygge brukes i to tilfeller og ikke flere: et såvidt merkbart løft på fylte
+   knapper, og en ring rundt skuffen som flyter over siden.
+
+   Aktivt menyvalg er en **myk kobberflate**, ikke en fet stolpe i kanten —
+   DESIGN.md er uttrykkelig på det. Den dekorative kobbergradienten i
+   ordre-heroen er borte av samme grunn: farge brukes ikke til pynt på
+   UI-elementer.
+
+   **Fonten er fortsatt Geist alene.** DESIGN.md vil ha Satoshi til display og
+   Inter til brødtekst, men regel 8 låser Ampex til én font, og prosjektets egen
+   regel går foran en ekstern referanse. Skalaen er DESIGN.md sin: 11 / 14 / 16 /
+   18 / 20 / 24 / 30 / 36, med vekt 500 på overskrifter — halvfet, aldri fet.
+
+   Grunnen: montørappen legger kort på 5,5 % hvitt over brunt. På en telefon
+   ser du én flate av gangen og det holder. På en bred skjerm med fire flater
+   samtidig forsvinner forskjellen, og hele bildet leser som ett brunt
+   rektangel. Kontoret trenger noe å legge panelene OPPÅ, så grunnen er trukket
+   mørkere (`#141009`) og panelene ligger over den. Kobberet er lysnet fra
+   `#A97C4F` til `#B98A5C` av samme grunn: samme kulør, hevet nok til å lese på
+   en mørkere grunn enn den ble valgt for.
+
+   Formspråket er flytende, avrundede paneler med luft rundt, stor talltypografi
+   (42 px på nøkkeltall), og aksentfargen på DATA — ikke på krom. Statusfargene
+   er fortsatt semantiske, og kobber er derfor ikke med blant dem.
+3. **Ingen plassholderruter.** Menyen har to valg fordi det finnes to ruter.
+
+### Funnet underveis: EAN-varer importeres ikke
+
+`tilVarekort()` godtar EAN som nøkkel når linjeposten mangler el-nummer, men
+`elnummer()`-vakten i BEGGE importene slipper bare varemerke 1 gjennom. En
+EAN-vare telles derfor som «uten el-nummer» og hoppes over. Det er montørappens
+oppførsel fra før, og desktop følger den bevisst — men det betyr at
+EAN-fallbacken i `varekort.ts` er død kode i praksis. Skal det endres, må begge
+endres, og det er en egen beslutning.
+
+---
+
 ## Beslutninger som er tatt (ikke ta dem opp igjen)
 
 - **EFObasen droppes for v1.** API-tilgang koster **29 412 kr/år eks. mva**
@@ -1605,6 +2441,202 @@ Og den hører sannsynligvis i **Ampex Desktop**, ikke i montørappen — se
 | `docs/GROSSIST_INTEGRASJON.md` | Prisfiler, FTP-kanalen, prissammenligning, autobestilling |
 | `docs/REGNSKAPSINTEGRASJON.md` | Fiken/Tripletex — API-diff, kompatibilitet, friksjon |
 | `docs/ROADMAP_2026-08.md` | Full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering |
-| `docs/DESKTOP_OG_IMPORT.md` | Ampex Desktop, SpeedyCraft-import |
+| `docs/DESKTOP_OG_IMPORT.md` | Ampex Kontor (`desktop/`), SpeedyCraft-import |
 | `docs/ON_DEVICE_SCAN_PLAN.md` | Skann-planen (utracket) |
-| `docs/NEW_APP_PLAN.md` | Opprinnelig domene- og datamodell-plan |
+
+---
+
+# 21. august, sen kveld — sikkerhet, GDPR, poolene og exe-en
+
+## Sikkerhet
+
+**Rettighetseskalering i `profiles`, lukket.** `profiles_self_update` var
+`using (id = auth.uid())` uten `with_check`. Postgres gjenbruker da
+`using`-uttrykket på den nye raden, så sjekken ble «er den nye radens id min
+id?» — alltid sann, uansett hva annet setningen endret. Enhver innlogget bruker
+kunne kjøre `update profiles set role='owner'`, eller sette `company_id` til et
+annet firma og dermed få full tilgang til et fremmed firmas data, siden hele
+RLS-modellen leser den kolonnen. Det var den **eneste** policyen i basen der den
+nye raden ikke var bundet til `company_id`.
+
+Lukket med `profiles_vern()` (BEFORE UPDATE), en ekte `with_check`, og en ny
+`profiles_admin_update` så eier og admin fortsatt kan endre kollegers rolle.
+Verifisert ved å utgi seg for en montør i en transaksjon som rulles tilbake:
+selvforfremmelse blokkert, firmabytte blokkert.
+
+Videre: `log_audit_event` var kallbar av `anon` (hvem som helst kunne skrive i
+revisjonsloggen), triggerfunksjoner lå eksponert som REST-endepunkt, og to
+funksjoner manglet pinnet `search_path`. Alt i
+`20260821195749_sikkerhet_profiles_og_rpc`.
+
+**Bevisst ikke rørt:** `current_company_id()` og `kan_skrive_ik()` beholder anon
+EXECUTE. De brukes inne i RLS-policyer, som evalueres med kallerens rolle;
+revokering bytter et tomt svar mot en databasefeil og vinner ingenting.
+
+**Gjenstår, og krever deg:** slå på lekkasjesjekk av passord i Supabase Auth.
+Kan ikke settes via MCP.
+
+## GDPR
+
+Fire dokumenter, alle utkast som må leses av advokat før de brukes:
+
+- `docs/PERSONVERN.md` — behandlingsprotokoll, underdatabehandlere, art. 32-tiltak, avviksrutine, og en ærlig liste over det som ikke er på plass
+- `docs/VILKAR.md` — avtalevilkår mot firmaet
+- `docs/DATABEHANDLERAVTALE.md` — art. 28, med vedlegg A og B
+- `docs/PERSONVERNERKLARING_MAL.md` — mal firmaet fyller ut til sine egne kunder
+
+Teknisk: `personinnsyn_kunde()` og `personinnsyn_ansatt()` (art. 15 og 20),
+begrenset til eier/admin i eget firma, og selv logget til `audit_events` — uten
+å skrive hva som ble hentet, som ville gjort loggen til en kopi av uttrekket.
+
+Det største uavklarte er **GPS-sporingen av ansatte**: kontrolltiltak har egne
+regler, og drøfting og informasjon er ikke gjort.
+
+## GPU-pool: Firma Privat + Ampex Public
+
+**Basen og repoet hadde divergert.** Live lå et utkast fra 14. august —
+`scan_jobs` + `scan_claim_job(p_worker uuid)` — som aldri fantes i repoet.
+Signaturen tok en rå uuid og ingen hemmelighet, og var kallbar av anon: hvem som
+helst kunne plukket jobber ut av køen. Tabellen hadde 0 rader og ingen kode
+kalte funksjonene, så den er droppet.
+
+Repoets to migrasjoner (`gpu_bake_worker_pool`, `ampex_public_pool`) var aldri
+kjørt. De er nå kjørt, med tre endringer:
+
+1. **`allow_ampex_pool` er `default false`**, ikke `true`. Et skann er LiDAR av
+   kundens bolig; at det pakkes ut på en maskin firmaet ikke eier er en
+   utlevering til tredjepart. Styrt av `company_settings.ampex_pool`, håndhevet
+   av trigger.
+2. **`claim_scan_job` var ødelagt** — `for update` kan ikke kombineres med en
+   vindusfunksjon (0A000), og rettferdighetsrangeringen trenger `row_number()`.
+   Delt i to: finn id uten lås, lås den ene raden, bekreft at den fortsatt er
+   `queued`. Taper man kappløpet blir det en tom runde, ikke en dobbel bake.
+3. Innmelding kan aldri lage en Ampex-node. `is_public` settes kun med
+   service_role.
+
+Verifisert med sju påstander i en transaksjon som rulles tilbake: samtykkesperre,
+at en Ampex-node ikke ser private jobber, at egen node tar dem, at en delt jobb
+går til Ampex-poolen etter nådetid, at en fremmed node ikke kan fullføre andres
+jobb, at riktig node kan, og versjonssperren (0.1.0 < 0.10.0).
+
+## Exe-en
+
+`worker/ampex-worker.spec` → `dist\ampex-worker\`, **326 MB** mot 4,8 GB i
+venv-et. Forskjellen er nesten bare PyTorch, som ble importert kun for å lese
+GPU-navnet; `ampex_worker/gpu.py` gjør det nå via `nvidia-smi`.
+
+Ny `bake`-kommando svarer på «virker denne PC-en» uten kø eller innmelding.
+Kjørt på fixture: 24 keyframes → 204k trekanter → 18,2 s → 8,5 MB GLB.
+
+**Sperre: Smart App Control blokkerer den.** «En programkontrollpolicy har
+blokkert denne filen» — den er på som standard på nye Windows 11-maskiner, og på
+denne. Exe-en er altså verifisert **bygget**, ikke verifisert **kjørt**. Krever
+kodesignering (OV eller EV). Å slå av Smart App Control er en enveisbryter og
+ikke et alternativ.
+
+## Vercel
+
+Kontorappen bygger rent (1,2 MB, testbrukeren tree-shakes bort i produksjon).
+`vercel.json` og `.vercelignore` er på plass. **Blokkert på innlogging** —
+`npx vercel login` må kjøres av deg. Domenet `ampex.no` må deretter legges til i
+prosjektet og DNS pekes dit.
+
+---
+
+# 22. august — skannekjeden, kontorflatene og en toolchain-blokker
+
+## Opplastingslivsløpet
+
+`scan_jobs` fikk et livsløp som starter FØR filene lastes opp:
+
+```
+venter (venter_paa: wifi)  →  queued  →  claimed  →  running  →  done
+   ↑ jobben finnes alt her                                        ↓
+   telefonen holder filene                        input_slettes_etter = +72t
+```
+
+Grunnen er ikke teknisk. Montøren skanner i en kjeller uten dekning og laster
+opp når han er tilbake på wifi; opprettes jobben først ved opplasting, er
+skannet usynlig for kontoret i mellomtiden. `venter_paa` sier hvorfor det
+venter, så kontoret kan se «tre skann ligger på telefonen til Ola».
+
+Bytetak i basen: 1 GiB per jobb, 100 GiB rullerende 30 dager per firma.
+Rullerende, ikke kalendermåned — en kvote som nullstilles den 1. gir en topp
+den 1. og en tom pool den 31. Elleve påstander kjørt mot ekte base.
+
+`scan_job_lokalt_slettet` lar telefonen bekrefte at den har slettet sine egne
+kopier, og `input_slettes_etter` rydder R2 72 timer etter en vellykket bake.
+Rammene er inndata, ikke leveranse.
+
+## scan-blobs
+
+Den ene delen som manglet i hele kjeden. Fire grener med fire ulike
+autentiseringer: `upload` og `finish` (telefon, sesjon), `download` og `output`
+(worker, node-token).
+
+**`finish` teller selv.** `scan_job_opplastet` tar imot et byte-tall, og kom det
+tallet fra klienten var kvoten en høflig forespørsel — en modifisert app oppgir
+1 MB og laster opp 900. Funksjonen lister objektene i R2 og sender R2 sin egen
+sum inn i basen.
+
+`output`-grenen manglet i første utkast: `api.py` kalte `upload` med en nøkkel,
+og den veien krever brukersesjon. Worker-en har node-token. Resultatet navngis
+dessuten av serveren, så et kompromittert node-token ikke kan skrive utenfor
+sin egen jobb.
+
+**Ikke deployet.** R2-nøklene ligger i Vercel, ikke som Supabase-secrets, og
+verken supabase-CLI eller dashbordet er innlogget her.
+
+## Kontorflatene
+
+**Skann** under Arbeid: fire bolker, med «på telefonene» øverst fordi det er den
+eneste kontoret kan gjøre noe med. «Ryddet»-kolonnen viser om rammene faktisk er
+borte fra telefonen — står den tom, ligger LiDAR av kundens bolig i to
+eksemplarer.
+
+**Poolstyring** i Firma: innmeldingskode (verifisert mot ekte base) og
+Ampex-bryteren.
+
+To nye rettigheter i den delte matrisen. `pool.styr` er kun eier og
+administrator — ikke installatør. Å slå på Ampex-poolen er å tillate at LiDAR av
+kundens bolig pakkes ut på en maskin firmaet ikke eier; det binder firmaet
+overfor kundene sine og hører ikke hos den som setter opp PC-en.
+
+**Innloggingen** sto på `className="panel …"`, og `.panel` finnes ikke i
+`styles.css`. Kortet hadde verken bakgrunn, kant eller luft — krem på krem, med
+sidemenyens avatarprikk lånt som logo. Nå krom som grunnflate og papir som kort.
+
+## Splat: blokkert på verktøykjede, ikke på kode
+
+Testet direkte på maskinen. `gsplat` 1.5.3 installerer fint (rent Python-hjul),
+men **CUDA-kjernene JIT-kompileres ved første bruk**, og det krever nvcc.
+
+| Ledd | Status |
+|---|---|
+| Driver 610.88, RTX 5070 Ti | ok |
+| PyTorch 2.11 + cu128, ser sm_120 | ok |
+| CUDA Toolkit | **ikke installert** |
+| MSVC Build Tools | **ikke installert** |
+| gsplat-kjerner | **ikke kompilert** |
+
+Feilen er stygg å finne selv: gsplat skriver «No CUDA toolkit found» én gang på
+stderr ved import, fortsetter, og krasjer først midt i en bake med
+`AttributeError: 'NoneType' object has no attribute 'CameraModelType'` — som
+ikke nevner verktøykjeden med et ord.
+
+`worker/tools/sjekk_gpu.py` diagnostiserer hele kjeden og sier hva som mangler.
+Den tvinger UTF-8 på stdout, fordi den første versjonen krasjet med
+`UnicodeEncodeError` på en cp1252-konsoll — nøyaktig feilmodusen den finnes for
+å unngå på en verkstedsPC.
+
+Det som skal til er CUDA Toolkit + MSVC Build Tools. Samme to som README-en
+allerede oppga for å bygge Open3D med CUDA.
+
+## Blokkere, alle på deg
+
+| Blokker | Hva den stopper |
+|---|---|
+| `supabase login` / dashbord | R2-secrets → `scan-blobs`, og lekkasjesjekk av passord |
+| CUDA Toolkit + MSVC Build Tools | all splat-trening |
+| `MeshScanPresenter.swift` (din WIP) | wifi-gating, sletting etter opplasting, dybdekomprimering |
+| Kodesignering | at exe-en kan kjøre forbi Smart App Control |

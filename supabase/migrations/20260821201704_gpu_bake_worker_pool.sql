@@ -1,3 +1,18 @@
+-- MERK: kjørt mot basen 21. august 2026 som `gpu_bake_worker_pool`.
+--
+-- Før dette lå det et eldre utkast I BASEN som aldri fantes i repoet:
+-- `scan_jobs` + `scan_claim_job(p_worker uuid)`. Den signaturen er grunnen til
+-- at det måtte vekk — den tok en rå uuid og ingen hemmelighet, og var kallbar
+-- av anon. Hvem som helst kunne plukket jobber ut av køen. Tabellen hadde 0
+-- rader og ingen kode kalte funksjonene, så det som gikk tapt var et utkast.
+
+drop function if exists public.scan_claim_job(uuid);
+drop function if exists public.scan_complete(uuid, text);
+drop function if exists public.scan_fail(uuid, text);
+drop function if exists public.scan_heartbeat(uuid, integer, text);
+drop function if exists public.scan_requeue_expired();
+drop table if exists public.scan_jobs cascade;
+
 -- GPU-bake: worker-pool (se docs/GPU_BAKE_PLAN.md)
 -- Supabase er KUN kø og koordinering; all GPU-regning skjer på maskiner i
 -- firmaets egen pool eller i Ampex-poolen. R2 holder blobbene.

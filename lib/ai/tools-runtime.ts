@@ -25,6 +25,7 @@ import { FormTemplate } from '../db/models/form-template'
 import { Project } from '../db/models/project'
 import { Room } from '../db/models/room'
 import { findByOrderNumber } from '../orders'
+import { kanKalle, type Verktoyrett } from './verktoy-tilgang'
 import {
   addOrderMember,
   findColleagueByName,
@@ -118,7 +119,50 @@ async function resolveOrder(
     return { order, n, member: await isOrderMember(order, user.id), user }
   }
 
+/**
+ * Hvilke verktøy som krever hvilken rett. Kun de som SKRIVER står her.
+ *
+ * Oppslag (mine_ordrer, finn_ordre, sok_vare) og regnestykker har ingen rad: de
+ * endrer ingenting, og medlemskapsvernet i finn_ordre gjør sin egen jobb.
+ * Påminnelser og notater er brukerens egne. En lærling som ikke får be appen huske
+ * hvor han parkerte, har fått en app som er sur.
+ *
+ * DETTE ER IKKE SIKKERHETSMODELLEN — RLS er det. Men verktøykallene skriver til
+ * lokal WatermelonDB, og RLS ser ingenting før `watermelon_push` kjører, kanskje
+ * timer senere. Uten denne sperren sier assistenten «ordren er opprettet», brukeren
+ * hører det, og avvisningen kommer som en synkfeil lenge etterpå.
+ *
+ * (Gjenopprettet 2026-09-11 under flettingen av grossist-og-pool: omskrivingen av
+ * live-økten hadde mistet koblingen, mens verktoy-tilgang.ts lå igjen ubrukt.)
+ */
+const VERKTOY_KREVER: Record<string, Verktoyrett> = {
+  opprett_ordre: 'ordre.opprett',
+  bli_med_pa_ordre: 'ordre.bli_med',
+  oppdater_ordre: 'ordre.endre',
+  legg_til_medlem: 'ordre.endre',
+  foer_timer: 'timer.egne',
+  utfyll_timenotat: 'timer.egne',
+  start_skjema: 'skjema.fyll',
+  fyll_skjemafelt: 'skjema.fyll',
+  legg_til_materiell: 'materiell.for',
+  ta_ut_materiell: 'materiell.for',
+  foresla_tillegg: 'materiell.for',
+  nytt_tilbud: 'tilbud.skriv',
+  legg_til_tilbudslinje: 'tilbud.skriv',
+}
+
 export async function runTool(ctx: ToolContext, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    // Rollesjekk FØR noe skrives. Se VERKTOY_KREVER for hvorfor RLS alene ikke holder
+    // når appen er offline-først.
+    const krav = VERKTOY_KREVER[name]
+    if (krav) {
+      const rolle = (await getCurrentUser())?.role
+      const dom = kanKalle(rolle, krav)
+      if (!dom.tillatt) {
+        console.warn(`Verktøy: ${name} avvist lokalt (${dom.grunn}) for rolle ${rolle ?? 'ukjent'}`)
+        return { feil: dom.beskjed, grunn: dom.grunn }
+      }
+    }
     try {
       if (name === 'finn_ordre') {
         const resolved = await resolveOrder(args)

@@ -89,8 +89,7 @@ export default function AktiviteterScreen() {
       <PromptSheet
         synlig={nyÅpen}
         tittel="Ny aktivitet"
-        forklaring="Navnet vises på fakturaen. «Montasje», «Feilsøking», «Kjøring»."
-        plassholder="Navn"
+        plassholder="Montasje, Feilsøking, Kjøring …"
         knapp="Opprett"
         onSvar={async navn => { setNyÅpen(false); await opprettAktivitet({ name: navn }) }}
         onAvbryt={() => setNyÅpen(false)}

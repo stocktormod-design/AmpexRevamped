@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="nb">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Ampex Kontor</title>
+    <meta name="description" content="Ampex Kontor — kontorflaten for elektrikerfirmaet: ordre, prosjekter, tilbud, timer og internkontroll." />
+
+    <!--
+      Ikonet.
+
+      Uten disse linjene ber nettleseren om /favicon.ico, og den forespørselen
+      treffer omskrivinga i vercel.json (`/(.*)` -> `/`). Da får den index.html
+      tilbake med bildetype, kaster den, og faller ned på vertens eget merke.
+      Det var Vercel-trekanten i fana.
+
+      Merket er den samme lyn-A-en som i appen (assets/ampex-icon-black-on-white.svg),
+      snudd til kobber på krom slik at flisen leser likt i lys og mørk fanelinje.
+      SVG er hovedformatet; PNG-en er for iOS, som ikke tar SVG på hjemskjermen.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#211C15" />
+  </head>
+  <body>
+    <div id="rot"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

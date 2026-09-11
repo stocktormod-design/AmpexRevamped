@@ -135,7 +135,7 @@ function Rad({ extra }: { extra: OrderExtra }) {
       <PromptSheet
         synlig={spørNavn}
         tittel="Hvem godkjente?"
-        forklaring="Navnet på personen hos kunden som sa ja. Det er dette som teller hvis det blir uenighet senere."
+        forklaring="Det er dette som teller hvis det blir uenighet senere."
         plassholder="Fornavn Etternavn"
         knapp="Neste"
         onSvar={navn => { setSpørNavn(false); setSpørMåte(navn) }}
