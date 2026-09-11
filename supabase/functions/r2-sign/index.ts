@@ -28,8 +28,11 @@ Deno.serve(async (req) => {
 
   const key = (payload.key ?? '').replace(/^\/+/, '')
   const method = (payload.method ?? 'get').toLowerCase()
-  if (!key || !/^(drawings|room-scans)\//.test(key)) {
-    return json({ error: 'ugyldig key (må starte med drawings/ eller room-scans/)' }, 400)
+  // tale/ er talecachen (lib/ai/tale-cache.ts): ferdigrendrede setninger, delt
+  // på tvers av firma fordi setningene er de samme. Innholdet er assistentens
+  // egne bekreftelser — ingen kundedata, ingen personopplysninger.
+  if (!key || !/^(drawings|room-scans|tale)\//.test(key)) {
+    return json({ error: 'ugyldig key (må starte med drawings/, room-scans/ eller tale/)' }, 400)
   }
   if (method !== 'put' && method !== 'get') return json({ error: 'method må være put eller get' }, 400)
 

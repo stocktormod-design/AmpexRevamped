@@ -1,15 +1,7 @@
-import { useEffect } from 'react'
-import { View } from 'react-native'
-import Animated, {
-  useSharedValue, useAnimatedStyle, withTiming, withSequence, Easing,
-} from 'react-native-reanimated'
-import Svg, { Circle } from 'react-native-svg'
 import { Pressable } from './pressable'
 import { AmpexLogo } from './ampex-logo'
 import { useVoiceSession } from '../lib/ai/voice-session'
-import { colors, sizes } from '../lib/theme'
-
-const RING = sizes.iconChip * 2.6 // ytterste lyn-ring ved full utladning
+import { colors, sizes, shadows } from '../lib/theme'
 
 /**
  * Merket ER assistenten. Lyn-A-en fra AmpexLogo er inngangen til AI-økten, og
@@ -26,91 +18,40 @@ const RING = sizes.iconChip * 2.6 // ytterste lyn-ring ved full utladning
  * utladningen som blir til orben.
  */
 /**
- * Standard er brun grunn — kremet merke i et lyst felt. `tone="papir"` for
- * dokumentskjermene, der merket i stedet står i kobber på kremet.
- *
- * Kobber på brunt forsvinner, og et merke som ikke synes kan ikke trykkes på.
+ * Grunnflaten er papir nå: standard er messing-merke i et messing-vasket felt
+ * (`papir` er beholdt som alias). `tone="orb"` er STEMME-ORBEN fra specen:
+ * 54 pt frostet sirkel med blekk-logo, forankret over docken — glasskrom nr. 3
+ * (navbar, dock, orb) og det eneste stedet den store varianten brukes.
  */
-export function AmpexMarkButton({ tone = 'default' }: { tone?: 'default' | 'papir' } = {}) {
+export function AmpexMarkButton({ tone = 'default' }: { tone?: 'default' | 'papir' | 'orb' } = {}) {
   const { stage, beginSession } = useVoiceSession()
-  const paaMorkt = tone !== 'papir'
+  const orb = tone === 'orb'
 
-  // 0 = i ro, 1 = full utladning. Driver begge ringene med hver sin forsinkelse.
-  const burst = useSharedValue(0)
-  const press = useSharedValue(1)
-
-  // Økten kan avsluttes fra overlayet eller to-finger-gesten — nullstill da, så
-  // neste trykk starter fra ro i stedet for midt i forrige animasjon.
-  useEffect(() => {
-    if (stage === 'idle') burst.value = 0
-  }, [stage, burst])
-
-  function fyrAv() {
-    burst.value = 0
-    burst.value = withTiming(1, { duration: 520, easing: Easing.out(Easing.quad) })
-    press.value = withSequence(
-      withTiming(0.9, { duration: 90, easing: Easing.out(Easing.quad) }),
-      withTiming(1, { duration: 260, easing: Easing.elastic(1.4) }),
-    )
-    beginSession()
-  }
-
-  const markStyle = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }))
-
-  const ringIndre = useAnimatedStyle(() => ({
-    opacity: (1 - burst.value) * 0.9,
-    transform: [{ scale: 0.5 + burst.value * 1.1 }],
-  }))
-
-  const ringYtre = useAnimatedStyle(() => ({
-    opacity: (1 - burst.value) * 0.55,
-    transform: [{ scale: 0.5 + burst.value * 1.7 }],
-  }))
-
+  // STATISK (Tormod 2026-09-06: «ai knappen er ikke static den beveger seg»).
+  // Utladningsringene og den elastiske spretten er tatt bort. Merket står i ro
+  // som en signatur øverst til høyre; trykket gir vanlig, kort press-respons.
   // Overlayet overtar den visuelle jobben så snart økten er i gang.
   if (stage !== 'idle') return null
 
+  const size = orb ? sizes.voiceOrb : sizes.iconChip
   return (
     <Pressable
       haptic="medium"
-      pressScale={1} // egen press-animasjon under, ikke Pressable sin
-      onPress={fyrAv}
+      pressScale={0.94}
+      onPress={beginSession}
       accessibilityLabel="Start med AI"
-      style={{
-        width: sizes.iconChip, height: sizes.iconChip, borderRadius: sizes.iconChip / 2,
-        backgroundColor: paaMorkt ? 'rgba(255,255,255,0.14)' : colors.brandWash,
-        alignItems: 'center', justifyContent: 'center',
-      }}
+      style={[
+        {
+          alignItems: 'center', justifyContent: 'center',
+          width: size, height: size, borderRadius: size / 2,
+          // Sort disk med hvitt merke: logoen ER knappen, og den leser som
+          // Ampex på hver skjerm — ikke som et grått ikon i et grått felt.
+          backgroundColor: colors.label,
+        },
+        orb && { ...shadows.floating },
+      ]}
     >
-      {/* Ringene ligger utenfor knappen og må ikke ta trykk. */}
-      <View pointerEvents="none" style={{
-        position: 'absolute', width: RING, height: RING, alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Animated.View style={[{ position: 'absolute' }, ringIndre]}>
-          <Lynring size={RING} dash={9} />
-        </Animated.View>
-        <Animated.View style={[{ position: 'absolute' }, ringYtre]}>
-          <Lynring size={RING} dash={4} />
-        </Animated.View>
-      </View>
-
-      <Animated.View style={markStyle}>
-        <AmpexLogo size={sizes.icon} color={paaMorkt ? colors.brandSoft : colors.brand} />
-      </Animated.View>
+      <AmpexLogo size={orb ? sizes.iconLg : sizes.icon - 1} color="#FFFFFF" />
     </Pressable>
-  )
-}
-
-/** Stiplet ring — samme «elektriske» språk som buene i voice-assistant-overlay. */
-function Lynring({ size, dash }: { size: number; dash: number }) {
-  const r = size / 2 - 1
-  return (
-    <Svg width={size} height={size}>
-      <Circle
-        cx={size / 2} cy={size / 2} r={r}
-        stroke={colors.brand} strokeWidth={1.5} fill="none"
-        strokeDasharray={`${dash} ${dash * 1.6}`} strokeLinecap="round"
-      />
-    </Svg>
   )
 }

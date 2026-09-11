@@ -1,26 +1,48 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { View, ScrollView } from 'react-native'
 import { Text } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Check, Mic, Users, Timer, ChevronRight, CalendarClock, ShieldCheck, Archive, CloudOff } from 'lucide-react-native'
-import { router } from 'expo-router'
+import { setStatusBarStyle } from 'expo-status-bar'
+import { Check, CloudOff } from 'lucide-react-native'
+import { router, useFocusEffect } from 'expo-router'
 import { Pressable } from '../../components/pressable'
 import { AmpexMarkButton } from '../../components/ampex-mark-button'
+import { BilKort } from '../../components/bil-kort'
 import { useTilGodkjenning, useKanGodkjenne } from '../../lib/approvals'
 import { useSynkStatus } from '../../lib/db/sync'
-import { useMorkStatuslinje } from '../../components/tool-surface'
-import { PALETTER, lagretPalett, velgPalett, type PalettId } from '../../lib/palett'
+import { useUserId } from '../../lib/auth-user'
 import { getPreferredVoice, setPreferredVoice, VOICE_OPTIONS } from '../../lib/ai/voice-prefs'
-import { colors, spacing, radius, type as t } from '../../lib/theme'
+import { trykkProve, nullstillTrykk, type TrykkProve } from '../../lib/perf'
+import { colors, spacing, radius, sizes, type as t } from '../../lib/theme'
+
+/** Avlesning av trykk-køen. Ett trykk = oppdater, langt trykk = nullstill. */
+function TrykkMaaler() {
+  const [prove, setProve] = useState<TrykkProve | null>(() => trykkProve())
+  return (
+    <Pressable
+      haptic="none"
+      onPress={() => setProve(trykkProve())}
+      onLongPress={() => { nullstillTrykk(); setProve(null) }}
+      style={{ marginTop: spacing.md, paddingVertical: spacing.sm }}
+    >
+      <Text style={[t.caption, { color: colors.tertiaryLabel, textAlign: 'center' }]}>
+        {prove
+          ? `trykk-kø: median ${prove.median} ms · p90 ${prove.p90} ms · verst ${prove.verst} ms (${prove.antall})`
+          : 'trykk-kø: ingen målinger · trykk her for å oppdatere'}
+      </Text>
+    </Pressable>
+  )
+}
 
 export default function Screen() {
-  useMorkStatuslinje()
+  // Papir-grunn → mørk statuslinje mens fanen er i fokus.
+  useFocusEffect(useCallback(() => { setStatusBarStyle('dark') }, []))
+  const userId = useUserId()
   const tilGodkjenning = useTilGodkjenning()
   const synk = useSynkStatus()
   const kanGodkjenne = useKanGodkjenne()
   const insets = useSafeAreaInsets()
   const [voice, setVoice] = useState<string | null>(null)
-  const [palett, setPalett] = useState<PalettId | null>(null) // null = ingen prøve valgt, tokens.js gjelder
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
@@ -28,7 +50,6 @@ export default function Screen() {
       setVoice(v)
       setLoaded(true)
     })
-    lagretPalett().then(setPalett).catch(() => {})
   }, [])
 
   async function choose(id: string | null) {
@@ -43,19 +64,26 @@ export default function Screen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: colors.toolBg }}
-      contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.screen, paddingBottom: spacing.xxl }}
+      style={{ flex: 1, backgroundColor: colors.canvas }}
+      contentContainerStyle={{
+        paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.screen,
+        paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl,
+      }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xl }}>
-        <Text style={[t.display, { color: colors.toolLabel }]}>Meg</Text>
-        <AmpexMarkButton />
+        <Text style={t.display}>Meg</Text>
+        <View />
       </View>
 
-      {/* Faglig godkjenning står først når noe faktisk venter — det er en
+      {/* Bilen · lageret ditt på hjul. Regnr → Vegvesen-oppslag → silhuett i
+          bilens faktiske farge. */}
+      <BilKort userId={userId} />
+
+      {/* Faglig godkjenning står først når noe faktisk venter · det er en
           forskriftsfestet oppgave med en kø, ikke en innstilling. Er køen tom,
           eller er du ikke faglig ansvarlig, tar den ingen plass. */}
       {kanGodkjenne && tilGodkjenning.length > 0 && (
-        <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl }}>
+        <View style={{ backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl }}>
           <Pressable
             haptic="light"
             onPress={() => router.push('/(app)/godkjenning')}
@@ -64,27 +92,22 @@ export default function Screen() {
               paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
             }}
           >
-            <ShieldCheck size={18} color={colors.brand} strokeWidth={2.2} />
             <View style={{ flex: 1 }}>
-              <Text style={[t.body, { color: colors.toolLabel }]}>Til godkjenning</Text>
-              <Text style={[t.footnote, { color: colors.toolSecondary }]}>
-                {`${tilGodkjenning.length} ${tilGodkjenning.length === 1 ? 'ordre venter' : 'ordrer venter'} på deg`}
-              </Text>
+              <Text style={[t.body]}>Til godkjenning</Text>
             </View>
             <View style={{
               minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 7,
               backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center',
             }}>
-              <Text style={[t.caption, { color: '#fff', fontWeight: '700' }]}>{tilGodkjenning.length}</Text>
+              <Text style={[t.caption, { color: colors.ctaLabel, fontWeight: '700' }]}>{tilGodkjenning.length}</Text>
             </View>
-            <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
           </Pressable>
         </View>
       )}
 
       {/* Mine timer står ØVERST og ikke under registrene: det er det eneste her
           en montør åpner mer enn én gang i uken. */}
-      <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl }}>
+      <View style={{ backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl }}>
         <Pressable
           haptic="light"
           onPress={() => router.push('/(app)/mine-timer')}
@@ -93,12 +116,9 @@ export default function Screen() {
             paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
           }}
         >
-          <CalendarClock size={18} color={colors.brand} strokeWidth={2.2} />
           <View style={{ flex: 1 }}>
-            <Text style={[t.body, { color: colors.toolLabel }]}>Mine timer</Text>
-            <Text style={[t.footnote, { color: colors.toolSecondary }]}>Uke for uke — grunnlaget for lønn</Text>
+            <Text style={[t.body]}>Mine timer</Text>
           </View>
-          <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
         </Pressable>
         <Pressable
           haptic="light"
@@ -106,26 +126,33 @@ export default function Screen() {
           style={{
             flexDirection: 'row', alignItems: 'center', gap: spacing.md,
             paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
-            borderTopWidth: 1, borderTopColor: colors.toolBorder,
+            borderTopWidth: 1, borderTopColor: colors.separator,
           }}
         >
-          <Archive size={18} color={colors.brand} strokeWidth={2.2} />
           <View style={{ flex: 1 }}>
-            <Text style={[t.body, { color: colors.toolLabel }]}>Gamle jobber</Text>
-            <Text style={[t.footnote, { color: colors.toolSecondary }]}>Arkivet — filtrert på kunde og år</Text>
+            <Text style={[t.body]}>Gamle jobber</Text>
           </View>
-          <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
+        </Pressable>
+        <Pressable
+          haptic="light"
+          onPress={() => router.push('/(app)/skanner')}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+            paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
+            borderTopWidth: 1, borderTopColor: colors.separator,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[t.body]}>Skann</Text>
+          </View>
         </Pressable>
       </View>
 
       {/* Registrene. Ligger her fordi de settes opp sjelden og brukes via ordren. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, marginBottom: spacing.sm }}>
-        <Users size={15} color={colors.toolTertiary} strokeWidth={2.2} />
-        <Text style={[t.footnote, { color: colors.toolTertiary, fontWeight: '600', textTransform: 'uppercase' }]}>
-          Register
-        </Text>
-      </View>
-      <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl }}>
+      <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
+        Register
+      </Text>
+      <View style={{ backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xl }}>
         <Pressable
           haptic="light"
           onPress={() => router.push('/(app)/kunder')}
@@ -134,9 +161,7 @@ export default function Screen() {
             paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
           }}
         >
-          <Users size={18} color={colors.brand} strokeWidth={2.2} />
-          <Text style={[t.body, { flex: 1, color: colors.toolLabel }]}>Kunder</Text>
-          <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
+          <Text style={[t.body, { flex: 1, color: colors.label }]}>Kunder</Text>
         </Pressable>
         <Pressable
           haptic="light"
@@ -147,22 +172,16 @@ export default function Screen() {
             borderTopWidth: 1, borderTopColor: colors.border,
           }}
         >
-          <Timer size={18} color={colors.brand} strokeWidth={2.2} />
           <View style={{ flex: 1 }}>
-            <Text style={[t.body, { color: colors.toolLabel }]}>Aktiviteter og timepriser</Text>
-            <Text style={[t.footnote, { color: colors.toolSecondary }]}>Avgjør hva en time koster på fakturaen</Text>
+            <Text style={[t.body]}>Aktiviteter og timepriser</Text>
           </View>
-          <ChevronRight size={18} color={colors.toolTertiary} strokeWidth={2.2} />
         </Pressable>
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, marginBottom: spacing.sm }}>
-        <Mic size={15} color={colors.toolTertiary} strokeWidth={2.2} />
-        <Text style={[t.footnote, { color: colors.toolTertiary, fontWeight: '600', textTransform: 'uppercase' }]}>
-          AI-assistentens stemme
-        </Text>
-      </View>
-      <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden' }}>
+      <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
+        AI-assistentens stemme
+      </Text>
+      <View style={{ backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, borderRadius: radius.lg, overflow: 'hidden' }}>
         {loaded &&
           rows.map((row, i) => {
             const active = voice === row.id
@@ -182,89 +201,46 @@ export default function Screen() {
                 }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[t.body, { color: colors.toolLabel, fontWeight: active ? '700' : '400' }]}>{row.label}</Text>
-                  <Text style={[t.footnote, { color: colors.toolSecondary }]}>{row.description}</Text>
+                  <Text style={[t.body, { color: colors.label, fontWeight: active ? '700' : '400' }]}>{row.label}</Text>
                 </View>
                 {active && <Check size={18} color={colors.brand} strokeWidth={2.6} />}
               </Pressable>
             )
           })}
       </View>
-      <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: spacing.sm }]}>
-        Gjelder fra neste samtale — trykk på Ampex-merket for å starte en.
+      <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>
+        Gjelder fra neste samtale · trykk på Ampex-merket for å starte en.
       </Text>
-
-      {/* MIDLERTIDIG: palettprøving. Slettes sammen med lib/palett.ts når én
-          er valgt og verdiene er skrevet inn i lib/tokens.js. Ligger her og
-          ikke bak en dev-flagg fordi den som skal VELGE er deg, på en telefon,
-          i det lyset appen faktisk brukes i. */}
-      <Text style={[t.footnote, { color: colors.toolTertiary, fontWeight: '600', textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
-        Fargeprøve
-      </Text>
-      <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, overflow: 'hidden' }}>
-        {PALETTER.map((p, i) => {
-          const aktiv = palett === p.id
-          return (
-            <Pressable
-              key={p.id}
-              haptic="medium"
-              onPress={() => { setPalett(p.id); void velgPalett(p.id) }}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-                borderBottomWidth: i < PALETTER.length - 1 ? 0.5 : 0,
-                borderBottomColor: colors.toolBorder,
-              }}
-            >
-              {/* Prøvene tegnes med paletten sine EGNE hex-verdier, ikke med
-                  temaet — ellers ville alle tre sett like ut. */}
-              <View style={{ flexDirection: 'row' }}>
-                {p.proever.map((farge, n) => (
-                  <View
-                    key={farge}
-                    style={{
-                      width: 22, height: 22, borderRadius: 11, backgroundColor: farge,
-                      borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.12)',
-                      marginLeft: n === 0 ? 0 : -7,
-                    }}
-                  />
-                ))}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[t.body, { color: colors.toolLabel, fontWeight: aktiv ? '700' : '400' }]}>{p.navn}</Text>
-                <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 1, lineHeight: 18 }]}>
-                  {p.beskrivelse}
-                </Text>
-              </View>
-              {aktiv && <Check size={18} color={colors.brand} strokeWidth={2.6} />}
-            </Pressable>
-          )
-        })}
-      </View>
 
       {/* Synken er usynlig (regel 2) og skal forbli det. Men blir vi AVVIST av
-          serveren tre ganger på rad, er det en defekt, ikke en kjeller — og da
+          serveren tre ganger på rad, er det en defekt, ikke en kjeller · og da
           må noen få vite at arbeidet står på telefonen og ikke kommer videre.
           Uten nett teller ikke: det er normaltilstanden appen er bygget for. */}
       {synk?.nivaa === 'blokkert' && (
-        <View style={{ backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.xl, flexDirection: 'row', gap: spacing.md }}>
+        <View style={{ backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.xl, flexDirection: 'row', gap: spacing.md }}>
           <CloudOff size={20} color={colors.danger} strokeWidth={2.2} style={{ marginTop: 2 }} />
           <View style={{ flex: 1 }}>
-            <Text style={[t.body, { color: colors.toolLabel, fontWeight: '600' }]}>{synk.tekst}</Text>
-            <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 2 }]}>
-              Ingenting er tapt — alt ligger lagret på telefonen. Men det kommer ikke fram før dette er rettet.
+            <Text style={[t.body, { color: colors.label, fontWeight: '600' }]}>{synk.tekst}</Text>
+            <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 2 }]}>
+              Ingenting er tapt · alt ligger lagret på telefonen. Men det kommer ikke fram før dette er rettet.
             </Text>
             {synk.detalj && (
-              <Text style={[t.caption, { color: colors.toolSecondary, marginTop: spacing.sm }]}>{synk.detalj}</Text>
+              <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>{synk.detalj}</Text>
             )}
           </View>
         </View>
       )}
       {synk && synk.nivaa !== 'blokkert' && (
-        <Text style={[t.caption, { color: colors.toolTertiary, marginTop: spacing.xl, textAlign: 'center' }]}>
+        <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: spacing.xl, textAlign: 'center' }]}>
           {synk.tekst}
         </Text>
       )}
+
+      {/* TRYKK-KØEN (kun __DEV__, se lib/perf.ts). Trykk rundt i appen, kom hit
+          og trykk her for å lese av hvor lenge trykkene lå og ventet på
+          JS-tråden. Ingen løkke som oppdaterer seg selv · den leses av på
+          forespørsel, så den koster ingenting mens den står der (regel 10). */}
+      {__DEV__ && <TrykkMaaler />}
     </ScrollView>
   )
 }

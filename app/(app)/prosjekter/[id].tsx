@@ -4,21 +4,24 @@ import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { ChevronLeft, Plus, Layers, ChevronRight, UserPlus, DoorOpen, ScanLine, Circle, CircleCheckBig, ScanSearch } from 'lucide-react-native'
+import { ChevronLeft, Plus, Layers, ChevronRight, UserPlus, ScanLine, Circle, CircleCheckBig, ScanSearch } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { SectionHeader } from '../../../components/ui'
+import { SectionHeader, GlassListGroup } from '../../../components/ui'
+import { MappeInnhold, useMapper } from '../../../components/tegning-mapper'
 import { ToolGlow } from '../../../components/tool-surface'
-import { AmpexMarkButton } from '../../../components/ampex-mark-button'
+import { usePapirFokus } from '../../../components/papir-surface'
+import { MegAvatar } from '../../../components/meg-avatar'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Project, projectStatusLabel } from '../../../lib/db/models/project'
 import { Drawing, disciplineLabel } from '../../../lib/db/models/drawing'
 import { ProjectMember } from '../../../lib/db/models/project-member'
-import { Room, overallProgress } from '../../../lib/db/models/room'
+import { Room } from '../../../lib/db/models/room'
 import { FireDevice } from '../../../lib/db/models/fire-device'
 import { Task } from '../../../lib/db/models/task'
 import { toggleTaskDone } from '../../../lib/tasks'
-import { useUserRole } from '../../../lib/auth-user'
+import { useUserId, useUserRole } from '../../../lib/auth-user'
+import { TaskPinSheet, type TaskPinSheetState } from '../../../components/task-pin-sheet'
 import { useVoiceSession } from '../../../lib/ai/voice-session'
 import { loadDraft } from '../../../lib/ai/voice-drafts'
 import { runProjectStatusQuery, type ProjectStatusOutcome } from '../../../lib/ai/project-status'
@@ -30,18 +33,6 @@ import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib
 const PROJECT_STATUS_ROLES = new Set(['owner', 'admin', 'bas', 'baas'])
 
 /** Glass-listegruppe — skygge på wrapper, klipping+fyll på inner (samme mønster som GlassCard). */
-function GlassListGroup({ children }: { children: React.ReactNode }) {
-  return (
-    <View style={[{ marginHorizontal: spacing.screen, borderRadius: radius.hero }, shadows.card]}>
-      <View style={{
-        backgroundColor: colors.cardGlassStrong, borderRadius: radius.hero, overflow: 'hidden',
-        borderWidth: 0.5, borderColor: colors.glassEdge,
-      }}>
-        {children}
-      </View>
-    </View>
-  )
-}
 
 /** Kompakt glass-empty for Rom/Tegninger — ikon + kort tekst, valgfri kobber-CTA. */
 function GlassEmpty({ Icon, text, cta }: {
@@ -175,15 +166,22 @@ function DetektorlisteRow({ projectId }: { projectId: string }) {
 }
 
 export default function ProsjektDetailScreen() {
+  usePapirFokus() // hvit grunn → mørk statuslinje
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [project, setProject] = useState<Project | null>(null)
-  const drawings = useDrawings(id ?? '')
+  const { mapper, tegninger: drawings } = useMapper(id ?? '')
   const members = useMembers(id ?? '')
   const rooms = useRooms(id ?? '')
   const tasks = useTasks(id ?? '')
   const role = useUserRole()
   const canAskStatus = role !== null && PROJECT_STATUS_ROLES.has(role)
+  // Bas/PL/eier deler ut oppgaver; montør ser og lukker sine.
+  const kanDeleUt = canAskStatus
+  const userId = useUserId()
+  const [taskSheet, setTaskSheet] = useState<TaskPinSheetState>(null)
+  const memberNavn = new Map(members.map(m => [m.userId, m.userName || 'Ukjent']))
+  const romNavn = new Map(rooms.map(r => [r.id, r.name]))
   const { lastCompletedSessionId, clearLastCompleted } = useVoiceSession()
   const [statusProcessing, setStatusProcessing] = useState(false)
   const [statusOutcome, setStatusOutcome] = useState<ProjectStatusOutcome | null>(null)
@@ -221,15 +219,6 @@ export default function ProsjektDetailScreen() {
 
   if (!project) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
 
-  // Grupper tegninger på plan (rekkefølge etter første forekomst)
-  const plans: string[] = []
-  const byPlan = new Map<string, Drawing[]>()
-  for (const d of drawings) {
-    const key = d.plan || 'Uten plan'
-    if (!byPlan.has(key)) { byPlan.set(key, []); plans.push(key) }
-    byPlan.get(key)!.push(d)
-  }
-
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <ToolGlow height={360} />
@@ -246,7 +235,7 @@ export default function ProsjektDetailScreen() {
               }}>
               <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
             </Pressable>
-            {canAskStatus && <AmpexMarkButton />}
+            {canAskStatus && <MegAvatar />}
           </View>
 
           {statusProcessing && (
@@ -277,26 +266,18 @@ export default function ProsjektDetailScreen() {
             {[project.customerName, project.address, projectStatusLabel[project.status]].filter(Boolean).join(' · ')}
           </Text>
 
-          <Pressable
-            haptic="medium"
-            onPress={() => router.push({ pathname: '/(app)/prosjekter/tegning-ny', params: { projectId: project.id } })}
-            style={{
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-              height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.brand, marginTop: spacing.lg,
-            }}
-          >
-            <Plus size={sizes.icon} color="#fff" strokeWidth={2.2} />
-            <Text style={[t.headline, { color: '#fff' }]}>Legg til tegning</Text>
-          </Pressable>
           <DetektorlisteRow projectId={project.id} />
         </View>
 
+        {/* Tegninger — det du kom hit for. Derfor først. Mapper (bygg → fag) som
+            rader, tegningene på rota som fliser; handlingene ligger på nivået. */}
+        <View style={{ marginBottom: spacing.screen }}>
+          <SectionHeader>Tegninger</SectionHeader>
+          <MappeInnhold projectId={project.id} parentId={null} mapper={mapper} tegninger={drawings} userId={userId} />
+        </View>
         {/* Medlemmer — trykk for å sette LiDAR-ansvarlig, hold for å fjerne */}
         <View style={{ marginBottom: spacing.screen }}>
           <SectionHeader>Folk på prosjektet</SectionHeader>
-          <Text style={[t.footnote, { marginHorizontal: spacing.screen + spacing.lg, marginTop: -spacing.xs, marginBottom: spacing.sm }]}>
-            Trykk for LiDAR-ansvarlig
-          </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginHorizontal: spacing.screen }}>
             {members.map(m => {
               const responsible = !!m.isScanResponsible
@@ -331,132 +312,73 @@ export default function ProsjektDetailScreen() {
               <Text style={[t.subhead, { color: colors.secondaryLabel }]}>Legg til folk</Text>
             </Pressable>
           </View>
+          {members.length > 0 && (
+            <Text style={[t.caption, { marginHorizontal: spacing.screen + spacing.xs, marginTop: spacing.sm, color: colors.tertiaryLabel }]}>
+              Trykk på en person for å gjøre dem LiDAR-ansvarlig
+            </Text>
+          )}
         </View>
 
-        {/* Oppgaver — prosjektets to-do (inkl. LiDAR-forespørsler) */}
-        {tasks.length > 0 && (
+        {/* Oppgaver — basen deler ut, montøren lukker. Rad = åpne, sirkel = ferdig. */}
+        {(tasks.length > 0 || kanDeleUt) && (
           <View style={{ marginBottom: spacing.screen }}>
-            <SectionHeader>Oppgaver</SectionHeader>
-            <GlassListGroup>
-              {[...tasks].sort((a, b) => (a.status === b.status ? 0 : a.status === 'open' ? -1 : 1)).map((task, i, arr) => {
-                const done = task.status === 'done'
-                return (
-                  <Pressable
-                    key={task.id}
-                    haptic="light"
-                    onPress={() => toggleTaskDone(task)}
-                    style={[
-                      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-                      i < arr.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
-                    ]}
-                  >
-                    {done
-                      ? <CircleCheckBig size={sizes.icon} color={colors.success} strokeWidth={2} />
-                      : <Circle size={sizes.icon} color={colors.tertiaryLabel} strokeWidth={2} />}
-                    <View style={{ flex: 1, marginLeft: spacing.md }}>
-                      <Text style={[t.body, done && { color: colors.tertiaryLabel, textDecorationLine: 'line-through' }]} numberOfLines={2}>
-                        {task.title}
-                      </Text>
-                    </View>
-                    {task.kind === 'lidar_scan' && (
-                      <ScanSearch size={16} color={done ? colors.tertiaryLabel : colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-                    )}
-                  </Pressable>
-                )
-              })}
-            </GlassListGroup>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginHorizontal: spacing.screen + spacing.lg, marginBottom: spacing.sm - 1 }}>
+              <Text style={[t.eyebrow, { textTransform: 'uppercase' }]}>Oppgaver</Text>
+              {kanDeleUt && (
+                <Pressable onPress={() => setTaskSheet({ mode: 'ny', projectId: project.id })} hitSlop={8}>
+                  <Text style={[t.caption, { color: colors.brand, fontWeight: '600' }]}>+ Ny oppgave</Text>
+                </Pressable>
+              )}
+            </View>
+            {tasks.length === 0 ? (
+              <GlassEmpty
+                Icon={CircleCheckBig}
+                text="Del ut oppgaver til folk på prosjektet, gjerne knyttet til et rom."
+                cta={{ label: 'Ny oppgave', onPress: () => setTaskSheet({ mode: 'ny', projectId: project.id }) }}
+              />
+            ) : (
+              <GlassListGroup>
+                {[...tasks].sort((a, b) => (a.status === b.status ? 0 : a.status === 'open' ? -1 : 1)).map((task, i, arr) => {
+                  const done = task.status === 'done'
+                  const under = [
+                    task.assignedTo ? memberNavn.get(task.assignedTo) ?? null : 'Ingen mottaker',
+                    task.roomId ? romNavn.get(task.roomId) ?? null : null,
+                    task.fristAt ? `Frist ${task.fristAt.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` : null,
+                  ].filter(Boolean).join(' · ')
+                  return (
+                    <Pressable
+                      key={task.id}
+                      haptic="light"
+                      onPress={() => setTaskSheet({ mode: 'vis', task })}
+                      style={[
+                        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
+                        i < arr.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
+                      ]}
+                    >
+                      <Pressable haptic="light" hitSlop={10} onPress={() => toggleTaskDone(task)}>
+                        {done
+                          ? <CircleCheckBig size={sizes.icon} color={colors.success} strokeWidth={2} />
+                          : <Circle size={sizes.icon} color={colors.tertiaryLabel} strokeWidth={2} />}
+                      </Pressable>
+                      <View style={{ flex: 1, marginLeft: spacing.md }}>
+                        <Text style={[t.body, done && { color: colors.tertiaryLabel, textDecorationLine: 'line-through' }]} numberOfLines={2}>
+                          {task.title}
+                        </Text>
+                        {!!under && <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>{under}</Text>}
+                      </View>
+                      {task.kind === 'lidar_scan' && (
+                        <ScanSearch size={16} color={done ? colors.tertiaryLabel : colors.iconMuted} strokeWidth={sizes.lucideStroke} />
+                      )}
+                    </Pressable>
+                  )
+                })}
+              </GlassListGroup>
+            )}
           </View>
         )}
 
-        {/* Rom — framdrift per rom (× fagfelt), grunnlag for LiDAR-skann */}
-        <View style={{ marginBottom: spacing.screen }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: spacing.screen + spacing.lg, marginBottom: spacing.sm - 1 }}>
-            <Text style={[t.caption, { textTransform: 'uppercase' }]}>Rom</Text>
-            <Pressable onPress={() => router.push({ pathname: '/(app)/prosjekter/rom-ny', params: { projectId: project.id } })} hitSlop={8}>
-              <Text style={[t.caption, { color: colors.secondaryLabel, textTransform: 'uppercase' }]}>Legg til</Text>
-            </Pressable>
-          </View>
-          {rooms.length === 0 ? (
-            <GlassEmpty
-              Icon={DoorOpen}
-              text="Spor framdrift per fagfelt og LiDAR-skanne."
-              cta={{ label: 'Legg til rom', onPress: () => router.push({ pathname: '/(app)/prosjekter/rom-ny', params: { projectId: project.id } }) }}
-            />
-          ) : (
-            <GlassListGroup>
-              {rooms.map((r, i) => {
-                const pct = overallProgress(r.progressMap)
-                return (
-                  <Pressable
-                    key={r.id}
-                    onPress={() => router.push({ pathname: '/(app)/prosjekter/rom', params: { roomId: r.id } })}
-                    style={[
-                      { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-                      i < rooms.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
-                    ]}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <View style={{ width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md }}>
-                        <DoorOpen size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={t.body} numberOfLines={1}>{r.name}</Text>
-                        <Text style={[t.footnote, { marginTop: 1 }]}>{r.plan}</Text>
-                      </View>
-                      <Text style={[t.bodyMedium, { color: colors.label, fontVariant: ['tabular-nums'], marginRight: spacing.sm }]}>{pct}%</Text>
-                      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-                    </View>
-                    <View style={{ height: 4, borderRadius: radius.pill, backgroundColor: colors.fill, overflow: 'hidden', marginTop: spacing.sm, marginLeft: sizes.iconChip - 8 + spacing.md }}>
-                      <View style={{ width: `${pct}%`, height: '100%', backgroundColor: colors.label, borderRadius: radius.pill }} />
-                    </View>
-                  </Pressable>
-                )
-              })}
-            </GlassListGroup>
-          )}
-        </View>
-
-        {/* Tegninger — planen er inngangen; du bytter tegning i vieweren (swap-navbar) */}
-        <View style={{ marginBottom: spacing.screen }}>
-          <SectionHeader>Tegninger</SectionHeader>
-          {drawings.length === 0 ? (
-            <GlassEmpty Icon={Layers} text="Ingen tegninger ennå. Per plan og fagfelt." />
-          ) : (
-            <GlassListGroup>
-              {plans.map((plan, i) => {
-                const list = byPlan.get(plan)!
-                return (
-                  <Pressable
-                    key={plan}
-                    onPress={() => router.push({ pathname: '/(app)/prosjekter/tegning', params: { drawingId: list[0].id } })}
-                    style={[
-                      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-                      i < plans.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
-                    ]}
-                  >
-                    <View style={{
-                      width: sizes.iconChip - 8, height: sizes.iconChip - 8, borderRadius: radius.sm,
-                      backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md,
-                    }}>
-                      <Layers size={sizes.icon - 2} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-                    </View>
-                    <View style={{ flex: 1, marginRight: spacing.md }}>
-                      <Text style={t.bodyMedium} numberOfLines={1}>{plan}</Text>
-                      <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>
-                        {list.map(d => d.name).join(' · ')}
-                      </Text>
-                    </View>
-                    <Text style={[t.footnote, { color: colors.tertiaryLabel, marginRight: spacing.sm }]}>
-                      {`${list.length} tegn.`}
-                    </Text>
-                    <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-                  </Pressable>
-                )
-              })}
-            </GlassListGroup>
-          )}
-        </View>
       </ScrollView>
+      <TaskPinSheet state={taskSheet} userId={userId} onClose={() => setTaskSheet(null)} />
     </View>
   )
 }

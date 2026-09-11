@@ -45,7 +45,10 @@ export function AddressMap({ address, onPress, height = 150, chrome = true }: {
         <MapView
           style={{ height }}
           initialRegion={{
-            latitude: coords.lat,
+            // I hero (uten krom) står tittelen nederst i kartet, og pinnen midt i
+            // kartet havnet da rett bak teksten. Senteret flyttes litt sørover, så
+            // pinnen ligger i den øvre, frie delen.
+            latitude: chrome ? coords.lat : coords.lat - 0.0022,
             longitude: coords.lng,
             latitudeDelta: 0.008,
             longitudeDelta: 0.008,

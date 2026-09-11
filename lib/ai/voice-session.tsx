@@ -9,6 +9,7 @@ import { useAudioRecorderState } from 'expo-audio'
 import { speak } from './voice-speaker'
 import { hasMicrophonePermission, requestMicrophonePermission, useVoiceRecorder } from './voice-recorder'
 import { createDraft, loadDraft, addAudioSegment, clearDraft, type VoiceRouteContext } from './voice-drafts'
+import { MindSession } from './mind-session'
 import { LiveSession } from './live-session'
 import { syncLiveActivity } from './live-activity-control'
 import { useHasDynamicIsland } from '../has-dynamic-island'
@@ -82,17 +83,31 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
     return { screen: 'unknown' }
   }, [pathname, params])
 
-  const liveRef = useRef<LiveSession | null>(null)
+  const assistentRef = useRef<MindSession | LiveSession | null>(null)
   const [liveOrderFound, setLiveOrderFound] = useState<Order | null>(null)
 
   /**
-   * Sanntidssamtale med Gemini Live (lib/ai/live-session.ts) — dette er
+   * Samtale med den turbaserte assistenten (lib/ai/mind-session.ts) — dette er
    * normalveien på mobil. Unntak: skjema-skjermen beholder det gamle
    * opptak→gap_check-løpet (det fyller faktisk ut feltene), og web har ikke
-   * native PCM-streaming. Stage-navnene gjenbrukes så overlay + Live Activity
-   * virker uendret: 'confirming' = kobler til, 'recording' = samtale pågår.
+   * native mikrofontilgang. Stage-navnene gjenbrukes så overlay + Live Activity
+   * virker uendret: 'confirming' = starter opp, 'recording' = samtale pågår.
+   *
+   * Erstattet Gemini Live 2026-09-03. Live holdt en WebSocket åpen og fakturerte
+   * sesjonen — stillhet, tenketid og sin egen tale til 4x inngangsprisen. Nå
+   * sendes ett lydklipp per tur og svaret leses opp lokalt.
    */
-  const startLiveSession = useCallback(async (routeContext: VoiceRouteContext) => {
+  /**
+   * Live er tilbake (2026-09-04), men med klient-VAD: mikrofonen strømmer BARE
+   * når det er tale, med activityStart/activityEnd rundt. Det som gjorde Live
+   * dyr — stillhet og verkstedstøy fakturert som lyd — forlater aldri
+   * telefonen. Se live-session.ts for tallene.
+   *
+   * Dagstak: er det nådd, gir serveren intet token, og vi faller tilbake til
+   * den turbaserte assistenten med systemstemmen. Samme verktøy, samme
+   * intelligens — bare gratis stemme resten av dagen.
+   */
+  const startLiveSession = useCallback(async (routeContext: VoiceRouteContext): Promise<void> => {
     setStage('confirming')
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
 
@@ -105,9 +120,41 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
     const session = new LiveSession(routeContext, {
       onStage: s => setStage(s === 'connecting' ? 'confirming' : 'recording'),
       onEnd: error => {
-        liveRef.current = null
+        assistentRef.current = null
         setStage('idle')
-        // Feil leses opp med system-TTS — Live-lyden er per definisjon død her.
+        if (error) speak(error)
+      },
+      onCapHit: () => {
+        // Ikke en feil for brukeren — bare en annen stemme i dag.
+        assistentRef.current = null
+        void startMindSession(routeContext)
+      },
+      onOrderFound: order => setLiveOrderFound(order),
+      onOpenForm: (orderId, templateId) => {
+        router.push({ pathname: '/(app)/ordre/skjema', params: { orderId, templateId } })
+      },
+      onNavigate: path => router.push(path as never),
+    })
+    assistentRef.current = session
+    void session.start()
+  }, []) // startMindSession refereres via lukking; begge er stabile useCallback uten deps
+
+  const startMindSession = useCallback(async (routeContext: VoiceRouteContext) => {
+    setStage('confirming')
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+
+    const granted = (await hasMicrophonePermission()) || (await requestMicrophonePermission())
+    if (!granted) {
+      setStage('idle')
+      return
+    }
+
+    const session = new MindSession(routeContext, {
+      onStage: s => setStage(s === 'connecting' ? 'confirming' : 'recording'),
+      onEnd: error => {
+        assistentRef.current = null
+        setStage('idle')
+        // Økten er borte, så feilen må leses opp av noen andre enn den.
         if (error) speak(error)
       },
       onOrderFound: order => setLiveOrderFound(order),
@@ -118,7 +165,7 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
       // Guide-navigasjon: modellen åpner skjermer direkte (opprettet ordre, vis_ordre).
       onNavigate: path => router.push(path as never),
     })
-    liveRef.current = session
+    assistentRef.current = session
     session.start()
   }, [])
 
@@ -161,8 +208,8 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
 
   const endSession = useCallback(
     async (opts?: { discard?: boolean }) => {
-      if (liveRef.current) {
-        liveRef.current.stop() // setter stage til idle via onEnd
+      if (assistentRef.current) {
+        assistentRef.current.stop() // setter stage til idle via onEnd
         return
       }
       if (stageRef.current === 'confirming') {
@@ -226,7 +273,7 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
     }, 250)
 
     const proxSub = addProximityListener(near => {
-      liveRef.current?.setEarpiece(near)
+      assistentRef.current?.setEarpiece(near)
     })
 
     const appSub = AppState.addEventListener('change', state => {
@@ -254,7 +301,7 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
     // mikrofon, og expo-opptakerens metering er da støy/utdatert — uten denne
     // vakten kunne stillhetsdeteksjonen HENRETTE live-økter etter ~5 s («hun
     // stopper av seg selv», «rist virker aldri to ganger»), helt uten logglinjer.
-    if (liveRef.current) return
+    if (assistentRef.current) return
     if (stage !== 'recording' && stage !== 'checking') {
       silenceSinceRef.current = null
       askedAtRef.current = null

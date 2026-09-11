@@ -9,7 +9,7 @@ import {
   X, ArrowUpDown, Search, LayoutGrid, Rows3, Plus,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { ToolChip, ToolGlow, useMorkStatuslinje } from '../../../components/tool-surface'
+import { PapirChip, usePapirFokus } from '../../../components/papir-surface'
 import { PromptSheet } from '../../../components/sheet'
 import {
   useVaresok, useFabrikater, useGrossister, useVareantall, useKategorier, useMenteDu,
@@ -18,7 +18,7 @@ import {
 import { sorteringLabel, type Sortering } from '../../../lib/product-search'
 import { useDemoAntall } from '../../../lib/pricefile/demo'
 import { formatKr, tilOre } from '../../../lib/invoicing'
-import { colors, spacing, radius, sizes, toolType as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 /**
  * Varekartoteket — «EFObasen-følelsen».
@@ -36,7 +36,7 @@ function VareRad({ treff, first, last }: { treff: Varetreff; first: boolean; las
     <Pressable
       onPress={() => router.push({ pathname: '/(app)/lager/vare', params: { id: p.id } })}
       style={{
-        backgroundColor: colors.toolRaised, marginHorizontal: spacing.screen,
+        backgroundColor: colors.bg, marginHorizontal: spacing.screen,
         paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
         flexDirection: 'row', alignItems: 'center',
         borderTopLeftRadius: first ? radius.lg : 0, borderTopRightRadius: first ? radius.lg : 0,
@@ -46,12 +46,12 @@ function VareRad({ treff, first, last }: { treff: Varetreff; first: boolean; las
       {/* Bildet kommer fra grossistens egen katalog. Mangler det, står ikonet. */}
       <View style={{
         width: 44, height: 44, borderRadius: radius.md,
-        backgroundColor: p.imageUrl ? colors.brandSoft : colors.toolRaisedStrong,
+        backgroundColor: p.imageUrl ? colors.brandSoft : colors.fill,
         alignItems: 'center', justifyContent: 'center', marginRight: spacing.md, overflow: 'hidden',
       }}>
         {p.imageUrl
           ? <Image source={{ uri: p.imageUrl }} style={{ width: 44, height: 44 }} resizeMode="contain" />
-          : <Package size={19} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />}
+          : <Package size={19} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />}
       </View>
 
       <View style={{ flex: 1, marginRight: spacing.sm }}>
@@ -79,18 +79,18 @@ function VareRad({ treff, first, last }: { treff: Varetreff; first: boolean; las
           <Text style={[t.subhead, {
             fontVariant: ['tabular-nums'],
             // Dempet når det bare er en listepris: tallet er katalogens, ikke firmaets.
-            color: treff.pris.kunListepriser ? colors.toolSecondary : colors.toolLabel,
+            color: treff.pris.kunListepriser ? colors.secondaryLabel : colors.label,
           }]}>
             {formatKr(tilOre(treff.billigste.nettoPris))}
           </Text>
         )}
-        <Text style={[t.caption, { color: colors.toolTertiary, marginTop: 1 }]}>
+        <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 1 }]}>
           {treff.pris.kunListepriser
             ? 'listepris'
             : treff.priser.length > 1 ? `${treff.priser.length} grossister` : ''}
         </Text>
       </View>
-      <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} style={{ marginLeft: spacing.sm }} />
+      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} style={{ marginLeft: spacing.sm }} />
     </Pressable>
   )
 }
@@ -113,28 +113,28 @@ function VareRute({ treff, bredde, indeks }: { treff: Varetreff; bredde: number;
     <Pressable onPress={() => router.push({ pathname: '/(app)/lager/vare', params: { id: p.id } })}>
       <View style={{
         height: bredde, borderRadius: radius.lg, overflow: 'hidden',
-        backgroundColor: p.imageUrl ? colors.brandSoft : colors.toolRaisedStrong,
+        backgroundColor: p.imageUrl ? colors.brandSoft : colors.fill,
         alignItems: 'center', justifyContent: 'center',
       }}>
         {p.imageUrl
           ? <Image source={{ uri: p.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
-          : <Package size={26} color={colors.toolTertiary} strokeWidth={1.8} />}
+          : <Package size={26} color={colors.tertiaryLabel} strokeWidth={1.8} />}
       </View>
       <Text style={[t.subhead, { marginTop: spacing.sm }]} numberOfLines={2}>{p.name}</Text>
-      <Text style={[t.caption, { color: colors.toolTertiary, marginTop: 1 }]} numberOfLines={1}>
+      <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 1 }]} numberOfLines={1}>
         {[p.fabrikat, p.elnummer ? `EL ${p.elnummer}` : null].filter(Boolean).join(' · ')}
       </Text>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.xs, marginTop: 3 }}>
         {treff.billigste && (
           <Text style={[t.bodyMedium, {
             fontVariant: ['tabular-nums'],
-            color: treff.pris.kunListepriser ? colors.toolSecondary : colors.toolLabel,
+            color: treff.pris.kunListepriser ? colors.secondaryLabel : colors.label,
           }]}>
             {formatKr(tilOre(treff.billigste.nettoPris))}
           </Text>
         )}
         {treff.pris.kunListepriser && (
-          <Text style={[t.caption, { color: colors.toolTertiary }]}>listepris</Text>
+          <Text style={[t.caption, { color: colors.tertiaryLabel }]}>listepris</Text>
         )}
       </View>
       {treff.besparelse !== null && treff.besparelse > 0 && treff.billigste && (
@@ -153,7 +153,7 @@ function VareRute({ treff, bredde, indeks }: { treff: Varetreff; bredde: number;
 export default function Varekartotek() {
   const insets = useSafeAreaInsets()
   // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
-  useMorkStatuslinje()
+  usePapirFokus()
   // `?sok=` fyller søkefeltet ved åpning. Brukes av dyplenker og av
   // AI-assistenten når den skal vise et bestemt oppslag.
   const { sok: sokParam } = useLocalSearchParams<{ sok?: string }>()
@@ -201,32 +201,31 @@ export default function Varekartotek() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.toolBg }}>
-      <ToolGlow height={380} />
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
-            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.toolRaised, alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronLeft size={sizes.icon} color={colors.toolLabel} strokeWidth={2.2} />
+            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
           </Pressable>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
           <Pressable haptic="light" pressScale={0.94} onPress={() => setRutenett(r => !r)}
             style={{
               width: 34, height: 34, borderRadius: radius.pill,
-              backgroundColor: colors.toolRaisedStrong, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center',
             }}>
             {rutenett
-              ? <Rows3 size={16} color={colors.toolLabel} strokeWidth={2.1} />
-              : <LayoutGrid size={16} color={colors.toolLabel} strokeWidth={2.1} />}
+              ? <Rows3 size={16} color={colors.label} strokeWidth={2.1} />
+              : <LayoutGrid size={16} color={colors.label} strokeWidth={2.1} />}
           </Pressable>
           <Pressable haptic="light" pressScale={0.94} onPress={() => setVisFilter(v => !v)}
             style={{
               flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 34,
               paddingHorizontal: spacing.md, borderRadius: radius.pill,
-              backgroundColor: aktiveFilter > 0 ? colors.brandSoft : colors.toolRaisedStrong,
+              backgroundColor: aktiveFilter > 0 ? colors.brandSoft : colors.fill,
             }}>
-            <SlidersHorizontal size={15} color={aktiveFilter > 0 ? colors.brand : colors.toolLabel} strokeWidth={2.1} />
-            <Text style={[t.subhead, { fontWeight: '600', color: aktiveFilter > 0 ? colors.brand : colors.toolLabel }]}>
+            <SlidersHorizontal size={15} color={aktiveFilter > 0 ? colors.brand : colors.label} strokeWidth={2.1} />
+            <Text style={[t.subhead, { fontWeight: '600', color: aktiveFilter > 0 ? colors.brand : colors.label }]}>
               {aktiveFilter > 0 ? `Filter · ${aktiveFilter}` : 'Filter'}
             </Text>
           </Pressable>
@@ -245,10 +244,10 @@ export default function Varekartotek() {
         <TextInput
           value={sok} onChangeText={setSok}
           placeholder="El-nummer, navn, produsent eller strekkode"
-          placeholderTextColor={colors.toolTertiary}
+          placeholderTextColor={colors.tertiaryLabel}
           autoCorrect={false} clearButtonMode="while-editing"
           style={[t.body, {
-            backgroundColor: colors.toolRaisedStrong, borderRadius: radius.md,
+            backgroundColor: colors.fill, borderRadius: radius.md,
             paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
             marginTop: spacing.md,
           }]}
@@ -261,9 +260,9 @@ export default function Varekartotek() {
             <View>
               <Text style={[t.caption, { textTransform: 'uppercase', marginBottom: spacing.sm }]}>Hvor</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-                <ToolChip label="På vårt lager" selected={!!filter.kunPaaLager}
+                <PapirChip label="På vårt lager" selected={!!filter.kunPaaLager}
                   onPress={() => setFilter(f => ({ ...f, kunPaaLager: !f.kunPaaLager }))} />
-                <ToolChip label="Lagerført hos grossist" selected={!!filter.kunLagerfoert}
+                <PapirChip label="Lagerført hos grossist" selected={!!filter.kunLagerfoert}
                   onPress={() => setFilter(f => ({ ...f, kunLagerfoert: !f.kunLagerfoert }))} />
               </View>
             </View>
@@ -272,7 +271,7 @@ export default function Varekartotek() {
                 <Text style={[t.caption, { textTransform: 'uppercase', marginBottom: spacing.sm }]}>Grossist</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                   {grossister.map(g => (
-                    <ToolChip key={g} label={g} selected={filter.grossist === g} onPress={() => slaaAv('grossist', g)} />
+                    <PapirChip key={g} label={g} selected={filter.grossist === g} onPress={() => slaaAv('grossist', g)} />
                   ))}
                 </View>
               </View>
@@ -282,7 +281,7 @@ export default function Varekartotek() {
                 <Text style={[t.caption, { textTransform: 'uppercase', marginBottom: spacing.sm }]}>Produsent</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                   {fabrikater.slice(0, 30).map(f => (
-                    <ToolChip key={f} label={f} selected={filter.fabrikat === f} onPress={() => slaaAv('fabrikat', f)} />
+                    <PapirChip key={f} label={f} selected={filter.fabrikat === f} onPress={() => slaaAv('fabrikat', f)} />
                   ))}
                 </View>
               </View>
@@ -308,7 +307,7 @@ export default function Varekartotek() {
           <Text style={[t.footnote, { flex: 1 }]} numberOfLines={1}>
             {`${demoAntall} varer med oppdiktede priser`}
           </Text>
-          <ChevronRight size={14} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
+          <ChevronRight size={14} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
         </Pressable>
       )}
 
@@ -321,11 +320,11 @@ export default function Varekartotek() {
             style={{
               flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
               paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-              borderRadius: radius.pill, backgroundColor: colors.toolLabel,
+              borderRadius: radius.pill, backgroundColor: colors.label,
             }}
           >
-            <Text style={[t.subhead, { color: colors.toolRaised, fontWeight: '600' }]}>{filter.kategori}</Text>
-            <X size={14} color={colors.toolRaised} strokeWidth={2.4} />
+            <Text style={[t.subhead, { color: colors.bg, fontWeight: '600' }]}>{filter.kategori}</Text>
+            <X size={14} color={colors.bg} strokeWidth={2.4} />
           </Pressable>
         </View>
       )}
@@ -338,7 +337,7 @@ export default function Varekartotek() {
       {!!ukjentElnummer && (
         <View style={{
           marginHorizontal: spacing.screen, marginTop: spacing.md,
-          backgroundColor: colors.toolRaised, borderRadius: radius.lg, padding: spacing.lg,
+          backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.lg,
         }}>
           <Text style={t.bodyMedium}>{`EL ${ukjentElnummer} er ikke i kartoteket`}</Text>
           <Text style={[t.footnote, { marginTop: spacing.xs }]}>
@@ -386,9 +385,9 @@ export default function Varekartotek() {
           contentContainerStyle={{ paddingHorizontal: spacing.screen, gap: spacing.sm, alignItems: 'center' }}
           style={{ marginTop: spacing.md, flexGrow: 0 }}
         >
-          <ArrowUpDown size={13} color={colors.toolTertiary} strokeWidth={2.2} />
+          <ArrowUpDown size={13} color={colors.tertiaryLabel} strokeWidth={2.2} />
           {(['relevans', 'pris', 'navn'] as Sortering[]).map(v => (
-            <ToolChip key={v} label={sorteringLabel[v]} selected={sortering === v} onPress={() => setSortering(v)} />
+            <PapirChip key={v} label={sorteringLabel[v]} selected={sortering === v} onPress={() => setSortering(v)} />
           ))}
         </ScrollView>
       )}
@@ -418,24 +417,24 @@ export default function Varekartotek() {
                 >
                   <View style={{
                     height: ruteBredde * 0.72, borderRadius: radius.lg, overflow: 'hidden',
-                    backgroundColor: k.bilde ? colors.brandSoft : colors.toolRaisedStrong,
+                    backgroundColor: k.bilde ? colors.brandSoft : colors.fill,
                     alignItems: 'center', justifyContent: 'center',
                   }}>
                     {k.bilde
                       ? <Image source={{ uri: k.bilde }} style={{ width: '72%', height: '72%' }} resizeMode="contain" />
-                      : <Package size={24} color={colors.toolTertiary} strokeWidth={1.8} />}
+                      : <Package size={24} color={colors.tertiaryLabel} strokeWidth={1.8} />}
                   </View>
                   <Text style={[t.subhead, { fontWeight: '600', marginTop: spacing.sm }]} numberOfLines={2}>
                     {k.kategori}
                   </Text>
-                  <Text style={[t.caption, { color: colors.toolTertiary, marginTop: 1 }]}>
+                  <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 1 }]}>
                     {`${k.antall} ${k.antall === 1 ? 'vare' : 'varer'}`}
                   </Text>
                 </Pressable>
               ))}
             </View>
           ) : (
-            <View style={{ backgroundColor: colors.toolRaised, borderRadius: radius.lg, overflow: 'hidden' }}>
+            <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, overflow: 'hidden' }}>
               {kategorier.map((k, i) => (
                 <Pressable
                   key={k.kategori}
@@ -443,12 +442,12 @@ export default function Varekartotek() {
                   onPress={() => setFilter(f => ({ ...f, kategori: k.kategori }))}
                   style={[
                     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-                    i < kategorier.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder },
+                    i < kategorier.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
                   ]}
                 >
                   <Text style={[t.body, { flex: 1 }]} numberOfLines={1}>{k.kategori}</Text>
-                  <Text style={[t.subhead, { color: colors.toolTertiary, marginRight: spacing.sm }]}>{k.antall}</Text>
-                  <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
+                  <Text style={[t.subhead, { color: colors.tertiaryLabel, marginRight: spacing.sm }]}>{k.antall}</Text>
+                  <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
                 </Pressable>
               ))}
             </View>
@@ -461,7 +460,7 @@ export default function Varekartotek() {
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                 {fabrikater.map(f => (
-                  <ToolChip key={f} label={f} selected={filter.fabrikat === f} onPress={() => slaaAv('fabrikat', f)} />
+                  <PapirChip key={f} label={f} selected={filter.fabrikat === f} onPress={() => slaaAv('fabrikat', f)} />
                 ))}
               </View>
             </>
@@ -481,8 +480,8 @@ export default function Varekartotek() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={rutenett ? undefined : () => (
-          <View style={{ backgroundColor: colors.toolRaised, marginHorizontal: spacing.screen }}>
-            <View style={{ height: 0.5, backgroundColor: colors.toolBorder, marginLeft: spacing.lg + 44 + spacing.md }} />
+          <View style={{ backgroundColor: colors.bg, marginHorizontal: spacing.screen }}>
+            <View style={{ height: 0.5, backgroundColor: colors.separator, marginLeft: spacing.lg + 44 + spacing.md }} />
           </View>
         )}
         renderItem={({ item, index }) => (

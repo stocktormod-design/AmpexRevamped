@@ -87,23 +87,25 @@ export const toolType = {
   caption: { ...type.caption, color: colors.toolSecondary },
 } as const
 
-// Shadows — hero/feature cards only; inset-list cards stay flat on grouped bg.
+// Shadows — VARME på papir: stor blur, liten opasitet, brun-toner — aldri en
+// grå Material-skygge. Hero/feature cards only; inset-list cards stay flat.
 // Don't combine with overflow:'hidden' on iOS (clipsToBounds kills the shadow).
 export const shadows = {
+  // Nøytral, nesten borte: hvitt på hvitt får dybde av skyggen, ikke av farge.
   card: {
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
-  } satisfies ViewStyle,
-  // Elements floating OVER a tab's content (not inline in a scroll view) — cart bar/sheet.
-  // Needs to read as clearly lifted off the page, not just gently inset.
-  floating: {
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
+    shadowColor: '#000000',
+    shadowOpacity: 0.06,
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 10 },
+    elevation: 3,
+  } satisfies ViewStyle,
+  // Elements floating OVER a tab's content (not inline in a scroll view) —
+  // dock-pillen, stemme-orben, cart bar/sheet.
+  floating: {
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
     elevation: 10,
   } satisfies ViewStyle,
 } as const

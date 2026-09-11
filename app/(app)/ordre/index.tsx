@@ -1,265 +1,220 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { View, FlatList, ScrollView } from 'react-native'
 import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { Plus, ChevronRight, Inbox, FileText, Map, List, CalendarDays } from 'lucide-react-native'
+import { Plus, Inbox, CalendarDays, ChevronRight, List } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { ToolScreen, ToolChip } from '../../../components/tool-surface'
-import { AmpexMarkButton } from '../../../components/ampex-mark-button'
-import { OrdreKart, kartStottes } from '../../../components/ordre-kart'
+import { PapirScreen } from '../../../components/papir-surface'
+import { MegAvatar } from '../../../components/meg-avatar'
 import { OrdreKalender } from '../../../components/ordre-kalender'
 import { database } from '../../../lib/db'
-import { Order, orderStatuses, orderStatusLabel, type OrderStatus } from '../../../lib/db/models/order'
+import { Order } from '../../../lib/db/models/order'
+import { OrderArchive } from '../../../lib/db/models/order-archive'
 import { formatTime } from '../../../lib/format'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
-type Filter = 'apne' | 'alle' | OrderStatus
+/**
+ * ORDRE (lagt om 2026-09-06, Tormod: «ordre er ikke oversiktlig. tesla hadde
+ * aldri kommet fram til denne løsningen»).
+ *
+ * Det som sto her: fem kontroller i hodet (merke, kalender, kart, Tilbud, +),
+ * sju filterchips, og rader som viste status på alle. Sju valg før lista.
+ *
+ * Nå er det ÉN struktur: tittel + én sort handling, én bryter (Åpne/Ferdig),
+ * og lista gruppert på DAG. Dagen er statusen — «I dag 16:04» sier mer enn
+ * «Planlagt». Status vises bare når den avviker: Pågår (sort) og Klar til
+ * faktura (grønn). Kalenderen er en visning av samme liste, Tilbud en rad.
+ */
 
-/** Liste, kalender og kart er tre VISNINGER av samme filtrerte liste. */
-type Visning = 'liste' | 'kalender' | 'kart'
-
-const filters: { key: Filter; label: string }[] = [
-  { key: 'apne', label: 'Åpne' },
-  { key: 'alle', label: 'Alle' },
-  ...orderStatuses.map(s => ({ key: s as Filter, label: orderStatusLabel[s] })),
-]
-
-function useOrders(filter: Filter) {
+function useOrders() {
   const [orders, setOrders] = useState<Order[]>([])
   useEffect(() => {
-    const clauses =
-      filter === 'alle' ? [] :
-      filter === 'apne' ? [Q.where('status', Q.notEq('fakturert'))] :
-      [Q.where('status', filter)]
-    const sub = database
-      .get<Order>('orders')
-      .query(...clauses, Q.sortBy('scheduled_at', Q.asc))
-      .observe()
-      .subscribe(setOrders)
+    const sub = database.get<Order>('orders').query(Q.sortBy('scheduled_at', Q.asc)).observe().subscribe(setOrders)
     return () => sub.unsubscribe()
-  }, [filter])
+  }, [])
   return orders
 }
 
+/** Nedfryste ordre = de som har en arkivrad (registeret, ikke R2). */
+function useNedfryst() {
+  const [ids, setIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    const sub = database.get<OrderArchive>('order_archives').query().observe().subscribe(r => setIds(new Set(r.map(x => x.orderId))))
+    return () => sub.unsubscribe()
+  }, [])
+  return ids
+}
+
+type Rad = { type: 'hode'; key: string; label: string } | { type: 'ordre'; key: string; order: Order; first: boolean; last: boolean }
+
+/**
+ * Fire bunker i fast rekkefølge (Tormod 2026-09-06): ÅPNE øverst — det du
+ * skal gjøre — så Klar til faktura, Fakturert og Nedfryst. Ingen «Tidligere»
+ * og ingen «Uten tidspunkt»: en ordre uten tid er fortsatt åpen, og hører
+ * hjemme i samme bunke som resten, bare nederst i den.
+ */
+function grupper(inn: Order[], nedfryst: Set<string>): Rad[] {
+  const apne = inn.filter(o => !nedfryst.has(o.id) && (o.status === 'mottatt' || o.status === 'planlagt' || o.status === 'pagaar'))
+  const klar = inn.filter(o => !nedfryst.has(o.id) && o.status === 'fakturaklar')
+  const fakturert = inn.filter(o => !nedfryst.has(o.id) && o.status === 'fakturert')
+  const fryst = inn.filter(o => nedfryst.has(o.id))
+  const tidsatt = (liste: Order[]) => [...liste.filter(o => o.scheduledAt), ...liste.filter(o => !o.scheduledAt)]
+  const bunker: { label: string; liste: Order[] }[] = [
+    { label: 'Åpne', liste: tidsatt(apne) },
+    { label: 'Klar til faktura', liste: tidsatt(klar) },
+    { label: 'Fakturert', liste: [...fakturert].reverse() },
+    { label: 'Nedfryst', liste: [...fryst].reverse() },
+  ]
+  const ut: Rad[] = []
+  for (const b of bunker) {
+    if (b.liste.length === 0) continue
+    ut.push({ type: 'hode', key: 'h:' + b.label, label: `${b.label} · ${b.liste.length}` })
+    b.liste.forEach((o, i) => ut.push({ type: 'ordre', key: o.id, order: o, first: i === 0, last: i === b.liste.length - 1 }))
+  }
+  return ut
+}
+
+/** Raden: navn, kunde · adresse, og klokkeslettet stort til høyre. Status
+ *  bare når den avviker fra det dagen alt sier. */
 function OrderRow({ order, first, last }: { order: Order; first: boolean; last: boolean }) {
+  const tid = order.scheduledAt
+    ? `${order.scheduledAt.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })} ${formatTime(order.scheduledAt)}`
+    : ''
+  const avvik =
+    order.status === 'pagaar' ? { tekst: 'Pågår', farge: '#FFFFFF', bg: colors.label } :
+    order.status === 'fakturaklar' ? { tekst: 'Klar til faktura', farge: colors.success, bg: colors.successSoft } :
+    null
   return (
     <Pressable
+      haptic="light"
       onPress={() => router.push(`/(app)/ordre/${order.id}`)}
       style={{
-        backgroundColor: colors.toolRaised,
+        backgroundColor: colors.bg,
         marginHorizontal: spacing.screen,
         paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.md + 3,
+        paddingVertical: spacing.md + 4,
         flexDirection: 'row',
         alignItems: 'center',
-        // Hårlinje MELLOM radene, ikke rundt hver. Rader som er separate kort
-        // leses som løse lapper; én sammenhengende flate leses som en liste.
         borderTopWidth: first ? 1 : 0,
         borderBottomWidth: 1,
         borderLeftWidth: 1,
         borderRightWidth: 1,
-        borderColor: colors.toolBorder,
+        borderColor: colors.separator,
         borderTopLeftRadius: first ? radius.lg : 0,
         borderTopRightRadius: first ? radius.lg : 0,
         borderBottomLeftRadius: last ? radius.lg : 0,
         borderBottomRightRadius: last ? radius.lg : 0,
       }}
     >
-      {/* Statusen som en smal kobberstrek, ikke som ord til høyre. Den leses
-          før teksten og tar null plass. */}
-      <View style={{
-        width: 3, height: 30, borderRadius: 2, marginRight: spacing.md,
-        backgroundColor: order.status === 'pagaar' ? colors.brand : colors.toolBorder,
-      }} />
       <View style={{ flex: 1, marginRight: spacing.md }}>
-        <Text style={[t.bodyMedium, { color: colors.toolLabel }]} numberOfLines={1}>{order.title}</Text>
-        <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 2 }]} numberOfLines={1}>
-          {[order.customerName, order.address].filter(Boolean).join(' · ')}
+        <Text style={[t.headline, { color: colors.label }]} numberOfLines={1}>{order.title}</Text>
+        <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 3 }]} numberOfLines={1}>
+          {[order.customerName, order.address].filter(Boolean).join(' · ') || 'Ingen kunde'}
         </Text>
-      </View>
-      <View style={{ alignItems: 'flex-end', marginRight: spacing.sm }}>
-        <Text style={[t.caption, { color: colors.toolSecondary }]}>
-          {orderStatusLabel[order.status] ?? order.status}
-        </Text>
-        {!!order.scheduledAt && (
-          <Text style={[t.caption, { color: colors.toolTertiary, marginTop: 2, fontVariant: ['tabular-nums'] }]}>
-            {formatTime(order.scheduledAt)}
-          </Text>
+        {avvik && (
+          <View style={{ alignSelf: 'flex-start', marginTop: spacing.sm - 2, paddingHorizontal: spacing.sm + 1, height: 22, borderRadius: radius.pill, backgroundColor: avvik.bg, justifyContent: 'center' }}>
+            <Text style={[t.caption, { color: avvik.farge, fontWeight: '600' }]}>{avvik.tekst}</Text>
+          </View>
         )}
       </View>
-      <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
+      {!!tid && (
+        <Text style={[t.subhead, { fontWeight: '600', color: colors.label, fontVariant: ['tabular-nums'], textAlign: 'right' }]}>
+          {tid}
+        </Text>
+      )}
     </Pressable>
   )
 }
 
 export default function OrdreScreen() {
   const insets = useSafeAreaInsets()
-  const [filter, setFilter] = useState<Filter>('apne')
-  const [visning, setVisning] = useState<Visning>('liste')
-  const orders = useOrders(filter)
+  const [kalender, setKalender] = useState(false)
+  const orders = useOrders()
+  const nedfryst = useNedfryst()
+  const rader = useMemo(() => grupper(orders, nedfryst), [orders, nedfryst])
 
-  // Tittel + filterchips ligger her fordi BÅDE lista og kalenderen bruker dem:
-  // filteret over gjelder visningen du står i, uansett hvilken det er.
   const topp = (
     <>
       <View style={{
         flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
         paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
       }}>
-        <Text style={[t.display, { color: colors.toolLabel }]}>Ordre</Text>
+        <Text style={[t.display, { color: colors.label }]}>Ordre</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
-          <AmpexMarkButton />
-          {/* Uken som kalender. Lista svarer på «hvilke jobber har vi», denne
-              på «når skal de gjøres» — og de er samme liste. */}
+          <MegAvatar />
           <Pressable
-            haptic="light"
-            pressScale={0.94}
-            onPress={() => setVisning(v => (v === 'kalender' ? 'liste' : 'kalender'))}
-            style={{
-              width: 36, height: 36, borderRadius: radius.pill,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: visning === 'kalender' ? colors.brandSoft : colors.toolRaised,
-              borderWidth: 1, borderColor: visning === 'kalender' ? colors.brandSoft : colors.toolBorder,
-            }}
-          >
-            <CalendarDays size={16} color={visning === 'kalender' ? colors.brand : colors.toolLabel} strokeWidth={2.1} />
-          </Pressable>
-          {kartStottes && (
-            <Pressable
-              haptic="light"
-              pressScale={0.94}
-              onPress={() => setVisning('kart')}
-              style={{
-                width: 36, height: 36, borderRadius: radius.pill,
-                alignItems: 'center', justifyContent: 'center',
-                backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder,
-              }}
-            >
-              <Map size={16} color={colors.toolLabel} strokeWidth={2.1} />
-            </Pressable>
-          )}
-          {/* Tilbudet er steget FØR ordren — derfor står inngangen her, ved
-              siden av ordrelista, og ikke gjemt under Meg. */}
-          <Pressable
-            haptic="light"
-            pressScale={0.94}
-            onPress={() => router.push('/(app)/tilbud')}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-              height: 36, paddingHorizontal: spacing.md, borderRadius: radius.pill,
-              backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder,
-            }}
-          >
-            <FileText size={15} color={colors.toolLabel} strokeWidth={2.1} />
-            <Text style={[t.subhead, { fontWeight: '600', color: colors.toolLabel }]}>Tilbud</Text>
-          </Pressable>
-          <Pressable
-            haptic="medium"
-            pressScale={0.92}
+            haptic="medium" pressScale={0.92}
             onPress={() => router.push('/(app)/ordre/ny')}
-            style={{
-              width: 36, height: 36, borderRadius: radius.pill,
-              backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center',
-            }}
+            style={{ width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.label, alignItems: 'center', justifyContent: 'center' }}
           >
-            <Plus size={sizes.icon} color={colors.brand} strokeWidth={2.2} />
+            <Plus size={sizes.icon} color="#FFFFFF" strokeWidth={2.4} />
           </Pressable>
         </View>
       </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: spacing.screen, gap: spacing.sm }}
-        style={{ marginBottom: spacing.lg }}
-      >
-        {filters.map(f => (
-          <ToolChip key={f.key} label={f.label} selected={filter === f.key} onPress={() => setFilter(f.key)} />
-        ))}
-      </ScrollView>
+
+      {/* Visning og tilbud. Ingen filter: bunkene ER filteret, i fast rekkefølge. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.screen, marginBottom: spacing.lg, gap: spacing.sm }}>
+        <Pressable haptic="light" pressScale={0.94} onPress={() => setKalender(k => !k)}
+          accessibilityLabel={kalender ? 'Vis liste' : 'Vis kalender'}
+          style={{ width: 38, height: 38, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: kalender ? colors.label : colors.fill }}>
+          {kalender
+            ? <List size={18} color="#FFFFFF" strokeWidth={2.1} />
+            : <CalendarDays size={18} color={colors.label} strokeWidth={2.1} />}
+        </Pressable>
+        <View style={{ flex: 1 }} />
+        <Pressable haptic="light" onPress={() => router.push('/(app)/tilbud')} hitSlop={8}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <Text style={[t.subhead, { fontWeight: '600', color: colors.label }]}>Tilbud</Text>
+          <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={2.2} />
+        </Pressable>
+      </View>
     </>
   )
 
-  // Kartet er en VISNING av samme liste, ikke en egen skjerm: filteret over
-  // gjelder alle tre. Slik gjør Jobber, Housecall Pro og Tradify det, og grunnen
-  // er at rekkefølgen på dagens jobber bestemmes av geografi — en liste sortert
-  // på klokkeslett skjuler at to av dem ligger i samme gate.
-  if (visning === 'kart' && kartStottes) {
+  if (kalender) {
     return (
-      <ToolScreen>
-        <OrdreKart
-          orders={orders}
-          onVelg={o => router.push({ pathname: '/(app)/ordre/[id]', params: { id: o.id } })}
-        />
-        <Pressable
-          haptic="light"
-          onPress={() => setVisning('liste')}
-          style={{
-            position: 'absolute', top: insets.top + spacing.md, right: spacing.screen,
-            flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-            height: 36, paddingHorizontal: spacing.md, borderRadius: radius.pill,
-            backgroundColor: colors.bg,
-          }}
-        >
-          <List size={15} color={colors.label} strokeWidth={2.1} />
-          <Text style={[t.subhead, { fontWeight: '600' }]}>Liste</Text>
-        </Pressable>
-      </ToolScreen>
-    )
-  }
-
-  if (visning === 'kalender') {
-    return (
-      <ToolScreen>
+      <PapirScreen>
         <ScrollView
-          contentContainerStyle={{
-            paddingTop: insets.top + spacing.xl,
-            paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl,
-          }}
+          contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
           showsVerticalScrollIndicator={false}
         >
           {topp}
           <OrdreKalender
-            orders={orders}
+            orders={orders.filter(o => o.status !== 'fakturert' && !nedfryst.has(o.id))}
             onVelg={o => router.push({ pathname: '/(app)/ordre/[id]', params: { id: o.id } })}
           />
         </ScrollView>
-      </ToolScreen>
+      </PapirScreen>
     )
   }
 
   return (
-    <ToolScreen>
+    <PapirScreen>
       <FlatList
-        data={orders}
-        keyExtractor={o => o.id}
-        contentContainerStyle={{
-          paddingTop: insets.top + spacing.xl,
-          paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl,
-        }}
+        data={rader}
+        keyExtractor={r => r.key}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={topp}
-        ItemSeparatorComponent={null}
-        renderItem={({ item, index }) => (
-          <OrderRow order={item} first={index === 0} last={index === orders.length - 1} />
+        renderItem={({ item }) => item.type === 'hode' ? (
+          <Text style={[t.eyebrow, { textTransform: 'uppercase', color: item.label.startsWith('Klar til faktura') ? colors.success : colors.secondaryLabel, marginHorizontal: spacing.screen + spacing.xs, marginTop: spacing.md, marginBottom: spacing.sm }]}>
+            {item.label}
+          </Text>
+        ) : (
+          <OrderRow order={item.order} first={item.first} last={item.last} />
         )}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: spacing.xxl, paddingHorizontal: spacing.xxl }}>
-            <View style={{
-              width: sizes.iconChip + 8, height: sizes.iconChip + 8, borderRadius: radius.md,
-              backgroundColor: colors.toolRaised, borderWidth: 1, borderColor: colors.toolBorder,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Inbox size={sizes.iconLg} color={colors.toolSecondary} strokeWidth={sizes.lucideStroke} />
+            <View style={{ width: sizes.iconChip + 8, height: sizes.iconChip + 8, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
+              <Inbox size={sizes.iconLg} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
             </View>
-            <Text style={[t.headline, { color: colors.toolLabel, marginTop: spacing.md }]}>Ingen ordre her</Text>
-            <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: spacing.xs, textAlign: 'center' }]}>
-              Prøv et annet filter, eller opprett en ny.
-            </Text>
+            <Text style={[t.headline, { color: colors.label, marginTop: spacing.md }]}>Ingen ordre ennå</Text>
+            <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.xs, textAlign: 'center' }]}>Trykk + for å opprette en.</Text>
           </View>
         }
       />
-    </ToolScreen>
+    </PapirScreen>
   )
 }

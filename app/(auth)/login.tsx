@@ -5,7 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { supabase } from '../../lib/supabase'
 import { Pressable } from '../../components/pressable'
-import { colors, spacing, radius, sizes, type as t } from '../../lib/theme'
+import { AmpexLogo } from '../../components/ampex-logo'
+import { colors, spacing, radius, sizes, shadows, type as t } from '../../lib/theme'
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets()
@@ -34,10 +35,18 @@ export default function LoginScreen() {
       style={{ flex: 1, backgroundColor: colors.canvas }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
       <View style={{ flex: 1, paddingHorizontal: spacing.screen + 4, paddingTop: insets.top + 72, paddingBottom: insets.bottom + spacing.screen }}>
 
         <Animated.View entering={FadeInDown.springify()} style={{ flex: 1 }}>
+          {/* Merket først — det er det ENE stedet i appen der lyn-A-en får stå stort. */}
+          <View style={{
+            width: 64, height: 64, borderRadius: radius.lg, backgroundColor: colors.bg,
+            borderWidth: 1, borderColor: colors.separator, alignItems: 'center', justifyContent: 'center',
+            marginBottom: spacing.xl, ...shadows.card,
+          }}>
+            <AmpexLogo size={38} />
+          </View>
           <Text style={{ fontSize: 52, fontWeight: '800', color: colors.label, letterSpacing: -2, lineHeight: 54, marginBottom: spacing.sm }}>
             Ampex
           </Text>
@@ -86,8 +95,9 @@ export default function LoginScreen() {
             }
           </Pressable>
 
-          {/* Vises også i Release: intern testflåte. Fjern gaten når kundebygg blir en ting. */}
-          <Pressable
+          {/* KUN i dev-bygg: en «Test-innlogging»-knapp i et butikkbygg er det
+              første en App Store-anmelder ser, og ser ut som et hull. */}
+          {__DEV__ && <Pressable
             onPress={() => signIn('test@ampex.no', 'ampex-test-2026')}
             disabled={loading}
             style={{
@@ -98,7 +108,7 @@ export default function LoginScreen() {
           >
             <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>Test-innlogging</Text>
             <Text style={[t.caption, { color: colors.tertiaryLabel }]}>dev</Text>
-          </Pressable>
+          </Pressable>}
         </Animated.View>
 
         <Text style={[t.footnote, { color: colors.tertiaryLabel, textAlign: 'center' }]}>

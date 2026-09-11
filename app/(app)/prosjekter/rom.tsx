@@ -114,6 +114,8 @@ export default function RomDetailScreen() {
               if (room.scanPath) await archiveRevision(room.id, room.scanPath)
               await database.write(async () => { await room.update(r => { r.scanPath = path }) })
               syncQuietly()
+              // Åpne den ombygde modellen med en gang — det er den man vil se.
+              router.push({ pathname: '/(app)/skann', params: { roomId: room.id, title: room.name, viewPath: path } })
             }}
           />
         </View>

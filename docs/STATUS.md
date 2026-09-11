@@ -2,6 +2,21 @@
 
 Sist oppdatert: 2026-08-21. Holdes oppdatert; ikke lag daterte kopier.
 
+## Skann 2026-09-02 — vegger, gulv og tak som ett bilde (Mac, ikke enhet)
+
+Baken kjøres nå i sin helhet på Mac mot et hentet skann-bundle (verktøy i økt-scratchpad,
+se minne «scan-kontinuerlig-2026-09-02»). Fem årsaker til lappeteppet funnet og fikset, alle
+som nye DEFAULTS i `modules/ampex-splat/ios` (ingen flagg fra appen):
+
+1. Gain-solven tilpasset ekte lys som eksponering (AE/AWB er låst!) → `gainclamp` 0,05.
+2. `blend=raw` brukte per-flate topp-2 etter rå score, aldri ICM-vinneren → `blend=winner`.
+3. Tone-laget (uwarpet lavfrekvens-snitt) la forskjøvne spøkelser av takplankene → av i vinnerveien.
+4. Falske flater foran ekte (13,5 % av LiDAR-pikslene i kf65) → frirom-utskjæring i TSDF, ratio 8.
+5. Meterstore trekanter fra forenklingen ga tonefasetter på gulvet → kanttak 0,30 m.
+
+Pluss søm-fjæring (40 mm) over regiongrensene. Baketid Mac 33 s. **Ikke kjørt på iPhone ennå**
+— første ting å gjøre. Møbler/gardiner/planter er bevisst ikke jobbet med.
+
 ## Overlevering — start her
 
 Branch **`grossist-og-pool`**, pushet. **34 commits** over `7633048`

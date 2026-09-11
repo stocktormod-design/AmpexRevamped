@@ -60,7 +60,7 @@ export function ToolGlow({ height = 420 }: { height?: number }) {
   return (
     <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height }}>
       <LinearGradient
-        colors={['rgba(169,124,79,0.20)', 'rgba(169,124,79,0.045)', 'rgba(0,0,0,0)']}
+        colors={['rgba(29,29,31,0.05)', 'rgba(29,29,31,0.012)', 'rgba(0,0,0,0)']}
         locations={[0, 0.45, 1]}
         start={{ x: 0.15, y: 0 }}
         end={{ x: 0.9, y: 1 }}

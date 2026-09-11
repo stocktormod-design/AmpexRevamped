@@ -4,12 +4,12 @@ import { Text, TextInput } from '../../../components/text'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import { Pressable } from '../../../components/pressable'
-import { ToolChip, ToolGlow, useMorkStatuslinje } from '../../../components/tool-surface'
+import { PapirChip, usePapirFokus } from '../../../components/papir-surface'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Product } from '../../../lib/db/models/product'
 import { StockMovement } from '../../../lib/db/models/stock-movement'
-import { colors, spacing, radius, sizes, toolType as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 const UNITS = ['stk', 'm', 'pk', 'rull', 'sett']
 
@@ -20,7 +20,7 @@ const UNITS = ['stk', 'm', 'pk', 'rull', 'sett']
  */
 export default function BevegelseScreen() {
   // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
-  useMorkStatuslinje()
+  usePapirFokus()
   const { locationId } = useLocalSearchParams<{ locationId: string }>()
   const [name, setName] = useState('')
   const [elnummer, setElnummer] = useState('')
@@ -68,11 +68,10 @@ export default function BevegelseScreen() {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.toolBg }}>
-      <ToolGlow />
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.canvas }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screen, paddingVertical: spacing.lg }}>
         <Pressable onPress={() => router.dismiss()} hitSlop={12}>
-          <Text style={[t.body, { color: colors.toolSecondary }]}>Avbryt</Text>
+          <Text style={[t.body, { color: colors.secondaryLabel }]}>Avbryt</Text>
         </Pressable>
         <Text style={t.headline}>Beholdning</Text>
         <View style={{ width: 48 }} />
@@ -80,26 +79,26 @@ export default function BevegelseScreen() {
 
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.screen, marginBottom: spacing.md }}>
-          <ToolChip label="Legg til" selected={direction === 'inn'} onPress={() => setDirection('inn')} />
-          <ToolChip label="Trekk fra" selected={direction === 'ut'} onPress={() => setDirection('ut')} />
+          <PapirChip label="Legg til" selected={direction === 'inn'} onPress={() => setDirection('inn')} />
+          <PapirChip label="Trekk fra" selected={direction === 'ut'} onPress={() => setDirection('ut')} />
         </View>
 
-        <View style={{ backgroundColor: colors.toolRaised, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
+        <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
           <TextInput
             value={name} onChangeText={setName}
-            placeholder="Vare (påkrevd)" placeholderTextColor={colors.toolTertiary} autoFocus
-            style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder }]}
+            placeholder="Vare (påkrevd)" placeholderTextColor={colors.tertiaryLabel} autoFocus
+            style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, borderBottomWidth: 0.5, borderBottomColor: colors.separator }]}
           />
           <TextInput
             value={elnummer} onChangeText={setElnummer}
-            placeholder="El-nummer (valgfritt)" placeholderTextColor={colors.toolTertiary} keyboardType="number-pad"
+            placeholder="El-nummer (valgfritt)" placeholderTextColor={colors.tertiaryLabel} keyboardType="number-pad"
             style={[t.body as TextStyle, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }]}
           />
         </View>
 
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-          backgroundColor: colors.toolRaised, borderRadius: radius.lg,
+          backgroundColor: colors.bg, borderRadius: radius.lg,
           marginHorizontal: spacing.screen, marginTop: spacing.md,
           paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
         }}>
@@ -113,7 +112,7 @@ export default function BevegelseScreen() {
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginHorizontal: spacing.screen, marginTop: spacing.md }}>
           {UNITS.map(u => (
-            <ToolChip key={u} label={u} selected={unit === u} onPress={() => setUnit(u)} />
+            <PapirChip key={u} label={u} selected={unit === u} onPress={() => setUnit(u)} />
           ))}
         </View>
 

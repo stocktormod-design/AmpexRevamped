@@ -10,6 +10,7 @@ export default function OrdreLayout() {
       <Stack.Screen name="material" options={{ presentation: 'modal' }} />
       <Stack.Screen name="faktura" />
       <Stack.Screen name="timer" />
+      <Stack.Screen name="skanninger" />
       <Stack.Screen name="deltakere" />
       <Stack.Screen name="tillegg" />
       <Stack.Screen name="signatur" />

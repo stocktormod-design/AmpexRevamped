@@ -26,6 +26,54 @@ async function geocode(place: string): Promise<{ lat: number; lon: number; name:
   return { lat: parseFloat(json[0].lat), lon: parseFloat(json[0].lon), name: json[0].display_name.split(',')[0] }
 }
 
+// ── Nå-tilstanden til Hjem-skjermen ────────────────────────────────────────
+// Hjem viser KUN hvordan været er nå: ett farget ikon + grader (spec
+// 2026-08-29). Ingen forløpstekst — timevarselet bor hos AI-verktøyet og i
+// kalenderen. Cachet per sted i 30 min så forgrunnsretur ikke blir polling.
+
+export type VaerSymbol = 'sol' | 'regn' | 'sno' | 'skyet' | 'natt'
+
+export type VaerNaa =
+  | { ok: true; sted: string; temp: number; symbol: VaerSymbol }
+  | { ok: false }
+
+const NAA_TTL_MS = 30 * 60 * 1000
+const naaCache = new Map<string, { at: number; verdi: VaerNaa }>()
+
+function symbolFraKode(kode: string | undefined): VaerSymbol {
+  if (!kode) return 'skyet'
+  if (kode.includes('rain') || kode.includes('sleet') || kode.includes('drizzle')) return 'regn'
+  if (kode.includes('snow')) return 'sno'
+  if (kode.includes('night')) return 'natt'
+  if (kode.includes('clearsky') || kode.includes('fair')) return 'sol'
+  return 'skyet'
+}
+
+export async function getVaerNaa(place: string): Promise<VaerNaa> {
+  const cached = naaCache.get(place)
+  if (cached && Date.now() - cached.at < NAA_TTL_MS) return cached.verdi
+  try {
+    const loc = await geocode(place)
+    if (!loc) return { ok: false }
+    const res = await fetch(
+      `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${loc.lat.toFixed(4)}&lon=${loc.lon.toFixed(4)}`,
+      { headers: { 'User-Agent': USER_AGENT } },
+    )
+    if (!res.ok) return { ok: false }
+    const json = await res.json()
+    const first = json?.properties?.timeseries?.[0]
+    const temp = first?.data?.instant?.details?.air_temperature
+    if (typeof temp !== 'number') return { ok: false }
+    const kode: string | undefined = first?.data?.next_1_hours?.summary?.symbol_code
+      ?? first?.data?.next_6_hours?.summary?.symbol_code
+    const verdi: VaerNaa = { ok: true, sted: loc.name, temp: Math.round(temp), symbol: symbolFraKode(kode) }
+    naaCache.set(place, { at: Date.now(), verdi })
+    return verdi
+  } catch {
+    return { ok: false }
+  }
+}
+
 export async function getForecast(place: string, days = 4): Promise<WeatherResult> {
   try {
     const loc = await geocode(place)

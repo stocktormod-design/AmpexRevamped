@@ -1,26 +1,24 @@
-import { useEffect, useState } from 'react'
-import { View, ScrollView, Linking, Platform, Alert, StyleSheet } from 'react-native'
-import { Text } from '../../../components/text'
+import { useEffect, useRef, useState } from 'react'
+import { View, ScrollView, Linking, Platform, Alert, StyleSheet, Dimensions } from 'react-native'
+import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Q } from '@nozbe/watermelondb'
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable'
-import {
-  ChevronLeft, Phone, MapPin, FileText, Check, ChevronRight, Plus, Package, Navigation, Trash2,
-  Receipt, UserPlus, Clock, Users, FilePlus2,
-  PenLine, Box, ChevronDown,
-} from 'lucide-react-native'
+import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, FilePlus2, FileText, Navigation, Package, PenLine, Phone, Plus, Receipt, ScanLine, Search, Trash2, UserPlus, Users } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { AvtaltPrisKort } from '../../../components/avtalt-pris-kort'
 import { useSignaturer } from '../../../lib/signatures'
 import { useGodkjenninger, useGrunnlag } from '../../../lib/approvals'
 import { GodkjenningKort } from '../../../components/godkjenning-kort'
 import { ArkivKort } from '../../../components/arkiv-kort'
-import { SectionHeader, Chip } from '../../../components/ui'
+import { Chip } from '../../../components/ui'
 import { PapirCard, usePapirFokus } from '../../../components/papir-surface'
-import { ChoiceSheet } from '../../../components/sheet'
-import { AmpexMarkButton } from '../../../components/ampex-mark-button'
+import { Ark, ChoiceSheet } from '../../../components/sheet'
+import { taOrdrefoto, useOrdrefoto, velgOrdrefoto } from '../../../lib/foto'
+import { TidForing, SeksjonsRad } from '../../../components/tid-foring'
+import { MegAvatar } from '../../../components/meg-avatar'
 import { ScanCard } from '../../../components/scan-card'
 import { deleteScanFiles, clearRevisions, archiveRevision } from '../../../lib/scan-revisions'
 import { AddressMap } from '../../../components/address-map'
@@ -40,7 +38,7 @@ import { OrderMember } from '../../../lib/db/models/order-member'
 import { OrderExtra } from '../../../lib/db/models/order-extra'
 import { useFakturagrunnlag } from '../../../lib/order-billing'
 import { formatKr } from '../../../lib/invoicing'
-import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib/theme'
 
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('')
@@ -153,15 +151,18 @@ function useOrderScans(orderId: string) {
   return scans
 }
 
-async function addScan(orderId: string, kind: ScanKind, index: number) {
+async function addScan(orderId: string, kind: ScanKind, index: number): Promise<string> {
+  let id = ''
   await database.write(async () => {
-    await database.get<OrderScan>('order_scans').create(s => {
+    const rad = await database.get<OrderScan>('order_scans').create(s => {
       s.orderId = orderId
       s.kind = kind
       s.title = `${scanKindLabel[kind]} ${index}`
     })
+    id = rad.id
   })
   syncQuietly()
+  return id
 }
 
 const scanKinds: ScanKind[] = ['planlegging', 'dokumentasjon']
@@ -172,16 +173,14 @@ const scanHints: Record<ScanKind, string> = {
 }
 
 /**
- * LiDAR — et PRODUKT, ikke en fane.
+ * LiDAR — samme mønster som materiell og dokumentasjon: en liten seksjonstittel
+ * med ÉN handling til høyre, og innholdet under, ledet av seg selv.
  *
- * Før: to chips som så ut som et filter, og under dem en liste med kort. Da
- * leses funksjonen som en innstilling — noe du bytter mellom — i stedet for det
- * den er: at telefonen din måler opp et rom i tre dimensjoner.
- *
- * Nå er det én bred, mørk flate med kobberkant og et eget språk. Skannene
- * ligger som miniatyrer i en vannrett rulle, og handlingen står som ÉN knapp
- * med et verb. Typen (planlegging eller dokumentasjon) velges når du skanner,
- * ikke som en fane du må forstå på forhånd.
+ * Forrige versjon var en tonet boks med kant, ikon, tittel, forklaring, kort OG
+ * en messingknapp i full bredde — fem lag før du kom til selve skannet, og en
+ * messingknapp nummer to på en skjerm som allerede har den forankrede
+ * hovedhandlingen i messing. Tormods dom: «overstimulerende». Alt som gjør noe
+ * er beholdt; alt som forklarte er tatt bort. Typen velges fortsatt i arket.
  */
 function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }) {
   async function removeScan(s: OrderScan) {
@@ -191,54 +190,48 @@ function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }
     syncQuietly()
   }
 
-  // Ampex-ark, ikke iOS-ark: systemarket finnes ikke på Android, og der falt
-  // valget bort helt — du fikk «planlegging» uten å ha bedt om det.
-  const [velgerType, setVelgerType] = useState(false)
-
-  function velgType(kind: ScanKind) {
-    setVelgerType(false)
-    addScan(orderId, kind, scans.filter(s => s.kind === kind).length + 1)
+  /**
+   * To FASTE fliser (Tormod 2026-09-06): «Planlegging» og «Dokumentasjon».
+   * Det finnes bare to slags skann, så de skal alltid stå der — tom flis
+   * starter skanningen direkte, fylt flis viser siste modell av det slaget.
+   * Ingen «velg type»-ark, ingen pluss.
+   */
+  async function nyOgSkann(kind: ScanKind) {
+    const id = await addScan(orderId, kind, scans.filter(s => s.kind === kind).length + 1)
+    router.push({ pathname: '/(app)/skann', params: { scanId: id, kind: scanKindLabel[kind], title: `${scanKindLabel[kind]} ${scans.filter(s => s.kind === kind).length + 1}`, viewPath: '' } })
   }
 
   return (
-    <View style={{
-      marginBottom: spacing.screen, marginHorizontal: spacing.screen,
-      backgroundColor: 'rgba(169,124,79,0.10)',
-      borderRadius: radius.xl,
-      borderWidth: 1, borderColor: 'rgba(169,124,79,0.30)',
-      overflow: 'hidden',
-    }}>
-      <View style={{ padding: spacing.lg, paddingBottom: scans.length > 0 ? spacing.md : spacing.lg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <Box size={18} color={colors.brand} strokeWidth={2.1} />
-          <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.brand, flex: 1 }]}>3D-skann</Text>
-          {scans.length > 0 && (
-            <Text style={[t.caption, { color: colors.tertiaryLabel, fontVariant: ['tabular-nums'] }]}>
-              {String(scans.length)}
-            </Text>
-          )}
-        </View>
-        <Text style={[t.title3, { color: colors.label, marginTop: spacing.sm }]}>
-          {scans.length > 0 ? 'Rommet er målt opp' : 'Mål opp rommet med telefonen'}
-        </Text>
-        <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 2, lineHeight: 18 }]}>
-          {scans.length > 0
-            ? 'Ta et nytt skann når noe er endret — begge versjonene beholdes.'
-            : 'LiDAR gir mål, plassering og dokumentasjon av som-bygget, uten målebånd.'}
-        </Text>
-      </View>
-
-      {scans.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm }}
-        >
-          {scans.map(s => (
-            <View key={s.id} style={{ width: 190 }}>
+    <View>
+      <SeksjonsRad navn="3D-skann" verdi={scans.filter(s => s.scanPath).length > 0 ? `${scans.filter(s => s.scanPath).length} modell${scans.filter(s => s.scanPath).length === 1 ? '' : 'er'}` : 'Ingen'} />
+      <View style={{ flexDirection: 'row', gap: spacing.sm + 2, marginHorizontal: spacing.screen }}>
+        {scanKinds.map(kind => {
+          const mine = scans.filter(s => s.kind === kind)
+          const s = mine.length ? mine[mine.length - 1] : null
+          // Uten modell ennå ser flisa lik ut som en tom — trykk starter skanningen
+          // på den eksisterende raden (det stiplede skannkortet brøt rytmen).
+          if (!s || !s.scanPath) {
+            const start = () => s
+              ? router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind], title: s.title, viewPath: '' } })
+              : void nyOgSkann(kind)
+            return (
+              <Pressable key={kind} haptic="medium" pressScale={0.97} onPress={start}
+                style={{ flex: 1, height: 72, borderRadius: radius.md, backgroundColor: colors.fill, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: colors.label, alignItems: 'center', justifyContent: 'center' }}>
+                  <ScanLine size={17} color="#FFFFFF" strokeWidth={2.2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[t.subhead, { fontWeight: '600', color: colors.label }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>{scanKindLabel[kind]}</Text>
+                  <Text style={[t.caption, { marginTop: 1 }]} numberOfLines={1}>{kind === 'planlegging' ? 'Mål opp' : 'Som bygd'}</Text>
+                </View>
+              </Pressable>
+            )
+          }
+          return (
+            <View key={kind} style={{ flex: 1 }}>
               <ScanCard
-                title={s.title}
-                meta={scanKindLabel[s.kind]}
+                title={scanKindLabel[kind]}
+                meta={mine.length > 1 ? `${mine.length} skann` : undefined}
                 scanPath={s.scanPath}
                 revisionKey={s.id}
                 onOpen={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind], title: s.title, ...(s.scanPath ? { viewPath: s.scanPath } : {}) } })}
@@ -249,63 +242,87 @@ function ScanSection({ orderId, scans }: { orderId: string; scans: OrderScan[] }
                   if (s.scanPath) await archiveRevision(s.id, s.scanPath)
                   await database.write(async () => { await s.update(x => { x.scanPath = path }) })
                   syncQuietly()
+                  router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind], title: s.title, viewPath: path } })
                 }}
               />
             </View>
-          ))}
-        </ScrollView>
-      )}
-
-      <ChoiceSheet<ScanKind>
-        synlig={velgerType}
-        tittel="Hva skal skannes?"
-        forklaring="Planlegging er for å måle opp før jobben. Dokumentasjon er for å vise hvordan det ble."
-        valg={scanKinds.map(k => ({ verdi: k, etikett: scanKindLabel[k] }))}
-        onVelg={velgType}
-        onAvbryt={() => setVelgerType(false)}
-      />
-
-      <Pressable
-        haptic="medium"
-        onPress={() => setVelgerType(true)}
-        style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-          backgroundColor: colors.brand,
-          paddingVertical: spacing.md + 2,
-        }}
-      >
-        <Box size={17} color={colors.ctaLabel} strokeWidth={2.3} />
-        <Text style={[t.headline, { color: colors.ctaLabel }]}>Start skanning</Text>
-      </Pressable>
+          )
+        })}
+      </View>
     </View>
   )
 }
 
 /**
- * «Legg til» i en seksjonstittel.
+ * «Legg til» i en seksjonstittel: et bart pluss, ingen pille.
  *
- * Var en 13 px tekstlenke i kobber. To feil i én: kobber på mørk grunn er
- * appens SVAKESTE kontrast, og treffflaten var teksten selv — det er under
- * halvparten av de 44 punktene en finger med hanske trenger. En knapp som er
- * vanskelig å treffe leses som en knapp man ikke skal trykke på.
+ * Pillene («+ Legg til», «+ Skann») sto som tre like knapper nedover siden og
+ * tok mer plass enn innholdet de la til (Tormod 2026-09-02). Et pluss i
+ * tertiærfarge med stor treffflate gjør samme jobb uten å rope. Tomme seksjoner
+ * har ikke plusset i det hele tatt — der ER den stiplede raden handlingen.
  */
-function LeggTilKnapp({ tekst, onPress }: { tekst: string; onPress: () => void }) {
+function PlussKnapp({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable haptic="light" pressScale={0.9} hitSlop={14} onPress={onPress}
+      style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
+      <Plus size={17} color={colors.label} strokeWidth={2.2} />
+    </Pressable>
+  )
+}
+
+/** Boksene under listeradene — samme token for skann og bilder. */
+function Token({ Icon, navn, under, ferdig, onPress }: {
+  Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>
+  navn: string; under: string; ferdig?: boolean; onPress: () => void
+}) {
+  return (
+    <Pressable haptic="medium" pressScale={0.97} onPress={onPress}
+      style={{ flex: 1, height: 104, borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, padding: spacing.md, justifyContent: 'space-between' }}>
+      <View style={{ width: 30, height: 30, borderRadius: 14, backgroundColor: ferdig ? colors.success : colors.label, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={15} color="#FFFFFF" strokeWidth={2.3} />
+      </View>
+      <View>
+        <Text style={[t.subhead, { fontWeight: '600', color: colors.label }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{navn}</Text>
+        <Text style={[t.caption, { marginTop: 1 }]} numberOfLines={1}>{under}</Text>
+      </View>
+    </Pressable>
+  )
+}
+
+/** Seksjonstittel med valgfritt pluss til høyre — samme rytme i alle seksjoner. */
+function Seksjonshode({ tekst, paaPluss }: { tekst: string; paaPluss?: () => void }) {
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', height: 28,
+      marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.xs,
+    }}>
+      <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.secondaryLabel, flex: 1 }]}>{tekst}</Text>
+      {!!paaPluss && <PlussKnapp onPress={paaPluss} />}
+    </View>
+  )
+}
+
+/** Tom seksjon: én stille rad som ER handlingen. Hvit flate, hårlinje, pluss
+ *  til venstre og pil til høyre — samme rad som alt annet i appen, ikke en
+ *  stiplet boks (den leste som «her mangler noe» i stedet for «trykk her»). */
+function TomRad({ tekst, onPress }: { tekst: string; onPress: () => void }) {
   return (
     <Pressable
       haptic="light"
-      pressScale={0.94}
-      hitSlop={8}
+      pressScale={0.985}
       onPress={onPress}
       style={{
-        flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-        height: 34, paddingLeft: spacing.sm + 2, paddingRight: spacing.md,
-        borderRadius: radius.pill,
-        backgroundColor: colors.fill,
-        borderWidth: 1, borderColor: colors.separator,
+        marginHorizontal: spacing.screen, borderRadius: radius.lg,
+        backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator,
+        paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+        flexDirection: 'row', alignItems: 'center', gap: spacing.md,
       }}
     >
-      <Plus size={15} color={colors.label} strokeWidth={2.4} />
-      <Text style={[t.footnote, { color: colors.label, fontWeight: '600' }]}>{tekst}</Text>
+      <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
+        <Plus size={15} color={colors.label} strokeWidth={2.2} />
+      </View>
+      <Text style={[t.body, { flex: 1, color: colors.label }]}>{tekst}</Text>
+      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
     </Pressable>
   )
 }
@@ -537,8 +554,19 @@ export default function OrderDetailScreen() {
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [order, setOrder] = useState<Order | null>(null)
-  const [statusOpen, setStatusOpen] = useState(false)
-  const [kontorAapen, setKontorAapen] = useState(false)
+  const [skjemaListe, setSkjemaListe] = useState(false)
+  const [skjemaSok, setSkjemaSok] = useState('')
+  async function nyOgSkann(kind: ScanKind) {
+    if (!order) return
+    const n = scans.filter(s => s.kind === kind).length + 1
+    const nyId = await addScan(order.id, kind, n)
+    router.push({ pathname: '/(app)/skann', params: { scanId: nyId, kind: scanKindLabel[kind], title: `${scanKindLabel[kind]} ${n}`, viewPath: '' } })
+  }
+  const [bildeValg, setBildeValg] = useState(false)
+  const [side, setSide] = useState(0)
+  const [bekreft, setBekreft] = useState(false)
+  const kortBredde = Dimensions.get('window').width - spacing.screen * 2
+  const foto = useOrdrefoto(id)
   const docs = useOrderDocuments(id ?? '')
   const materials = useOrderMaterials(id ?? '')
   const scans = useOrderScans(id ?? '')
@@ -641,6 +669,21 @@ export default function OrderDetailScreen() {
     if (order) router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId } })
   }
 
+  /**
+   * INGEN «Start jobben» (Tormod 2026-09-06: «ingen tenker at de må ha en knapp
+   * der det står start jobben»). Jobben starter seg selv: fører du timer, tar
+   * ut materiell, åpner et skjema eller skanner, ER den i gang — statusen
+   * følger arbeidet, ikke omvendt. Det eneste montøren sier eksplisitt er at
+   * jobben er FERDIG, og den ligger der arbeidet slutter, ikke som en fast
+   * knapp over alt.
+   */
+  const arbeidFinnes = timer > 0 || materials.length > 0 || startedTemplates.length > 0 || scans.length > 0
+  useEffect(() => {
+    if (!order) return
+    if ((order.status === 'mottatt' || order.status === 'planlagt') && arbeidFinnes) void setStatus('pagaar')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id, order?.status, arbeidFinnes])
+
   if (!order) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
 
   const when = formatDateTime(order.scheduledAt)
@@ -650,29 +693,6 @@ export default function OrderDetailScreen() {
     ? orderStatuses[statusIdx + 1]
     : null
 
-  /**
-   * Den ene handlingen. Kopiert fra Jobber og Tradify, og det er ikke
-   * plasseringen som er poenget — det er at det finnes ÉN.
-   *
-   * «Marker som pågår» beskriver en databasekolonne. «Start jobben» beskriver
-   * det montøren gjør. Verbet er hele forskjellen: den ene må oversettes i
-   * hodet, den andre ikke.
-   *
-   * Fakturaklar peker VIDERE i stedet for å endre status, fordi fakturering
-   * krever faglig godkjenning og skjer på fakturaskjermen. Er jobben fakturert,
-   * er det ingen neste handling — og da skal det ikke stå en knapp der.
-   */
-  const hovedhandling: { tekst: string; gjor: () => void } | null =
-    order.status === 'fakturert' ? null
-    : order.status === 'fakturaklar'
-      ? { tekst: 'Til fakturagrunnlaget', gjor: () => router.push({ pathname: '/(app)/ordre/faktura', params: { id } }) }
-      : order.status === 'pagaar'
-        ? { tekst: 'Meld ferdig', gjor: () => setStatus('fakturaklar') }
-        : order.status === 'planlagt'
-          ? { tekst: 'Start jobben', gjor: () => setStatus('pagaar') }
-          : nextStatus
-            ? { tekst: `Marker som ${orderStatusLabel[nextStatus].toLowerCase()}`, gjor: () => setStatus(nextStatus) }
-            : null
 
   return (
     /*
@@ -704,7 +724,7 @@ export default function OrderDetailScreen() {
       */}
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 460 }}>
         <LinearGradient
-          colors={['rgba(169,124,79,0.22)', 'rgba(169,124,79,0.05)', 'rgba(0,0,0,0)']}
+          colors={['rgba(29,29,31,0.04)', 'rgba(29,29,31,0.01)', 'rgba(0,0,0,0)']}
           locations={[0, 0.45, 1]}
           start={{ x: 0.15, y: 0 }}
           end={{ x: 0.9, y: 1 }}
@@ -714,7 +734,7 @@ export default function OrderDetailScreen() {
       <ScrollView
         contentContainerStyle={{
           // Plass til den forankrede handlingen — ellers skjuler den siste rad.
-          paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl + (hovedhandling ? 72 : 0),
+          paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl,
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -740,12 +760,12 @@ export default function OrderDetailScreen() {
           Uten adresse faller den tilbake til ren mørk grunn med kobbergløden.
           Ingen tom kartboks.
         */}
-        <View style={{ height: order.address ? 300 : 200 }}>
+        <View style={{ height: order.address ? 250 : 180 }}>
           {!!order.address && (
             <View style={StyleSheet.absoluteFill}>
-              <AddressMap address={order.address} onPress={naviger} height={300} chrome={false} />
+              <AddressMap address={order.address} onPress={naviger} height={250} chrome={false} />
               <LinearGradient
-                colors={['rgba(243,238,230,0)', 'rgba(243,238,230,0.72)', colors.canvas]}
+                colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.78)', colors.canvas]}
                 locations={[0, 0.55, 1]}
                 style={StyleSheet.absoluteFill}
               />
@@ -758,476 +778,235 @@ export default function OrderDetailScreen() {
                 onPress={() => router.back()}
                 pressScale={0.92}
                 style={{
-                  width: 36, height: 36, borderRadius: radius.pill,
-                  backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center',
+                  width: 38, height: 38, borderRadius: radius.pill,
+                  backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center',
+                  ...shadows.card,
                 }}
               >
                 <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
               </Pressable>
-              <AmpexMarkButton />
+              <MegAvatar />
             </View>
 
             <View style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: spacing.lg }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                <View style={{ height: 3, width: 26, borderRadius: 2, backgroundColor: colors.brand }} />
-                <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.brand }]}>
-                  {orderStatusLabel[order.status] ?? order.status}
-                </Text>
-                {!!order.orderNumber && (
-                  <Text style={[t.eyebrow, { color: colors.tertiaryLabel }]}>{`#${order.orderNumber}`}</Text>
-                )}
-                {!!when && <Text style={[t.eyebrow, { color: colors.tertiaryLabel }]}>{when}</Text>}
-              </View>
-
-              <Text style={[t.display, { color: colors.label, marginTop: spacing.sm }]} numberOfLines={2}>
+              <Text style={[t.display, { color: colors.label }]} numberOfLines={2}>
                 {order.title}
               </Text>
-
-              {/* Kunde og adresse på én linje, med handlingene som runde knapper.
-                  Før var dette et eget hvitt kort — ett kort mindre i kolonnen. */}
-              {(order.customerName || order.address) && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
-                  <View style={{ flex: 1 }}>
-                    {!!order.customerName && (
-                      <Text style={[t.subhead, { color: colors.label, fontWeight: '600' }]} numberOfLines={1}>
-                        {order.customerName}
-                      </Text>
-                    )}
-                    {!!order.address && (
-                      <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 1 }]} numberOfLines={1}>
-                        {order.address}
-                      </Text>
-                    )}
-                  </View>
-                  {!!order.customerPhone && (
-                    <Pressable haptic="medium" onPress={ring} style={{
-                      width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.brand,
-                      alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Phone size={18} color="#fff" strokeWidth={2} />
-                    </Pressable>
-                  )}
-                  {!!order.address && (
-                    <Pressable haptic="medium" onPress={naviger} style={{
-                      width: 40, height: 40, borderRadius: radius.pill,
-                      backgroundColor: 'rgba(255,255,255,0.14)',
-                      alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Navigation size={17} color={colors.label} strokeWidth={2.1} />
-                    </Pressable>
-                  )}
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-        <View style={{ height: spacing.screen }} />
-
-        {/* Arkivet står øverst når jobben er ferdig — da er det det eneste som
-            gjenstår, og det som betyr noe om syv år. */}
-        {order.status === 'fakturert' && (
-          <View style={{ marginBottom: spacing.screen }}>
-            <ArkivKort order={order} />
-          </View>
-        )}
-
-        {/*
-          ── INGEN INNFELLING HER ───────────────────────────────────────────
-          Sonene falt inn i rekkefølge med FadeInDown. Det så bra ut i teorien
-          og hakket i praksis, av to grunner:
-
-            · Push-overgangen ER inngangen. Innhold som beveger seg ETTER at
-              skjermen har glidd inn er dobbel bevegelse — øyet ser noe som
-              fortsatt setter seg mens det allerede har begynt å lese.
-            · Kartet i hero initialiseres i nøyaktig samme øyeblikk. MapView
-              koster rammer ved oppstart, og da har vi ingen å gi bort til
-              pynt.
-
-          Bevegelse må gjøre en jobb. Trykk-respons og overganger gjør det;
-          innhold som glir på plass ved åpning gjør det ikke.
-        */}
-        {/*
-          ── SONER, IKKE KORT I KOLONNE ──────────────────────────────────────
-          Forrige forsøk ble et instrumentpanel: to like fliser side om side med
-          hvert sitt tall. Det er fortsatt like kort i kolonne, bare snudd 90°.
-
-          Nå har hver sone sin egen FORM, fordi de er forskjellige ting:
-
-            TIMER          én bred stripe, ett stort tall. Kort og horisontal.
-            MATERIELL      vannrett rulle av det som faktisk er ført. Ruller.
-            DOKUMENTASJON  loddrette rader som VISER skjemaene og tilstanden
-                           deres. «2/3» sa hvor mange; dette sier hvilke.
-            LIDAR          full bredde, med bilde. Et produkt, ikke en fane.
-
-          Ingen av dem kan forveksles med en annen på avstand. Det er testen.
-        */}
-        <View style={{ marginBottom: spacing.lg }}>
-          <Pressable
-            haptic="light"
-            onPress={() => router.push({ pathname: '/(app)/ordre/timer', params: { id } })}
-            style={{
-              marginHorizontal: spacing.screen,
-              backgroundColor: colors.bg,
-              borderWidth: 1, borderColor: colors.separator,
-              borderRadius: radius.lg,
-              paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-              flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-            }}
-          >
-            <Clock size={19} color={colors.brand} strokeWidth={2.1} />
-            <View style={{ flex: 1 }}>
-              <Text style={[t.caption, { textTransform: 'uppercase', color: colors.tertiaryLabel }]}>Timer</Text>
-              {timer > 0 ? (
-                <Text style={[t.title1, { color: colors.label, marginTop: 1 }]}>
-                  {`${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t`}
-                </Text>
-              ) : (
-                <Text style={[t.title3, { color: colors.brand, marginTop: 2 }]}>Før første time</Text>
-              )}
-            </View>
-            <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-          </Pressable>
-        </View>
-
-        {/* MATERIELL — vannrett. Det du førte sist ligger først, og lista ruller
-            i stedet for å vokse nedover og dytte alt annet ut av syne. */}
-        <View style={{ marginBottom: spacing.lg }}>
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.sm,
-          }}>
-            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel, flex: 1 }]}>
-              {materials.length > 0 ? `Materiell · ${materials.length}` : 'Materiell'}
-            </Text>
-            <LeggTilKnapp
-              tekst="Legg til"
-              onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })}
-            />
-          </View>
-          {materials.length === 0 ? (
-            <Text style={[t.footnote, { color: colors.secondaryLabel, marginHorizontal: spacing.screen + spacing.xs }]}>
-              Ingenting ført. Skann en vare eller søk den opp.
-            </Text>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: spacing.screen, gap: spacing.sm }}
-            >
-              {[...materials].reverse().map(m => (
-                <View
-                  key={m.id}
-                  style={{
-                    minWidth: 132, maxWidth: 190,
-                    backgroundColor: colors.bg,
-                    borderWidth: 1, borderColor: colors.separator,
-                    borderRadius: radius.md,
-                    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
-                  }}
-                >
-                  <Text style={[t.footnote, { color: colors.brand, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
-                    {`${formatQty(m.quantity)} ${m.unit}`}
-                  </Text>
-                  <Text style={[t.subhead, { color: colors.label, marginTop: 2 }]} numberOfLines={2}>
-                    {m.description}
-                  </Text>
-                  {!!m.elnummer && (
-                    <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 2, fontVariant: ['tabular-nums'] }]}>
-                      {`EL ${m.elnummer}`}
+              {/* Meta UNDER tittelen: status bare når den sier noe, så tid og nummer. */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm }}>
+                {(order.status === 'pagaar' || order.status === 'fakturaklar' || order.status === 'fakturert') && (
+                  <View style={{ paddingHorizontal: spacing.sm + 1, height: 22, borderRadius: radius.pill, justifyContent: 'center',
+                    backgroundColor: order.status === 'pagaar' ? colors.label : colors.successSoft }}>
+                    <Text style={[t.caption, { fontWeight: '600', color: order.status === 'pagaar' ? '#FFFFFF' : colors.success }]}>
+                      {order.status === 'pagaar' ? 'Pågår' : order.status === 'fakturaklar' ? 'Ferdig' : 'Fakturert'}
                     </Text>
-                  )}
+                  </View>
+                )}
+                {!!when && <Text style={[t.footnote, { color: colors.secondaryLabel }]}>{when}</Text>}
+                {!!order.orderNumber && <Text style={[t.footnote, { color: colors.tertiaryLabel }]}>{`#${order.orderNumber}`}</Text>}
+              </View>
+
+              {/* Kunden er en TOKEN: navnet når den finnes, «Velg kunde» når ikke.
+                  Trykk åpner kundevalget — ingen egen varselrad (Tormod 2026-09-06). */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
+                <Pressable haptic="light" pressScale={0.96}
+                  onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: spacing.md, borderRadius: radius.pill,
+                    backgroundColor: (order.customerId || order.customerName) ? colors.fill : colors.warningSoft }}>
+                  {(order.customerId || order.customerName)
+                    ? <Users size={14} color={colors.label} strokeWidth={2.2} />
+                    : <UserPlus size={14} color={colors.warning} strokeWidth={2.2} />}
+                  <Text style={[t.subhead, { fontWeight: '600', color: (order.customerId || order.customerName) ? colors.label : colors.warning }]} numberOfLines={1}>
+                    {order.customerName || 'Velg kunde'}
+                  </Text>
+                </Pressable>
+                {!!order.customerPhone && (
+                  <Pressable haptic="medium" onPress={ring} style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
+                    <Phone size={15} color={colors.label} strokeWidth={2.1} />
+                  </Pressable>
+                )}
+                <View style={{ flex: 1 }} />
+                {!!order.address && (
+                  <Pressable haptic="medium" pressScale={0.95} onPress={naviger} hitSlop={8} style={{
+                    height: 34, paddingHorizontal: spacing.md, borderRadius: radius.pill,
+                    backgroundColor: colors.fill, flexDirection: 'row', alignItems: 'center', gap: 6,
+                  }}>
+                    <Navigation size={14} color={colors.label} strokeWidth={2.2} />
+                    <Text style={[t.subhead, { color: colors.label, fontWeight: '600' }]}>Kjørerute</Text>
+                  </Pressable>
+                )}
+              </View>
+              {!!order.address && (
+                <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.sm }]} numberOfLines={1}>{order.address}</Text>
+              )}
+            </View>
+          </View>
+        </View>
+        <View style={{ height: spacing.md }} />
+
+        {/* TRE LISTERADER: Skjema · Materiell · Timeføring (Tormod 2026-09-06). */}
+        <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, overflow: 'hidden' }}>
+          {([
+            { navn: 'Skjema', verdi: [doneCount > 0 ? `${doneCount} fullført` : null, (docs.length - doneCount) > 0 ? `${docs.length - doneCount} påbegynt` : null].filter(Boolean).join(' · '), Icon: FileText, gaa: () => setSkjemaListe(true) },
+            { navn: 'Materiell', verdi: `${materials.length} ${materials.length === 1 ? 'vare' : 'varer'}`, Icon: Package, gaa: () => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } }) },
+            { navn: 'Timeføring', verdi: `${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t`, Icon: Clock, gaa: () => router.push({ pathname: '/(app)/ordre/timer', params: { id } }) },
+          ] as const).map((r, i) => (
+            <Pressable key={r.navn} haptic="light" onPress={r.gaa}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, height: 50, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.separator }}>
+              <r.Icon size={19} color={colors.label} strokeWidth={sizes.lucideStroke} />
+              <Text style={[t.body, { flex: 1, color: colors.label }]}>{r.navn}</Text>
+              <Text style={[t.subhead, { color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>{r.verdi}</Text>
+              <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
+          ))}
+        </View>
+
+        {/* TRE LIKE TOKENS: Planlegging · Dokumentasjon · Bilder. Skann-tokenene
+            åpner lista over skann av det slaget (som tegningene i et prosjekt). */}
+        <View style={{ marginHorizontal: spacing.screen, marginTop: spacing.md, flexDirection: 'row', gap: spacing.sm }}>
+          {scanKinds.map(kind => {
+            const mine = scans.filter(s => s.kind === kind)
+            const klare = mine.filter(s => s.scanPath).length
+            return (
+              <Token key={kind} Icon={klare > 0 ? Check : ScanLine} ferdig={klare > 0} navn={scanKindLabel[kind]}
+                under={klare > 0 ? `${klare} skann` : 'Skann'}
+                onPress={() => router.push({ pathname: '/(app)/ordre/skanninger', params: { orderId: order.id, kind } })} />
+            )
+          })}
+          <Token Icon={Camera} navn="Bilder" under={foto.length > 0 ? `${foto.length} bilde${foto.length === 1 ? '' : 'r'}` : 'Foto'} onPress={() => setBildeValg(true)} />
+        </View>
+
+        {/* SVEIPEKORTET: Opprettet → Fakturagrunnlag → Marker som ferdig. Tre sider
+            i én rektangulær token; knappen for ferdig finnes bare på siste side. */}
+        <View style={{ marginHorizontal: spacing.screen, marginTop: spacing.md }}>
+          <ScrollView
+            horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={e => setSide(Math.round(e.nativeEvent.contentOffset.x / Math.max(1, e.nativeEvent.layoutMeasurement.width)))}
+            style={{ borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, height: 132 }}
+          >
+            {/* 1 · Opprettet */}
+            <View style={{ width: kortBredde, padding: spacing.md, paddingHorizontal: spacing.lg, gap: 4 }}>
+              <Text style={t.title3}>Opprettet</Text>
+              {[
+                ['Opprettet', formatDateTime(order.createdAt) ?? ''],
+                ['Sist endret', formatDateTime(order.updatedAt) ?? ''],
+                ['Planlagt', when || 'Ikke satt'],
+                ['Ordrenummer', order.orderNumber ? `#${order.orderNumber}` : 'Tildeles ved synk'],
+              ].map(([k, v]) => (
+                <View key={k} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md }}>
+                  <Text style={[t.subhead, { color: colors.secondaryLabel }]}>{k}</Text>
+                  <Text style={[t.subhead, { color: colors.label, fontVariant: ['tabular-nums'] }]} numberOfLines={1}>{v}</Text>
                 </View>
               ))}
-            </ScrollView>
-          )}
-        </View>
-
-        {/* DOKUMENTASJON — VISES, ikke telles. «2/3» sa hvor mange skjemaer det
-            var; dette sier hvilke, og hvor langt hvert av dem er kommet. Det er
-            forskjellen på et tall og et svar. */}
-        <View style={{ marginBottom: spacing.lg }}>
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.sm,
-          }}>
-            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel, flex: 1 }]}>
-              Dokumentasjon
-            </Text>
-            {remainingTemplates.length > 0 && (
-              <LeggTilKnapp tekst="Legg til" onPress={addDocumentation} />
-            )}
-          </View>
-          {startedTemplates.length === 0 ? (
-            <Pressable
-              haptic="light"
-              onPress={addDocumentation}
-              style={{
-                marginHorizontal: spacing.screen, borderRadius: radius.lg,
-                borderWidth: 1, borderColor: colors.separator, borderStyle: 'dashed',
-                paddingVertical: spacing.lg, alignItems: 'center',
-              }}
-            >
-              <Text style={[t.subhead, { color: colors.secondaryLabel }]}>Velg skjemaene jobben trenger</Text>
-            </Pressable>
-          ) : (
-            <View style={{ marginHorizontal: spacing.screen }}>
-              {startedTemplates.map((tpl, i) => {
-                const doc = docByTemplate.get(tpl.id)
-                const fullfort = doc?.status === 'fullfort'
-                return (
-                  <Pressable
-                    key={tpl.id}
-                    haptic="light"
-                    onPress={() => router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: tpl.id } })}
-                    style={{
-                      flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-                      backgroundColor: colors.bg,
-                      borderWidth: 1, borderColor: colors.separator,
-                      borderTopWidth: i === 0 ? 1 : 0,
-                      borderTopLeftRadius: i === 0 ? radius.lg : 0,
-                      borderTopRightRadius: i === 0 ? radius.lg : 0,
-                      borderBottomLeftRadius: i === startedTemplates.length - 1 ? radius.lg : 0,
-                      borderBottomRightRadius: i === startedTemplates.length - 1 ? radius.lg : 0,
-                      paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
-                    }}
-                  >
-                    {fullfort
-                      ? <Check size={17} color={colors.success} strokeWidth={2.6} />
-                      : <FileText size={17} color={colors.secondaryLabel} strokeWidth={2} />}
-                    <Text style={[t.body, { flex: 1, color: colors.label }]} numberOfLines={1}>{tpl.name}</Text>
-                    <Text style={[t.caption, { color: fullfort ? colors.success : colors.brand, fontWeight: '600' }]}>
-                      {fullfort ? 'Fullført' : 'Utkast'}
-                    </Text>
-                    <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-                  </Pressable>
-                )
-              })}
             </View>
-          )}
-        </View>
-
-        {/* LIDAR — et PRODUKT, ikke en fane. Se ScanSection. */}
-        <View>
-          <ScanSection orderId={order.id} scans={scans} />
-        </View>
-
-        {/* TILLEGGSARBEID hører til i FELT: det registreres på stedet, i det
-            kunden ber om noe utenfor avtalen. Vises kun når ordren HAR en
-            avtalt pris — på løpende regning er ekstra arbeid bare flere timer
-            og mer materiell, og begrepet står bare i veien. */}
-        {!!order.quoteId && (
-          <View style={{ marginBottom: spacing.lg }}>
-            <PapirCard>
-              <Rad
-                ikon={<FilePlus2 size={18} color={colors.brand} strokeWidth={sizes.lucideStroke} />}
-                tittel="Tilleggsarbeid"
-                under={tillegg.ventende > 0 ? `${tillegg.ventende} venter på godkjenning` : 'Arbeid utenfor den avtalte prisen'}
-                underVarsel={tillegg.ventende > 0}
-                verdi={tillegg.total > 0 ? String(tillegg.total) : '—'}
-                onPress={() => router.push({ pathname: '/(app)/ordre/tillegg', params: { id } })}
-                forst
-                sist
-              />
-            </PapirCard>
-          </View>
-        )}
-
-        {/* Ble ordren sendt tilbake av faglig ansvarlig, må montøren se det —
-            det er en beskjed til FELTET, ikke en kontoroppgave. */}
-        {godkjenninger.length > 0 && (
-          <View style={{ marginBottom: spacing.lg }}>
-            <GodkjenningKort godkjenninger={godkjenninger} grunnlag={godkjenningsgrunnlag} />
-          </View>
-        )}
-
-        {/*
-          ── KONTOR ──────────────────────────────────────────────────────────
-          Kundesignatur, fakturagrunnlag og fakturasending gjøres på kontoret,
-          i desktop-appen. På telefonen er de ikke feil — de er i veien. Fire
-          rader montøren aldri trykker på, mellom de tre han bruker hver dag.
-
-          De er ikke fjernet, de er lagt bak ett trykk. Å amputere en funksjon
-          fordi den er sjelden er like galt som å la den ligge øverst fordi den
-          finnes.
-        */}
-        <View style={{ marginBottom: spacing.screen }}>
-          <Pressable
-            haptic="light"
-            onPress={() => setKontorAapen(o => !o)}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-              marginHorizontal: spacing.screen + spacing.xs, paddingVertical: spacing.sm,
-            }}
-          >
-            <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel, flex: 1 }]}>
-              Kontor
-            </Text>
-            <Text style={[t.footnote, { color: colors.tertiaryLabel }]}>
-              {kontorAapen ? 'Skjul' : 'Vis'}
-            </Text>
-            {kontorAapen
-              ? <ChevronDown size={16} color={colors.tertiaryLabel} strokeWidth={2} />
-              : <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={2} />}
-          </Pressable>
-
-          {kontorAapen && (
-            <>
-              {!!order.quoteId && (
-                <View style={{ marginBottom: spacing.sm }}>
-                  <AvtaltPrisKort quoteId={order.quoteId} />
-                </View>
-              )}
-              <PapirCard>
-                <Rad
-                  ikon={<Receipt size={18} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />}
-                  tittel="Fakturagrunnlag"
-                  under={
-                    !grunnlag ? 'Regner ut …'
-                      : grunnlag.linjer.length === 0 ? 'Ingenting å fakturere ennå'
-                      : `${grunnlag.linjer.length} linjer${grunnlag.utelatt.length ? ` · ${grunnlag.utelatt.length} utelatt` : ''}`
-                  }
-                  verdi={grunnlag && grunnlag.linjer.length > 0 ? formatKr(grunnlag.bruttoOre) : '—'}
-                  sterkVerdi
-                  onPress={() => router.push({ pathname: '/(app)/ordre/faktura', params: { id } })}
-                  forst
-                />
-                <Rad
-                  ikon={<PenLine size={18} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />}
-                  tittel="Kundesignatur"
-                  under={signaturer.length === 0 ? 'Bevis på at arbeidet er godtatt' : undefined}
-                  verdi={signaturer.length > 0 ? String(signaturer.length) : '—'}
-                  onPress={() => router.push({ pathname: '/(app)/ordre/signatur', params: { id } })}
-                />
-                <Rad
-                  ikon={<Users size={18} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />}
-                  tittel="Deltakere"
-                  verdi={antallMedlemmer > 0 ? String(antallMedlemmer) : '—'}
-                  onPress={() => router.push({ pathname: '/(app)/ordre/deltakere', params: { id } })}
-                  sist={!!order.customerId}
-                />
-                {/* Kunde uten ID stopper fakturaen i regnskapet. Den advarselen
-                    hører til her, sammen med fakturagrunnlaget — men den må ikke
-                    ligge SKJULT, så den vises også når kontor er lukket (under). */}
-                {!order.customerId && (
-                  <Rad
-                    ikon={<UserPlus size={18} color={colors.warning} strokeWidth={sizes.lucideStroke} />}
-                    tittel="Mangler kunde"
-                    under="Regnskapet trenger en kunde med ID"
-                    underVarsel
-                    verdi="Velg"
-                    onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
-                    sist
-                  />
-                )}
-              </PapirCard>
-            </>
-          )}
-
-          {/* Én ting slipper ALDRI å bli skjult: mangler ordren kunde, kan den
-              ikke faktureres — og det må oppdages mens montøren står på stedet
-              og kan spørre hvem regningen skal til. */}
-          {!kontorAapen && !order.customerId && (
-            <Pressable
-              haptic="light"
-              onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-                marginHorizontal: spacing.screen, paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-                borderRadius: radius.md, borderWidth: 1, borderColor: colors.warning + '55',
-              }}
-            >
-              <UserPlus size={17} color={colors.warning} strokeWidth={2.1} />
-              <Text style={[t.footnote, { flex: 1, color: colors.secondaryLabel }]}>
-                Ordren mangler kunde i registeret
-              </Text>
-              <Text style={[t.footnote, { color: colors.brand, fontWeight: '700' }]}>Velg</Text>
-            </Pressable>
-          )}
-        </View>
-        {/*
-          Status var seks likeverdige chips — en editor, ikke en handling. Flyten er
-          lineær (mottatt → planlagt → pågår → fakturaklar → fakturert), så neste steg
-          kan utledes og løftes til én tydelig knapp. Resten ligger bak «Endre status»
-          for korrigering; ingen funksjonalitet er fjernet, bare rangert.
-        */}
-        <View style={{ marginBottom: spacing.screen }}>
-          <SectionHeader>Status</SectionHeader>
-          <View style={{ marginHorizontal: spacing.screen, gap: spacing.sm }}>
-            {/* Hovedhandlingen er flyttet til den forankrede linja nederst.
-                Her ligger bare korrigering — å hoppe tilbake når noe ble
-                markert feil. */}
-            <Pressable
-              haptic="light"
-              onPress={() => setStatusOpen(o => !o)}
-              style={{ alignItems: 'center', paddingVertical: spacing.sm }}
-            >
-              <Text style={[t.subhead, { color: 'rgba(251,247,240,0.55)', fontWeight: '600' }]}>
-                {statusOpen ? 'Skjul statusvalg' : 'Endre status'}
-              </Text>
-            </Pressable>
-            {statusOpen && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-                {orderStatuses.map(s => (
-                  <Chip
-                    key={s}
-                    label={orderStatusLabel[s]}
-                    selected={order.status === s}
-                    onPress={() => setStatus(s)}
-                  />
-                ))}
+            {/* 2 · Fakturagrunnlag */}
+            <View style={{ width: kortBredde, padding: spacing.md, paddingHorizontal: spacing.lg, gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                <Text style={t.title3}>Fakturagrunnlag</Text>
+                <Text style={[t.subhead, { fontWeight: '600', fontVariant: ['tabular-nums'] }]}>{grunnlag ? `${formatKr(grunnlag.bruttoOre)} kr` : ''}</Text>
               </View>
-            )}
+              {!grunnlag || grunnlag.linjer.length === 0 ? (
+                <Text style={t.footnote}>Ingenting å fakturere ennå. Timer og materiell havner her.</Text>
+              ) : (
+                <>
+                  {grunnlag.linjer.slice(0, 3).map((l, i) => (
+                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md }}>
+                      <Text style={[t.subhead, { flex: 1, color: colors.label }]} numberOfLines={1}>{`${l.antall} ${l.enhet} ${l.beskrivelse}`}</Text>
+                      <Text style={[t.subhead, { color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>{formatKr(l.nettoOre)}</Text>
+                    </View>
+                  ))}
+                  {grunnlag.linjer.length > 3 && <Text style={t.footnote}>{`+ ${grunnlag.linjer.length - 3} linjer til`}</Text>}
+                  <Text style={[t.footnote, { marginTop: 2 }]}>{`Netto ${formatKr(grunnlag.nettoOre)} · mva ${formatKr(grunnlag.mvaOre)}`}</Text>
+                </>
+              )}
+            </View>
+            {/* 3 · Marker som ferdig */}
+            <View style={{ width: kortBredde, padding: spacing.md, paddingHorizontal: spacing.lg, gap: spacing.sm, justifyContent: 'space-between' }}>
+              <View>
+                <Text style={t.title3}>Marker som ferdig</Text>
+                <Text style={[t.footnote, { marginTop: 4 }]}>
+                  {order.status === 'fakturaklar' ? 'Ordren er ferdig og klar til faktura.' : order.status === 'fakturert' ? 'Ordren er fakturert.' : 'Ordren går til fakturering. Du får se hele grunnlaget først.'}
+                </Text>
+              </View>
+              <Pressable haptic="medium" pressScale={0.985} disabled={order.status === 'fakturert'} onPress={() => setBekreft(true)}
+                style={{ height: 46, borderRadius: radius.md, backgroundColor: order.status === 'fakturaklar' ? colors.successSoft : colors.label, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: spacing.sm, opacity: order.status === 'fakturert' ? 0.4 : 1 }}>
+                <Check size={17} color={order.status === 'fakturaklar' ? colors.success : '#FFFFFF'} strokeWidth={2.4} />
+                <Text style={[t.headline, { color: order.status === 'fakturaklar' ? colors.success : '#FFFFFF' }]}>{order.status === 'fakturaklar' ? 'Til fakturagrunnlaget' : 'Send faktura'}</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: spacing.sm }}>
+            {[0, 1, 2].map(i => <View key={i} style={{ width: i === side ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: i === side ? colors.label : colors.separator }} />)}
           </View>
         </View>
 
-        {/* Detaljer — metadata nederst, minst viktig */}
-        <View>
-          <SectionHeader>Detaljer</SectionHeader>
-          <PapirCard>
-            <MetaRow label="Ordrenummer" value={order.orderNumber ? `#${order.orderNumber}` : 'Tildeles ved synk'} />
-            <MetaRow label="Opprettet" value={formatDateTime(order.createdAt) ?? '–'} />
-            <MetaRow label="Sist endret" value={formatDateTime(order.updatedAt) ?? '–'} last />
-          </PapirCard>
-        </View>
+        {/* «Sikker?» — hele fakturagrunnlaget ramses opp før noe skjer. */}
+        <Ark synlig={bekreft} onLukk={() => setBekreft(false)}>
+          <View style={{ paddingHorizontal: spacing.screen, gap: spacing.md }}>
+            <View>
+              <Text style={t.title3}>Sikker?</Text>
+              <Text style={[t.footnote, { marginTop: 2 }]}>Dette er alt som faktureres på ordren.</Text>
+            </View>
+            <View style={{ gap: 6 }}>
+              {(grunnlag?.linjer ?? []).map((l, i) => (
+                <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md }}>
+                  <Text style={[t.subhead, { flex: 1, color: colors.label }]} numberOfLines={1}>{`${l.antall} ${l.enhet} ${l.beskrivelse}`}</Text>
+                  <Text style={[t.subhead, { color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>{formatKr(l.nettoOre)}</Text>
+                </View>
+              ))}
+              {(grunnlag?.linjer.length ?? 0) === 0 && <Text style={t.footnote}>Ingen linjer. Ordren blir ferdig uten noe å fakturere.</Text>}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.separator, paddingTop: spacing.sm, marginTop: 4 }}>
+                <Text style={[t.headline]}>Å betale</Text>
+                <Text style={[t.headline, { fontVariant: ['tabular-nums'] }]}>{grunnlag ? `${formatKr(grunnlag.bruttoOre)} kr` : '0 kr'}</Text>
+              </View>
+            </View>
+            <Pressable haptic="medium" pressScale={0.985}
+              onPress={async () => { setBekreft(false); if (order.status !== 'fakturaklar') await setStatus('fakturaklar'); router.push({ pathname: '/(app)/ordre/faktura', params: { id } }) }}
+              style={{ height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.label, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={[t.headline, { color: '#FFFFFF' }]}>Ja, send faktura</Text>
+            </Pressable>
+            <Pressable haptic="light" onPress={() => setBekreft(false)} style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>Avbryt</Text>
+            </Pressable>
+          </View>
+        </Ark>
+
+        {/* Skjema-lista som ark: sjekkliste, trykk åpner skjemaet. */}
+        <Ark synlig={skjemaListe} onLukk={() => setSkjemaListe(false)}>
+          <View style={{ paddingHorizontal: spacing.screen }}>
+            <Text style={[t.title3, { marginBottom: spacing.sm }]}>Skjema</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, height: 40, borderRadius: radius.pill, backgroundColor: colors.fill, paddingHorizontal: spacing.md, marginBottom: spacing.sm }}>
+              <Search size={16} color={colors.secondaryLabel} strokeWidth={2.1} />
+              <TextInput value={skjemaSok} onChangeText={setSkjemaSok} placeholder="Søk i skjema" placeholderTextColor={colors.tertiaryLabel} style={[t.body, { flex: 1 }]} autoCorrect={false} clearButtonMode="while-editing" />
+            </View>
+            {alleMaler.filter(tpl => tpl.name.toLowerCase().includes(skjemaSok.trim().toLowerCase())).map((tpl, i) => {
+              const doc = docByTemplate.get(tpl.id)
+              const tilstand = doc?.status === 'fullfort' ? 'ferdig' : doc ? 'utkast' : 'tom'
+              return (
+                <Pressable key={tpl.id} haptic="light"
+                  onPress={() => { setSkjemaListe(false); router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: tpl.id } }) }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, height: 48, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.separator }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: tilstand === 'ferdig' ? 0 : 1.5, borderColor: tilstand === 'utkast' ? colors.label : colors.separator, backgroundColor: tilstand === 'ferdig' ? colors.success : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                    {tilstand === 'ferdig' && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
+                    {tilstand === 'utkast' && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.label }} />}
+                  </View>
+                  <Text style={[t.body, { flex: 1, color: colors.label }]} numberOfLines={1}>{tpl.name}</Text>
+                  <Text style={[t.caption, { color: tilstand === 'ferdig' ? colors.success : colors.tertiaryLabel }]}>{tilstand === 'ferdig' ? 'Fullført' : tilstand === 'utkast' ? 'Utkast' : ''}</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        </Ark>
+        <ChoiceSheet<'kamera' | 'galleri'>
+          synlig={bildeValg}
+          tittel="Bilder"
+          forklaring={foto.length > 0 ? `${foto.length} bilde${foto.length === 1 ? '' : 'r'} på ordren` : undefined}
+          valg={[{ verdi: 'kamera', etikett: 'Ta bilde' }, { verdi: 'galleri', etikett: 'Velg fra bildene' }]}
+          onVelg={async v => { setBildeValg(false); if (v === 'kamera') await taOrdrefoto(order.id); else await velgOrdrefoto(order.id) }}
+          onAvbryt={() => setBildeValg(false)}
+        />
       </ScrollView>
 
-      {/*
-        Én forankret hovedhandling — mønsteret fra Jobber og Tradify.
-
-        Poenget er ikke at knappen er festet nederst. Poenget er at det finnes
-        ÉN. Før konkurrerte fem kort med lik vekt om oppmerksomheten, og
-        statusknappen — det eneste steget som faktisk flytter jobben framover —
-        lå nederst mellom «Endre status» og metadata.
-
-        Den ligger OVER tabbaren og under innholdet, så den følger med uansett
-        hvor langt ned du har rullet. En montør med hansker skal ikke lete.
-      */}
-      {hovedhandling && (
-        <View style={{
-          position: 'absolute', left: 0, right: 0, bottom: 0,
-          paddingHorizontal: spacing.screen,
-          paddingBottom: sizes.tabBar + insets.bottom + spacing.sm,
-          paddingTop: spacing.sm,
-        }}>
-          <Pressable
-            haptic="medium"
-            onPress={hovedhandling.gjor}
-            style={{
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-              // KOBBER, ikke kremet. På lyse skjermer er hovedknappen den mørke
-              // brune; på mørke kan den ikke være det, og kremet flyter når
-              // tabbaren under er brun. Kobber er samme familie, og det ENE
-              // stedet i appen fargen brukes som flate og ikke som aksent —
-              // derfor leses den umiddelbart som handlingen.
-              height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.brand,
-              shadowColor: '#503719', shadowOpacity: 0.25, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
-            }}
-          >
-            <Check size={19} color={colors.ctaLabel} strokeWidth={2.4} />
-            <Text style={[t.headline, { color: colors.ctaLabel }]}>{hovedhandling.tekst}</Text>
-          </Pressable>
-        </View>
-      )}
     </View>
   )
 }

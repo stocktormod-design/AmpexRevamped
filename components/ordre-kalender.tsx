@@ -3,7 +3,7 @@ import { View } from 'react-native'
 import { Text } from './text'
 import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react-native'
 import { Pressable } from './pressable'
-import { ToolCard, ToolSectionHeader } from './tool-surface'
+import { PapirCard, PapirSectionHeader } from './papir-surface'
 import type { Order } from '../lib/db/models/order'
 import { formatTime } from '../lib/format'
 import {
@@ -46,31 +46,31 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
       <View style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         marginHorizontal: spacing.screen, marginBottom: spacing.md,
-        backgroundColor: colors.toolRaised, borderRadius: radius.lg, padding: spacing.sm,
-        borderWidth: 1, borderColor: colors.toolBorder,
+        backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.sm,
+        borderWidth: 1, borderColor: colors.separator,
       }}>
         <Pressable haptic="light" pressScale={0.92} onPress={() => bytt(-1)}
           style={{ width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }}>
-          <ChevronLeft size={18} color={colors.toolLabel} strokeWidth={2.2} />
+          <ChevronLeft size={18} color={colors.label} strokeWidth={2.2} />
         </Pressable>
         <View style={{ alignItems: 'center' }}>
-          <Text style={[t.headline, { color: colors.toolLabel }]}>{ukeEtikett(start)}</Text>
-          <Text style={[t.caption, { color: colors.toolSecondary }]}>
+          <Text style={[t.headline, { color: colors.label }]}>{ukeEtikett(start)}</Text>
+          <Text style={[t.caption, { color: colors.secondaryLabel }]}>
             {`Uke ${ukenummer(start)} · ${start.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}–${plan.dager[6].dato.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}`}
           </Text>
         </View>
         <Pressable haptic="light" pressScale={0.92} onPress={() => bytt(1)}
           style={{ width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }}>
-          <ChevronRight size={18} color={colors.toolLabel} strokeWidth={2.2} />
+          <ChevronRight size={18} color={colors.label} strokeWidth={2.2} />
         </Pressable>
       </View>
 
       {/* Sum + søyler */}
-      <ToolCard style={{ padding: spacing.lg }}>
-        <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.toolTertiary }]}>Avtalt denne uken</Text>
+      <PapirCard style={{ padding: spacing.lg }}>
+        <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel }]}>Avtalt denne uken</Text>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 2 }}>
-          <Text style={[t.display, { color: colors.toolLabel }]}>{plan.sumJobber}</Text>
-          <Text style={[t.footnote, { color: colors.toolSecondary }]}>
+          <Text style={[t.display, { color: colors.label }]}>{plan.sumJobber}</Text>
+          <Text style={[t.footnote, { color: colors.secondaryLabel }]}>
             {plan.sumJobber === 1 ? 'jobb' : 'jobber'}
           </Text>
         </View>
@@ -97,7 +97,7 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
                 onPress={() => setValgt(i)}
                 style={{ flex: 1, alignItems: 'center' }}
               >
-                <Text style={[t.caption, { color: erValgt ? colors.toolSecondary : colors.toolTertiary, marginBottom: 4 }]}>
+                <Text style={[t.caption, { color: erValgt ? colors.secondaryLabel : colors.tertiaryLabel, marginBottom: 4 }]}>
                   {antall > 0 ? String(antall) : ''}
                 </Text>
                 <View style={{ width: '100%', height: SOYLE, justifyContent: 'flex-end', gap: 3 }}>
@@ -111,14 +111,14 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
                     }} />
                   ))}
                 </View>
-                <Text style={[t.caption, { marginTop: spacing.xs, color: colors.toolTertiary }]}>{DAGER[i]}</Text>
+                <Text style={[t.caption, { marginTop: spacing.xs, color: colors.tertiaryLabel }]}>{DAGER[i]}</Text>
                 <View style={{
                   width: 24, height: 24, borderRadius: radius.pill, marginTop: 2,
                   alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: erIdag ? colors.brand : erValgt ? colors.toolRaisedStrong : 'transparent',
+                  backgroundColor: erIdag ? colors.brand : erValgt ? colors.fill : 'transparent',
                 }}>
                   <Text style={[t.caption, {
-                    color: erIdag ? colors.toolLabel : erValgt ? colors.toolLabel : colors.toolSecondary,
+                    color: erIdag ? colors.label : erValgt ? colors.label : colors.secondaryLabel,
                     fontWeight: erIdag || erValgt ? '700' : '500',
                     fontVariant: ['tabular-nums'],
                   }]}>
@@ -129,23 +129,23 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
             )
           })}
         </View>
-      </ToolCard>
+      </PapirCard>
 
       {/* Den valgte dagen */}
       <View style={{ marginTop: spacing.xl }}>
-        <ToolSectionHeader>
+        <PapirSectionHeader>
           {dag.dato.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </ToolSectionHeader>
+        </PapirSectionHeader>
         {dag.jobber.length === 0 ? (
-          <ToolCard style={{ padding: spacing.lg, alignItems: 'center' }}>
-            <Text style={[t.footnote, { color: colors.toolSecondary }]}>Ingen jobber satt opp denne dagen.</Text>
-          </ToolCard>
+          <PapirCard style={{ padding: spacing.lg, alignItems: 'center' }}>
+            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Ingen jobber satt opp denne dagen.</Text>
+          </PapirCard>
         ) : (
-          <ToolCard>
+          <PapirCard>
             {dag.jobber.map((o, i, arr) => (
               <DagRad key={o.id} order={o} last={i === arr.length - 1} onPress={() => onVelg(o)} />
             ))}
-          </ToolCard>
+          </PapirCard>
         )}
       </View>
 
@@ -153,12 +153,12 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
           er de det egentlige arbeidet på denne skjermen. */}
       {plan.utenDato.length > 0 && (
         <View style={{ marginTop: spacing.xl }}>
-          <ToolSectionHeader>Ikke satt opp</ToolSectionHeader>
-          <ToolCard>
+          <PapirSectionHeader>Ikke satt opp</PapirSectionHeader>
+          <PapirCard>
             {plan.utenDato.map((o, i, arr) => (
               <DagRad key={o.id} order={o} last={i === arr.length - 1} onPress={() => onVelg(o)} />
             ))}
-          </ToolCard>
+          </PapirCard>
         </View>
       )}
     </View>
@@ -174,29 +174,29 @@ function DagRad({ order, last, onPress }: { order: Order; last: boolean; onPress
       onPress={onPress}
       style={[
         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 },
-        !last && { borderBottomWidth: 0.5, borderBottomColor: colors.toolBorder },
+        !last && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
       ]}
     >
       <View style={{ width: 46 }}>
         {tid ? (
           <Text style={[t.footnote, { color: colors.brand, fontWeight: '600', fontVariant: ['tabular-nums'] }]}>{tid}</Text>
         ) : (
-          <CalendarOff size={15} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
+          <CalendarOff size={15} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
         )}
       </View>
       {/* Samme kobberstrek som i ordrelista: pågår er den ene statusen som
           betyr noe når du ser på dagen. */}
       <View style={{
         width: 3, height: 28, borderRadius: 2, marginRight: spacing.md,
-        backgroundColor: order.status === 'pagaar' ? colors.brand : colors.toolBorder,
+        backgroundColor: order.status === 'pagaar' ? colors.brand : colors.separator,
       }} />
       <View style={{ flex: 1, marginRight: spacing.sm }}>
-        <Text style={[t.bodyMedium, { color: colors.toolLabel }]} numberOfLines={1}>{order.title}</Text>
+        <Text style={[t.bodyMedium, { color: colors.label }]} numberOfLines={1}>{order.title}</Text>
         {!!under && (
-          <Text style={[t.footnote, { color: colors.toolSecondary, marginTop: 2 }]} numberOfLines={1}>{under}</Text>
+          <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 2 }]} numberOfLines={1}>{under}</Text>
         )}
       </View>
-      <ChevronRight size={16} color={colors.toolTertiary} strokeWidth={sizes.lucideStroke} />
+      <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
     </Pressable>
   )
 }

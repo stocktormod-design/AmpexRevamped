@@ -17,19 +17,25 @@ export default function KunderScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingTop: insets.top + spacing.sm, paddingBottom: spacing.md, paddingHorizontal: spacing.screen,
-      }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <Pressable onPress={() => router.back()} hitSlop={12}>
-            <ChevronLeft size={26} color={colors.label} strokeWidth={sizes.lucideStroke} />
+      {/* Samme hode som Mine timer / Gamle jobber: tilbake-pille, display-tittel. */}
+      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen, paddingBottom: spacing.md }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Pressable onPress={() => router.back()} pressScale={0.92}
+            style={{
+              width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.cardGlassStrong,
+              borderWidth: 0.5, borderColor: colors.glassEdge, alignItems: 'center', justifyContent: 'center',
+            }}>
+            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
           </Pressable>
-          <Text style={t.headline}>Kunder</Text>
+          <Pressable
+            haptic="medium" pressScale={0.92}
+            onPress={() => router.push('/(app)/kunder/ny')}
+            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Plus size={sizes.icon} color={colors.brand} strokeWidth={2.2} />
+          </Pressable>
         </View>
-        <Pressable onPress={() => router.push('/(app)/kunder/ny')} hitSlop={12}>
-          <Plus size={24} color={colors.brand} strokeWidth={sizes.lucideStroke} />
-        </Pressable>
+        <Text style={[t.display, { marginTop: spacing.lg }]}>Kunder</Text>
       </View>
 
       <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.md }}>

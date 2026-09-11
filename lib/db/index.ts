@@ -25,6 +25,7 @@ import { Location } from './models/location'
 import { StockMovement } from './models/stock-movement'
 import { Project } from './models/project'
 import { Drawing } from './models/drawing'
+import { DrawingFolder } from './models/drawing-folder'
 import { ProjectMember } from './models/project-member'
 import { OrderMember } from './models/order-member'
 import { TimeEntry } from './models/time-entry'
@@ -44,6 +45,9 @@ import { NfcTag } from './models/nfc-tag'
 import { OrderSignature } from './models/order-signature'
 import { ProductPrice } from './models/product-price'
 import { OrderApproval } from './models/order-approval'
+import { Deviation } from './models/deviation'
+import { ServiceAgreement } from './models/service-agreement'
+import { PurchaseOrder, PurchaseOrderLine } from './models/purchase-order'
 import { OrderArchive } from './models/order-archive'
 import { Quote } from './models/quote'
 import { QuoteLine } from './models/quote-line'
@@ -60,5 +64,5 @@ const adapter = new SQLiteAdapter({
 
 export const database = new Database({
   adapter,
-  modelClasses: [Order, OrderDocument, OrderMaterial, OrderExtra, Product, Customer, Activity, Location, StockMovement, Project, Drawing, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, FireDevice, NfcTag, Quote, QuoteLine, OrderSignature, ProductPrice, OrderApproval, OrderArchive],
+  modelClasses: [Order, OrderDocument, OrderMaterial, OrderExtra, Product, Customer, Activity, Location, StockMovement, Project, Drawing, DrawingFolder, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, FireDevice, NfcTag, Quote, QuoteLine, OrderSignature, ProductPrice, OrderApproval, OrderArchive, Deviation, ServiceAgreement, PurchaseOrder, PurchaseOrderLine],
 })

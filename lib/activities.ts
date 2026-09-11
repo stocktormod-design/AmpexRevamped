@@ -21,9 +21,16 @@ export const STANDARD_AKTIVITETER: { name: string; hourlyRate: number; billable:
   { name: 'Internt', hourlyRate: 0, billable: false },
 ]
 
-/** Idempotent: kjører bare når tabellen er tom, så den kan kalles ved hver oppstart. */
+/**
+ * Idempotent — og først ETTER første synk. En fersk installasjon har tom lokal
+ * tabell før synken har hentet firmaets aktiviteter; seedet vi da, fikk hver
+ * ny telefon sitt eget sett (Tormod 2026-09-06: tre «Montasje», tre «Service»
+ * i timeføringa). Duplikatene i basen er arkivert; dette hindrer nye.
+ */
 export async function seedAktiviteter(): Promise<void> {
   const collection = database.get<Activity>('activities')
+  const synket = await database.localStorage.get('__watermelon_last_pulled_at')
+  if (!synket) return
   const antall = await collection.query().fetchCount()
   if (antall > 0) return
   await database.write(async () => {

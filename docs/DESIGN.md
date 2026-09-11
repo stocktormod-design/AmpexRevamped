@@ -34,45 +34,71 @@ som iOS Innstillinger. Se «Overflate» under for det som skiller de to.
 7. **Safe areas** alltid via `useSafeAreaInsets` — aldri hardkodede toppmarger.
 8. **Skeleton/placeholder** ved lasting — aldri spinner alene på en tom skjerm.
 
-## To slags skjermer: verktøy og papir
+## Hvitt og sort (2026-09-06) — erstatter «Papir og messing»
 
-Den varme kremfargen ligger i **nøyaktig samme familie som lese- og notatapper**
-— Kindle sepia `#FBF0D9`, Apple Notes `#FFFBED`, Goodreads `#F4F1EA`, Panera
-`#F4EFE1`. Derfor leste hver skjerm som en notatblokk: paletten sier «dokument»,
-fordi det er det alle andre bruker den til.
+Tormod: «føler hvit er mer premium» og «recreate den som om Tesla eller Apple
+skulle lage field app SaaS elektro». Grunnflaten er nå **hvit** (`canvas` =
+`bg` = #FFFFFF). Platen skiller seg fra grunnen med **hårlinje + nøytral
+skygge**, ikke med farge. Én grå (`fill` #F2F2F4, `groupedBg` #F5F5F7) grupperer.
+Blekket er sort (#1D1D1F). Den ene fylte handlingen per skjerm er **sort med
+hvit tekst** (`cta`/`brand`): sort på hvitt leser som beslutning, farget som
+kampanje. Messingen er borte fra UI-et; `brand` peker på sort så ingen skjerm
+måtte skrives om. Farge finnes kun som semantikk (status, vær). Valgt
+filterchip = sort pille. De mørke instrumentflatene (`toolBg`) er nøytralt
+sort, ikke brunsvart. Dokumentflatene (`paper*`) er nøytralt lysegrå.
 
-Fargen er ikke feil. Den hadde bare ingen jobb. Nå har den én:
+Avsnittet under beskriver æraen FØR og beholdes som historikk.
+
+## Papir og messing (låst 2026-08-29 — HISTORIKK, erstattet 2026-09-06)
+
+Grunnflaten er **varmt papir** — en arbeidsordre på et skrivebord, ikke en
+notatblokk og ikke en mørk hule. Full spec med verifiserte mock-er: artifact
+«Espresso-prøven». Tre lag:
 
 | | Grunn | Hvilke skjermer |
 |---|---|---|
-| **Verktøy** | `toolBg` mørk | Ordre, lager, prosjekter, lister, kart |
-| **Papir** | `canvas` kremet | Skjema, tilbud, arkiv, fakturagrunnlag |
+| **Papir** | `canvas` #F3EEE6 | Alt daglig: Hjem, Prosjekter, Ordre, Lager, Meg |
+| **Dokument** | `paperCanvas` kremet | Inne i skjema, tilbud, tegning — mykere ark |
+| **Instrument** | `toolBg` mørk | Skann/AR, tegning i mørk modus |
 
-**Chromen er ALLTID brun.** Tab-baren er mørk på hver eneste skjerm, også de
-kremede. Den lyse glassbaren var det siste store beige feltet i appen, og fordi
-den ligger over alt, skar den som en lys stripe gjennom de mørke skjermene.
-At chromen er konstant er dessuten det som gjør at kremfargen kan BETY noe: når
-flaten blir kremet, er det fordi du har åpnet et dokument — ikke fordi skjermen
-tilfeldigvis er lys.
+Valnøtt (`#2A221C`/`#3A2F26`) er planlagt som kveldsmodus — en utseende-
+veksling, aldri standarden.
 
-**Knapper er brune.** Hovedhandlingen er `colors.cta` på papir. På mørk grunn
-kan den ikke være det, og kremet flyter når baren under er brun — der er
-hovedhandlingen `colors.brand` (kobber). Det er det ENE stedet kobber brukes
-som flate og ikke som aksent, og derfor leses den umiddelbart som handlingen.
+**Platen er et hvitere ark på skitnere papir.** `bg` #FFFBF5 over `canvas`
+#F3EEE6 — det 4–6 %-skiftet er hele premium-trikset i lys modus. Er de like,
+dør flaten.
 
-**Statuslinja følger flaten.** `useMorkStatuslinje()` i mørke skjermer setter
-lys stil i fokus og MØRK igjen ved blur. `<StatusBar>` gjenoppretter ingenting
-ved unmount, så uten dette blir klokka hvit på kremet bakgrunn i det du åpner
-et skjema. Å legge `<StatusBar style="dark" />` i alle papirskjermene ville
-vært å rette symptomet 32 ganger.
+**Dybde lages med varm skygge og luft** — stor blur, liten opasitet, brun-tonet
+(`shadows.card`/`shadows.floating`), aldri grå Material-skygge. Hårlinjene
+(`separator` #E4DCD0) er nesten usynlige; kontrasten bor i skyggen.
 
-Skiftet betyr noe: det forteller deg at du har gått fra å JOBBE til å
-DOKUMENTERE. `components/tool-surface.tsx` er rammen — bruk `ToolScreen`,
-`ToolCard`, `ToolChip` og `ToolSectionHeader`, ikke egne verdier.
+**Glass finnes KUN tre steder** (regel 10): den frostede navbaren, dock-pillen
+og stemme-orben. Aldri per listecelle — kort fingerer aldri glass.
 
-**Dybde lages med VERDI, ikke med skygge.** En lysere flate leses som nærmere.
-Det er slik mørke grensesnitt faktisk bygges — og det fjerner samtidig den
-diffuse skyggen som lå på absolutt alt.
+**Messing (`brand` #C4A574) brukes GJERRIG**: neste-prikken på Hjem,
+primærknappen (som er det MØRKESTE VARME på skjermen — aldri blek på blek,
+tekst `#1C1712`), og maks én aksent per skjermområde. Aktiv fane i BLEKK.
+
+**Platen er kontrollen.** Hjems hero (neste ordre) åpner ordren ved trykk på
+hele flaten — ingen «Åpne»-knapp, ingen chevron; hintet er press-state +
+haptikk. På platen står bare beslutningsdataene: etikett, jobbnavn, adresse.
+Ingen materiellstatus («elektrikeren vet det selv») — en linje under adressen
+er et UNNTAK som krever handling, i varsel-tone.
+
+**Rader ledes av sine egne data** — klokkeslett på Ordre, oppgavetall på
+Prosjekter, timer på Meg — aldri grå ikonfliser + chevron per rad (det er
+Innstillinger-mønsteret, avvist). Unntak: Lager er visuelt og bruker
+Finn-stil rutenett med produktbilder (EFO-bildene fra prisfilene) som default.
+
+**Varsel-oransje (`warning` #B4530A) er eneste semantikk på oversiktene**:
+avvik, lav beholdning, ting som venter. Grønn/rød beholdes for ekte status i
+dokumenter og detaljer.
+
+**Statuslinja er mørk-på-lys** på papirflatene; instrument-skjermene setter lys
+via `useMorkStatuslinje()` og gjenoppretter mørk ved blur.
+
+Instrument-rammen (`ToolScreen`, `ToolCard`, `ToolChip`) består for de mørke
+skjermene — der lages dybde fortsatt med VERDI, ikke skygge.
 
 ## Radius med mening
 
@@ -93,11 +119,13 @@ har tatt et valg i. Skalaen skal brukes slik:
 Målt mot lista over hva som avslører maskingenerert design. Ampex var skyldig i
 tre av dem, og alle tre er rettet eller under retting:
 
-- ~~systemfont uten personlighet på alt~~ → serif på display (`lib/fonts.ts`)
+- ~~systemfont uten personlighet på alt~~ → Geist overalt, display-signaturen
 - ~~lik hjørneradius overalt~~ → skalaen over
-- ~~myk skygge på 0.08 over hele appen~~ → hårlinje og verdi på mørke flater
+- ~~myk grå skygge på 0.08 over hele appen~~ → VARM skygge kun på heroer,
+  hårlinje ellers; verdi-dybde på de mørke instrumentene
 - lilla gradient-orber — har aldri vært her
-- hvitt/lysegrått uten standpunkt — brunt og kobber ER et standpunkt
+- hvit boks på beige uten standpunkt («2024-AI-kit») — platen skiller seg fra
+  papiret med det 4–6 %-skiftet + varm skygge, og messingen er standpunktet
 
 ## Soner, ikke kort på kort på kort
 
@@ -140,15 +168,12 @@ før teksten; en liten prikk i en pille gjør ikke det.
 Samme innhold og flyt som før — kun materialene endrer seg.
 
 **Gjør:**
-- Ambient bakgrunn (`AmbientBackdrop`, `ambientCool`/`ambientWarm`): myke,
-  nøytrale/varme gradient-flekker bak innholdet på hver hovedskjerm — glass
-  trenger noe å bryte, en flat farge bak glass er usynlig.
-- Frostede glasskort (`GlassCard`, `radius.hero`) for hero-innhold og
-  fremhevet informasjon. `cardGlassStrong` for tettere lister/empty-states
-  som trenger mer kontrast enn hero-glasset.
+- Glass KUN på kromen: navbar, dock-pille, stemme-orb. Innholdet som scroller
+  under er det glasset bryter.
+- Heroer (platen) på `bg` med `shadows.card` — varm skygge, hairline-kant,
+  `radius.hero`.
 - Luft: mer whitespace mellom seksjoner enn tradisjonell iOS-tetthet.
-- Ikon-chips i `brandSoft` (kobber-tint) på primærhandlinger — flat `fill`-grå
-  er OK for sekundære/nøytrale ikoner, ikke for det brukeren skal legge merke til.
+- Én messing-aksent per skjermområde — resten av flaten er papir og blekk.
 
 **Eksplisitt anti-Settings:**
 - Aldri `groupedBg` (flat iOS-systemgrå) som eneste bakgrunn på en hovedskjerm.
