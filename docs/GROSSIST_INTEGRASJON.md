@@ -349,3 +349,93 @@ To ting å ta med:
 - **Bygg «Test tilkobling» før automatisk import.** Uten den er første oppsett
   et gjettespill.
 - **Filmaske, ikke filnavn.** Grossistene daterer filnavnene sine.
+
+---
+
+# Felles katalog, privat pris — arkitektur besluttet 2026-09-11
+
+Tormod, etter at Solar sendte en standard V4-fil: *«de får IKKE samme fil, det
+er deres pris som ligger der. men vi kan rippe produktene, ikke pris. før du har
+prisfil kan du se produkter.»*
+
+Det er skillet hele varekartoteket skal bygges rundt, og det løser to problemer
+på én gang.
+
+## Problemet slik det står i dag
+
+`products` er firmascopet og ligger i `sync_tables`. Importerer ti firmaer den
+samme grossistfila, ligger sortimentet i ti kopier i Postgres, og hver kopi
+synkes ned til hver telefon i firmaet. Med 38 demovarer merkes det ikke. Med en
+ekte V4-fil på 50 000–200 000 varer blir det 20–80 MB SQLite per enhet, ganget
+med antall firmaer i basen.
+
+Det er feil for produktdata, og helt riktig for priser.
+
+## Grensa
+
+**Felles katalog** — én kopi, lik for alle: el-nummer, betegnelse, fabrikat,
+typebetegnelse, EAN, NRF, måleenhet og prisenhet, pakningsstørrelse,
+erstatningsvare, lagerført, og hele `VX`-bagasjen (bilde, FDV, HMS, dimensjon,
+vekt). Dette er VAREN. Den er identisk for alle som kjøper den.
+
+**Privat per firma** — nettopris, bruttopris, rabatt, rabattgruppe, prisdato,
+gyldighetsperiode, og firmaets egen utsalgspris og påslag (som ikke kommer fra
+grossisten i det hele tatt).
+
+Konkret betyr det at dagens `products` deles: `cost_price`, `unit_price` og
+`discount_group` er firmadata og skal ut av fellesfila. De øvrige kolonnene blir.
+
+## Kilden er STANDARDFILA, aldri kundens
+
+Fellesfila bygges kun av **V4 standard varefil** — den Solar sendte har ingen
+`kjoperOrgnr`, intet `kundeNr` og ingen `avtaleId`, bare bruttopriser. Den er
+ren å dele.
+
+Kundespesifikke `P4`-filer bidrar ALDRI med produkter, bare med prisrader inn i
+firmaets egen tabell. Dermed oppstår ikke spørsmålet om vi har lov til å hente
+noe ut av én kundes fil — vi gjør det ikke.
+
+## Distribusjon: fil på disk, ikke rader i synken
+
+Katalogen bygges én gang per grossistfil til en **ferdig SQLite-fil** og legges
+i R2. Enheten laster den ned ved behov, nøyaktig som skann i dag —
+`lib/scan-storage.ts` har mønsteret (`ensureLocal`/`ensureUploaded` + lokal
+tilstandsfil).
+
+**Ikke last katalogen inn i RAM.** SQLite minnekartlegger fila og slår opp
+gjennom indeks: oppslag i 100 000 varer tar under et millisekund, og
+minnebruken står stille uansett filstørrelse. Hundre tusen rader som
+JS-objekter koster hundrevis av MB og et par sekunder ved oppstart. SQLite
+*er* «hent til minne ved behov», bare gjort riktig.
+
+Krever `expo-sqlite` — WatermelonDB eksponerer bare sin egen base. Expo-pakke,
+ingen løpende kostnad.
+
+Koblingen holder uten databasejoin: `order_materials` lagrer allerede
+`elnummer` ved siden av `product_id`, så et oppslag mot katalogfila er nok.
+
+Offline: katalogen ligger på disk, så søk virker i kjelleren. Bestilling
+trenger nett uansett — det er derfor katalogen ikke må gjennom
+offline-først-synken for å være offline.
+
+## Førstedagen, og «Etterspør prisfil»-knappen
+
+Konsekvensen av skillet: en ny kunde kan søke opp varer, se bilde og datablad
+og bygge en ordre med antall FØR de har egen prisfil. Prisfeltet står tomt til
+fila kommer. Det er en vesentlig bedre førstedag enn et tomt varesøk.
+
+Knappen skal gjøre mer enn å åpne en e-post. Appen vet allerede hvilken
+grossist varen kom fra og firmaets orgnr, så forespørselen kan skrives ferdig:
+hvem vi er, hvilket kundenummer det gjelder, og at vi ber om V4/P4 på sFTP.
+Jørn Normand i Solar bekreftet 2026-09-08 at det er veien: filene distribueres
+på sFTP, normalt én konto per kunde, og bestillinger kan legges på samme server.
+
+Da er det ikke en supportsak, det er knappen som starter integrasjonen.
+
+## Ikke rør skjemaet ennå
+
+Standardfila fra Solar kom aldri fram — vedlegget ble borte på veien, og ny
+forespørsel er sendt 2026-09-11. Første steg når den kommer er å kjøre den
+gjennom parseren og TELLE: antall varer, tekstmengde, hvor stor SQLite-fila
+faktisk blir, og hvor mye den komprimeres. Skjemaendringen gjøres på det tallet,
+ikke på anslaget over.
