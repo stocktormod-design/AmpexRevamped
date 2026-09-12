@@ -10,9 +10,9 @@ import { CartSheet } from './cart-sheet'
 import { useCart, takenQty, adjustCartLine } from '../lib/cart'
 import { colors, spacing, radius, sizes, shadows, type as t } from '../lib/theme'
 
-// Tom-invitten vises KUN på Lager-rota — det er der uttak starter. (Var alle
-// hovedfaner, men baren «alltid i veien» på Hjem/Ordre/Prosjekter var bare støy.)
-const ROOT_TAB_PATHS = ['/lager']
+// Tom-invitten er BORTE (Tormod 12.09: «fjern materielluttak nederst på lager»).
+// Baren finnes bare når kurven har varer; uttak startes fra varen eller lokasjonen.
+const ROOT_TAB_PATHS: string[] = []
 
 /**
  * Spotify-stil mini-bar for aktivt materielluttak. Har kurven varer → full bar

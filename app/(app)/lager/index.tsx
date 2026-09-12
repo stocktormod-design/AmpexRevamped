@@ -3,7 +3,7 @@ import { View, ScrollView } from 'react-native'
 import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { Plus, Warehouse, FileUp, Search } from 'lucide-react-native'
+import { Plus, Warehouse, Search, Car } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { MegAvatar } from '../../../components/meg-avatar'
 import { PapirSectionHeader, usePapirFokus } from '../../../components/papir-surface'
@@ -89,31 +89,37 @@ export default function LagerScreen() {
           paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
         }}>
           <Text style={t.display}>Lager</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          {/* Prisfila ligger under varekartoteket (Søk i varer), ikke som ikon her:
+              en montør som åpner Lager skal se bilen sin, ikke en importknapp. */}
           <MegAvatar />
-          {/* Prisfila er inngangen til hele vareregisteret — uten den er lageret
-              en liste over ting noen har skrevet inn for hånd. */}
-          <Pressable
-            haptic="light" pressScale={0.92}
-            onPress={() => router.push('/(app)/lager/prisfil')}
-            style={{
-              width: 36, height: 36, borderRadius: radius.pill,
-              alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs,
-            }}
-          >
-            <FileUp size={18} color={colors.label} strokeWidth={sizes.lucideStroke} />
-          </Pressable>
-          <Pressable
-            haptic="medium" pressScale={0.92}
-            onPress={() => router.push('/(app)/lager/ny-lokasjon')}
-            style={{
-              width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.brandSoft,
-              alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs,
-            }}
-          >
-            <Plus size={sizes.icon} color={colors.brand} strokeWidth={2.2} />
-          </Pressable>
-          </View>
+        </View>
+
+        {/* Legg til bil står øverst: bilen er det en montør faktisk har. Sentrallager
+            har de fleste småfirma bare ett av. Begge er egne, navngitte valg —
+            ikke ett plusstegn som spør etterpå. */}
+        <View style={{
+          marginHorizontal: spacing.screen, marginBottom: spacing.screen,
+          borderRadius: radius.lg, borderWidth: 1, borderColor: colors.separator, overflow: 'hidden',
+        }}>
+          {([
+            { label: 'Legg til bil', Icon: Car, type: 'bil' },
+            { label: 'Legg til lokasjon', Icon: Warehouse, type: 'lager' },
+          ] as const).map((v, i) => (
+            <Pressable
+              key={v.type}
+              haptic="light"
+              onPress={() => router.push({ pathname: '/(app)/lager/ny-lokasjon', params: { type: v.type } })}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.bg,
+                paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+                borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.separator,
+              }}
+            >
+              <v.Icon size={18} color={colors.label} strokeWidth={sizes.lucideStroke} />
+              <Text style={[t.body, { flex: 1 }]}>{v.label}</Text>
+              <Plus size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
+          ))}
         </View>
 
         {locations.length === 0 ? (
@@ -130,21 +136,8 @@ export default function LagerScreen() {
               </View>
               <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen lokasjoner</Text>
               <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>
-                Legg til sentrallager og biler for å begynne å spore beholdning.
+                Bilen din er lageret på hjul. Legg den til over, så følger uttak og handleliste den.
               </Text>
-              <Pressable
-                haptic="medium"
-                pressScale={0.97}
-                onPress={() => router.push('/(app)/lager/ny-lokasjon')}
-                style={{
-                  marginTop: spacing.lg, height: sizes.ctaHeight - 6, paddingHorizontal: spacing.xl,
-                  borderRadius: radius.xl, backgroundColor: colors.cta,
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-                }}
-              >
-                <Plus size={sizes.icon - 2} color={colors.ctaLabel} strokeWidth={2.2} />
-                <Text style={[t.headline, { color: colors.ctaLabel }]}>Legg til lokasjon</Text>
-              </Pressable>
             </View>
           </View>
         ) : (

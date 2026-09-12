@@ -1,14 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { View, ScrollView, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
 import { Text, TextInput } from '../../../components/text'
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
-import { X } from 'lucide-react-native'
+import { X, ChevronRight, UserRound } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Order } from '../../../lib/db/models/order'
 import { markOrderOpened } from '../../../lib/last-opened'
+import { settValgtKunde, useValgtKunde } from '../../../lib/customers'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 function Field({ value, onChange, placeholder, last, ...inputProps }: {
@@ -62,9 +63,12 @@ function pickAndroidDateTime(initial: Date, onPicked: (d: Date) => void) {
 
 export default function NyOrdreScreen() {
   const [title, setTitle] = useState('')
-  const [customer, setCustomer] = useState('')
-  const [phone, setPhone] = useState('')
+  // Kunden velges fra registeret (eller opprettes der med navn, telefon og adresse) —
+  // ikke fritekst per ordre. Da finnes hun med telefonnummer for alltid.
+  const kunde = useValgtKunde()
+  useEffect(() => { settValgtKunde(null) }, []) // start rent hver gang skjermen åpnes
   const [address, setAddress] = useState('')
+  useEffect(() => { if (kunde?.postalAddress && !address) setAddress(kunde.postalAddress) }, [kunde]) // eslint-disable-line react-hooks/exhaustive-deps
   const [description, setDescription] = useState('')
   const [scheduled, setScheduled] = useState<Date | null>(null)
   const [saving, setSaving] = useState(false)
@@ -76,8 +80,9 @@ export default function NyOrdreScreen() {
     const created = await database.write(async () =>
       database.get<Order>('orders').create(o => {
         o.title = title.trim()
-        o.customerName = customer.trim() || null
-        o.customerPhone = phone.trim() || null
+        o.customerId = kunde?.id ?? null
+        o.customerName = kunde?.name ?? null
+        o.customerPhone = kunde?.phone ?? null
         o.address = address.trim() || null
         o.description = description.trim() || null
         o.scheduledAt = scheduled
@@ -100,7 +105,7 @@ export default function NyOrdreScreen() {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: spacing.screen, paddingVertical: spacing.lg,
       }}>
-        <Pressable onPress={() => router.dismiss()} hitSlop={12}>
+        <Pressable onPress={() => (router.canDismiss() ? router.dismiss() : router.back())} hitSlop={12}>
           <Text style={[t.body, { color: colors.secondaryLabel }]}>Avbryt</Text>
         </Pressable>
         <Text style={t.headline}>Ny ordre</Text>
@@ -114,9 +119,25 @@ export default function NyOrdreScreen() {
       >
         <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
           <Field value={title} onChange={setTitle} placeholder="Tittel (påkrevd)" autoFocus returnKeyType="next" />
-          <Field value={customer} onChange={setCustomer} placeholder="Kunde" returnKeyType="next" />
-          <Field value={phone} onChange={setPhone} placeholder="Telefon" keyboardType="phone-pad" returnKeyType="next" />
-          <Field value={address} onChange={setAddress} placeholder="Adresse" returnKeyType="next" />
+          <Pressable
+            haptic="light"
+            onPress={() => router.push('/(app)/kunder/velg')}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+              paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+              borderBottomWidth: 0.5, borderBottomColor: colors.separator,
+            }}
+          >
+            <UserRound size={18} color={kunde ? colors.label : colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            <View style={{ flex: 1 }}>
+              <Text style={[t.body, { color: kunde ? colors.label : colors.tertiaryLabel }]} numberOfLines={1}>
+                {kunde ? kunde.name : 'Kunde'}
+              </Text>
+              {!!kunde?.phone && <Text style={[t.footnote, { marginTop: 1 }]}>{kunde.phone}</Text>}
+            </View>
+            <ChevronRight size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+          </Pressable>
+          <Field value={address} onChange={setAddress} placeholder="Adresse (jobben)" returnKeyType="next" />
           {/* Planlagt tidspunkt — inline compact-picker (iOS), dialoger (Android) */}
           <View style={{
             flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

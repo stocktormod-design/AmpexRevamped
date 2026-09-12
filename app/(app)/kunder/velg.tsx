@@ -8,7 +8,7 @@ import { ListCard } from '../../../components/ui'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Order } from '../../../lib/db/models/order'
-import { useKunder } from '../../../lib/customers'
+import { useKunder, settValgtKunde } from '../../../lib/customers'
 import { Customer } from '../../../lib/db/models/customer'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
@@ -22,7 +22,7 @@ export default function VelgKundeScreen() {
   const kunder = useKunder(sok)
 
   async function velg(kunde: Customer) {
-    if (!orderId) { router.dismiss(); return }
+    if (!orderId) { settValgtKunde(kunde); router.dismiss(); return }
     const order = await database.get<Order>('orders').find(orderId).catch(() => null)
     if (order) {
       await database.write(async () => {

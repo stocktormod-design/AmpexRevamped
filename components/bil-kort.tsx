@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { InteractionManager, View } from 'react-native'
 import Svg, { Path, Rect, Circle, Ellipse } from 'react-native-svg'
 import { Q } from '@nozbe/watermelondb'
+import { router } from 'expo-router'
 import { Text } from './text'
 import { Pressable } from './pressable'
 import { Bil3D } from './bil-3d'
@@ -164,8 +165,30 @@ export function BilKort({ userId }: { userId: string | null }) {
     return () => { stopp = true }
   }, [regNr])
 
-  // Ingen biler registrert → ingenting å vise. Biler legges til i Lager.
-  if (biler.length === 0) return null
+  // Ingen biler registrert → plassholder som sier hva som kommer her, og som
+  // tar deg rett til «Legg til bil». Et tomt Meg forklarer ingenting.
+  if (biler.length === 0) {
+    return (
+      <Pressable
+        haptic="light"
+        onPress={() => router.push({ pathname: '/(app)/lager/ny-lokasjon', params: { type: 'bil' } })}
+        style={{
+          backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, borderRadius: radius.lg,
+          padding: spacing.lg, marginBottom: spacing.xl,
+        }}
+      >
+        <View style={{ paddingHorizontal: spacing.sm, opacity: 0.35 }}>
+          <BilSilhuett tint={colors.separator} form="varebil" />
+        </View>
+        <Text style={[t.headline, { marginTop: spacing.md }]}>Bilen din</Text>
+        <Text style={[t.footnote, { marginTop: spacing.xs }]}>
+          Skriv inn registreringsnummeret, så henter vi merke, modell og farge fra Vegvesen og
+          viser bilen her. Den blir lageret ditt på hjul: uttak og handleliste følger den.
+        </Text>
+        <Text style={[t.footnote, { marginTop: spacing.md, fontWeight: '600', color: colors.label }]}>Legg til bil</Text>
+      </Pressable>
+    )
+  }
 
   // Vegvesen gjentar ofte merket i handelsbetegnelsen («AUDI» + «Audi e-tron»)
   // — vis «Audi e-tron», ikke «AUDI Audi e-tron».
