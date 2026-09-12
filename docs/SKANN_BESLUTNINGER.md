@@ -3777,3 +3777,49 @@ og skiller ikke armene.
 
 **Og dette er regelen fra §90 fulgt:** begge måltallene ble først vist å rangere
 bilder jeg alt hadde dømt med øyet, FØR de ble brukt til å velge noe.
+
+## 92. Krasj i flisemalingen — budsjettet var 40 sekunder gammelt, 2026-09-12
+
+Tormod skannet et større rom (6,0 × 2,8 × 6,2 m, 342 bilder, TSDF → 258 249 trekanter)
+og appen døde. Loggen slutter midt i flisemalingen: flis 1 og 2 ferdige, ingen
+«prosjektive fliser»-linje. Avskyggingen (§91) var ferdig 23 sekunder tidligere, så
+det er ikke den.
+
+### Feilen
+
+Minnebudsjettet (atlas / maxKF / topK) leses ETT sted, tidlig:
+
+```
+13:10:27.551  V2 budsjett — headroom 2213MB → atlas 8192, maxKF 160, topK 6
+...
+13:11:05      flis 1 ferdig
+13:11:17      flis 2 ferdig
+(død)
+```
+
+Mellom de to linjene ligger TSDF (101 MB voxels), depth super-res, surface nets,
+xatlas (12,8 s) og pose-raffinering. Headroom-tallet gjaldt ikke lenger, og
+flisemalingen — det tyngste steget i hele baken — fortsatte på det.
+
+Kostnaden per flis er kjent aritmetikk: atlasparet pluss lesebufferet (3×S²×4 B),
+plan-akkumulatoren i halv oppløsning rgba16F (S²×2), fjæringslaget (S²×1) og ett
+dekodet kildefoto. Ved S = 8192 er det ~1,0 GB. Fire ganger etter hverandre, mot et
+tall målt før alt det andre ble allokert.
+
+### Grepet
+
+Minnet måles PÅ NYTT rett før flisene, og flisstørrelsen velges fra det: 8192 → 6144
+→ 4096, første som får plass innenfor 70 % av ledig minne. Grensa på 70 % er det eneste
+valgte tallet; resten følger av størrelsene. `meshscan.flisbudsjett = "off"` slår av.
+
+I tillegg logges ledig minne etter HVER flis. Neste krasj vil dermed si hvor mye som
+faktisk var ledig, i stedet for å måtte gjettes fra et tall som var 40 sekunder gammelt.
+
+Kvaliteten er urørt der minnet holder: panelfixturen gir 39 / 0,50 / 7,5 med og uten
+grepet, identisk med §91.
+
+**Ikke bekreftet ennå:** at dette alene er nok. Om ledig minne ved flisetid er f.eks.
+1600 MB, får 8192 fortsatt plass innenfor 70 %, og da krasjer det igjen. Loggen fra
+neste bake på det store rommet avgjør om grensa må ned eller om det er en lekkasje
+mellom flisene. Simulatoren kan ikke svare — `os_proc_available_memory()` gir 0 der og
+harnessen later som 2,5 GB.
