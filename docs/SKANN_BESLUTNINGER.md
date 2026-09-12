@@ -3665,3 +3665,56 @@ appen. `autoreleasepool` per bilde; toppen er nå ett foto om gangen.
 `meshscan.blend` = `raw`, mikrokontrast 1,6 i grenen. `winner`/`multiband`/`off` er
 A/B-armene. `meshscan.topk` er fortsatt 2 — flere syn midler bort mer bånd, men koster
 mer skarphet; ikke målt med mikrokontrasten på plass ennå.
+
+## 90. Snittet rullet tilbake — måltallet var blindt for artefakten, 2026-09-12
+
+§89 ble satt som standard, Tormod bakte om sin egen soveromsvegg, og den ble verre.
+Bildene ligger side om side (`T-gml-A.png` / `T-ny-A.png` i harness-mappa).
+
+### Hva som faktisk skjedde med veggen
+
+Veggen er PANEL — tynne loddrette spor med jevn avstand. Det er det vanskeligste
+tilfellet for et snitt: to syn er sub-pixel uenige om hvor sporet ligger, så den
+tynne mørke streken smøres til et bredt, svakt bånd. Mikrokontrast 1,6 blåser
+deretter opp nettopp det båndet. Resultatet er brede, myke loddrette striper der det
+før var skarpe streker.
+
+I tillegg kom §72-mosaikken tilbake: store flekker med saggtakk-kant, der topp-2-
+settet vipper fra trekant til trekant.
+
+| | vannrett bånd | tonespenn over veggen |
+|---|---|---|
+| winner (før) | 0,566 | 51 gråtrinn |
+| snitt (etter) | **0,147** | **88 gråtrinn** |
+
+Båndene ble altså fjernet. Men lysheten over veggen varierte nesten dobbelt så mye
+etterpå — og «ser det ut som ÉN vegg» er nettopp det tonespennet, ikke båndenergien.
+
+### Hvorfor måltallet løy — fjerde gang
+
+Båndmålet er RADSNITT minus et glidende snitt. Det ser bare vannrett struktur.
+Artefakten snittet lager er loddrett og flekkete, og radsnittet er per konstruksjon
+blind for den. Skarphetsmålet (98-persentil av vannrette nabodifferanser) ble
+dessuten BEDRE av brede oversharpede loddrette striper. Begge tallene pekte oppover
+mens veggen ble dårligere.
+
+**Regel herfra: et nytt måltall skal først vises å skille to bilder jeg allerede har
+rangert med øyet.** Ellers måler det noe annet enn det jeg tror.
+
+Nyttig par som faktisk skiller dem, til neste gang:
+- `tonespenn` = maks − min av luminansen etter gauss(12) over veggflata. 51 mot 88.
+- `tonesteg p90` = 90-persentil av |∇| på samme lavfrekvensfelt. 0,50 mot 0,71.
+
+### Hva som ble beholdt
+
+- `autoreleasepool` per bilde i snitt-grenen. Ekte feil: 103 foto à ~14 MB ble aldri
+  sluppet, og appen ble drept av jetsam på 77 % i det store skannet.
+- Mikrokontrast i snitt-grenen. Den kjørte aldri der før, så alle tidligere A/B-er av
+  den på denne veien målte ingenting.
+- `meshscan.blend raw` består som A/B-arm.
+
+### Det som står igjen
+
+Vinnerveien har fortsatt et bredt, mykt vannrett slør over veggen (tonespenn 51 =
+20 % av skalaen, mot avskyggingens mål på 6 %). Det er den ekte gjenstående feilen,
+og den skal angripes i tonelaget — ikke ved å bytte ut fargevalget.
