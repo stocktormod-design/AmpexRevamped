@@ -5,6 +5,34 @@ import { Customer } from './db/models/customer'
 import { Order } from './db/models/order'
 import { syncQuietly } from './db/sync'
 
+// ── Valgt kunde for en ordre som ikke er opprettet ennå (Ny ordre → Velg kunde).
+// Velgeren kobler ellers kunden rett på ordren; her finnes ingen ordre å koble på,
+// så valget parkeres til «Opprett ordre» trykkes.
+let valgtKunde: Customer | null = null
+const valgtLyttere = new Set<(k: Customer | null) => void>()
+export function settValgtKunde(k: Customer | null) { valgtKunde = k; valgtLyttere.forEach(l => l(k)) }
+export function useValgtKunde(): Customer | null {
+  const [k, setK] = useState<Customer | null>(valgtKunde)
+  useEffect(() => { valgtLyttere.add(setK); return () => { valgtLyttere.delete(setK) } }, [])
+  return k
+}
+
+/** Kundesøk uten hook — for assistentens verktøy. Tom søketekst gir alle. */
+export async function sokKunder(sok = '', maks = 20): Promise<Customer[]> {
+  const alle = await database.get<Customer>('customers').query(Q.sortBy('name', Q.asc)).fetch()
+  const q = sok.trim().toLowerCase()
+  const treff = q ? alle.filter(k => [k.name, k.phone, k.city, k.address].some(v => (v ?? '').toLowerCase().includes(q))) : alle
+  return treff.slice(0, maks)
+}
+
+/** Én kunde etter navn: eksakt først, så «begynner med». Null hvis ingen. */
+export async function finnKunde(navn: string): Promise<Customer | null> {
+  const n = navn.trim().toLowerCase()
+  if (!n) return null
+  const alle = await database.get<Customer>('customers').query().fetch()
+  return alle.find(k => k.name.toLowerCase() === n) ?? alle.find(k => k.name.toLowerCase().startsWith(n)) ?? null
+}
+
 export function useKunder(sok = ''): Customer[] {
   const [rows, setRows] = useState<Customer[]>([])
   useEffect(() => {

@@ -7,7 +7,7 @@ import { Chip } from '../../../components/ui'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Order } from '../../../lib/db/models/order'
-import { opprettKunde } from '../../../lib/customers'
+import { opprettKunde , settValgtKunde } from '../../../lib/customers'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 function Field({ value, onChange, placeholder, last, ...rest }: {
@@ -64,6 +64,8 @@ export default function NyKundeScreen() {
         })
         syncQuietly()
       }
+    } else {
+      settValgtKunde(kunde)
     }
     router.dismiss()
   }

@@ -48,8 +48,8 @@ function Rad({ aktivitet, sist }: { aktivitet: Activity; sist: boolean }) {
             value={pris}
             onChangeText={setPris}
             onBlur={lagre}
-            placeholder="—"
-            placeholderTextColor={colors.tertiaryLabel}
+            placeholder="mangler"
+            placeholderTextColor={colors.danger}
             keyboardType="decimal-pad"
             selectTextOnFocus
             style={[t.body, { minWidth: 72, textAlign: 'right', fontVariant: ['tabular-nums'] }]}
@@ -68,6 +68,9 @@ export default function AktiviteterScreen() {
   const aktiviteter = useAktiviteter()
   // Alert.prompt finnes ikke på Android og gjør ingenting der — knappen var død.
   const [nyÅpen, setNyÅpen] = useState(false)
+  // Timepris er ikke valgfri (Tormod 12.09): en timetype uten pris gir timer uten
+  // pris i fakturagrunnlaget. Navn først, så pris, så opprettes den.
+  const [nyttNavn, setNyttNavn] = useState<string | null>(null)
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
@@ -91,8 +94,22 @@ export default function AktiviteterScreen() {
         tittel="Ny aktivitet"
         plassholder="Montasje, Feilsøking, Kjøring …"
         knapp="Opprett"
-        onSvar={async navn => { setNyÅpen(false); await opprettAktivitet({ name: navn }) }}
+        onSvar={navn => { setNyÅpen(false); setNyttNavn(navn) }}
         onAvbryt={() => setNyÅpen(false)}
+      />
+      <PromptSheet
+        synlig={nyttNavn != null}
+        tittel={`Timepris for ${nyttNavn ?? ''}`}
+        forklaring="Kroner per time eks. mva. Skriv 0 for interne timer som ikke faktureres."
+        plassholder="850"
+        knapp="Opprett"
+        onSvar={async verdi => {
+          const navn = nyttNavn ?? ''; setNyttNavn(null)
+          const pris = Number(verdi.replace(',', '.').replace(/[^0-9.]/g, ''))
+          if (!navn || !Number.isFinite(pris)) return
+          await opprettAktivitet({ name: navn, hourlyRate: pris, billable: pris > 0 })
+        }}
+        onAvbryt={() => setNyttNavn(null)}
       />
 
       <ScrollView

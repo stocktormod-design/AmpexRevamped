@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { View, KeyboardAvoidingView, Platform, TextStyle } from 'react-native'
 import { Text, TextInput } from '../../../components/text'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { Pressable } from '../../../components/pressable'
 import { PapirChip, usePapirFokus } from '../../../components/papir-surface'
 import { database } from '../../../lib/db'
@@ -12,7 +12,8 @@ import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 export default function NyLokasjonScreen() {
   // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
   usePapirFokus()
-  const [type, setType] = useState<LocationType>('bil')
+  const { type: typeParam } = useLocalSearchParams<{ type?: string }>()
+  const [type, setType] = useState<LocationType>(typeParam === 'lager' ? 'lager' : 'bil')
   const [name, setName] = useState('')
   const [regNr, setRegNr] = useState('')
   const [trackerImei, setTrackerImei] = useState('')

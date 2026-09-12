@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { View, ScrollView } from 'react-native'
+import { View, ScrollView, Alert } from 'react-native'
 import { Text } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { setStatusBarStyle } from 'expo-status-bar'
@@ -11,6 +11,7 @@ import { BilKort } from '../../components/bil-kort'
 import { useTilGodkjenning, useKanGodkjenne } from '../../lib/approvals'
 import { useSynkStatus } from '../../lib/db/sync'
 import { useUserId } from '../../lib/auth-user'
+import { supabase } from '../../lib/supabase'
 import { getPreferredVoice, setPreferredVoice, VOICE_OPTIONS } from '../../lib/ai/voice-prefs'
 import { trykkProve, nullstillTrykk, type TrykkProve } from '../../lib/perf'
 import { colors, spacing, radius, sizes, type as t } from '../../lib/theme'
@@ -240,6 +241,23 @@ export default function Screen() {
           og trykk her for å lese av hvor lenge trykkene lå og ventet på
           JS-tråden. Ingen løkke som oppdaterer seg selv · den leses av på
           forespørsel, så den koster ingenting mens den står der (regel 10). */}
+      {/* Utlogging. Nederst og rolig: det er ikke en handling man gjør i løpet av
+          dagen. Lokale data blir stående på telefonen; logger en annen bruker fra et
+          annet firma inn, nullstiller company-guard basen før synk. */}
+      <Pressable
+        haptic="light"
+        onPress={() => Alert.alert('Logge ut?', 'Du kan logge inn igjen med samme bruker.', [
+          { text: 'Avbryt', style: 'cancel' },
+          { text: 'Logg ut', style: 'destructive', onPress: () => { void supabase.auth.signOut({ scope: 'local' }).then(() => router.replace('/(auth)/login')) } },
+        ])}
+        style={{
+          marginTop: spacing.xxl, paddingVertical: spacing.md, alignItems: 'center',
+          borderRadius: radius.lg, borderWidth: 1, borderColor: colors.separator, backgroundColor: colors.bg,
+        }}
+      >
+        <Text style={[t.body, { color: colors.danger }]}>Logg ut</Text>
+      </Pressable>
+
       {__DEV__ && <TrykkMaaler />}
     </ScrollView>
   )
