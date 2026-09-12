@@ -390,7 +390,11 @@ enum MeshBakeV2 {
         // uskarpheten, og vinkelvekting skiller for dårlig når synene ser flaten fra omtrent
         // samme retning. Målt på enhet: 6 syn ga tydelig blur, 2 ga skarphet uten at sømmene
         // kom tilbake (fordi raw-snittet ikke VELGER, det vekter).
-        topK = min(2, topK)
+        // Taket var 2 (2026-09-12, §94). Med 2 syn flytter ett bytte HALVE fargen, og
+        // tonelappene med saggtakk-kant blir tydelige. Med 6 flytter det en sjettedel.
+        // Det var 2 fordi flere syn ga uskarphet — men det var før mikrokontrasten kjørte
+        // i snitt-grenen (§89) og før snittet ble vektet etter skarphet (§94).
+        topK = min(6, topK)
         if let s = UserDefaults.standard.string(forKey: "meshscan.topk"), let v = Int(s), v >= 1 {
             topK = v
             MeshLog.log("V2 topK overstyrt → \(topK)")
@@ -450,7 +454,20 @@ enum MeshBakeV2 {
         // Og tonespennet over veggen DOBLET seg, 51 → 88 gråtrinn: flekkene med
         // saggtakk-kant er tilbake, altså §72-mosaikken. Veggen ser mindre ut som ÉN
         // vegg, ikke mer. «raw»/«multiband»/«off» er A/B-armene.
-        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "winner"
+        // STANDARD ER «raw» (2026-09-12, §94 — tredje og siste runde på dette valget).
+        // Vinnerveien gir hver flate ETT foto, og der to felt møtes hopper panelsporet noen
+        // piksler til siden: lange rette linjer blir brutt opp i forskjøvede segmenter.
+        // Snittet har ingen vinner og dermed ingen søm — sporene går hele veggen, rette.
+        //
+        // Prisen er skarphet på skann der atlaset har MER oppløsning enn justeringen klarer
+        // å levere: snitting krever sub-texel samsvar mellom syn, og vi har ~2 texler feil.
+        // Målt: panelfixturen har 0,7 mm per texel og synene er ~1,5 mm uenige, så et 3 mm
+        // spor smøres. Store rom har 2–3 mm per texel og mister ingenting.
+        //
+        // Valget er Tormods, ordrett: «da var faktisk forgje versjon bedre selvom noen av
+        // stripene i panelene var ikke skarp fordi de var iallefall rett.»
+        // «winner»/«multiband»/«off» er A/B-armene.
+        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "raw"
         let blendAll = blendFlag != "off" && blendFlag != "winner"
         let blendRaw = blendAll && blendFlag != "multiband"
         var warpGrids = [[SIMD2<Float>]]()
@@ -470,8 +487,13 @@ enum MeshBakeV2 {
             // for lite informasjon til at Gauss-Newton finner riktig løsning, og de finere
             // rundene klarer ikke å rette opp det den grove låste seg til. Én runde på full
             // oppløsning er bedre. Sett meshscan.refinesteps = "pyramid" for å prøve igjen.
+            // ARBEIDSOPPLØSNINGEN ER EN FRIHETSGRAD (2026-09-12). 960 er en FJERDEDEL av
+            // kildefotoets 3840. Konvergerer justeringen til ±1 px der, er det ±4 px i
+            // teksturen — og det er akkurat så mye panelsporene hopper over en feltgrense.
+            // meshscan.refinepx setter oppløsningen direkte.
             let steps: [Int] = UserDefaults.standard.string(forKey: "meshscan.refinesteps") == "pyramid"
-                ? [240, 480, 960] : [960]
+                ? [240, 480, 960]
+                : [Int(flaggTall("meshscan.refinepx", 960))]
             for (si, px) in steps.enumerated() {
                 UserDefaults.standard.set(String(px), forKey: "meshscan.warppx")
                 MeshPoseRefineV2.refine(keyframes: &kfUse, positions: meshIn.positions, normals: meshIn.normals,
@@ -3595,6 +3617,23 @@ enum MeshBakeV2 {
         // Eksponenten lar det beste synet dominere gradvis i stedet for binært: 4 var den
         // gamle faste verdien, 10–14 gir merkbart skarpere raw-bake med litt mer søm.
         let blendSharp = Float(UserDefaults.standard.string(forKey: "meshscan.blendsharp") ?? "") ?? 12
+        // Skarphetsvekt per bilde, normalisert mot skannets EGEN 90-persentil (ikke maks —
+        // ett tilfeldig knivskarpt bilde skal ikke gjøre alle andre verdiløse). Eksponenten
+        // styrer hvor hardt de skarpe dominerer. meshscan.blendskarp = 0 slår av (alt = 1).
+        let skarpEksp = MeshBakeV2.flaggTall("meshscan.blendskarp", 2)
+        var skarpVekt = [Float](repeating: 1, count: kfUse.count)
+        if skarpEksp > 0.01 {
+            let alle = kfUse.map { Float($0.sharpness ?? 0) }.sorted()
+            let p90 = alle.isEmpty ? 0 : alle[min(alle.count - 1, Int(Float(alle.count) * 0.9))]
+            if p90 > 1e-3 {
+                for i in kfUse.indices {
+                    let r = min(1, max(0, Float(kfUse[i].sharpness ?? 0) / p90))
+                    skarpVekt[i] = max(0.02, pow(r, skarpEksp))
+                }
+                MeshLog.log(String(format: "V2 snitt-vekt — skarphet^%.1f, p90 %.0f, vekt %.2f–%.2f",
+                                   skarpEksp, p90, skarpVekt.min() ?? 0, skarpVekt.max() ?? 0))
+            }
+        }
         let gW = MeshPoseRefineV2.warpGridW, gH = MeshPoseRefineV2.warpGridH
         var gdim = SIMD2<Int32>(Int32(gW), Int32(gH))
         let zeroGrid = [SIMD2<Float>](repeating: .zero, count: gW * gH)
@@ -3708,7 +3747,7 @@ enum MeshBakeV2 {
                     SIMD4(k.transform[12], k.transform[13], k.transform[14], k.transform[15])))),
                     intr: SIMD4(k.intrinsics[0], k.intrinsics[1], k.intrinsics[2], k.intrinsics[3]),
                     img: SIMD4(Float(k.width), Float(k.height), 0, 0),
-                    wb: SIMD4(gains[fr.frame], 0), ofs: SIMD4(0, 0, 0, 0),
+                    wb: SIMD4(gains[fr.frame], skarpVekt.indices.contains(fr.frame) ? skarpVekt[fr.frame] : 1), ofs: SIMD4(0, 0, 0, 0),
                     // meshscan.blendsharp: 4 er den gamle faste verdien.
                     camPos: SIMD4(k.transform[12], k.transform[13], k.transform[14], blendSharp))
                 var grid = (fr.frame < warpGrids.count && warpGrids[fr.frame].count == gW * gH) ? warpGrids[fr.frame] : zeroGrid
@@ -3881,7 +3920,10 @@ enum MeshBakeV2 {
                 SIMD4(k.transform[12], k.transform[13], k.transform[14], k.transform[15])))),
                 intr: SIMD4(k.intrinsics[0], k.intrinsics[1], k.intrinsics[2], k.intrinsics[3]),
                 img: SIMD4(Float(k.width), Float(k.height), 0, 0),
-                wb: SIMD4(gains[r.frame], 0),
+                // w bærer skarphetsvekta (§94). Den brukes bare av avg_warp-fragmentet;
+                // vinnerfragmentet leser den ikke. Må være 1 og ikke 0 når vekting er av,
+                // ellers nulles snittvektene.
+                wb: SIMD4(gains[r.frame], skarpVekt.indices.contains(r.frame) ? skarpVekt[r.frame] : 1),
                 ofs: SIMD4(regionOfs.indices.contains(r.region) ? regionOfs[r.region] : .zero, 0),
                 camPos: SIMD4(k.transform[12], k.transform[13], k.transform[14], blendSharp))
 
@@ -4690,7 +4732,13 @@ enum MeshBakeV2 {
         float3 n = normalize(cross(dfdx(in.wp), dfdy(in.wp)));
         float3 viewDir = normalize(c.camPos.xyz - in.wp);
         float facing = clamp(abs(dot(n, viewDir)), 0.0, 1.0); // abs: normal-orientering er vilkårlig
-        float w = pow(facing, max(c.camPos.w, 1.0)) + 1e-3;    // liten sokkel så ingen flate blir helt svart
+        // SKARPHETSVEKT PER BILDE (c.wb.w, 2026-09-12 §94). Vekten var ren vinkelvekting:
+        // et uskarpt syn som ser flaten head-on slo et skarpt syn på skrå. På et skann der
+        // flertallet av bildene er uskarpe (målt: 65 % under skarphet 100 på panelfixturen)
+        // blir snittet da mos, og vinnerveien — som plukker DET ENE skarpe — vinner.
+        // Med skarpheten i vekten lar samme snitt seg bruke på begge slags skann: er bare
+        // ett syn skarpt, dominerer det av seg selv, og snittet oppfører seg som vinneren.
+        float w = pow(facing, max(c.camPos.w, 1.0)) * max(c.wb.w, 1e-4) + 1e-3;
         return float4(frame.sample(s, uvN).rgb * devig * c.wb.rgb * w, w);
     }
 
