@@ -3901,3 +3901,70 @@ altså høyest for LAVEST oppløsning. Femte gang det målet peker feil vei. Det
 
 Kostnaden er tid: 9 fliser i stedet for 4 omtrent dobler malingen. På det store rommet
 betyr det ~150 s i stedet for 87 s.
+
+## 94. Snittet som standard — rett slår skarpt, 2026-09-12
+
+Tormod, om panelveggen: «nei panelene er ikke helt rett. da var faktisk forgje versjon
+bedre selvom noen av stripene i panelene var ikke skarp fordi de var iallefall rett.»
+Og: «NEI ikke per plane. det gjør ikke scaniverse. det blir ikke værre med flere
+viewangles hos dem.»
+
+Begge er riktige, og de bestemmer valget.
+
+### Feilen
+
+Vinnerveien gir hver flate ETT foto. Der to felt møtes hopper panelsporet noen piksler
+til siden, så en linje som går fra gulv til tak blir brutt opp i forskjøvede segmenter.
+Det store rommet hadde 5052 felt og 7840 sømkanter på veggene.
+
+Snittet har ingen vinner og dermed ingen søm. Sporene går hele veggen, rette. Det er
+også derfor flere vinkler gjør det BEDRE hos Scaniverse i stedet for verre: de velger
+ikke, de blander.
+
+### Prisen, målt
+
+Snitting krever at synene ligger innenfor én texel av hverandre. De gjør de ikke:
+
+| | texler/m | mm per texel | uenighet mellom syn | koster? |
+|---|---|---|---|---|
+| panelfixtur (nært, lite rom) | ~1400 | 0,7 | ~1,5 mm ≈ 2 texler | JA — 3 mm spor smøres |
+| stort rom (5×3×7 m) | ~500 | 2–3 | ~1,5 mm < 1 texel | nei |
+
+Derfor er snittet klart bedre på store rom og mykere på nære, detaljrike skann. Det er
+en ekte avveining, ikke en feil som kan flagges bort — og Tormod har valgt rett side av
+den.
+
+### Fem armer prøvd for å slippe å betale prisen. Ingen virket.
+
+1. **Justering på full oppløsning** (`meshscan.refinepx 3840` — nytt flagg). Residual
+   0,0350 → 0,0337. Og sporene ble like rette ved 960 som ved 3840: **det var snittet
+   alene som rettet dem**, ikke justeringen. Påstanden om det motsatte ble trukket.
+2. **Finere warp-rutenett** (`meshscan.warpgrid` — nytt flagg, 12×8 → 36×24 → 72×48).
+   Residual 0,0269 → 0,0262 uansett oppløsning. Warpen er ikke begrenset av antall
+   frihetsgrader; den konvergerer mot det samme.
+3. **Skarphetsvekt per bilde** (`meshscan.blendskarp`, standard 2 — BEHOLDT). Vekten var
+   ren vinkelvekting: et uskarpt syn head-on slo et skarpt syn på skrå. Panelfixturen har
+   65 % av bildene under skarphet 100 (median 42) mot 26 % på nyskann (median 299), så
+   dette MÅTTE være galt. Det er riktigere nå, men løste ikke utsmøringen.
+4. **Hardere vinkelvekting** (`meshscan.blendsharp` 12 → 32 → 80). Skulle la snittet
+   gradvis oppføre seg som vinneren uten hard søm. Sporene ble ikke skarpere.
+5. **Per-plan kandidatbegrensning** (`meshscan.planetopn`). Avvist av Tormod før måling,
+   med rett begrunnelse: det er ikke det Scaniverse gjør, og det gjør flere vinkler til
+   et problem i stedet for en fordel.
+
+### Standard nå
+
+`meshscan.blend` = `raw`, `topK`-taket 2 → **6** (med 2 syn flytter ett bytte halve
+fargen; med 6 en sjettedel, og tonelappene blir svake), mikrokontrast 1,6 i grenen,
+skarphetsvekt på. Verifisert at defaultene gir identiske tall som flaggene på alle fire
+fixturer: 49 / 86 / 25 / 93 tonespenn, rutethet 6,0 / 6,0 / 8,3 / 5,4.
+
+### Det som står igjen
+
+- **Svake tonelapper med saggtakk-kant** øverst på veggene. Tonespenn er verre enn
+  vinnerveien på to av fire fixturer (panel 39 → 86, soverom 47 → 93). Neste sak.
+- **Sub-texel justering** er den eneste veien til både rett OG skarpt. Warpen som finnes
+  konvergerer mot 0,026 uansett hva den får av frihetsgrader, så det er ikke flere
+  parametere som mangler — det er metoden. Se `docs/SUBPIXEL_ALIGN_PLAN.md`.
+- **Svarte hull på møbler** (`fylt=96 %`) og en **asfaltflekk i taket** fra et feil foto.
+  Begge synes mer enn tonen nå.

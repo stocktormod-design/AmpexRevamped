@@ -18,7 +18,21 @@ enum MeshPoseRefineV2 {
     // drive og rive. Residual er IKKE en trygg proxy for utseende (device 2026-08-25).
     // 12×8 er trygt FORDI reguleringen nå er adaptiv (se warpLambda i refine). Uten den
     // rev dette opp blanke vegger — kommentaren over gjaldt fast λ.
-    static let warpGridW = 12, warpGridH = 8
+    // ── WARP-RUTENETTETS OPPLØSNING (2026-09-12, §94). 12×8 over et 3840-bredt foto er
+    // celler på 320 piksler. Warpen kan da bare rette en GLOBAL bøy, ikke den lokale
+    // uenigheten mellom syn — og det er den lokale som smører detaljen når man snitter.
+    //
+    // Målt hvorfor det betyr noe: panelfixturen har ~1400 texler/m (0,7 mm per texel), og
+    // synene er ~2 px uenige i fotoet ≈ 1,5 mm ≈ TO texler. Et 3 mm panelspor smøres da
+    // bort av snittet. På et stort rom er texelen 2–3 mm, samme uenighet er under én texel,
+    // og der smører snittet ingenting. Snitting krever altså sub-texel justering.
+    // meshscan.warpgrid setter cellebredden i bilder à 12 kolonner (3 = 36×24).
+    static var warpGridW: Int { 12 * warpGridMul }
+    static var warpGridH: Int { 8 * warpGridMul }
+    static var warpGridMul: Int {
+        let v = Int(UserDefaults.standard.string(forKey: "meshscan.warpgrid") ?? "") ?? 1
+        return max(1, min(8, v))
+    }
 
 
     // Residualen må følge tilstanden som faktisk ble målt, aldri GN-steget den
