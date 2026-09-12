@@ -434,6 +434,13 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
 
+[functions.r2-sign]
+enabled = true
+# auth: 'user' i index.ts — anon-nøkkelen alene skal ikke få signere R2-URL-er.
+verify_jwt = true
+import_map = "./functions/r2-sign/deno.json"
+entrypoint = "./functions/r2-sign/index.ts"
+
 [functions.ai-voice]
 enabled = true
 # auth: 'user' i index.ts krever gyldig JWT — la plattformens sjekk stå på (standard).
