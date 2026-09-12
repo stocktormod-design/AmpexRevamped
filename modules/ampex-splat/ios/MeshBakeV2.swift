@@ -464,10 +464,14 @@ enum MeshBakeV2 {
         // Målt: panelfixturen har 0,7 mm per texel og synene er ~1,5 mm uenige, så et 3 mm
         // spor smøres. Store rom har 2–3 mm per texel og mister ingenting.
         //
-        // Valget er Tormods, ordrett: «da var faktisk forgje versjon bedre selvom noen av
-        // stripene i panelene var ikke skarp fordi de var iallefall rett.»
-        // «winner»/«multiband»/«off» er A/B-armene.
-        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "raw"
+        // RULLET TILBAKE SAMME DAG (§95). Snittet ble satt som standard fordi det gir rette,
+        // hele panelspor — og det gjør det. Men NÆRT er det mos: sporene vaskes til nesten
+        // usynlige spøkelser og tonelappene med saggtakk-kant står igjen. Vinnerveien har
+        // skarpe, tydelige spor; feilen der er at noen spor blir KUTTET ved en feltgrense,
+        // ikke at veggen mangler tekstur. Kuttede skarpe spor slår utvaskede hele spor.
+        // Vurderingen ble først gjort på et utsnitt for langt unna til at forskjellen syntes.
+        // «raw»/«multiband»/«off» er A/B-armene.
+        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "winner"
         let blendAll = blendFlag != "off" && blendFlag != "winner"
         let blendRaw = blendAll && blendFlag != "multiband"
         var warpGrids = [[SIMD2<Float>]]()
