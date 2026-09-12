@@ -93,6 +93,18 @@ fokuserer», og loggen skriver median skarphet på keyframes ved slutt (skannet 
 mykt: 35 mot 259 — fokus/lys, ikke fart). Ingen regresjon på soverom/nyskann. UKOMMITTERT sammen med r2-sign,
 eas.json og docs.
 
+## Kveld 12. september — pilot, assistent og sikkerhet
+
+Første bruker blir Glenn (Aqila): skann pluss parallellføring med assistenten. Apple
+Developer kjøpt, venter på godkjenning; TestFlight som intern tester når den er inne
+(`eas.json` klar, `ITSAppUsesNonExemptEncryption=false`). Rettet i kveld: firmavakten
+slettet ikke lokal base for bruker uten firma (`505e77f`, sikkerhetshull); ai-voice-låsen
+brukte feil feltnavn og brøt økten ved første ord; live-modellen er låst til
+`gemini-3.1-flash-live-preview` (første lyd 0,6 s). Assistenten kjenner registrene
+(antall kunder, timetyper med pris), oppretter kunder og timetyper på forespørsel og
+følger faste manus, aldri åpne spørsmål. `Documents/ai.log` på telefonen for feilsøking.
+Testbrukere: `glenn-test@ampex.no` / `ampex-glenn-2026` (uten firma), `test@ampex.no`.
+
 ## Åpne tråder
 
 - **Skann:** bad og stue må skannes på nytt med dagens app. Bare ett komplett LiDAR-skann
