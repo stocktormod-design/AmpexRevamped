@@ -68,8 +68,30 @@ skal gjøres der, ikke på telefon. Oppskrift i `docs/SKANN_BESLUTNINGER.md`.
    `supabase/migrations/20260908090000_profile_privilege_guard.sql`.
 2. **13 tabeller synkes aldri, men merkes som synket.** Signaturer, godkjenninger, tilbud
    og arkivpakker lever kun i SQLite på én telefon og tapes ved reinstall.
-3. **`r2-sign` mangler firmascoping.** Tegninger og skann kan leses på tvers av firma.
+3. ~~**`r2-sign` mangler firmascoping.**~~ **Lukket 12. september.** Funksjonen krever nå
+   innlogget bruker (anon-nøkkelen avvises med 401), leser firmaet fra `current_company_id`
+   og legger alle objekter under `firma/<company_id>/…` i R2. Klientnøklene er uendret.
+   Verifisert live: anon 401, testbruker får eget prefiks, `..` og fremmed prefiks avvises,
+   PUT/GET gjennom signert URL går rundt. De fire seed-tegningene fra 4. juli lå uten
+   prefiks og må lastes opp på nytt. Deployet som versjon 14.
 4. **Commit.** Se punkt om ukommittert arbeid over.
+
+## Skann 12. september (kveld)
+
+Hele kjeden gjennomgått (§95) og panelhakket funnet: det er posefeil på noen få uskarpe
+bilder (7–12 mm), ikke geometri og ikke snitt-metoden. Ny `planeAlign` i
+`MeshPoseRefineV2.swift` måler bilde mot bilde på dominantplanene og løser warp-rutenettet
+per bilde; kalles fra baken etter den rigide refinen, `meshscan.planalign = "off"` for A/B.
+Toppraden på panelveggen er nå nesten på linje. Snitt-veien er fortsatt myk, og §96 sier
+hvorfor (lik vekting av ulik skarphet). Senere på kvelden ble målingen PARVIS med felles
+løsning over alle bilder (§96, «Kveld»), etter at Tormods nye skann viste en søm som den
+første varianten ikke tok. Release-bygg fra kl. 20:34 er installert på iPhonen, med tre
+runder som standard. Bygg fra kl. 21:40 legger til luma-til-disk i fangsten og celler på disk i justeringen
+(§96 «Sent på kvelden»), pluss fokusvakt v2 (innholdsbasert, dytter autofokus). Samme bygg har en FOKUSVAKT i fangsten (`MeshScanPresenter`): rammer
+tatt mens linsen stiller seg holdes igjen, hintet sier «Hold stille et øyeblikk — kameraet
+fokuserer», og loggen skriver median skarphet på keyframes ved slutt (skannet 20:23 var
+mykt: 35 mot 259 — fokus/lys, ikke fart). Ingen regresjon på soverom/nyskann. UKOMMITTERT sammen med r2-sign,
+eas.json og docs.
 
 ## Åpne tråder
 
@@ -82,6 +104,13 @@ skal gjøres der, ikke på telefon. Oppskrift i `docs/SKANN_BESLUTNINGER.md`.
 - **PDF-laget er bygget og testet, men ingen skjerm importerer det.** «Del» på faktura
   sender tabseparert tekst.
 - **Utviklerprofilen på telefonen utløper 14. september kl. 19:59.** Da må appen bygges og
+  installeres på nytt. Profilen er fra et *gratis* personlig Apple-team («Tormod Holand»,
+  Z4ZUZRL65Q, kun «Apple Development»-sertifikat, 7 dagers levetid). TestFlight og EAS-
+  distribusjon krever betalt Apple Developer Program (999 kr/år) og innlogging i Expo
+  (`npx eas-cli login`, deretter `npx eas-cli init` som skriver `extra.eas.projectId`).
+  `eas.json` med development/preview/production-profiler ligger klar i rota (12. september).
+  Inntil kontoen er betalt er eneste vei å bygge om med xcodebuild hver sjuende dag.
+  Opprinnelig punkt:
   installeres på nytt.
 
 ## Miljø

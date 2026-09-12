@@ -1132,4 +1132,590 @@ enum MeshPoseRefineV2 {
         MeshLog.log("poseRefine ferdig — residual \(String(format: "%.4f", meanResBefore)) → \(String(format: "%.4f", meanResAfter)), \(frames.count) frames, \(nV) verts, \(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
         return (meanResBefore, meanResAfter)
     }
+
+    // MARK: - Plan-justering: bilde mot bilde på dominantplanene (2026-09-12, §96)
+    //
+    // HVORFOR: refinen over måler bilde-mot-PROXY, og proxyen er et per-verteks snitt med
+    // 1–4 cm mellom punktene. Et 3 mm panelspor finnes ikke i den, så residualen er blind for
+    // det den skal rette (§94: 0,026 uansett rutenett og oppløsning). Målt på Mac (§96):
+    // de skarpe synene på panelveggen er enige innenfor 0,3 mm med RÅ poser, mens to uskarpe
+    // syn ligger 7 mm feil — og det er de som vinner der ingen skarpere dekker, og kutter
+    // sporene. Refinen fant ikke de 7 mm (WIN og WINNOREF var like).
+    //
+    // HVA: hvert dominantplan deles i 40 cm celler. Hvert syn som ser en celle rektifiseres på
+    // planet (2 mm/px, full kildeoppløsning). Cellens referanse er et skarphetsvektet snitt;
+    // hvert syn NCC-søkes mot referansen (grov→fin, sub-piksel med parabel), to runder så
+    // referansen skjerpes av første rundes justering. Forskyvningen i planet (mm) føres til
+    // bilderommet med jacobianen, og warp-rutenettet per bilde løses som vektet minste
+    // kvadrater med glatthet. Rutenettet er det baken alt sampler gjennom — vinner OG snitt
+    // — så ingenting nedstrøms endres.
+    //
+    // meshscan.planalign = "off" for A/B. meshscan.planalignaudit = "on" skriver målingene
+    // til plane-align-audit.json i bundelen (harnessen sammenligner med Mac-prototypen).
+    static func planeAlign(keyframes: [MeshScanPresenter.Keyframe], positions: [Float], planes: [SIMD4<Float>],
+                           framesDir: URL, warpGridsByKF: inout [[SIMD2<Float>]]) {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let gW = warpGridW, gH = warpGridH, G = gW * gH
+        if warpGridsByKF.count != keyframes.count {
+            warpGridsByKF = [[SIMD2<Float>]](repeating: [], count: keyframes.count)
+        }
+        guard !planes.isEmpty, keyframes.count >= 2 else { return }
+        let mmPx = MeshBakeV2.flaggTall("meshscan.planalignmm", 1.5)
+        let cellM: Float = 0.3
+        let cellPx = max(64, Int((cellM * 1000 / mmPx).rounded()))
+        let step = cellM / Float(cellPx) // m per rektifisert piksel
+        let lambda = MeshBakeV2.flaggTall("meshscan.planalignlambda", 0.5)
+        let audit = UserDefaults.standard.string(forKey: "meshscan.planalignaudit") == "on"
+
+        struct Cell { var plane: Int; var origin: SIMD3<Float>; var eu: SIMD3<Float>; var ev: SIMD3<Float>; var n: SIMD3<Float> }
+        struct CellView { var cell: Int; var frame: Int; var offset: Int; var imgPos: SIMD2<Float>; var jac: simd_float2x2; var cos: Float }
+        struct Meas { var i: Int; var j: Int; var cell: Int; var posI: SIMD2<Float>; var jacI: simd_float2x2; var posJ: SIMD2<Float>; var jacJ: simd_float2x2; var s: SIMD2<Float>; var w: SIMD2<Float>; var peak: Float }
+
+        // ── Celler: vertekser innen 6 mm av planet, minst 12 per 40 cm celle
+        var cells: [Cell] = []
+        let vc = positions.count / 3
+        for (pi, pl) in planes.enumerated() {
+            let nRaw = SIMD3(pl.x, pl.y, pl.z)
+            let nl = simd_length(nRaw); guard nl > 1e-6 else { continue }
+            let n = nRaw / nl, d = pl.w / nl
+            var ev: SIMD3<Float> = abs(n.y) < 0.8 ? SIMD3(0, 1, 0) : SIMD3(1, 0, 0)
+            ev = simd_normalize(ev - simd_dot(ev, n) * n)
+            let eu = simd_normalize(simd_cross(ev, n))
+            var counts: [Int64: Int] = [:]
+            var i = 0
+            while i < vc {
+                let p = SIMD3(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]); i += 1
+                if abs(simd_dot(n, p) - d) > 0.006 { continue }
+                let cu = Int64(floor(simd_dot(p, eu) / cellM)), cv = Int64(floor(simd_dot(p, ev) / cellM))
+                guard abs(cu) < 100, abs(cv) < 100 else { continue }
+                counts[(cu + 200) * 1000 + (cv + 200), default: 0] += 1
+            }
+            for (key, c) in counts where c >= 8 {
+                let cu = Float(key / 1000 - 200), cv = Float(key % 1000 - 200)
+                cells.append(Cell(plane: pi, origin: eu * (cu * cellM) + ev * (cv * cellM) + n * d, eu: eu, ev: ev, n: n))
+            }
+        }
+        guard !cells.isEmpty else { MeshLog.log("planAlign — ingen celler på planene"); return }
+
+        func mat(_ a: [Float]) -> simd_float4x4 {
+            simd_float4x4(columns: (SIMD4(a[0], a[1], a[2], a[3]), SIMD4(a[4], a[5], a[6], a[7]),
+                                    SIMD4(a[8], a[9], a[10], a[11]), SIMD4(a[12], a[13], a[14], a[15])))
+        }
+
+        // ── YTRE RUNDER (2026-09-12): runde 2 rektifiserer gjennom rutenettet fra runde 1, så
+        // målingene blir rest-forskyvninger og referansene (de andre synene) alt er justert.
+        // Det er slik et uskarpt bilde som bare deler celler med andre uskarpe bilder blir
+        // dratt på plass: naboene ble ankret til det skarpe bildet i runde 1.
+        let outerIters = max(1, Int(MeshBakeV2.flaggTall("meshscan.planaligniter", 3)))
+        var imgSize = [SIMD2<Float>](repeating: SIMD2(Float(1), Float(1)), count: keyframes.count)
+        var auditRows: [[String: Any]] = []
+        var sisteLogg = ""
+        // Teksturløs i runde 1 → hopp over siden. Pekere: skrives fra parallelle celler (egen indeks).
+        let cellSkip = UnsafeMutablePointer<Bool>.allocate(capacity: cells.count)
+        cellSkip.initialize(repeating: false, count: cells.count)
+        defer { cellSkip.deinitialize(count: cells.count); cellSkip.deallocate() }
+        // CELLER PÅ DISK (2026-09-12): rektifiseres ÉN gang (runde 1) og skrives til
+        // planalign-cells-<ki>.bin i bundelen, som minnemappes. Runde 2+ flytter de lagrede
+        // cellene med rutenett-differansen i stedet for å gå tilbake til fotoene. Minnet er
+        // sidecache (fil-bakket, kastbart), ikke RSS.
+        let slots = UnsafeMutablePointer<[CellView]>.allocate(capacity: keyframes.count)
+        slots.initialize(repeating: [], count: keyframes.count)
+        var cellFiles = [Data?](repeating: nil, count: keyframes.count)
+        var gridsAtRect: [[SIMD2<Float>]] = []
+        var cellViewCount = 0
+        var tRectFirst: Double = 0
+        var lumaFromDisk = 0
+        defer {
+            slots.deinitialize(count: keyframes.count); slots.deallocate()
+            for ki in 0..<keyframes.count { try? FileManager.default.removeItem(at: framesDir.appendingPathComponent("planalign-cells-\(ki).bin")) }
+        }
+        for outer in 0..<outerIters {
+        let tIter = CFAbsoluteTimeGetCurrent()
+        let gridsNow = warpGridsByKF
+        func gridOffsetPx(_ ki: Int, _ u: Float, _ v: Float, _ lw: Int, _ lh: Int, grids: [[SIMD2<Float>]]) -> SIMD2<Float> {
+            let g = ki < grids.count ? grids[ki] : []; guard g.count == G else { return .zero }
+            let gx = min(max(u / Float(lw), 0), 1) * Float(gW - 1), gy = min(max(v / Float(lh), 0), 1) * Float(gH - 1)
+            let cx = min(max(Int(gx), 0), gW - 2), cy = min(max(Int(gy), 0), gH - 2)
+            let tx = min(max(gx - Float(cx), 0), 1), ty = min(max(gy - Float(cy), 0), 1)
+            let o00: SIMD2<Float> = g[cy * gW + cx], o10: SIMD2<Float> = g[cy * gW + cx + 1]
+            let o01: SIMD2<Float> = g[(cy + 1) * gW + cx], o11: SIMD2<Float> = g[(cy + 1) * gW + cx + 1]
+            let top: SIMD2<Float> = o00 * (1 - tx) + o10 * tx
+            let bot: SIMD2<Float> = o01 * (1 - tx) + o11 * tx
+            let o: SIMD2<Float> = top * (1 - ty) + bot * ty
+            return SIMD2(o.x * Float(lw), o.y * Float(lh))
+        }
+        // ── Rektifisering (bare runde 1): ett bilde om gangen, fire parallelt
+        let sizeLock = NSLock()
+        if outer == 0 {
+        gridsAtRect = gridsNow
+        // MINNETAK (2026-09-12): cellene ligger i minnet, ~2 byte per piksel (bilde + maske),
+        // 80 kB per celle-syn ved 1,5 mm/px. Det store rommet hadde 3000 celle-syn = 250 MB.
+        // Taket er 30 % av ledig minne målt nå; når det er nådd, lagres ikke flere celle-syn
+        // (loggen sier det), og resten av bildene bidrar ikke til justeringen den runden.
+        let budgetBytes = max(64 << 20, Int(Double(MeshSimMem.available()) * 0.80))
+        let bytesPerView = cellPx * cellPx * 2
+        var storedBytes = 0; var budgetHit = false
+        let budgetLock = NSLock()
+        var start = 0
+        while start < keyframes.count {
+            let cnt = min(4, keyframes.count - start)
+            DispatchQueue.concurrentPerform(iterations: cnt) { bi in
+                let ki = start + bi
+                let k = keyframes[ki]
+                autoreleasepool {
+                    var luma: [UInt8] = []; var lw = 0, lh = 0
+                    // Luma-fil fra fangsten (halv oppløsning) hvis den finnes; ellers dekod JPEG.
+                    if let ld = try? Data(contentsOf: framesDir.appendingPathComponent("luma-\(k.index).u8"), options: .alwaysMapped), ld.count > 8 {
+                        let w = Int(ld.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) })
+                        let h = Int(ld.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) })
+                        if w > 0, h > 0, ld.count == 8 + w * h { lw = w; lh = h; luma = [UInt8](ld[8...]); sizeLock.lock(); lumaFromDisk += 1; sizeLock.unlock() }
+                    }
+                    if luma.isEmpty {
+                        guard let cg = MeshImageIO.loadCGImageThumb(framesDir, k.file, maxPx: max(k.width, k.height)),
+                              let rgba = MeshImageIO.rgbaBytes(cg) else { return }
+                        lw = cg.width; lh = cg.height
+                        luma = [UInt8](repeating: 0, count: lw * lh)
+                        rgba.withUnsafeBufferPointer { rp in
+                            for p in 0..<(lw * lh) {
+                                let rr = Int(rp[p * 4]), gg = Int(rp[p * 4 + 1]), bb = Int(rp[p * 4 + 2])
+                                let y = 299 * rr + 587 * gg + 114 * bb
+                                luma[p] = UInt8(y / 1000)
+                            }
+                        }
+                    }
+                    var depth: [Float] = []; var dw = 0; var dh = 0
+                    if let df = k.depthFile, let dd = try? Data(contentsOf: framesDir.appendingPathComponent(df)),
+                       dd.count == k.depthWidth * k.depthHeight * 4 {
+                        depth = dd.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+                        dw = k.depthWidth; dh = k.depthHeight
+                    }
+                    let sx = Float(lw) / Float(k.width), sy = Float(lh) / Float(k.height)
+                    let fx = k.intrinsics[0] * sx, fy = k.intrinsics[1] * sy, cx = k.intrinsics[2] * sx, cy = k.intrinsics[3] * sy
+                    let w2c = simd_inverse(mat(k.transform))
+                    let camPos = SIMD3(k.transform[12], k.transform[13], k.transform[14])
+                    func proj(_ p: SIMD3<Float>) -> SIMD2<Float>? {
+                        let c = w2c * SIMD4(p, 1); if c.z > -0.1 { return nil }
+                        let z = -c.z; return SIMD2(fx * c.x / z + cx, fy * (-c.y) / z + cy)
+                    }
+                    func samp(_ u: Float, _ v: Float) -> Float {
+                        let uu = min(max(u, 0), Float(lw - 1) - 0.001), vv = min(max(v, 0), Float(lh - 1) - 0.001)
+                        let x0 = Int(uu), y0 = Int(vv); let tx = uu - Float(x0), ty = vv - Float(y0)
+                        let i00 = y0 * lw + x0
+                        let a = Float(luma[i00]), b = Float(luma[i00 + 1]), c = Float(luma[i00 + lw]), d = Float(luma[i00 + lw + 1])
+                        let top = a * (1 - tx) + b * tx
+                        let bot = c * (1 - tx) + d * tx
+                        return top * (1 - ty) + bot * ty
+                    }
+                    var out: [CellView] = []
+                    var fileData = Data()
+                    for (ci, cell) in cells.enumerated() where !cellSkip[ci] {
+                        let center = cell.origin + (cell.eu + cell.ev) * (cellM / 2)
+                        let toCam = camPos - center; let dist = simd_length(toCam)
+                        guard dist > 0.3, dist < 7 else { continue }
+                        let cosv = simd_dot(toCam / dist, cell.n)
+                        guard cosv > 0.3 else { continue }
+                        // DELVIS DEKNING (2026-09-12): kravet om at hele cellen lå inne i bildet
+                        // utelukket nærbildene (0,8 m synsfelt på veggen), så de skarpe og de
+                        // uskarpe bildene delte aldri en celle — og de uskarpe hadde bare
+                        // hverandre som referanse. Nå holder senteret + ≥ 60 % dekning, med maske.
+                        guard let pc = proj(center), pc.x > 2, pc.y > 2, pc.x < Float(lw) - 3, pc.y < Float(lh) - 3 else { continue }
+                        if dw > 0 {
+                            let dx = min(dw - 1, max(0, Int(pc.x / Float(lw) * Float(dw))))
+                            let dy = min(dh - 1, max(0, Int(pc.y / Float(lh) * Float(dh))))
+                            let sceneZ = depth[dy * dw + dx], zbar = -(w2c * SIMD4(center, 1)).z
+                            if sceneZ > 0.25 && abs(sceneZ - zbar) > 0.2 { continue } // noe står foran planet
+                        }
+                        guard let qu = proj(center + cell.eu * 0.001), let qv = proj(center + cell.ev * 0.001) else { continue }
+                        budgetLock.lock()
+                        let over = storedBytes + bytesPerView > budgetBytes
+                        if over { budgetHit = true } else { storedBytes += bytesPerView }
+                        budgetLock.unlock()
+                        if over { break }
+                        var pix = [UInt8](repeating: 0, count: cellPx * cellPx)
+                        var mask = [UInt8](repeating: 0, count: cellPx * cellPx)
+                        var valid = 0
+                        for py in 0..<cellPx {
+                            let v = (Float(cellPx - 1 - py) + 0.5) * step
+                            for px in 0..<cellPx {
+                                let u = (Float(px) + 0.5) * step
+                                guard let q = proj(cell.origin + cell.eu * u + cell.ev * v) else { continue }
+                                let o = gridOffsetPx(ki, q.x, q.y, lw, lh, grids: gridsNow)
+                                let x = q.x + o.x, y = q.y + o.y
+                                guard x > 2, y > 2, x < Float(lw) - 3, y < Float(lh) - 3 else { continue }
+                                pix[py * cellPx + px] = UInt8(clamping: Int(samp(x, y).rounded()))
+                                mask[py * cellPx + px] = 1; valid += 1
+                            }
+                        }
+                        guard valid >= cellPx * cellPx * 6 / 10 else {
+                            budgetLock.lock(); storedBytes -= bytesPerView; budgetLock.unlock(); continue
+                        }
+                        out.append(CellView(cell: ci, frame: ki, offset: fileData.count, imgPos: pc,
+                                            jac: simd_float2x2(columns: (qu - pc, qv - pc)), cos: cosv))
+                        fileData.append(contentsOf: pix); fileData.append(contentsOf: mask)
+                    }
+                    let url = framesDir.appendingPathComponent("planalign-cells-\(ki).bin")
+                    if !out.isEmpty, (try? fileData.write(to: url, options: .atomic)) != nil,
+                       let mapped = try? Data(contentsOf: url, options: .alwaysMapped) {
+                        slots[ki] = out
+                        sizeLock.lock(); cellFiles[ki] = mapped; sizeLock.unlock()
+                    }
+                    sizeLock.lock(); imgSize[ki] = SIMD2(Float(lw), Float(lh)); sizeLock.unlock()
+                }
+            }
+            start += cnt
+        }
+        cellViewCount = 0
+        for ki in 0..<keyframes.count { cellViewCount += slots[ki].count }
+        tRectFirst = CFAbsoluteTimeGetCurrent() - tIter
+        if budgetHit { MeshLog.log(String(format: "planAlign — MINNETAK nådd: %d MB av %d MB ledig brukt til celler på disk, resten av bildene hoppet over", storedBytes >> 20, budgetBytes >> 20)) }
+        else { MeshLog.log(String(format: "planAlign — celler på disk %d MB (tak %d MB), %d/%d bilder lest fra luma-fil", storedBytes >> 20, budgetBytes >> 20, lumaFromDisk, keyframes.count)) }
+        } // outer == 0
+        var byCell = [[CellView]](repeating: [], count: cells.count)
+        for ki in 0..<keyframes.count { for cv in slots[ki] where !cellSkip[cv.cell] { byCell[cv.cell].append(cv) } }
+        let tRect = outer == 0 ? tRectFirst : CFAbsoluteTimeGetCurrent() - tIter
+
+        // ── NCC per celle: grov (4× ned, ±4) → fin (±2) → parabel. a(p+s) sammenlignes med b(p).
+        let maxSharp = max(keyframes.map(\.sharpness).max() ?? 1, 1e-4)
+        let N = cellPx
+        func nccAt(_ a: [Float], _ ma: [Float], _ b: [Float], _ mb: [Float], _ n: Int, _ sx: Int, _ sy: Int) -> Float {
+            var sa = 0.0, sb = 0.0, saa = 0.0, sbb = 0.0, sab = 0.0; var cnt = 0
+            let y0 = max(0, -sy), y1 = min(n, n - sy), x0 = max(0, -sx), x1 = min(n, n - sx)
+            guard y1 > y0, x1 > x0 else { return -1 }
+            a.withUnsafeBufferPointer { ap in b.withUnsafeBufferPointer { bp in
+            ma.withUnsafeBufferPointer { map in mb.withUnsafeBufferPointer { mbp in
+                for y in y0..<y1 {
+                    let ra = (y + sy) * n + sx, rb = y * n
+                    for x in x0..<x1 where map[ra + x] > 0.5 && mbp[rb + x] > 0.5 {
+                        let va = Double(ap[ra + x]), vb = Double(bp[rb + x])
+                        sa += va; sb += vb; saa += va * va; sbb += vb * vb; sab += va * vb; cnt += 1
+                    }
+                }
+            } } } }
+            guard cnt > n * n * 3 / 10 else { return -1 }
+            let c = Double(cnt); let cov = sab - sa * sb / c; let va = saa - sa * sa / c, vb = sbb - sb * sb / c
+            guard va > 1e-6, vb > 1e-6 else { return -1 }
+            return Float(cov / (va * vb).squareRoot())
+        }
+        func down2(_ a: [Float], _ n: Int) -> [Float] {
+            let m = n / 2; var o = [Float](repeating: 0, count: m * m)
+            for y in 0..<m { for x in 0..<m {
+                let i = (y * 2) * n + x * 2
+                o[y * m + x] = (a[i] + a[i + 1] + a[i + n] + a[i + n + 1]) / 4
+            } }
+            return o
+        }
+        // Finn s slik at a(p+s) ≈ b(p). Returnerer (sx, sy, peak, kurvatur x, kurvatur y) i piksler.
+        let coarseR = outer == 0 ? 6 : 4 // ±18 mm; runde 2+: bare rest-forskyvninger
+        func search(_ a: [Float], _ ma: [Float], _ b: [Float], _ mb: [Float]) -> (SIMD2<Float>, Float, SIMD2<Float>)? {
+            // Grovt på 2× (±8 = ±24 mm ved 1,5 mm/px), fint ±2 rundt toppen. 4× var for grovt:
+            // 7 mm er 3,5 px på 2 mm/px, og grovsøket landet på null (§96).
+            let a2 = down2(a, N), b2 = down2(b, N), n2 = N / 2
+            let ma2 = down2(ma, N), mb2 = down2(mb, N)
+            var best = (-2 as Float, 0, 0)
+            for sy in -coarseR...coarseR { for sx in -coarseR...coarseR {
+                let c = nccAt(a2, ma2, b2, mb2, n2, sx, sy); if c > best.0 { best = (c, sx, sy) }
+            } }
+            guard best.0 > 0.15 else { return nil }
+            var fine = (-2 as Float, 0, 0)
+            var table = [Int: Float]()
+            for sy in (best.2 * 2 - 2)...(best.2 * 2 + 2) { for sx in (best.1 * 2 - 2)...(best.1 * 2 + 2) {
+                let c = nccAt(a, ma, b, mb, N, sx, sy); table[sy * 1000 + sx] = c
+                if c > fine.0 { fine = (c, sx, sy) }
+            } }
+            guard fine.0 > 0.45 else { return nil }
+            func at(_ sx: Int, _ sy: Int) -> Float { table[sy * 1000 + sx] ?? nccAt(a, ma, b, mb, N, sx, sy) }
+            let c0 = fine.0
+            let cxm = at(fine.1 - 1, fine.2), cxp = at(fine.1 + 1, fine.2)
+            let cym = at(fine.1, fine.2 - 1), cyp = at(fine.1, fine.2 + 1)
+            let kx = cxm - 2 * c0 + cxp, ky = cym - 2 * c0 + cyp
+            let dx = kx < -1e-5 ? min(0.5, max(-0.5, 0.5 * (cxm - cxp) / kx)) : 0
+            let dy = ky < -1e-5 ? min(0.5, max(-0.5, 0.5 * (cym - cyp) / ky)) : 0
+            return (SIMD2(Float(fine.1) + dx, Float(fine.2) + dy), c0, SIMD2(kx, ky))
+        }
+        func shifted(_ a: [Float], _ m: [Float], _ s: SIMD2<Float>) -> ([Float], [Float]) {
+            // a justert: o(p) = a(p + s), bilineært; masken følger med (nærmeste), utenfor = 0
+            var o = [Float](repeating: 0, count: N * N), om = [Float](repeating: 0, count: N * N)
+            for y in 0..<N { for x in 0..<N {
+                let uf = Float(x) + s.x, vf = Float(y) + s.y
+                guard uf >= 0, vf >= 0, uf < Float(N - 1), vf < Float(N - 1) else { continue }
+                let x0 = Int(uf), y0 = Int(vf); let tx = uf - Float(x0), ty = vf - Float(y0)
+                let i = y0 * N + x0
+                guard m[i] > 0.5, m[i + 1] > 0.5, m[i + N] > 0.5, m[i + N + 1] > 0.5 else { continue }
+                let top = a[i] * (1 - tx) + a[i + 1] * tx
+                let bot = a[i + N] * (1 - tx) + a[i + N + 1] * tx
+                o[y * N + x] = top * (1 - ty) + bot * ty; om[y * N + x] = 1
+            } }
+            return (o, om)
+        }
+        let measSlots = UnsafeMutablePointer<[Meas]>.allocate(capacity: cells.count)
+        measSlots.initialize(repeating: [], count: cells.count)
+        var texturedCells = 0
+        let texLock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: cells.count) { ci in
+            let views = byCell[ci]
+            guard views.count >= 2 else { return }
+            var imgs: [[Float]] = []; var masks: [[Float]] = []
+            for v in views {
+                var pix = [Float](repeating: 0, count: N * N), mk = [Float](repeating: 0, count: N * N)
+                if let fd = cellFiles[v.frame] {
+                    fd.withUnsafeBytes { raw in
+                        let bp = raw.baseAddress!.assumingMemoryBound(to: UInt8.self) + v.offset
+                        for p in 0..<(N * N) { pix[p] = Float(bp[p]); mk[p] = Float(bp[N * N + p]) }
+                    }
+                }
+                if outer > 0 {
+                    // Flytt den lagrede cellen med rutenett-differansen siden rektifiseringen:
+                    // bilderom-px → planet (mm) via J⁻¹ → celle-px (x = +u, rad = −v).
+                    let sz = imgSize[v.frame]
+                    let oNow = gridOffsetPx(v.frame, v.imgPos.x, v.imgPos.y, Int(sz.x), Int(sz.y), grids: gridsNow)
+                    let oRect = gridOffsetPx(v.frame, v.imgPos.x, v.imgPos.y, Int(sz.x), Int(sz.y), grids: gridsAtRect)
+                    let dmm = v.jac.inverse * (oNow - oRect)
+                    if dmm.x.isFinite, dmm.y.isFinite, simd_length(dmm) > 0.05 {
+                        (pix, mk) = shifted(pix, mk, SIMD2(dmm.x / mmPx, -dmm.y / mmPx))
+                    }
+                }
+                imgs.append(pix); masks.append(mk)
+            }
+            let w = views.map { v -> Float in
+                let r = keyframes[v.frame].sharpness / maxSharp
+                return max(1e-3, r * r) * v.cos * v.cos
+            }
+            // Gain-normalisering mot det enkle snittet (a·I + b, a klemt), kun der masken er satt
+            var mean0 = [Float](repeating: 0, count: N * N), cnt0 = [Float](repeating: 0, count: N * N)
+            for vi in imgs.indices { for p in 0..<(N * N) where masks[vi][p] > 0.5 { mean0[p] += imgs[vi][p]; cnt0[p] += 1 } }
+            for p in 0..<(N * N) { mean0[p] /= max(cnt0[p], 1) }
+            for vi in imgs.indices {
+                var sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0, n = 0.0
+                for p in 0..<(N * N) where masks[vi][p] > 0.5 && cnt0[p] > 1.5 {
+                    let x = Double(imgs[vi][p]), y = Double(mean0[p]); sx += x; sy += y; sxx += x * x; sxy += x * y; n += 1
+                }
+                guard n > 100 else { continue }
+                let den = n * sxx - sx * sx
+                guard den > 1e-6 else { continue }
+                let a = min(2.0, max(0.5, (n * sxy - sx * sy) / den)), b = (sy - a * sx) / n
+                for p in 0..<(N * N) { imgs[vi][p] = Float(a) * imgs[vi][p] + Float(b) }
+            }
+            // HØYPASS (2026-09-12): rå NCC på en nesten flat vegg domineres av lysgradienten over
+            // cellen, og toppen legger seg på null uansett hvor sporene ligger (målt: 43 fikk
+            // +0,4 mm med topp 0,97 der Mac-prototypens fasekorrelasjon fant 7 mm). Trekk fra et
+            // 16 mm bokssnitt, så det er STRUKTUREN som korreleres.
+            let hpR = max(2, Int((8 / mmPx).rounded()))
+            // Bokssnitt med maske: sum(im·m)/sum(m), separabelt. Utenfor masken → 0.
+            func boxMasked(_ im: [Float], _ m: [Float]) -> [Float] {
+                var t1 = [Float](repeating: 0, count: N * N), t2 = [Float](repeating: 0, count: N * N)
+                var out = [Float](repeating: 0, count: N * N)
+                for y in 0..<N {
+                    var acc: Float = 0, accm: Float = 0
+                    for x in 0..<min(hpR, N) { acc += im[y * N + x] * m[y * N + x]; accm += m[y * N + x] }
+                    for x in 0..<N {
+                        if x + hpR < N { let i = y * N + x + hpR; acc += im[i] * m[i]; accm += m[i] }
+                        if x - hpR - 1 >= 0 { let i = y * N + x - hpR - 1; acc -= im[i] * m[i]; accm -= m[i] }
+                        t1[y * N + x] = acc; t2[y * N + x] = accm
+                    }
+                }
+                for x in 0..<N {
+                    var acc: Float = 0, accm: Float = 0
+                    for y in 0..<min(hpR, N) { acc += t1[y * N + x]; accm += t2[y * N + x] }
+                    for y in 0..<N {
+                        if y + hpR < N { acc += t1[(y + hpR) * N + x]; accm += t2[(y + hpR) * N + x] }
+                        if y - hpR - 1 >= 0 { acc -= t1[(y - hpR - 1) * N + x]; accm -= t2[(y - hpR - 1) * N + x] }
+                        out[y * N + x] = accm > 0.5 ? acc / accm : 0
+                    }
+                }
+                return out
+            }
+            func highpass(_ im: [Float], _ m: [Float]) -> [Float] {
+                let lo = boxMasked(im, m)
+                var out = [Float](repeating: 0, count: N * N)
+                for p in 0..<(N * N) where m[p] > 0.5 { out[p] = im[p] - lo[p] }
+                return out
+            }
+            for vi in imgs.indices { imgs[vi] = highpass(imgs[vi], masks[vi]) }
+            // PARVIS (2026-09-12, kveld). Hvert par (i, j) av syn i cellen måles DIREKTE mot
+            // hverandre. Mot et snitt eller én referanse ble ett falskt treff til «sannheten»
+            // alle andre ble målt mot, og to uskarpe bilder fra samme strekning kunne bekrefte
+            // hverandre. Med par er hvert falskt treff én måling blant mange som motsier den,
+            // og par mellom uskarpe bilder BINDER dem sammen mens parene mot de skarpe
+            // forankrer dem. Løses felles for alle bilder under (block-Gauss-Seidel + IRLS).
+            var bestVi = 0
+            for vi in imgs.indices where w[vi] > w[bestVi] { bestVi = vi }
+            var m = 0.0, mm = 0.0, mc = 0.0
+            for p in 0..<(N * N) where masks[bestVi][p] > 0.5 { let v = Double(imgs[bestVi][p]); m += v; mm += v * v; mc += 1 }
+            guard mc > 100 else { return }
+            m /= mc; mm = mm / mc - m * m
+            guard mm.squareRoot() > 1.5 else { if outer == 0 { cellSkip[ci] = true }; return }
+            texLock.lock(); texturedCells += 1; texLock.unlock()
+            let order = Array(imgs.indices.sorted { w[$0] > w[$1] }.prefix(6))
+            var out: [Meas] = []
+            for (a, vi) in order.enumerated() {
+                for vj in order.dropFirst(a + 1) {
+                    guard let (s, peak, k) = search(imgs[vi], masks[vi], imgs[vj], masks[vj]) else { continue }
+                    // i(p+s) ≈ j(p): innholdet ligger s lenger ute i i enn i j → Δ_i − Δ_j = s (mm i planet;
+                    // rektifisert piksel: x = +u, rad nedover = −v)
+                    let smm = SIMD2(s.x * mmPx, -s.y * mmPx)
+                    let wgt = SIMD2(min(1, max(0, -k.x * 4)) * peak, min(1, max(0, -k.y * 4)) * peak)
+                    out.append(Meas(i: views[vi].frame, j: views[vj].frame, cell: ci,
+                                    posI: views[vi].imgPos, jacI: views[vi].jac, posJ: views[vj].imgPos, jacJ: views[vj].jac,
+                                    s: smm, w: wgt, peak: peak))
+                }
+            }
+            measSlots[ci] = out
+        }
+        var meas: [Meas] = []
+        for ci in 0..<cells.count { meas.append(contentsOf: measSlots[ci]) }
+        let tNcc = CFAbsoluteTimeGetCurrent() - tIter - tRect
+
+        // ── Felles løsning. Ukjent: rest-rutenett dh_k (px) per bilde. Per par: J_i⁻¹B_i dh_i −
+        // J_j⁻¹B_j dh_j = s. Glatthet λ Σ|dh_a − dh_b|² per bilde, prior μ|dh|² (holder umålte
+        // bilder på null og fjerner gauge-friheten). Block-Gauss-Seidel: hvert bilde løser sitt
+        // 2G-system med de andre holdt fast; IRLS (Cauchy 3 mm) mellom sveipene.
+        var byFrame = [[Int]](repeating: [], count: keyframes.count)
+        for (mi, mm) in meas.enumerated() { byFrame[mm.i].append(mi); byFrame[mm.j].append(mi) }
+        var dh = [[SIMD2<Float>]](repeating: [SIMD2<Float>](repeating: .zero, count: G), count: keyframes.count)
+        var irls = [SIMD2<Float>](repeating: SIMD2(1, 1), count: meas.count)
+        var residual = [SIMD2<Float>](repeating: .zero, count: meas.count)
+        func bilin(_ pos: SIMD2<Float>, _ sz: SIMD2<Float>) -> ([Int], [Float]) {
+            let uN = min(max(pos.x / sz.x, 0), 1), vN = min(max(pos.y / sz.y, 0), 1)
+            let gx = uN * Float(gW - 1), gy = vN * Float(gH - 1)
+            let cx = min(max(Int(gx), 0), gW - 2), cy = min(max(Int(gy), 0), gH - 2)
+            let tx = min(max(gx - Float(cx), 0), 1), ty = min(max(gy - Float(cy), 0), 1)
+            return ([cy * gW + cx, cy * gW + cx + 1, (cy + 1) * gW + cx, (cy + 1) * gW + cx + 1],
+                    [(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty])
+        }
+        func predictMM(_ ki: Int, _ pos: SIMD2<Float>, _ jac: simd_float2x2) -> SIMD2<Float> {
+            let (idx, bw) = bilin(pos, imgSize[ki])
+            var d = SIMD2<Float>(0, 0)
+            for k in 0..<4 { d += dh[ki][idx[k]] * bw[k] }
+            return jac.inverse * d
+        }
+        let lam = Double(lambda)
+        // ANKER: parvise målinger sier bare hvor bildene ligger i forhold til HVERANDRE. Uten
+        // anker driver hele settet (målt: de skarpe bildene på panelveggen flyttet 5 px). De
+        // skarpe bildene er ankeret: prior μ_k ∝ skarphet² holder dem på plass, de uskarpe
+        // er frie til å flytte seg inn på dem.
+        let maxSharpA = max(keyframes.map(\.sharpness).max() ?? 1, 1e-4)
+        // 0,5·r² holdt et skarpt bilde med en EKTE lokal feil (36 på det nye skannet: 12–15 mm mot
+        // tre naboer i én celle, enig med dem ellers) fast. 0,05·r² stopper felles drift, men lar
+        // mange sterke par flytte ett bilde. meshscan.planalignanker.
+        let ankerK = Double(MeshBakeV2.flaggTall("meshscan.planalignanker", 0.05))
+        let muK = keyframes.map { k -> Double in let r = Double(k.sharpness / maxSharpA); return 1e-3 + ankerK * r * r }
+        let n = 2 * G
+        var sweeps = 0
+        for sweep in 0..<10 {
+            var maxChange: Float = 0
+            for ki in 0..<keyframes.count where !byFrame[ki].isEmpty {
+                let sz = imgSize[ki]
+                var A = [Double](repeating: 0, count: n * n), r = [Double](repeating: 0, count: n)
+                for mi in byFrame[ki] {
+                    let mm = meas[mi]
+                    let isI = mm.i == ki
+                    let pos = isI ? mm.posI : mm.posJ, jac = isI ? mm.jacI : mm.jacJ
+                    guard abs(jac.determinant) > 1e-6 else { continue }
+                    let inv = jac.inverse
+                    // Δ_i − Δ_j = s. For i: Δ_i = s + Δ_j(fast). For j: Δ_j = Δ_i(fast) − s.
+                    let other = isI ? predictMM(mm.j, mm.posJ, mm.jacJ) : predictMM(mm.i, mm.posI, mm.jacI)
+                    let target = isI ? mm.s + other : other - mm.s
+                    let (idx, bw) = bilin(pos, sz)
+                    for axis in 0..<2 {
+                        let wa = Double((axis == 0 ? mm.w.x : mm.w.y) * (axis == 0 ? irls[mi].x : irls[mi].y))
+                        guard wa > 1e-4 else { continue }
+                        let i0 = axis == 0 ? inv.columns.0.x : inv.columns.0.y
+                        let i1 = axis == 0 ? inv.columns.1.x : inv.columns.1.y
+                        var row = [(Int, Double)]()
+                        for k in 0..<4 { row.append((2 * idx[k], Double(bw[k] * i0))); row.append((2 * idx[k] + 1, Double(bw[k] * i1))) }
+                        let rhs = Double(axis == 0 ? target.x : target.y)
+                        for (ia, va) in row { r[ia] += wa * va * rhs; for (ib, vb) in row { A[ia * n + ib] += wa * va * vb } }
+                    }
+                }
+                for gy in 0..<gH { for gx in 0..<gW {
+                    let g = gy * gW + gx
+                    for axis in 0..<2 { A[(2 * g + axis) * n + 2 * g + axis] += muK[ki] }
+                    for (nx, ny) in [(gx + 1, gy), (gx, gy + 1)] where nx < gW && ny < gH {
+                        let h2 = ny * gW + nx
+                        for axis in 0..<2 {
+                            let i = 2 * g + axis, j = 2 * h2 + axis
+                            A[i * n + i] += lam; A[j * n + j] += lam; A[i * n + j] -= lam; A[j * n + i] -= lam
+                        }
+                    }
+                } }
+                var ok = true
+                for col in 0..<n {
+                    var piv = col
+                    for rr in (col + 1)..<n where abs(A[rr * n + col]) > abs(A[piv * n + col]) { piv = rr }
+                    if abs(A[piv * n + col]) < 1e-12 { ok = false; break }
+                    if piv != col { for c in 0..<n { A.swapAt(col * n + c, piv * n + c) }; r.swapAt(col, piv) }
+                    for rr in (col + 1)..<n {
+                        let f = A[rr * n + col] / A[col * n + col]; if f == 0 { continue }
+                        for c in col..<n { A[rr * n + c] -= f * A[col * n + c] }
+                        r[rr] -= f * r[col]
+                    }
+                }
+                guard ok else { continue }
+                var h = [Double](repeating: 0, count: n)
+                for row in stride(from: n - 1, through: 0, by: -1) {
+                    var sm = r[row]
+                    for c in (row + 1)..<n { sm -= A[row * n + c] * h[c] }
+                    h[row] = sm / A[row * n + row]
+                }
+                for g in 0..<G {
+                    let nv = SIMD2(Float(h[2 * g]), Float(h[2 * g + 1]))
+                    maxChange = max(maxChange, simd_length(nv - dh[ki][g])); dh[ki][g] = nv
+                }
+            }
+            for (mi, mm) in meas.enumerated() {
+                let res = predictMM(mm.i, mm.posI, mm.jacI) - predictMM(mm.j, mm.posJ, mm.jacJ) - mm.s
+                residual[mi] = res
+                irls[mi] = SIMD2(1 / (1 + (res.x / 3) * (res.x / 3)), 1 / (1 + (res.y / 3) * (res.y / 3)))
+            }
+            sweeps = sweep + 1
+            if maxChange < 0.05 { break }
+        }
+        // Legg rest-rutenettet på det som alt finnes, og logg
+        var moved = 0, maxMove: Float = 0, sumMove: Float = 0, movedFrames = 0, forkastet = 0
+        var flyttet: [String] = []
+        for ki in 0..<keyframes.count where !byFrame[ki].isEmpty {
+            let sz = imgSize[ki]
+            var mean: Float = 0
+            for g in 0..<G { mean += simd_length(dh[ki][g]) / Float(G); maxMove = max(maxMove, simd_length(dh[ki][g])) }
+            let grid = dh[ki].map { $0 / sz }
+            if warpGridsByKF[ki].count == G { for g in 0..<G { warpGridsByKF[ki][g] += grid[g] } } else { warpGridsByKF[ki] = grid }
+            sumMove += mean; movedFrames += 1; if mean > 4 { moved += 1 }
+            if mean > 2 { flyttet.append("kf\(keyframes[ki].index):\(String(format: "%.1f", mean))") }
+        }
+        if !flyttet.isEmpty { MeshLog.log("planAlign — flyttet over 2 px (snitt over rutenettet): " + flyttet.joined(separator: " ")) }
+        for (mi, mm) in meas.enumerated() {
+            let ok = max(irls[mi].x * (mm.w.x > 1e-4 ? 1 : 0), irls[mi].y * (mm.w.y > 1e-4 ? 1 : 0)) > 0.3
+            if !ok { forkastet += 1 }
+            if audit {
+                let c = cells[mm.cell].origin + (cells[mm.cell].eu + cells[mm.cell].ev) * (cellM / 2)
+                auditRows.append(["runde": outer, "i": keyframes[mm.i].index, "j": keyframes[mm.j].index, "cell": mm.cell,
+                                  "plane": cells[mm.cell].plane, "cx": c.x, "cy": c.y, "cz": c.z,
+                                  "smm_u": mm.s.x, "smm_v": mm.s.y, "w_u": mm.w.x, "w_v": mm.w.y, "peak": mm.peak,
+                                  "rest_u": residual[mi].x, "rest_v": residual[mi].y, "irls_u": irls[mi].x, "irls_v": irls[mi].y])
+            }
+        }
+        sisteLogg = String(format: "runde %d: %d celler (%d med tekstur), %d celle-syn, %d par (%d dempet), %d bilder justert (snitt %.2f px, maks %.1f px, %d over 4 px), %d sveip, rektifisering %.1fs, NCC %.1fs, løsning %.1fs",
+                           outer + 1, cells.count, texturedCells, cellViewCount, meas.count, forkastet, movedFrames,
+                           movedFrames > 0 ? sumMove / Float(movedFrames) : 0, maxMove, moved, sweeps, tRect, tNcc,
+                           CFAbsoluteTimeGetCurrent() - tIter - tRect - tNcc)
+        MeshLog.log("planAlign — " + sisteLogg)
+        measSlots.deinitialize(count: cells.count); measSlots.deallocate()
+        } // ytre runder
+        // HARNESS-TEST: meshscan.planaligntest = <px> legger en fast forskyvning på ALLE
+        // rutenett, så en kan se at baken faktisk sampler gjennom dem (teksturen skal flytte seg).
+        let testPx = MeshBakeV2.flaggTall("meshscan.planaligntest", 0)
+        if testPx != 0 {
+            for ki in 0..<keyframes.count {
+                let sz = imgSize[ki]
+                let off = SIMD2(testPx / sz.x, 0)
+                if warpGridsByKF[ki].count == G { for g in 0..<G { warpGridsByKF[ki][g] += off } }
+                else { warpGridsByKF[ki] = [SIMD2<Float>](repeating: off, count: G) }
+            }
+            MeshLog.log("planAlign — TEST: +\(testPx) px lagt på alle rutenett")
+        }
+        if audit, let data = try? JSONSerialization.data(withJSONObject: ["cells": cells.count, "meas": auditRows], options: [.prettyPrinted]) {
+            try? data.write(to: framesDir.appendingPathComponent("plane-align-audit.json"))
+        }
+        MeshLog.log(String(format: "planAlign ferdig — %d plan, %d runder, totalt %.1fs (%@)", planes.count, outerIters, CFAbsoluteTimeGetCurrent() - t0, sisteLogg))
+    }
 }

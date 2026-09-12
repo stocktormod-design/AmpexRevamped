@@ -3,6 +3,7 @@ import ARKit
 import SceneKit
 import CoreImage
 import os // os_proc_available_memory — ekte headroom fra OS-et
+import AVFoundation
 
 struct MeshScanResult {
     let fileURL: URL
@@ -55,6 +56,32 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     private var sampleRejectedBehind = 0
     private var sampleRejectedOffscreen = 0
     private var sampleHits = 0
+
+    /// Fokusvakt v2 — kjøres på captureQueue per kandidat. Se feltene over.
+    private func fokusvakt(sharp: Float, now: Double) {
+        sharpHistory.append(sharp); if sharpHistory.count > 20 { sharpHistory.removeFirst() }
+        guard sharpHistory.count >= 8 else { return }
+        let sorted = sharpHistory.sorted(); let p75 = sorted[sorted.count * 3 / 4]
+        let soft = p75 > 80 && sharp < p75 * 0.25
+        softStreak = soft ? softStreak + 1 : 0
+        guard soft else { return }
+        softDetected += 1
+        guard softStreak >= 3, now - lastFocusNudge > 2.0 else { return }
+        lastFocusNudge = now; focusNudges += 1
+        MeshLog.log(String(format: "fokusvakt — skarphet %.0f mot p75 %.0f i %d bilder på rad, dytter autofokus (dytt %d)", sharp, p75, softStreak, focusNudges))
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if let dev = self.captureDevice, (try? dev.lockForConfiguration()) != nil {
+                if dev.isFocusPointOfInterestSupported { dev.focusPointOfInterest = CGPoint(x: 0.5, y: 0.5) }
+                if dev.isFocusModeSupported(.continuousAutoFocus) { dev.focusMode = .continuousAutoFocus }
+                dev.unlockForConfiguration()
+            }
+            if let label = self.hintLabel, !self.sessionTrouble {
+                label.text = "Bildene er uskarpe — hold stille et øyeblikk"; label.textColor = .systemYellow
+                self.lastHintText = label.text ?? ""
+            }
+        }
+    }
 
     // MARK: - Keyframe capture (texture-baking step 1)
     // Full pipeline: capture RGB keyframes + camera params during scan → UV unwrap → Metal bake.
@@ -229,6 +256,25 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     private var camsVedSistePass = 0
     private var gateRejected = 0
     private var tooFastRejected = 0   // rammer sluppet av fartsporten (delegat-tråden)
+    // FOKUSPORTEN (2026-09-12). Skannet kl. 20:23 hadde median skarphet 35 mot 259 i det gode
+    // skannet fra 18:05 — samme rom, lavere fart, samme predikerte bevegelsesuskarphet. Bildene
+    // var ute av fokus: appen låser eksponering og hvitbalanse, men ARKits autofokus henger
+    // etter når kameraet snur fra noe nært til veggen. Fartsporten ser ikke det. Nå holdes
+    // rammer igjen mens linsen stiller seg (isAdjustingFocus), og hintet ber om ro.
+    private var captureDevice: AVCaptureDevice?
+    private var focusRejected = 0
+    // FOKUSVAKT v2 (2026-09-12, 20:35-skannet): isAdjustingFocus slo aldri til, men bildene
+    // 22–32 lå på skarphet 19–40 i sju sekunder rett etter 18–21 på 266–457 — linsen sto
+    // stille på feil avstand. Måles derfor på innholdet: faller skarpheten under en fjerdedel
+    // av 75-persentilen for de siste 20 bildene tre ganger på rad, dyttes autofokusen mot
+    // midten og hintet ber om ro. Skarphet er innholdsavhengig, derfor relativt, ikke absolutt.
+    private var sharpHistory: [Float] = []   // captureQueue
+    private var softStreak = 0               // captureQueue
+    private var softDetected = 0             // captureQueue
+    private var focusNudges = 0
+    private var lastFocusNudge: Double = -10
+    private var focusingSince: Double = -1
+    private var lastHintText = ""
     private var lastNoveltyCheck: Double = -1
     // Adaptiv kadens: stort mesh → dekningspasset tar lengre tid → senk frekvensen i stedet for
     // å pinne CPU. Kontinuerlig pinning ga termisk struping som gjorde ALT tregere jo lenger
@@ -333,6 +379,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         // vegger. Lås etter 1,5 s innmåling så alle keyframes deler én eksponering/fargetone.
         // Post-hoc gain-utjevning består som sikkerhetsnett for scener der låsen bommer.
         if #available(iOS 16.0, *) {
+            captureDevice = ARWorldTrackingConfiguration.configurableCaptureDeviceForPrimaryCamera
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard self != nil,
                       let device = ARWorldTrackingConfiguration.configurableCaptureDeviceForPrimaryCamera else { return }
@@ -579,6 +626,10 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         MeshLog.log("tett dybdelogg — \(denseCount) rå dybdekart lagret (super-res-råstoff)")
         MeshLog.log("dekningstvangen — \(noveltyForced) fangster tvunget av ufotografert sikt (>30 %), \(intervalForced) forbi minsteintervallet (>25 %)")
         MeshLog.log("fartsporten — \(tooFastRejected) rammer sluppet (grense 1,1 m/s / 2,0 rad/s)")
+        let skarpheter = captureQueue.sync { keyframes.map(\.sharpness).sorted() }
+        let medSkarp = skarpheter.isEmpty ? 0 : skarpheter[skarpheter.count / 2]
+        let (softN, nudges) = captureQueue.sync { (softDetected, focusNudges) }
+        MeshLog.log(String(format: "fokusporten — %d rammer holdt igjen mens linsen stilte, %d myke kandidater, %d autofokus-dytt; median skarphet på keyframes %.0f (18:05-skannet: 259, det myke 20:23-skannet: 35)", focusRejected, softN, nudges, medSkarp))
         // Kalibreringsdata for uskarphetsporten: 60 px-grensa er satt i blinde — snitt/maks
         // herfra på ekte skann (via pipeline.log) er det som skal justere den.
         let avgBlur = blurStatN > 0 ? Float(blurStatSum / Double(blurStatN)) : 0
@@ -884,15 +935,22 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         // Varselet slår også inn når PREDIKERT uskarphet passerer 40 % av portgrensa — i mørke
         // rom skjer det ved langt lavere fart enn de rå fartstersklene (som består som gulv).
         let tooFast = linSpeed > 0.7 || angSpeed > 1.2 || blurPx > blurGatePx * 0.4 // ~70°/s
-
-        if tooFast == wasTooFast { return }
         wasTooFast = tooFast
+        // Fokus: linsen som stiller seg i mer enn 0,4 s er et tegn på at den henger etter.
+        let focusing = captureDevice?.isAdjustingFocus ?? false
+        if focusing { if focusingSince < 0 { focusingSince = now } } else { focusingSince = -1 }
+        let focusingLong = focusing && now - focusingSince > 0.4
+        let text = tooFast ? "Beveg telefonen saktere"
+            : (focusingLong ? "Hold stille et øyeblikk — kameraet fokuserer" : MeshScanPresenter.defaultHint)
+        if text == lastHintText { return }
+        lastHintText = text
+        let warn = tooFast || focusingLong
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let label = self.hintLabel else { return }
             // En sesjonsadvarsel er viktigere enn fartshintet — ikke overskriv den.
             if self.sessionTrouble { return }
-            label.text = tooFast ? "Beveg telefonen saktere" : MeshScanPresenter.defaultHint
-            label.textColor = tooFast ? .systemYellow : .white
+            label.text = text
+            label.textColor = warn ? .systemYellow : .white
         }
     }
 
@@ -911,6 +969,8 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 bucket: auditBucket, blur: predictedBlurPx(frame), motion: lastLinSpeed + 0.5 * lastAngSpeed)
         }
         guard case .normal = frame.camera.trackingState else { auditReason = "tracking"; return }
+        // Fokusporten: en ramme tatt mens linsen flytter seg er myk uansett fart.
+        if captureDevice?.isAdjustingFocus == true { focusRejected += 1; auditReason = "focusing"; return }
 
         let t = frame.timestamp
         let cam = frame.camera
@@ -1254,6 +1314,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         captureQueue.async { [weak self] in
             guard let self = self, let dir = self.framesDir else { return }
             let sharp = MeshScanPresenter.sharpnessScore(copy)  // measure blur before encoding
+            self.fokusvakt(sharp: sharp, now: t)
 
             // ── Erstatningsavgjørelsen. Tas FØR JPEG-encodingen: en kandidat som ikke slår
             // plassen sin skal ikke koste encode-tid eller varme (regel 8).
@@ -1301,6 +1362,10 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             do { try jpeg.write(to: dir.appendingPathComponent(fname), options: .atomic) } catch {
                 self.captureDecisionAudit.record(time: t, reason: "write_failed", bucket: viewKey, index: idx); return
             }
+            // LUMA TIL DISK (2026-09-12, «offload mens vi skanner»): Y-planet i halv oppløsning
+            // skrives rått (8 byte header + w·h byte, ~2 MB). Plan-justeringen i baken leser
+            // den i stedet for å dekode JPEG-en: null dekodetid, null RGBA-topp i minnet.
+            MeshScanPresenter.writeLumaHalf(copy, to: dir.appendingPathComponent("luma-\(idx).u8"))
 
             var depthFile: String?
             var depthW = 0, depthH = 0
@@ -1347,6 +1412,34 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
 
     /// Blur metric on the luma (Y) plane: mean squared gradient (Tenengrad-style).
     /// Higher = sharper. Subsampled for speed. Used to keep the sharpest frames for splatting.
+    /// Y-planet nedskalert 2×2 (bokssnitt) til fil: header [UInt32 w, UInt32 h] + w·h byte.
+    static func writeLumaHalf(_ pb: CVPixelBuffer, to url: URL) {
+        CVPixelBufferLockBaseAddress(pb, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddressOfPlane(pb, 0) else { return }
+        let w = CVPixelBufferGetWidthOfPlane(pb, 0), h = CVPixelBufferGetHeightOfPlane(pb, 0)
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(pb, 0)
+        let p = base.assumingMemoryBound(to: UInt8.self)
+        let hw = w / 2, hh = h / 2
+        var d = Data(capacity: 8 + hw * hh)
+        var ww = UInt32(hw), hhh = UInt32(hh)
+        withUnsafeBytes(of: &ww) { d.append(contentsOf: $0) }
+        withUnsafeBytes(of: &hhh) { d.append(contentsOf: $0) }
+        var row = [UInt8](repeating: 0, count: hw)
+        for y in 0..<hh {
+            let r0 = p + (y * 2) * stride, r1 = r0 + stride
+            for x in 0..<hw {
+                let i = x * 2
+                let a = Int(r0[i]), b = Int(r0[i + 1])
+                let c = Int(r1[i]), d2 = Int(r1[i + 1])
+                let sum = a + b + c + d2 + 2
+                row[x] = UInt8(sum / 4)
+            }
+            d.append(contentsOf: row)
+        }
+        try? d.write(to: url, options: .atomic)
+    }
+
     private static func sharpnessScore(_ pb: CVPixelBuffer) -> Float {
         CVPixelBufferLockBaseAddress(pb, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }

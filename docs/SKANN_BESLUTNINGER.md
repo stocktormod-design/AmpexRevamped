@@ -3968,3 +3968,183 @@ fixturer: 49 / 86 / 25 / 93 tonespenn, rutethet 6,0 / 6,0 / 8,3 / 5,4.
   parametere som mangler — det er metoden. Se `docs/SUBPIXEL_ALIGN_PLAN.md`.
 - **Svarte hull på møbler** (`fylt=96 %`) og en **asfaltflekk i taket** fra et feil foto.
   Begge synes mer enn tonen nå.
+
+## 95. Gjennomgang av hele kjeden — det er justeringens MÅLESTOKK som er blind, 2026-09-12
+
+Tormod: «jeg vil bare ha scaniverse level teksturer. så hvis det er en del som vi
+bruker som burde byttes ut så er jeg down til det.» Hele kjeden ble lest på nytt,
+steg for steg, mot loggens egne målinger.
+
+### Dommen per steg
+
+Fangst (4K stills + LiDAR, §73/§76), geometri (TSDF, 2,8 mm RMS fra plan mot
+Scaniverses 30 mm, §85), atlas (2,5× deres texeltetthet, §56) og tonelaget (§79/§91)
+er på eller over Scaniverse-nivå, målt. Vinnervalget er nesten ferdig tunet (§65).
+Blandingen er riktig idé og feil resultat — den er gissel for justeringen.
+
+**Det ene strukturelt svake leddet er justeringen**, og mer presist objektivet dens.
+Residualen måles bilde-mot-PROXY: proxyen er et per-verteks snitt av alle syn med
+1–4 cm mellom punktene. Et 3 mm panelspor finnes ikke i proxyen, og det proxyen har
+er alt utsmurt av den uenigheten vi vil fjerne. Da har warpen ingenting å rette sporet
+mot, og den konvergerer til proxyens egen uskarphet. Det er derfor alle fem armene i
+§94 endte på 0,026: rutenett, oppløsning og proxyvertekser endrer ikke hva objektivet
+kan se. Koden innrømmer det selv (`MeshPoseRefineV2.swift` ved «er proxyen grov, kan
+residualen ikke bli lav»).
+
+### Det som skal byttes
+
+Målingen, ikke warpen. Bilde-mot-bilde på full oppløsning: for hvert par av syn som
+overlapper på en flate, projiser det ene inn i det andre gjennom nettet og finn lokal
+forskyvning per lapp (NCC eller fasekorrelasjon, sub-piksel med parabeltilpasning).
+Det gir mange harde målinger av typen «syn 12 og 40 er 1,4 mm uenige her». Løs så
+warp-rutenettene per bilde som minste kvadrater med glatthet, så alle par blir enige.
+Baken har alt warp-bevisst sampling, så halvdel to finnes. Samme grep som
+burst-fotografering bruker for å snitte uten å smøre.
+
+### Mål FØRST: pose eller geometri?
+
+Ingen måling skiller ennå de to kildene til de ~1,5 mm. 20 mm voxler + surface nets +
+Taubin gir mm-bølger på vegger som ikke er plan-snappet (§66: 78 587 av 101 438
+veggflater lå utenfor ethvert plan), og 2–5 mm bølger sett fra to vinkler 30° fra
+hverandre gir nettopp 1–2 mm parallaks. Billig test på harnessen: bak panelveggen i
+ampex-stort med veggens vertekser projisert hardt på det tilpassede planet. Blir
+sporene rette OG skarpe med blend=raw, er det geometrien, og da er plan-låsing på
+vegg svaret — ikke ny justering. Blir de ikke det, er det posene, og den nye
+justeringen er neste.
+
+### Forbehold Tormod må vite
+
+§77 står: parallaks fra et NEDFELT spor er ekte relieff og lar seg ikke warpe bort med
+en flat modell. Så selv perfekt justering gir på 0,7 mm/texel ikke vinnerfotoets
+skarphet — den gir det Scaniverse har: rett, hel, litt mykere enn ett foto. Det er
+målet, og det er nok.
+
+### To foreldede kommentarer
+
+`MeshBakeV2.swift` ~529 sier «ANCHOR-MESH ER DEFAULT»; linje ~299 sier det motsatte
+og har rett (§85). `devigK` 0,15 (~311) er hardkodet uten måling for iPhone-linsa.
+
+## 96. Plan-justering: bilde mot bilde på veggen — og fire feil i egen måling, 2026-09-12
+
+Tormod: «kan du bare prøve å fikse det?» Dette er det som ble gjort, og det som ble
+funnet underveis. Ny kode: `MeshPoseRefineV2.planeAlign` (kalles fra baken rett etter
+den rigide refinen, `meshscan.planalign = "off"` for A/B).
+
+### Første funn: veggen ER plan, og de skarpe bildene ER enige
+
+Mac-prototypen (`proto1.py` i harness-mappa) rektifiserte alle 78 keyframes på
+panelveggens plan med rå fixture-poser og krysskorrelerte dem. Resultat: de skarpe
+bildene (31, 32, 33, 34) er enige innenfor 0,3 mm. To uskarpe bilder fra en annen
+strekning (43, 44, skarphet 73–75) ligger 7–12 mm feil. Og veggens vertekser i
+bakens nett ligger 83 % innenfor 0,5 mm fra planet — plan-forskyvningssveipet
+(`meshscan.planoffset` ±4/±8 mm) endret ingenting. Så §95 sin hypotese om
+geometribølger var feil: det er POSENE, og bare noen av dem.
+
+Hakket i panelsporene i vinnerveien kommer av at bilde 43 vinner den øverste raden
+av veggen (der ingen skarpere dekker) og ligger 8 mm feil. WIN og WINNOREF (rigid
+refine av) var identiske: refinen fant ikke de 8 mm. Vinnerveien er ellers skarp
+(sporkontrast 52 mot 17 for snittet).
+
+### Snittet blir ikke skarpt av justering
+
+Med de skarpe bildene enige innen 0,3 mm burde snittet være skarpt. Det er det ikke,
+fordi snitt-vekten normaliserer skarphet mot skannets 90-persentil og klipper på 1:
+fire bilder med skarphet 920–1382 får alle vekt 1,0 og snittes likt, og 379/565-
+bildene får 0,95. Snittet av seks bilder med ulik skarphet er mykere enn det
+skarpeste — det er hele «mosen». Mac-emulering: snitt vektet med (skarphet/maks)² gir
+62 % av enkeltbildets sporkontrast, med ⁴ 79 %, lokal texelvekt (fokusstakking) 71 %.
+Ingen av dem når vinneren. Snitt-veien står urørt som A/B-arm; vinner er standard.
+
+### Plan-justeringen
+
+Hvert dominantplan deles i 30 cm celler. Hvert bilde som ser cellen (senter inne,
+≥ 60 % dekning, LiDAR-dybde innen 20 cm av planet) rektifiseres på planet ved
+1,5 mm/px fra full kildeoppløsning, med maske. Per celle: gain-normalisering,
+høypass (16 mm bokssnitt), referanse = skarphetsvektet snitt av de ANDRE bildene
+(leave-one-out), NCC-søk grovt på 2× (±24 mm) og fint ±2 px, sub-piksel med parabel,
+per-akse vekt fra toppens krumning. Forskyvningen (mm i planet) føres til bilderommet
+med jacobianen, og 12×8-rutenettet per bilde løses som vektet minste kvadrater med
+glatthet (λ = 1 px) og IRLS (Cauchy 3 mm). To ytre runder: runde 2 rektifiserer
+gjennom rutenettet fra runde 1. Rutenettet er det baken alt sampler gjennom.
+
+Kostnad på Mac: 685 celler, ~3000 celle-syn, ~690 målinger, 11 s for to runder
+(rektifisering 2,5 s + NCC 3 s per runde). Ikke målt på telefon ennå.
+
+### Fire feil i egen måling før det virket (les før du rører den)
+
+1. **Rå NCC på nesten flat vegg** låser på lysgradienten, ikke sporene: bilde 43 fikk
+   +0,4 mm med topp 0,97. Høypass først.
+2. **4× grovsøk** på 2 mm/px så aldri 3,5 px. 2× og 1,5 mm/px.
+3. **Referansen inneholdt bildet selv**, og tre uskarpe bilder fra samme strekning
+   målte 0 mm mot hverandre — selvkonsistente, men 10 mm feil mot resten. Leave-one-out.
+   Å vekte målingen med referansens skarphet var OGSÅ feil: et uskarpt bilde som er
+   ankret til et skarpt, er et like godt anker.
+4. **Hel-celle-kravet** utelukket nærbildene (0,8 m synsfelt), så 43 delte aldri celle
+   med 31 — ingen anker. Delvis dekning med maske.
+
+Og to fallgruver i harnessen: `-meshscan.tracepoint "-1.9,…"` — en verdi som begynner
+med minus leses som et nytt flagg; sett et mellomrom foran. Og kvalitetsstien
+(prosjektive felt) returnerer før `point-trace.json` skrives; det er derfor det finnes
+en `tracepoint`-logglinje i selve feltbyggingen nå.
+
+### Én ekte feil i baken funnet på veien
+
+De prosjektive feltene (kvalitetsmodus) regnet UV-ene rett fra CPU-projeksjonen, uten
+warp-rutenettet som alle GPU-passene sampler gjennom. Rettet i `MeshBakeV2` ved
+feltbyggingen. Merk at telefonen ble holdt i portrett: bildets x-akse er loddrett på
+veggen, så en «vannrett» forskyvning i bildet flytter teksturen loddrett. Målemetoden
+min lette først bare vannrett og fant tull.
+
+### Resultat på ampex-stort
+
+Toppraden (bilde 43) er flyttet 8 px og ligger nå nesten på linje med resten; rester
+på 2–3 px til venstre der 43s feil varierer over bildet (0 mm venstre, 12 mm høyre —
+rullelukker eller rotasjonsfeil) og målingene er få. Tre runder / λ 0,5 endret ikke
+det. Sporkontrasten er uendret (50–52). Regresjon på de andre fixturene: se under.
+
+### Kveld: parvis felles løsning — sømmen på det nye skannet
+
+Tormod skannet på nytt kl. 18:05 og fant «et scar på tvers av veggen». Diagnose fra
+harnessen (bundelen ligger på `/private/tmp/ampex-nytt`): feltet over sømmen vinnes av
+bilde 25 (skarphet 10 % av beste), 12 mm feil; under vinner 33. Versjonen på telefonen
+(én referanse per celle, tillit per bilde) verken laget eller tok den — AV og PÅ var
+identiske. Målingene av 25 mot de skarpe spriket (+12 i én celle, −3 i nabocellen), og
+det viste seg at bilde 36, som er skarpt, ligger 12–15 mm fra 35, 24 OG 25 i én celle
+mens det er enig med 35 ellers: en lokal feil i et skarpt bilde. Mot et snitt eller én
+referanse blir slikt usynlig; målt parvis er det opplagt.
+
+Derfor er målingen nå PARVIS: hvert par (i, j) av inntil seks syn per celle NCC-måles
+direkte, og alle bilders rutenett løses FELLES (block-Gauss-Seidel, 10 sveip, IRLS
+Cauchy 3 mm mellom sveipene). Par mellom uskarpe bilder binder dem sammen; parene mot
+de skarpe forankrer dem. Prior μ_k = 0,001 + 0,05·(skarphet/maks)² holder de skarpe
+som referanseramme uten å låse et skarpt bilde med ekte lokal feil (0,5 låste 36;
+uten anker drev hele panelveggen 5 px). Tre ytre runder, λ = 0,5.
+
+Resultat: sømmen på det nye skannet er nesten borte geometrisk (fra ~15 til ~1–2 px);
+tonen i feltet er fortsatt litt ulik (tonelaget, egen sak). Panelrommet: toppraden
+rettet som før, resten av veggen driftet 2–3 px felles (usynlig). Flaggene:
+`meshscan.planalign off`, `planaligniter` (3), `planalignlambda` (0,5),
+`planalignanker` (0,05), `planalignaudit on` (par-JSON i bundelen), og loggen
+`planAlign — flyttet over 2 px` lister bildene som ble flyttet. Kostnad: 5–7 s på Mac
+for tre runder; telefonen målte 7,6 s for to runder av den gamle varianten.
+
+### Sent på kvelden: offload under skanning, celler på disk
+
+Tormod: «burde vi ikke bare offloade mens vi scanner? SSD-er er jo raske.» Ja:
+
+- **Luma til disk i fangsten.** Hvert lagrede keyframe skriver Y-planet i halv oppløsning
+  (`luma-<idx>.u8`, 8 byte header + 1920×1080, ~2 MB) rett fra pikselbufferen, før JPEG-
+  kodingen. Plan-justeringen leser den i stedet for å dekode JPEG: rektifisering 1,3 → 0,5 s
+  på soverommet, og RGBA-toppen (4 × 33 MB) er borte. Eldre bundler uten filene tar JPEG-veien.
+- **Celler på disk, rektifisert én gang.** Cellene skrives til `planalign-cells-<ki>.bin` i
+  bundelen og minnemappes (sidecache, ikke RSS). Runde 2 og 3 flytter de lagrede cellene med
+  rutenett-differansen (J⁻¹ · Δ) i stedet for å rektifisere på nytt: 0,0 s i stedet for
+  2,5 s per runde på panelrommet. Totalt 13,5 → 9,0 s (panel, JPEG-vei) og 5,4 → 3,6 s
+  (soverom, luma-vei). Filene slettes når justeringen er ferdig. Resultatet er innenfor
+  1–3 px av den fulle rektifiseringen (flyttingen er en tilnærming per celle).
+- **Minnetak** står igjen som sikkerhet: 80 % av ledig minne til celler, deretter hoppes
+  resten av bildene over med logglinje «MINNETAK nådd».
+
+Det som IKKE er gjort: rektifisere cellene under selve skanningen. Det krever ARKits
+planankere som celleunderlag og at re-ankringen av posene ved eksport føres inn i
+cellene. Med luma på disk er gevinsten av det lite (0,5 s), så det er parkert.
