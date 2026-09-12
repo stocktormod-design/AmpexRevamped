@@ -26,17 +26,23 @@ export async function enforceCompanyBoundary(): Promise<void> {
     const user = data.user
     if (!user || user.id === verifiedUserId) return
 
-    const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', user.id).single()
-    const companyId = profile?.company_id
-    if (typeof companyId !== 'string' || companyId.length === 0) return
+    const { data: profile, error } = await supabase.from('profiles').select('company_id').eq('id', user.id).maybeSingle()
+    // Nettverks- eller serverfeil: vi VET ingenting, rør ingenting (offline-først).
+    if (error) return
+    // Herfra har serveren svart. Ingen profilrad, eller rad uten firma, er et POSITIVT
+    // svar: denne brukeren hører ikke til noe firma. Før 2026-09-12 gikk vakten rett
+    // ut her, og en fersk bruker uten firma så forrige firmas ordrer fra lokal SQLite
+    // (Tormod: «jeg får opp ordre fra andre firma»). Nå nullstilles basen også da.
+    const companyId = typeof profile?.company_id === 'string' && profile.company_id.length > 0 ? profile.company_id : null
 
     const owner = await database.localStorage.get<string>(OWNER_COMPANY_KEY)
     if (owner !== companyId) {
       if (owner) {
-        console.log('[company-guard] nytt firma på enheten — nullstiller lokal database')
+        console.log('[company-guard] annet firma (eller ingen) på enheten — nullstiller lokal database')
         await database.write(() => database.unsafeResetDatabase())
       }
-      await database.localStorage.set(OWNER_COMPANY_KEY, companyId)
+      if (companyId) await database.localStorage.set(OWNER_COMPANY_KEY, companyId)
+      else await database.localStorage.remove(OWNER_COMPANY_KEY)
     }
     verifiedUserId = user.id
   } catch (e) {
