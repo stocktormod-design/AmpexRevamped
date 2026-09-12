@@ -2964,7 +2964,14 @@ enum MeshBakeV2 {
             // (S²×1) og ett dekodet kildefoto (~33 MB) → S²×15 + 33 MB. 8192 koster ~1,0 GB,
             // 6144 ~0,6 GB, 4096 ~0,3 GB. Grensa på 70 % av ledig minne er det ENESTE valgte
             // tallet her; resten følger av størrelsene. meshscan.flisbudsjett = "off" slår av.
-            func flisKost(_ s: Int) -> Int { s * s * 15 + 33 * 1024 * 1024 }
+            // Byte per piksel: atlasparet (2×4) + lesebufferet + plan-akkumulatoren i halv
+            // oppløsning rgba16F (S²×2 → 2 per piksel) + fjæringslaget (1). Med stripevis
+            // lesing (§93) er lesebufferet en åttendedel av en full flis, ikke en hel.
+            let stripevis = UserDefaults.standard.string(forKey: "meshscan.stripelesing") != "off"
+            func flisKost(_ s: Int) -> Int {
+                let perPiksel = 2 * 4 + (stripevis ? 1 : 4) + 2 + 1
+                return s * s * perPiksel + 33 * 1024 * 1024
+            }
             var flisStr = projStr
             if UserDefaults.standard.string(forKey: "meshscan.flisbudsjett") != "off" {
                 let ledig = MeshSimMem.available()
@@ -2981,7 +2988,32 @@ enum MeshBakeV2 {
             // proporsjonalt, og fire fliser skal ta skalaen forbi referansens 0,509 %.
             // Skrives som EGEN diagnosefil; den vanlige eksporten er urørt, og appens
             // fremviser leser i dag bare første tekstur (AmpexMeshViewerView).
-            let fliser = kvalitetFliser ? 2 : (Int(flaggTall("meshscan.projektivfliser", 1)) == 2 ? 2 : 1)
+            // ── FLERE BRIKKER NÅR HVER MÅ VÆRE MINDRE (2026-09-12, §93).
+            // Tormod: «noen av linjene forsvant». Det var nedtrappingen fra 8192 til 6144:
+            // panelspor er 1–2 texler brede, og 33 % større texler spiser dem.
+            //
+            // Nedtrappingen var likevel riktig — minnet holdt ikke. Feilen var å la
+            // OPPLØSNINGEN betale. Rutenettet er fritt: fire brikker à 8192 gir 16384
+            // effektivt, og ni à 6144 gir 18432 — MER detalj, på 453 MB per brikke i stedet
+            // for 1,3 GB. Toppen bestemmes av én brikke, ikke av summen; å ta flere og
+            // mindre er derfor gratis i minne og koster bare tid.
+            //
+            // Målet er 2 × budsjettets atlas, altså det fire brikker à `projStr` ville gitt.
+            // Taket på 4×4 er der for å hindre at en liten flisstørrelse eksploderer i antall
+            // tegninger. meshscan.projektivfliser overstyrer manuelt.
+            let målEffektiv = 2 * projStr
+            let auto = kvalitetFliser && UserDefaults.standard.string(forKey: "meshscan.projektivfliser") == nil
+            let fliser: Int
+            if auto {
+                fliser = max(2, min(4, Int(ceil(Double(målEffektiv) / Double(flisStr)))))
+                if fliser != 2 {
+                    MeshLog.log("V2 fliser — \(fliser)×\(fliser) à \(flisStr) = \(fliser * flisStr) effektivt (mål \(målEffektiv))")
+                }
+            } else {
+                // Manuell overstyring godtar 1–4 (A/B av rutenettet), ikke bare 1 eller 2.
+                let bedt = Int(flaggTall("meshscan.projektivfliser", kvalitetFliser ? 2 : 1))
+                fliser = (1...4).contains(bedt) ? bedt : (kvalitetFliser ? 2 : 1)
+            }
             let kollaps = UserDefaults.standard.string(forKey: "meshscan.projektivkollaps") == "on"
             guard let alternative = projectiveFixtureUV(uv: uv, region: feltKey, projected: projected,
                                                         atlasSize: flisStr, fliser: fliser,
@@ -3334,7 +3366,11 @@ enum MeshBakeV2 {
         // større enn GPU-en tåler (16384² hang rasterizeren). Hvert felt pakkes HELT innenfor
         // én flis, så en flis kan rasteriseres alene og eksporteres som eget materiale.
         // fliser = 1 er den gamle oppførselen.
-        let ruter = max(1, min(2, fliser))
+        // Taket var 2 (2026-09-12, §93): resten av pakkeren er generell i `ruter`, men
+        // grensa hindret 3×3. Da ble UV-ene pakket for et 2×2 virtuelt atlas mens
+        // flisløkka kuttet i 3×3, og 1057 trekanter havnet på tvers av en grense som
+        // pakkingen ikke visste om — de fikk `flisAv = -1` og ble tegnet med flis 0s UV-er.
+        let ruter = max(1, min(4, fliser))
         func pack(_ scale: Float) -> [Int: SIMD2<Float>]? {
             var origins = [Int: SIMD2<Float>]()
             var flis = 0, x = 0, y = 0, height = 0
@@ -4447,8 +4483,51 @@ enum MeshBakeV2 {
             if !ok { MeshLog.log("V2 push-pull — hoppet over (fikk ikke plass til pyramiden)") }
         }
 
-        // Readback (privat lagring → blit til delt buffer)
+        // ── TILBAKELESING I STRIPER, VIA DISK (2026-09-12, §93). Tormods spørsmål:
+        // «kan vi ikke cycle mellom ram og lagring for å aldri miste ram?» Svaret er ja,
+        // og dette er stedet.
+        //
+        // Før lå hele flisa i minnet TRE ganger samtidig: Metal-bufferet, en Swift-array-
+        // kopi, og `Data(pixels)` inne i CGImage-en. Ved 8192 er det 3 × 268 MB = 800 MB
+        // oppå atlasparet på 536 MB, og da er det 1,3 GB for én flis. Det var grunnen til
+        // at flisemalingen ikke fikk plass til 8192 på et stort rom (målt på enhet: 833 MB
+        // ledig når flisene startet, mot 2140 MB da budsjettet ble lest 39 s tidligere),
+        // og hvorfor nedtrappingen til 6144 spiste panelsporene.
+        //
+        // Nå kopieres atlaset ut en stripe om gangen og skrives til en råfil, og JPEG-
+        // koderen memory-mapper fila. Toppen blir ETT stripebuffer (33 MB ved 8192) pluss
+        // atlasparet — pikslene er rene, filbakte sider iOS kan kaste ut under trykk, ikke
+        // skitten hukommelse appen må betale for.
+        // meshscan.stripelesing = "off" gir den gamle veien tilbake for A/B.
         let bpr = atlasSize * 4
+        let striper = UserDefaults.standard.string(forKey: "meshscan.stripelesing") != "off"
+        if striper, diagnosticSink == nil {
+            let stripeRader = max(256, atlasSize / 8)
+            guard let stripe = device.makeBuffer(length: bpr * stripeRader, options: .storageModeShared)
+            else { return nil }
+            let råURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("atlas-\(UUID().uuidString).raw")
+            guard FileManager.default.createFile(atPath: råURL.path, contents: nil),
+                  let fh = try? FileHandle(forWritingTo: råURL) else { return nil }
+            defer { try? FileManager.default.removeItem(at: råURL) }
+            var y = 0
+            while y < atlasSize {
+                let rader = min(stripeRader, atlasSize - y)
+                guard let cb = queue.makeCommandBuffer(), let blit = cb.makeBlitCommandEncoder() else { return nil }
+                blit.copy(from: src, sourceSlice: 0, sourceLevel: 0,
+                          sourceOrigin: MTLOrigin(x: 0, y: y, z: 0),
+                          sourceSize: MTLSize(width: atlasSize, height: rader, depth: 1),
+                          to: stripe, destinationOffset: 0,
+                          destinationBytesPerRow: bpr, destinationBytesPerImage: bpr * rader)
+                blit.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+                fh.write(Data(bytesNoCopy: stripe.contents(), count: bpr * rader, deallocator: .none))
+                y += rader
+            }
+            try? fh.close()
+            return MeshImageIO.jpegData(fromRawFile: råURL, size: atlasSize)
+        }
+        // Gammel vei: hele flisa i ett delt buffer. Beholdt for A/B og for diagnose-
+        // sinken, som trenger pikslene som array for den tapsfrie PNG-en.
         guard let readBuf = device.makeBuffer(length: bpr * atlasSize, options: .storageModeShared),
               let cb = queue.makeCommandBuffer(), let blit = cb.makeBlitCommandEncoder() else { return nil }
         blit.copy(from: src, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
