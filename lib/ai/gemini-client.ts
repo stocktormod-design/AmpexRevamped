@@ -1,4 +1,5 @@
 import { supabase } from '../supabase'
+import { aiLogg } from './ai-logg'
 
 export type AiVoiceMode =
   | 'gap_check'
@@ -105,7 +106,7 @@ export function reportVoiceUsage(f: { speechSec: number; inTok: number; outTok: 
     mode: 'voice_usage',
     routeContext: 'live',
     forbruk: { speech_sec: f.speechSec, in_tok: f.inTok, out_tok: f.outTok },
-  }).catch(e => console.warn('Live: forbruksrapport feilet:', e))
+  }).catch(e => aiLogg('Live: forbruksrapport feilet:', e))
 }
 
 /**

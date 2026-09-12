@@ -37,7 +37,9 @@ import {
 } from '../order-access'
 import { syncQuietly } from '../db/sync'
 import { TimeEntry } from '../db/models/time-entry'
-import { finnAktivitet } from '../activities'
+import { Activity } from '../db/models/activity'
+import { finnAktivitet, opprettAktivitet } from '../activities'
+import { sokKunder, finnKunde, opprettKunde } from '../customers'
 import { OrderExtra, type TilleggPrising } from '../db/models/order-extra'
 import { Quote } from '../db/models/quote'
 import { resolveTemplate, listAllTemplates, type TemplateCatalogEntry } from '../forms/resolve'
@@ -137,6 +139,8 @@ async function resolveOrder(
  */
 const VERKTOY_KREVER: Record<string, Verktoyrett> = {
   opprett_ordre: 'ordre.opprett',
+  opprett_kunde: 'kunde.opprett',
+  opprett_timetype: 'register.endre',
   bli_med_pa_ordre: 'ordre.bli_med',
   oppdater_ordre: 'ordre.endre',
   legg_til_medlem: 'ordre.endre',
@@ -239,11 +243,18 @@ export async function runTool(ctx: ToolContext, name: string, args: Record<strin
         if (!user) return { feil: 'Ingen innlogget bruker.' }
         const tittel = typeof args.tittel === 'string' ? args.tittel.trim() : ''
         if (!tittel) return { feil: 'Tittel mangler.' }
+        // Kunden kommer fra registeret: finnes navnet der, kobles ordren på kunden
+        // (id, telefon, adresse). Finnes det ikke, står navnet som fritekst og svaret
+        // sier fra, så assistenten kan tilby å opprette kunden.
+        const kundenavn = typeof args.kundenavn === 'string' && args.kundenavn.trim() ? args.kundenavn.trim() : null
+        const kunde = kundenavn ? await finnKunde(kundenavn) : null
         const created = await database.write(async () =>
           database.get<Order>('orders').create(o => {
             o.title = tittel
-            o.customerName = typeof args.kundenavn === 'string' && args.kundenavn.trim() ? args.kundenavn.trim() : null
-            o.address = typeof args.adresse === 'string' && args.adresse.trim() ? args.adresse.trim() : null
+            o.customerId = kunde?.id ?? null
+            o.customerName = kunde?.name ?? kundenavn
+            o.customerPhone = kunde?.phone ?? null
+            o.address = (typeof args.adresse === 'string' && args.adresse.trim() ? args.adresse.trim() : null) ?? kunde?.postalAddress ?? null
             o.description = typeof args.beskrivelse === 'string' && args.beskrivelse.trim() ? args.beskrivelse.trim() : null
             o.status = 'mottatt'
             o.assignedTo = user.id
@@ -256,9 +267,67 @@ export async function runTool(ctx: ToolContext, name: string, args: Record<strin
         return {
           opprettet: true,
           tittel,
+          kunde: kunde ? { navn: kunde.name, telefon: kunde.phone } : null,
           beskjed:
-            'Ordren er opprettet, brukeren er med på den, og den vises på skjermen nå. Ordrenummer kommer ved synk — ikke finn på ett. Ikke start et intervju — spør kun hvis noe viktig åpenbart mangler.',
+            'Ordren er opprettet, brukeren er med på den, og den vises på skjermen nå. Ordrenummer kommer ved synk — ikke finn på ett. Ikke start et intervju — spør kun hvis noe viktig åpenbart mangler.'
+            + (kundenavn && !kunde ? ` Kunden «${kundenavn}» finnes ikke i registeret — tilby å opprette henne med opprett_kunde (spør om telefon), så kobles hun på ordren.` : '')
+            + (!kundenavn ? ' Ordren har INGEN kunde. Si det i én kort setning og tilby å legge til en (finnes → mine_kunder ved navn, finnes ikke → opprett_kunde).' : ''),
         }
+      }
+      if (name === 'mine_kunder') {
+        const sok = typeof args.sok === 'string' ? args.sok : ''
+        if (!sok.trim()) return { feil: 'Oppgi et navn eller telefonnummer — ett oppslag, ikke hele registeret.' }
+        const kunder = await sokKunder(sok, 5)
+        return {
+          antall: kunder.length,
+          kunder: kunder.map(k => ({ navn: k.name, telefon: k.phone, adresse: k.postalAddress, bedrift: k.isCompany })),
+          ...(kunder.length === 0 ? { beskjed: sok.trim() ? `Ingen kunder matcher «${sok.trim()}».` : 'Kunderegisteret er tomt. Tilby å opprette den første kunden.' } : {}),
+        }
+      }
+      if (name === 'opprett_kunde') {
+        const navn = typeof args.navn === 'string' ? args.navn.trim() : ''
+        if (!navn) return { feil: 'Navn mangler.' }
+        const finnes = await finnKunde(navn)
+        if (finnes && finnes.name.toLowerCase() === navn.toLowerCase()) {
+          return { finnes: true, kunde: { navn: finnes.name, telefon: finnes.phone }, beskjed: 'Kunden finnes allerede — bruk den.' }
+        }
+        const kunde = await opprettKunde({
+          name: navn,
+          phone: typeof args.telefon === 'string' ? args.telefon : null,
+          address: typeof args.adresse === 'string' ? args.adresse : null,
+          email: typeof args.epost === 'string' ? args.epost : null,
+          isCompany: args.bedrift === true,
+        })
+        return {
+          opprettet: true,
+          kunde: { navn: kunde.name, telefon: kunde.phone },
+          beskjed: kunde.phone ? 'Kunden er lagret med telefon.' : 'Kunden er lagret uten telefon — spør om nummeret én gang, ikke mas.',
+        }
+      }
+      if (name === 'timetyper') {
+        const alle = await database.get<Activity>('activities').query(Q.where('archived', false)).fetch()
+        return {
+          antall: alle.length,
+          timetyper: alle.map(a => ({ navn: a.name, timepris: a.hourlyRate, fakturerbar: a.billable })),
+          ...(alle.length === 0 ? { beskjed: 'Firmaet har ingen timetyper. Tilby å opprette et sett (opprett_timetype) — timer uten timetype får ingen pris.' } : {}),
+        }
+      }
+      if (name === 'opprett_timetype') {
+        const navn = typeof args.navn === 'string' ? args.navn.trim() : ''
+        if (!navn) return { feil: 'Navn mangler.' }
+        const finnes = await finnAktivitet(navn)
+        if (finnes && finnes.name.toLowerCase() === navn.toLowerCase()) return { finnes: true, beskjed: `«${finnes.name}» finnes allerede.` }
+        const fakturerbar = args.fakturerbar !== false
+        if (fakturerbar && typeof args.timepris !== 'number') {
+          return { feil: `Timepris mangler for «${navn}». Spør hva timen koster eks. mva (eller om den er intern og ikke faktureres), og opprett så.` }
+        }
+        const a = await opprettAktivitet({
+          name: navn,
+          hourlyRate: typeof args.timepris === 'number' ? args.timepris : null,
+          billable: args.fakturerbar !== false,
+        })
+        syncQuietly()
+        return { opprettet: true, timetype: { navn: a.name, timepris: a.hourlyRate, fakturerbar: a.billable } }
       }
       if (name === 'prosjekt_status') {
         const navn = typeof args.prosjektnavn === 'string' ? args.prosjektnavn.trim() : ''
@@ -574,6 +643,15 @@ export async function runTool(ctx: ToolContext, name: string, args: Record<strin
         const aktivitet = typeof args.aktivitet === 'string' && args.aktivitet.trim()
           ? await finnAktivitet(args.aktivitet)
           : await finnAktivitet('Montasje')
+        if (!aktivitet) {
+          // Uten timetype får timene ingen pris. Si det FØR føringen, med det som
+          // finnes, så assistenten kan velge riktig eller tilby å opprette.
+          const alle = await database.get<Activity>('activities').query(Q.where('archived', false)).fetch()
+          const bedt = typeof args.aktivitet === 'string' ? args.aktivitet.trim() : ''
+          return alle.length === 0
+            ? { feil: 'Firmaet har ingen timetyper ennå, så timene ville stått uten pris. Tilby å opprette timetyper med opprett_timetype (f.eks. Montasje 850, Internt 0), og før timene etterpå.' }
+            : { feil: `Fant ingen timetype «${bedt || 'Montasje'}». Finnes: ${alle.map(a => a.name).join(', ')}. Spør hvilken, eller tilby å opprette den.` }
+        }
         await database.write(async () => {
           await database.get<TimeEntry>('time_entries').create(e => {
             e.orderId = resolved.order.id

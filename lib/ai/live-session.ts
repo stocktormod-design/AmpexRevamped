@@ -55,6 +55,21 @@ import { sokVareVerktoy, taUtMateriellVerktoy, leggTilMateriellVerktoy } from '.
 import { nyttTilbudVerktoy, tilbudslinjeVerktoy, tilbudssumVerktoy } from './tilbud-tools'
 import { SYSTEM_INSTRUCTION, TOOL_DECLARATIONS } from './assistant-contract'
 import { runTool } from './tools-runtime'
+import { aiLogg } from './ai-logg'
+
+/** Registrenes tilstand — kunder og timetyper — for lag 2. */
+async function hentRegistre(): Promise<NonNullable<import('./instruks').Lag2['registre']>> {
+  const { database } = await import('../db')
+  const { Q } = await import('@nozbe/watermelondb')
+  const antallKunder = await database.get('customers').query().fetchCount()
+  const akt = await database.get<import('../db/models/activity').Activity>('activities')
+    .query(Q.where('archived', false), Q.sortBy('name', Q.asc)).fetch()
+  return {
+    antallKunder,
+    timetyper: akt.map(a => ({ navn: a.name, timepris: a.hourlyRate, fakturerbar: a.billable })),
+  }
+}
+
 
 // Gemini Live: rå PCM16 little-endian begge veier — 16kHz opp, 24kHz ned
 // (dokumentert format, ikke valgbart). 100ms-chunks opp gir ~3,2KB per melding:
@@ -83,7 +98,7 @@ const OUTPUT_SAMPLE_RATE = 24000
  *    at et glemt åpent skift ikke koster noe — ikke taket.
  */
 const TALE_RMS = 0.02
-const STILLE_MS = 800
+const STILLE_MS = 500 // Googles minimum; 800 ga merkbar dødtid før svaret (12.09)
 const MIN_TALE_MS = 300
 const MAKS_TALE_MS = 20_000
 const AVBRYT_MS = 400
@@ -274,7 +289,7 @@ export class LiveSession {
     // «nekter å stoppe», og neste rist starter økt nr. 2 oppå. Én økt, alltid.
     const g = globalThis as { __ampexLiveSession?: LiveSession }
     if (g.__ampexLiveSession && g.__ampexLiveSession !== this) {
-      console.log('Live: stopper foreldreløs økt (hot reload?)')
+      aiLogg('Live: stopper foreldreløs økt (hot reload?)')
       try {
         g.__ampexLiveSession.stop()
       } catch {}
@@ -288,6 +303,7 @@ export class LiveSession {
     // Skjemakatalogen (bundlede + firmaets publiserte maler) hentes ved øktstart —
     // slik «kan» modellen firmaets egne skjemaer uten ny kode per firma.
     this.templateCatalog = await listAllTemplates().catch(() => [])
+    this.registre = await hentRegistre().catch(() => null)
     // Hukommelsen om denne montøren inn i instruksen (id-er med, så glem_notat virker).
     if (this.user) {
       this.userNotes = await database
@@ -332,7 +348,7 @@ export class LiveSession {
     }
     if ('cap' in auth) {
       // Taket er nådd. Ikke en feil — kalleren bytter til turbasert assistent.
-      console.log(`Live: dagstak nådd (${auth.cap.usedSec}/${auth.cap.capSec ?? '∞'} s, tier ${auth.cap.tier})`)
+      aiLogg(`Live: dagstak nådd (${auth.cap.usedSec}/${auth.cap.capSec ?? '∞'} s, tier ${auth.cap.tier})`)
       this.ended = true
       const g = globalThis as { __ampexLiveSession?: LiveSession }
       if (g.__ampexLiveSession === this) g.__ampexLiveSession = undefined
@@ -343,7 +359,7 @@ export class LiveSession {
     const useSearch = Date.now() >= searchQuotaBlockedUntil
 
     const voice = (await getPreferredVoice().catch(() => null)) ?? auth.voice
-    console.log(`Live: kobler til (modell ${auth.model}, stemme ${voice ?? 'standard'})`)
+    aiLogg(`Live: kobler til (modell ${auth.model}, stemme ${voice ?? 'standard'})`)
     const ws = new WebSocket(`${LIVE_WS_URL}?access_token=${auth.token}`)
     this.ws = ws
     ws.binaryType = 'arraybuffer'
@@ -354,7 +370,7 @@ export class LiveSession {
           ? { handle: lastResumeHandle.handle }
           : {}
       this.resumedConversation = 'handle' in resume
-      if (this.resumedConversation) console.log('Live: gjenopptar forrige samtale')
+      if (this.resumedConversation) aiLogg('Live: gjenopptar forrige samtale')
       ws.send(
         JSON.stringify({
           setup: {
@@ -365,8 +381,9 @@ export class LiveSession {
             realtimeInputConfig: { automaticActivityDetection: { disabled: true } },
             generationConfig: {
               responseModalities: ['AUDIO'],
+              // Ingen languageCode: native-audio-modellen avviser 'nb-NO' ved setup
+              // (1007 «Unsupported language code», 2026-09-12) og finner språket selv.
               speechConfig: {
-                languageCode: 'nb-NO',
                 // Personlig valg (Meg-fanen) vinner over firmastandarden fra serveren.
                 ...(voice ? { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } : {}),
               },
@@ -383,23 +400,23 @@ export class LiveSession {
       try {
         this.handleServerMessage(JSON.parse(text))
       } catch (e) {
-        console.warn('Live: klarte ikke tolke servermelding:', e)
+        aiLogg('Live: klarte ikke tolke servermelding:', e)
       }
     }
     ws.onerror = (e: any) => {
-      console.warn('Live: WS-feil:', e?.message ?? e)
+      aiLogg('Live: WS-feil:', e?.message ?? e)
       this.finish('Mistet forbindelsen til AI-tjenesten.')
     }
     ws.onclose = (e: any) => {
       // Lukking FØR setupComplete = Google avviste økten (feil modell, ugyldig
       // token, avvist setup-melding) — close-koden/-grunnen er eneste spor vi får.
-      console.warn(`Live: WS lukket (code=${e?.code}, reason=${e?.reason || 'ingen'})`)
+      aiLogg(`Live: WS lukket (code=${e?.code}, reason=${e?.reason || 'ingen'})`)
       if (!this.gotSetupComplete && useSearch && !this.ended) {
         // Avvist ved setup med søkeverktøyet på: mest sannsynlig grounding-kvoten (1011),
         // men RN-WebSocket MASKERER server-close-koder — så vi prøver på nytt uten søk
         // UANSETT kode (selv-begrensende: neste forsøk har useSearch=false). Feilsøkt
         // 2026-08-13: kode-sjekk på 1011 traff aldri, retryen fyrte ikke.
-        console.warn('Live: avvist ved setup — prøver på nytt uten Google-søk')
+        aiLogg('Live: avvist ved setup — prøver på nytt uten Google-søk')
         searchQuotaBlockedUntil = Date.now() + 30 * 60_000
         void this.connectSocket()
         return
@@ -408,7 +425,7 @@ export class LiveSession {
       // antakelsen vi har igjen å fjerne. Ett forsøk, aldri flere — auth.laast er
       // false neste gang, så dette kan ikke bli en løkke.
       if (!this.gotSetupComplete && auth.laast && !this.ended) {
-        console.warn('Live: avvist med låst token — prøver ulåst én gang')
+        aiLogg('Live: avvist med låst token — prøver ulåst én gang')
         void this.connectSocket({ ulaast: true })
         return
       }
@@ -429,6 +446,7 @@ export class LiveSession {
 
   /** Avslutt fra brukerens side (rist igjen / knapp). Trygg å kalle flere ganger. */
   stop(): void {
+    aiLogg('Live: stop() kalt fra UI')
     this.finish()
   }
 
@@ -450,6 +468,7 @@ export class LiveSession {
    * En ordre importert fra Tripletex i fjor kjenner ingen nonce fra i dag.
    */
   private readonly dataNonce = nyNonce()
+  private registre: import('./instruks').Lag2['registre'] = null
 
   private buildSystemInstruction(): string {
     const ctx = this.routeContext
@@ -461,6 +480,7 @@ export class LiveSession {
         skjerm,
         maler: this.templateCatalog.map(t => ({ id: t.id, navn: t.name, kilde: t.source })),
         rettigheter: verktoyrettigheter(this.user?.role),
+        registre: this.registre,
       }),
     ].join('\n\n')
   }
@@ -516,7 +536,7 @@ export class LiveSession {
       AudioManager.activelyReclaimSession(true)
     } catch {}
     await queueAudioSessionActivity(true)
-    console.log('Live: audiosesjon aktiv')
+    aiLogg('Live: audiosesjon aktiv')
 
     this.audioContext = getSharedAudioContext()
     // VEKK konteksten — ALLTID, deterministisk: den delte konteksten sovner når
@@ -524,7 +544,7 @@ export class LiveSession {
     // (tilkoblet, mottok lyd) men helt stum — enqueue mot en sovende kontekst
     // feiler lydløst. finish() suspenderer eksplisitt; her gjenopplives den.
     await this.audioContext.resume().catch(() => {})
-    console.log(`Live: audiokontekst ${this.audioContext.state}`)
+    aiLogg(`Live: audiokontekst ${this.audioContext.state}`)
     this.queueNode = this.audioContext.createBufferQueueSource()
     this.queueNode.connect(this.audioContext.destination)
     // start(0, 0), IKKE start(): react-native-audio-api 0.13.2 har default offset=-1
@@ -551,12 +571,12 @@ export class LiveSession {
           this.harAek = true
           this.port(base64ToBytes(base64), rms)
         })
-        console.log('Live: ekko-kansellert mikrofon aktiv')
+        aiLogg('Live: ekko-kansellert mikrofon aktiv')
         return
       } catch (e) {
         // Ingen AEC her — modellen vil høre seg selv. Fallbacken under demper det
         // ved å holde mikrofonen døv mens hun snakker. Dårligere, men i live.
-        console.warn('Live: ekko-kansellert mikrofon utilgjengelig, faller tilbake:', e)
+        aiLogg('Live: ekko-kansellert mikrofon utilgjengelig, faller tilbake:', e)
         this.micSub?.remove()
         this.micSub = null
       }
@@ -578,7 +598,7 @@ export class LiveSession {
           this.port(bytes, rmsFraPcm16(bytes))
         },
       )
-      recorder.onError(e => console.warn('Live: opptaksfeil:', e))
+      recorder.onError(e => aiLogg('Live: opptaksfeil:', e))
       await recorder.start()
     }
   }
@@ -586,13 +606,13 @@ export class LiveSession {
   private handleServerMessage(msg: Record<string, any>): void {
     if (msg.setupComplete) {
       this.gotSetupComplete = true
-      console.log('Live: setup OK — starter mikrofon')
+      aiLogg('Live: setup OK — starter mikrofon')
       this.callbacks.onStage('active')
       this.nullstillIdle()
       this.startAudio()
-        .then(() => console.log('Live: mikrofon streamer'))
+        .then(() => aiLogg('Live: mikrofon streamer'))
         .catch(e => {
-          console.warn('Live: mikrofonstart feilet:', e)
+          aiLogg('Live: mikrofonstart feilet:', e)
           this.finish('Fikk ikke startet mikrofonen.')
         })
       // Modellen venter ELLERS stille på at brukeren snakker først — uten en hørbar
@@ -610,10 +630,10 @@ export class LiveSession {
                   {
                     text: this.resumedConversation
                       ? 'Brukeren tok opp igjen samtalen deres. IKKE hils på nytt — fortsett der dere slapp med én kort setning.'
-                      : `Økten har akkurat startet (klokka er ${new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}). ` +
-                        'Hils KORT og rolig med riktig tid på døgnet — «God morgen», «God ettermiddag», «God kveld» — pluss ' +
-                        'maks en HALV setning til (navnet, eller en forfalt påminnelse hvis det finnes). Ikke ramse opp hva du ' +
-                        'kan, ikke lange tilbud — bare vær klar. Eksempel: «God morgen, Tormod.»',
+                      // Ett ord: lyd nok til at økten høres levende ut, og modellen er ledig
+                      // igjen før brukeren rekker å begynne (lengre hilsen ble avbrutt og kostet
+                      // både lyd og tid, 12.09). Forfalte påminnelser tas når brukeren spør.
+                      : 'Økten har akkurat startet. Si BARE «Ja?» — ett ord, ingenting mer.',
                   },
                 ],
               },
@@ -631,7 +651,7 @@ export class LiveSession {
         // Barge-in: brukeren snakket i munnen på modellen — kutt avspillingen NÅ.
         // (Logges også for å skille ekte/falske avbrytelser fra avspillingshakk:
         // hyppige avbrudd her mens brukeren er STILLE = mikrofonen hører høyttaleren.)
-        console.log('Live: avbrutt (barge-in)')
+        aiLogg('Live: avbrutt (barge-in)')
         this.pendingFloats = []
         this.pendingSamples = 0
         this.primed = false
@@ -644,7 +664,7 @@ export class LiveSession {
         if (inline?.data && typeof inline.data === 'string') {
           if (!this.receivedModelAudio) {
             this.receivedModelAudio = true
-            console.log('Live: mottar lyd fra modellen')
+            aiLogg('Live: mottar lyd fra modellen')
           }
           this.enqueueAudio(inline.data)
         }
@@ -712,7 +732,7 @@ export class LiveSession {
       const durationMs = merged.length / (OUTPUT_SAMPLE_RATE / 1000)
       this.playbackEndsAtMs = Math.max(Date.now(), this.playbackEndsAtMs) + durationMs
     } catch (e) {
-      console.warn('Live: klarte ikke legge lyd i kø:', e)
+      aiLogg('Live: klarte ikke legge lyd i kø:', e)
     }
   }
 
@@ -790,7 +810,7 @@ export class LiveSession {
     if (na - this.avbrytStartetMs < AVBRYT_MS) return
     // Ekte avbrytelse: åpne aktivitet MED lyden fra før vi bestemte oss.
     // Serveren svarer med `interrupted` og kutter sin egen tale.
-    console.log('Live: brukeren avbrøt')
+    aiLogg('Live: brukeren avbrøt')
     this.aapneAktivitet(this.avbrytStartetMs)
     for (const b of this.forbuffer) this.sendLyd(b)
     this.forbuffer = []
@@ -801,6 +821,7 @@ export class LiveSession {
     this.aktivitetAapen = true
     this.taleStartetMs = na
     this.sistLydMs = na
+    aiLogg('Live: activityStart')
     this.ws?.send(JSON.stringify({ realtimeInput: { activityStart: {} } }))
     this.nullstillIdle()
   }
@@ -809,6 +830,7 @@ export class LiveSession {
     if (!this.aktivitetAapen) return
     this.aktivitetAapen = false
     this.taleSekunder += (Date.now() - this.taleStartetMs) / 1000
+    aiLogg('Live: activityEnd')
     this.ws?.send(JSON.stringify({ realtimeInput: { activityEnd: {} } }))
     this.nullstillIdle()
   }
@@ -825,7 +847,7 @@ export class LiveSession {
   private nullstillIdle(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer)
     this.idleTimer = setTimeout(() => {
-      console.log('Live: ingen tale på tre minutter — lukker økten')
+      aiLogg('Live: ingen tale på tre minutter — lukker økten')
       this.finish()
     }, IDLE_MS)
   }
@@ -834,14 +856,14 @@ export class LiveSession {
     if (this.ended) return
     this.ended = true
     // Alle øktdødsfall skal ha en logglinje — tause avslutninger kostet oss timer.
-    console.log(`Live: økt avsluttet${error ? ` (${error})` : ''}`)
+    aiLogg(`Live: økt avsluttet${error ? ` (${error})` : ''}`)
     if (this.idleTimer) clearTimeout(this.idleTimer)
     this.idleTimer = null
     if (this.aktivitetAapen) this.sendAktivitetSlutt()
     // Fyr-og-glem. Aldri await her: finish() må være synkron og aldri feile.
     if (this.taleSekunder > 0 || this.tokUt > 0) {
       reportVoiceUsage({ speechSec: this.taleSekunder, inTok: this.tokInn, outTok: this.tokUt })
-      console.log(`Live: forbruk ${Math.round(this.taleSekunder)} s egen tale, ${this.tokInn} tok inn, ${this.tokUt} tok ut`)
+      aiLogg(`Live: forbruk ${Math.round(this.taleSekunder)} s egen tale, ${this.tokInn} tok inn, ${this.tokUt} tok ut`)
     }
     const g = globalThis as { __ampexLiveSession?: LiveSession }
     if (g.__ampexLiveSession === this) g.__ampexLiveSession = undefined

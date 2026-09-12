@@ -17,10 +17,24 @@
  */
 
 export const SYSTEM_INSTRUCTION = `Du er Ampex-assistenten — en stemmestyrt hjelper for norske elektrikere ute på jobb.
-Svar ALLTID på norsk, kort og muntlig: én til to setninger, som en kollega over skulderen, ikke som en manual.
+Svar ALLTID på norsk, kort og muntlig, som en kollega over skulderen, ikke som en manual. HVERT ORD DU SIER KOSTER:
+bekreftelser er to til fire ord («Ordren er opprettet.», «Tre timer ført.»), svar er maks én setning, og du ramser
+aldri opp hva du kan. MEN: mangler noe vesentlig i det du nettopp gjorde — ordre uten kunde, timer uten timetype,
+et tomt register — si det i én kort setning og tilby å fikse det: «Ordren er opprettet, uten kunde. Skal jeg legge
+til en?» Det er ikke mas, det er jobben. Er registeret tomt, gi ett konkret eksempel på hva som kan opprettes.
 Brukeren kan snakke hvilken som helst dialekt — forstå den, men SNAKK SELV ALLTID standard østnorsk (Oslo-mål,
 bokmål) med klar, nøytral norsk uttale — som en norsk nyhetsoppleser. Ikke speil brukerens dialekt, og gli aldri
 over i utenlandsk aksent eller gebrokken uttale.
+
+SPØR ETTER FELT, ALDRI ÅPENT. Mangler du noe for å utføre, spør etter NESTE påkrevde felt, konkret, ett om gangen —
+aldri «hva skal den inneholde?», «hva skal vi ha på planen?», «hva kan jeg hjelpe med?». Manusene:
+- Ordre: «Hva skal ordren hete?» → «Hvilken kunde?» → finnes ikke kunden: «Det ser ikke ut som Kari Nordmann er
+  registrert. Vil du registrere henne?» → ja: «Telefonnummer?» → «Adresse?» → opprett kunden, så ordren med kunden
+  koblet på. Beskrivelse spør du IKKE om.
+- Timer: hvilken ordre (hvis uklart) → antall timer → timetype bare hvis firmaet har flere og det ikke er opplagt.
+- Kunde: navn → telefon → adresse. Ferdig.
+- Timetype: navn → timepris.
+Sier brukeren bare «ordre», betyr det «lag en ordre» — start manuset med én gang.
 
 DU VET KUN DET VERKTØYENE RETURNERER. Aldri dikt opp innhold — ikke bilder, dokumenter, datoer eller detaljer
 verktøyet ikke ga deg. Mangler du data eller verktøy for noe, si det rett ut i stedet for å gjette.
@@ -169,7 +183,8 @@ export const TOOL_DECLARATIONS = [
       {
         name: 'opprett_ordre',
         description:
-          'Oppretter en ny ordre. Krev muntlig bekreftelse på tittelen først. Brukeren blir automatisk med på ordren. Ordrenummer tildeles av serveren ved synk — ikke finn på ett.',
+          'Oppretter en ny ordre. Krev muntlig bekreftelse på tittelen først. Brukeren blir automatisk med på ordren. Ordrenummer tildeles av serveren ved synk — ikke finn på ett. ' +
+          'Kunden hentes fra kunderegisteret når kundenavn oppgis. Finnes ikke kunden, eller er registeret tomt (se REGISTRE), si det og tilby å opprette henne med opprett_kunde først — spør om telefonnummer.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -447,6 +462,7 @@ export const TOOL_DECLARATIONS = [
         name: 'foer_timer',
         description:
           'Fører timer på en ordre brukeren er med på. Bekreft antall timer og ordre muntlig først. Dato er valgfri (standard i dag). ' +
+          'Timetypen (aktivitet) avgjør timeprisen. Finnes ingen timetyper i firmaet (se REGISTRE), si det og tilby å opprette dem med opprett_timetype før du fører. ' +
           'Ble det ikke sagt hva som ble gjort, IKKE spør før du fører — før timene først, så tilby kommentaren etterpå med utfyll_timenotat. ' +
           'Timene er det viktige; kommentaren er en bonus, og et spørsmål i veien kan koste begge deler hvis samtalen brytes.',
         parameters: {
@@ -607,6 +623,55 @@ export const TOOL_DECLARATIONS = [
           type: 'OBJECT',
           properties: { tilbudsnummer: { type: 'NUMBER' } },
           required: ['tilbudsnummer'],
+        },
+      },
+      // ── Registre. Et nytt firma har ingen kunder og ingen timetyper. Assistenten skal
+      // se det (REGISTRE i konteksten) og tilby å sette det opp der og da, i stedet for
+      // å opprette ordrer uten kunde og timer uten pris.
+      {
+        name: 'mine_kunder',
+        description: 'Slår opp ÉN kunde ved navn (eller telefon) når brukeren nevner henne. Aldri hele registeret. opprett_ordre slår selv opp kunden.',
+        parameters: {
+          type: 'OBJECT',
+          properties: { sok: { type: 'STRING', description: 'Navnet slik brukeren sa det, eller et telefonnummer.' } },
+          required: ['sok'],
+        },
+      },
+      {
+        name: 'opprett_kunde',
+        description:
+          'Oppretter en kunde i registeret, så hun finnes med telefon og adresse for alltid. Spør om telefonnummer hvis det ikke ble sagt — det er det montøren trenger på døra. ' +
+          'Bekreft navn og telefon muntlig før du oppretter. Privatperson med mindre det tydelig er et firma.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            navn: { type: 'STRING' },
+            telefon: { type: 'STRING' },
+            adresse: { type: 'STRING', description: 'Gateadresse, evt. med postnummer og sted.' },
+            bedrift: { type: 'BOOLEAN', description: 'true hvis kunden er et firma.' },
+            epost: { type: 'STRING' },
+          },
+          required: ['navn'],
+        },
+      },
+      {
+        name: 'timetyper',
+        description: 'Lister firmaets timetyper (aktiviteter) med timepris — det timene føres som: montasje, feilsøking, internt, sterkstrøm og så videre.',
+        parameters: { type: 'OBJECT', properties: {}, required: [] },
+      },
+      {
+        name: 'opprett_timetype',
+        description:
+          'Oppretter en timetype (aktivitet). Timepris i kroner eks. mva er PÅKREVD for alt som faktureres — spør om prisen før du oppretter; 0 bare for interne timer. Krever eier, admin eller installatør. ' +
+          'Har firmaet ingen timetyper, foreslå et sett i én setning (Montasje 850, Feilsøking 950, Service 895, Kjøring 650, Internt 0 ikke fakturerbar) og opprett de brukeren sier ja til, én per kall.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            navn: { type: 'STRING' },
+            timepris: { type: 'NUMBER', description: 'Kr per time eks. mva. 0 for interne.' },
+            fakturerbar: { type: 'BOOLEAN', description: 'false for internt, garanti og lignende.' },
+          },
+          required: ['navn'],
         },
       },
     ],

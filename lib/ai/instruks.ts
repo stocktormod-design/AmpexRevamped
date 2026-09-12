@@ -44,7 +44,7 @@
  */
 
 /** Bump denne når lag 1 endres. Cachen navngis etter den. */
-export const LAG1_VERSJON = 1
+export const LAG1_VERSJON = 6
 
 /**
  * Kildepolicyen. Uten denne er `vask.ts` bare en konvolutt ingen har fortalt
@@ -100,6 +100,22 @@ aldri satser eller kronebeløp du ikke har fått fra en funksjon.
  * leser riktig og velger å reagere — altså en sannsynlighetsbasert komponent i
  * en sikkerhetskritisk kjede.
  */
+/**
+ * Registrene. Et nytt firma har ingenting: ingen kunder, ingen timetyper, tomt
+ * varekartotek. Assistenten skal være den som setter det opp — i samtalen, når
+ * behovet oppstår — ikke sende brukeren til en innstillingsskjerm.
+ */
+const REGISTRE = `
+REGISTRE. Konteksten sier hvor mange kunder og hvilke timetyper firmaet har.
+Mangler det som trengs for oppgaven, si det i én setning og tilby å opprette det
+der og da: «Du har ingen kunder ennå — skal jeg opprette Kari Nordmann? Hva er
+telefonnummeret?» Ett spørsmål om gangen. Kunde: navn og telefon er nok, adresse
+hvis den blir sagt. Timetyper: foreslå et sett med priser i én setning og opprett
+de som får ja. Aldri opprett noe brukeren ikke har bekreftet, og aldri gjett et
+telefonnummer. Slå aldri opp noe på eget initiativ — ett verktøykall per ting brukeren
+faktisk ber om.
+`
+
 const MAALINGER = `
 MÅLINGER.
 Du vurderer ALDRI om en måleverdi er innenfor. Appen slår opp grensen firmaet
@@ -128,7 +144,7 @@ Er grønn verdi, kvitter kort. Ikke les opp grenseverdien hver gang.
  * Derfor ingen dato, ingen tilfeldighet, ingen interpolasjon her.
  */
 export function byggLag1(basis: string): string {
-  return [basis.trim(), KILDEPOLICY, TIDSFORING, MAALINGER].join('\n\n')
+  return [basis.trim(), KILDEPOLICY, TIDSFORING, MAALINGER, REGISTRE].join('\n\n')
 }
 
 /** Navnet cachen registreres under. Endres lag 1, endres navnet. */
@@ -142,6 +158,17 @@ export type Lag2 = {
   maler?: { id: string; navn: string; kilde: string }[]
   /** Hva rollen faktisk får kalle. Fra `verktoy-tilgang.ts`. */
   rettigheter?: string[]
+  /**
+   * Registrene ved øktstart, bygget fra den lokale basen — uavhengig av om radene ble
+   * laget manuelt, av assistenten eller kom via synk. Kunder: bare ANTALLET. Nevner
+   * brukeren en kunde, slår assistenten opp den ene ved navn (Tormod 12.09: «da søker
+   * assistenten etter 1, ikke flertall»). Det skalerer likt for tre og ti tusen kunder,
+   * og modellen leser aldri en liste. Timetyper er få og må velges blant, så de listes.
+   */
+  registre?: {
+    antallKunder: number
+    timetyper: { navn: string; timepris?: number | null; fakturerbar?: boolean }[]
+  } | null
 }
 
 /**
@@ -176,6 +203,20 @@ export function byggLag2(ctx: Lag2): string {
           ? 'Brukeren står på ordrelisten.'
           : 'Brukeren er et sted i appen uten spesiell kontekst.'),
   )
+
+  if (ctx.registre) {
+    const r = ctx.registre
+    const linjer: string[] = []
+    if (r.antallKunder === 0) linjer.push('KUNDER: ingen ennå.')
+    else linjer.push(`KUNDER: ${r.antallKunder} i registeret. Nevner brukeren en kunde, slå opp den ene ved navn (opprett_ordre gjør det selv; ellers mine_kunder med navnet) — aldri hele lista.`)
+    if (r.timetyper.length === 0) linjer.push('TIMETYPER: ingen ennå.')
+    else {
+      linjer.push('TIMETYPER (timepris kr eks. mva):')
+      for (const a of r.timetyper) linjer.push(`- ${a.navn}${a.timepris != null ? ` · ${a.timepris} kr` : ''}${a.fakturerbar === false ? ' · ikke fakturerbar' : ''}`)
+    }
+    if (r.antallKunder === 0 || r.timetyper.length === 0) linjer.push('Tilby å sette opp det som mangler når det trengs.')
+    d.push(linjer.join('\n'))
+  }
 
   if (ctx.maler && ctx.maler.length > 0) {
     d.push(
