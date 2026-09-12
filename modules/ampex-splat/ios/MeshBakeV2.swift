@@ -510,6 +510,14 @@ enum MeshBakeV2 {
             }
         }
 
+        // PLAN-JUSTERING (2026-09-12, §96): bilde-mot-bilde på dominantplanene, i tillegg til
+        // (ikke i stedet for) den rigide refinen over. Se MeshPoseRefineV2.planeAlign.
+        if UserDefaults.standard.string(forKey: "meshscan.planalign") != "off", !meshIn.planes.isEmpty {
+            ARMeshGlbExporter.progress?("Justerer bilder mot flatene…")
+            MeshPoseRefineV2.planeAlign(keyframes: kfUse, positions: meshIn.positions, planes: meshIn.planes,
+                                        framesDir: framesDir, warpGridsByKF: &warpGrids)
+        }
+
         fase("pose-raffinering")
         var rasterWarpGrids = warpGrids
         if !debugImageOffsets.isEmpty {
@@ -2915,14 +2923,54 @@ enum MeshBakeV2 {
         // = "fliser", ment for «Bygg om modellen», ikke for live-skannet.
         if debugSink != nil && UserDefaults.standard.string(forKey: "meshscan.projectiveatlas") == "on" || kvalitetFliser {
             let sink = debugSink
+            // WARP-RUTENETTET OGSÅ HER (2026-09-12, §96). De prosjektive feltene peker UV-ene
+            // rett inn i fotoet fra CPU-projeksjonen, og den gikk utenom rutenettet som alle
+            // GPU-passene sampler gjennom. Justeringen (rigid warp, plan-justering) nådde
+            // dermed aldri veggteksturen i kvalitetsmodus — målt: +20 px på alle rutenett
+            // flyttet veggen 0–4 px. Samme bilineære oppslag som bakev2_detail_uv, per hjørne.
+            let pgW = MeshPoseRefineV2.warpGridW, pgH = MeshPoseRefineV2.warpGridH
+            func projGridOffset(_ fi: Int, _ q: SIMD2<Float>, _ w: Float, _ h: Float) -> SIMD2<Float> {
+                guard fi < rasterWarpGrids.count, rasterWarpGrids[fi].count == pgW * pgH else { return .zero }
+                let g = rasterWarpGrids[fi]
+                let gx = min(max(q.x / w, 0), 1) * Float(pgW - 1), gy = min(max(q.y / h, 0), 1) * Float(pgH - 1)
+                let cx = min(max(Int(gx), 0), pgW - 2), cy = min(max(Int(gy), 0), pgH - 2)
+                let tx = min(max(gx - Float(cx), 0), 1), ty = min(max(gy - Float(cy), 0), 1)
+                let top: SIMD2<Float> = g[cy * pgW + cx] * (1 - tx) + g[cy * pgW + cx + 1] * tx
+                let bot: SIMD2<Float> = g[(cy + 1) * pgW + cx] * (1 - tx) + g[(cy + 1) * pgW + cx + 1] * tx
+                let o: SIMD2<Float> = top * (1 - ty) + bot * ty
+                return SIMD2(o.x * w, o.y * h)
+            }
+            // HARNESS: meshscan.tracepoint "x,y,z" → hvilket foto vinner flaten nærmest punktet
+            // (kvalitetsstien returnerer før point-trace.json skrives).
+            if let spec = UserDefaults.standard.string(forKey: "meshscan.tracepoint") {
+                let xyz = spec.split(separator: ",").compactMap { Float($0.trimmingCharacters(in: .whitespaces)) }
+                if xyz.count == 3 {
+                    let target = SIMD3(xyz[0], xyz[1], xyz[2])
+                    var best = -1; var bestD = Float.greatestFiniteMagnitude
+                    for t in 0..<triCount where winner[t] >= 0 {
+                        let d = simd_length_squared(fCent[t] - target); if d < bestD { bestD = d; best = t }
+                    }
+                    if best >= 0 {
+                        let wi = Int(winner[best])
+                        var grid = "ingen"
+                        if wi < rasterWarpGrids.count, rasterWarpGrids[wi].count > 0 {
+                            let g = rasterWarpGrids[wi]; let m = g.reduce(SIMD2<Float>(0, 0), +) / Float(g.count)
+                            grid = String(format: "snitt (%.4f, %.4f) norm = (%.1f, %.1f) px", m.x, m.y, m.x * cands[wi].imgW, m.y * cands[wi].imgH)
+                        }
+                        MeshLog.log("tracepoint — flate \(best) \(String(format: "%.2f", bestD.squareRoot())) m unna, vinner kf\(kfUse[wi].index) (\(kfUse[wi].file), skarphet \(Int(kfUse[wi].sharpness))), rutenett \(grid)")
+                    }
+                }
+            }
             var projected = [SIMD2<Float>](repeating: SIMD2(repeating: .nan), count: triCount * 3)
             for t in 0..<triCount where winner[t] >= 0 {
                 let c = cands[Int(winner[t])]
+                let warpOn = fieldWarpEnabled(t)
                 for j in 0..<3 {
                     let vi = Int(uv.indices[t * 3 + j])
                     let p = c.w2c * SIMD4(uv.positions[vi * 3], uv.positions[vi * 3 + 1], uv.positions[vi * 3 + 2], 1)
                     if p.z < -0.05 {
-                        let q = SIMD2(c.intr.x * p.x / -p.z + c.intr.z, c.intr.y * -p.y / -p.z + c.intr.w)
+                        var q = SIMD2(c.intr.x * p.x / -p.z + c.intr.z, c.intr.y * -p.y / -p.z + c.intr.w)
+                        if warpOn { q += projGridOffset(Int(winner[t]), q, c.imgW, c.imgH) }
                         if q.x >= 2, q.y >= 2, q.x < c.imgW - 2, q.y < c.imgH - 2 { projected[t * 3 + j] = q }
                     }
                 }

@@ -555,10 +555,32 @@ enum ARMeshGlbExporter {
                 merged.append(pl)
             }
         }
-        let planesFinal = merged
+        var planesFinal = merged
         guard !planesFinal.isEmpty else { return [] }
+        // DIAGNOSE (2026-09-12, §95): flytt VEGG-planene et fast antall mm langs normalen før
+        // snappen. Ligger TSDF-planet noen mm feil i dybden, ser to syn fra ulike vinkler
+        // teksturen forskjøvet med δ·(tanθ₁−tanθ₂) — samme størrelse som «1,5 mm uenighet»
+        // i §94. Gir én δ rette OG skarpe spor med blend=raw, er feilen geometrisk, ikke
+        // posene. meshscan.planoffset (mm, fortegn langs planets normal). Kun harness.
+        if let mm = Float(UserDefaults.standard.string(forKey: "meshscan.planoffset") ?? ""), mm != 0 {
+            for i in planesFinal.indices where abs(planesFinal[i].n.y) < 0.5 {
+                planesFinal[i].d += mm / 1000
+            }
+            MeshLog.log("plane snap — DIAGNOSE: veggplan flyttet \(mm) mm langs normalen (meshscan.planoffset)")
+        }
 
         // Snap vertekser: normal ≤ ~25° fra planet og ≤ 12 cm unna → projiser inn på planet.
+        // SNAPPEAVSTAND (2026-09-12): 9/13 cm var satt for ARKit-nettets dobbeltlag. På TSDF-
+        // nettet flater det også alt som stikker under 9 cm ut av veggen inn i planet — et
+        // sentralstøvsugeruttak på 2 cm, brytere, lister — og da får de parallakse mellom
+        // bildene og kuttes midt på der to fotofelt møtes (målt på soverommet: 15–20 mm
+        // forskyvning gjennom uttaket, i et skann der veggen ellers var på linje). TSDF-veggens
+        // egne bølger er millimeter (RMS 2,8 mm), så 3 cm full snap / 5 cm fjæring holder dem.
+        // meshscan.snapcm = full snap i cm (fjæring = +2 cm). Standard 9 (gammel oppførsel):
+        // 3 cm ble prøvd på soverommet 12.09 og ga ingen synlig forskjell på uttaket — kuttet
+        // der var justeringen, som den parvise løsningen tok. Flagget står til neste rom.
+        let snapFull = (Float(UserDefaults.standard.string(forKey: "meshscan.snapcm") ?? "") ?? 9) / 100
+        let snapFeather = snapFull + 0.02
         var snapped = 0
         for i in 0..<vc {
             let nl = simd_length(vNormal[i])
@@ -569,12 +591,12 @@ enum ARMeshGlbExporter {
             var bestPlane: Plane?
             for pl in planesFinal where simd_dot(n, pl.n) > 0.90 {
                 let off = simd_dot(pl.n, pos) - pl.d
-                if abs(off) <= 0.13 && abs(off) < abs(bestOff) { bestOff = off; bestPlane = pl }
+                if abs(off) <= snapFeather && abs(off) < abs(bestOff) { bestOff = off; bestPlane = pl }
             }
             if let pl = bestPlane {
-                // Feather i stedet for hard cutoff: full snap ≤ 9 cm, glidende mot 0 ved 13 cm —
-                // hard grense ga «rifter» der en snappet verteks hadde usnappet nabo.
-                let f = min(1, max(0, (0.13 - abs(bestOff)) / 0.04))
+                // Feather i stedet for hard cutoff: full snap ≤ snapFull, glidende mot 0 ved
+                // snapFeather — hard grense ga «rifter» der en snappet verteks hadde usnappet nabo.
+                let f = min(1, max(0, (snapFeather - abs(bestOff)) / (snapFeather - snapFull)))
                 let np = pos - pl.n * (bestOff * f)
                 positions[i * 3] = np.x; positions[i * 3 + 1] = np.y; positions[i * 3 + 2] = np.z
                 if f > 0 { snapped += 1 }
