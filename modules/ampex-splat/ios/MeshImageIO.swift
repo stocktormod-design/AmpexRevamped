@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import ImageIO
+import Metal
 import simd
 
 /// Bilde-I/O delt av bake-pipelinen (MeshBakeV2, MeshPoseRefineV2): keyframe-dekoding,
@@ -50,21 +51,54 @@ enum MeshImageIO {
         return n > 0 ? sum / Float(n) : SIMD3(0.25, 0.25, 0.25)
     }
 
-    /// Atlas → JPEG. 0.90 kvalitet: kilde-JPEG + atlas-JPEG er dobbel tapskoding — ringing oppå ringing.
-    static func jpegData(_ pixels: [UInt8], _ size: Int) -> Data? {
-        guard let cg = makeCGImage(pixels, size) else { return nil }
+    /// Atlas-JPEG fra en RÅFIL på disk — ingen full kopi i minnet.
+    ///
+    /// MÅLT 2026-09-12 (§93): veien om `[UInt8]` holdt TRE fulle kopier av flisa
+    /// samtidig — Metal-bufferet, Swift-arrayen, og `Data(pixels)` inne i
+    /// `makeCGImage`. Ved 8192 er det 3 × 268 MB = 800 MB oppå atlasparet, og det er
+    /// grunnen til at flisemalingen ikke fikk plass til 8192 på et stort rom.
+    ///
+    /// `CGDataProvider(url:)` memory-mapper fila. Pikslene blir RENE sider med en fil
+    /// bak seg, som iOS kan kaste ut under trykk og lese inn igjen — i motsetning til
+    /// en Swift-array, som er skitten hukommelse appen eier og må betale for.
+    /// Sammen med stripevis tilbakelesing (MeshBakeV2) er toppen ett stripebuffer i
+    /// stedet for hele flisa tre ganger.
+    static func jpegData(fromRawFile url: URL, size: Int) -> Data? {
+        guard let provider = CGDataProvider(url: url as CFURL),
+              let cg = cgImage(provider, size) else { return nil }
+        return encodeJpeg(cg)
+    }
+
+    private static func cgImage(_ provider: CGDataProvider, _ size: Int) -> CGImage? {
+        CGImage(width: size, height: size,
+                bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: size * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: false,
+                intent: .defaultIntent)
+    }
+
+    private static func encodeJpeg(_ cg: CGImage) -> Data? {
         let out = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(out as CFMutableData, "public.jpeg" as CFString, 1, nil) else { return nil }
-        // Atlas-JPEG. MÅLT 2026-09-11 (§83): 0,90 → 0,80 tar teksturen fra 35,5 til 26,8 MB
-        // på en 8192-kvalitetsmodell, og de to er ikke til å skille på 3× nærmeste-nabo-zoom
-        // i det mest detaljerte feltet i atlaset. Selv 0,72 var uskillelig, men 0,80 beholder
-        // margin mot zoom i vieweren. Veggmålene er uendret innenfor støyen.
-        // meshscan.jpegkvalitet er A/B-armen.
         var q = 0.80
         if let s = UserDefaults.standard.string(forKey: "meshscan.jpegkvalitet"), let v = Double(s), v >= 0.3, v <= 1 { q = v }
         CGImageDestinationAddImage(dest, cg, [kCGImageDestinationLossyCompressionQuality as String: q] as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { return nil }
         return out as Data
+    }
+
+    /// Atlas → JPEG fra en array i minnet. Holder tre fulle kopier; brukes bare der
+    /// bildet alt ER en array (diagnose, fixture-PNG). Produksjonsveien for fliser går
+    /// gjennom `jpegData(fromRawFile:size:)`.
+    ///
+    /// Kvaliteten er MÅLT 2026-09-11 (§83): 0,90 → 0,80 tar teksturen fra 35,5 til 26,8 MB
+    /// på en 8192-kvalitetsmodell, og de to er ikke til å skille på 3× nærmeste-nabo-zoom
+    /// i det mest detaljerte feltet i atlaset. Selv 0,72 var uskillelig, men 0,80 beholder
+    /// margin mot zoom i vieweren. meshscan.jpegkvalitet er A/B-armen.
+    static func jpegData(_ pixels: [UInt8], _ size: Int) -> Data? {
+        guard let cg = makeCGImage(pixels, size) else { return nil }
+        return encodeJpeg(cg)
     }
 
     /// Fixture-only lossless readback: separates atlas sampling from JPEG loss.

@@ -3823,3 +3823,81 @@ grepet, identisk med §91.
 neste bake på det store rommet avgjør om grensa må ned eller om det er en lekkasje
 mellom flisene. Simulatoren kan ikke svare — `os_proc_available_memory()` gir 0 der og
 harnessen later som 2,5 GB.
+
+## 93. «Cycle mellom RAM og lagring» — ja, og det ga 8192 tilbake, 2026-09-12
+
+Tormod, etter at §92 trappet ned til 6144 og panelsporene forsvant: «noen av linjene
+forsvant, kan vi ikke cycle mellom ram og lagring for å aldri miste ram? offloade»
+
+Riktig spørsmål, og to ting fulgte av det.
+
+### Målingen som satte rammene
+
+Fra enheten, samme bake:
+
+```
+13:23:05  V2 budsjett — headroom 2140MB → atlas 8192
+13:23:44  V2 fliser — ledig 833MB, kost 573MB per flis → 6144 (NED fra 8192)
+13:23:56  flis 1/4 malt, ledig 1080MB
+13:24:08  flis 2/4 malt, ledig 1075MB
+13:24:20  flis 3/4 malt, ledig 1066MB
+13:24:32  flis 4/4 malt, ledig 1069MB
+```
+
+To fakta: minnet faller **1300 MB** mellom budsjettet og flisene (TSDF, xatlas,
+pose-raffinering), og det er **ingen lekkasje** mellom flisene — 1080 → 1069 over fire.
+Det er ett øyeblikk som er trangt, ikke en drift.
+
+### Hvor RAM-en gikk
+
+Tilbakelesingen holdt hele flisa i minnet **tre ganger samtidig**:
+
+1. `readBuf` — MTLBuffer, delt lagring
+2. `pixels` — en Swift `[UInt8]`-kopi
+3. `Data(pixels)` inne i `makeCGImage`
+
+Ved 8192 er det 3 × 268 MB = 800 MB, oppå atlasparet på 536 MB. 1,3 GB for én flis,
+mot ~1,07 GB faktisk ledig. Derfor krasjet den, og derfor måtte den ned til 6144.
+
+### Grep 1: stripevis lesing via disk
+
+Atlaset kopieres nå ut én stripe om gangen (1/8 av høyden) til en råfil, og JPEG-koderen
+memory-mapper fila med `CGDataProvider(url:)`. Toppen er ETT stripebuffer (33 MB ved
+8192) i stedet for flisa tre ganger.
+
+Det er akkurat det Tormod foreslo, i den formen som faktisk virker: GPU-en kan ikke lese
+fra disk, men den FERDIGE flisa trenger ikke ligge i RAM. Og pikslene blir rene, filbakte
+sider som iOS kan kaste ut under trykk — ikke skitten hukommelse appen eier.
+
+Kravet per flis: 993 → **801 MB**. Verifisert identisk resultat på panelfixturen
+(39 / 0,50 / 7,5, 19 MB GLB, 100780/100780 trekanter). `meshscan.stripelesing = "off"`.
+
+### Grep 2: flere brikker når hver må være mindre
+
+Nedtrappingen i §92 var riktig — minnet holdt ikke. Feilen var å la OPPLØSNINGEN betale.
+
+Rutenettet er fritt, og toppen bestemmes av ÉN brikke, ikke av summen. Fire à 8192 gir
+16384 effektivt; **ni à 6144 gir 18432** — mer detalj, på 453 MB per brikke. Å ta flere
+og mindre er gratis i minne og koster bare tid.
+
+Flisantallet velges nå slik at effektiv oppløsning holdes på 2 × budsjettets atlas,
+uansett hvor liten hver brikke må være. Tak 4×4.
+
+**Pakkeren hadde et tak på 2** (`min(2, fliser)`). Resten av den er generell i `ruter`,
+men grensa gjorde at 3×3 pakket UV-ene for et 2×2 virtuelt atlas mens flisløkka kuttet i
+3×3: **1057 trekanter havnet på tvers av en grense pakkingen ikke visste om**, fikk
+`flisAv = -1`, og ble tegnet med flis 0s UV-er. Taket er hevet til 4, og 3×3 plasserer nå
+100780/100780.
+
+### Hva som IKKE er vist
+
+Gevinsten i detalj kan ikke måles på fixturene jeg har — de er ikke texel-sultet
+(1049–1523 texler/m), og 4 à 6144 mot 9 à 6144 mot 4 à 8192 er ikke til å skille for
+øyet på nært hold. Det store rommet er sultet: 5,2 × 2,9 × 7,4 m er ~3× flata.
+**Neste bake på det rommet avgjør**, og loggen oppgir nå rutenett og effektiv oppløsning.
+
+Sporkontrast-målet (99-persentil av vannrette nabodifferanser) ga 6,00 / 5,00 / 5,00 —
+altså høyest for LAVEST oppløsning. Femte gang det målet peker feil vei. Det brukes ikke.
+
+Kostnaden er tid: 9 fliser i stedet for 4 omtrent dobler malingen. På det store rommet
+betyr det ~150 s i stedet for 87 s.
