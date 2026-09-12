@@ -442,16 +442,15 @@ enum MeshBakeV2 {
         // et warp-justert fullfrekvens-snitt. Multiband bruker warpen KUN i lavfrekvensen —
         // altså på det som deretter blurres bort — så sub-pixel-alignmentet fikk aldri virke
         // der smøringen mellom bilder faktisk synes. «winner»/«off» er A/B-armene.
-        // STANDARD ER «raw» IGJEN (2026-09-11, §89 — se docs/SKANN_BESLUTNINGER.md).
-        // Vinnerveien er den som lager de vannrette båndene: naboflater henter fargen fra
-        // ULIKE foto, og et bytte flytter hele tonen i ett sprang. Snittet lar naboene dele
-        // det meste av settet sitt, så byttet blir en gradvis overgang i stedet for et hopp.
-        // Mosaikken som felte raw i september var to andre feil — søm-nivelleringen nådde
-        // ikke grenen (rettet 2026-09-01) og mikrokontrasten kjørte aldri der (rettet nå).
-        // Målt på tre fixturer: båndenergi 0,176 → 0,078 / 0,206 → 0,144 / 0,519 → 0,132,
-        // med skarphet uendret eller bedre. Scaniverse ligger på 0,091.
-        // «winner»/«multiband»/«off» er A/B-armene.
-        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "raw"
+        // STANDARD ER «winner» (2026-09-02, bekreftet på nytt 2026-09-12 — §90).
+        // Snittet ble prøvd som standard og RULLET TILBAKE samme dag: det fjerner de
+        // vannrette båndene (båndenergi 0,566 → 0,147 på Tormods soveromsvegg), men
+        // vasker samtidig ut panelsporene — to syn er sub-pixel uenige om HVOR sporet
+        // ligger, så den tynne streken blir et bredt bånd som mikrokontrasten blåser opp.
+        // Og tonespennet over veggen DOBLET seg, 51 → 88 gråtrinn: flekkene med
+        // saggtakk-kant er tilbake, altså §72-mosaikken. Veggen ser mindre ut som ÉN
+        // vegg, ikke mer. «raw»/«multiband»/«off» er A/B-armene.
+        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "winner"
         let blendAll = blendFlag != "off" && blendFlag != "winner"
         let blendRaw = blendAll && blendFlag != "multiband"
         var warpGrids = [[SIMD2<Float>]]()
