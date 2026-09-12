@@ -14,6 +14,7 @@ import { syncLiveActivity } from './live-activity-control'
 import { useHasDynamicIsland } from '../has-dynamic-island'
 import { supabase } from '../supabase'
 import type { Order } from '../db/models/order'
+import { aiLogg } from './ai-logg'
 
 export type VoiceAssistantStage = 'idle' | 'confirming' | 'recording' | 'checking'
 
@@ -170,6 +171,7 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
 
   const endSession = useCallback(
     async (opts?: { discard?: boolean }) => {
+      aiLogg(`UI: endSession (discard=${!!opts?.discard}, stage=${stageRef.current})`)
       if (assistentRef.current) {
         assistentRef.current.stop() // setter stage til idle via onEnd
         return

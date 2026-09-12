@@ -90,6 +90,15 @@ sjekk('lag 2 har brukeren', lag2.includes('Tormod'), true)
 sjekk('lag 2 har rollen', lag2.includes('montor'), true)
 sjekk('lag 2 har malen ordrett', lag2.includes('m1: Risikovurdering'), true)
 sjekk('lag 2 nevner hva rollen får', lag2.includes('ordre.opprett'), true)
+const lag2tom = byggLag2({ registre: { antallKunder: 0, timetyper: [] } })
+sjekk('lag 2 sier fra om tomme registre', lag2tom.includes('KUNDER: ingen') && lag2tom.includes('TIMETYPER: ingen'), true)
+const lag2full = byggLag2({ registre: {
+  antallKunder: 10000,
+  timetyper: [{ navn: 'Montasje', timepris: 850, fakturerbar: true }, { navn: 'Internt', timepris: 0, fakturerbar: false }],
+} })
+sjekk('lag 2 gir bare antallet kunder, aldri lista', lag2full.includes('KUNDER: 10000 i registeret') && !lag2full.includes('- K'), true)
+sjekk('lag 2 har én linje per timetype', lag2full.includes('- Montasje · 850 kr') && lag2full.includes('- Internt · 0 kr · ikke fakturerbar'), true)
+sjekk('fulle registre utløser ikke oppsett-tilbud', lag2full.includes('Tilby å sette opp'), false)
 
 // Lag 3 returnerer en melding, ikke en streng. Det er med vilje: en streng kan
 // limes inn i en instruks ved et uhell, en Content-melding kan den ikke.

@@ -189,11 +189,19 @@ const LIVE_CONSTRAINTS_OFF = Deno.env.get('GEMINI_LIVE_UNLOCK') === '1'
  *    Google anbefaler å flytte den serverside; det krever at all den konteksten
  *    sendes hit først, og er en egen jobb. Notert som gjenstående herding.
  */
+// REST-navnet er `bidiGenerateContentSetup` (AuthToken i ai.google.dev/api/live), ikke
+// SDK-ets `liveConnectConstraints`. Med SDK-navnet svarte Google 400 «Unknown name», og
+// hver eneste økt falt stille tilbake til ulåst token (funnet i loggen 2026-09-12).
 function liveConnectConstraints(): Record<string, unknown> | undefined {
   if (LIVE_CONSTRAINTS_OFF) return undefined
+  // Låsen ERSTATTER klientens oppsett for feltene den nevner — og for
+  // realtimeInputConfig gjaldt det selv når klienten sendte sitt: uten denne linja
+  // svarte Google 1007 «explicit activity control is not supported» på første
+  // activityStart, og økten døde i det brukeren begynte å snakke (2026-09-12).
   return {
     model: `models/${GEMINI_LIVE_MODEL}`,
-    config: { responseModalities: ['AUDIO'] },
+    generationConfig: { responseModalities: ['AUDIO'] },
+    realtimeInputConfig: { automaticActivityDetection: { disabled: true } },
   }
 }
 
@@ -206,7 +214,7 @@ async function issueToken(apiKey: string, constraints: Record<string, unknown> |
       uses: 1,
       newSessionExpireTime: new Date(now + LIVE_TOKEN_SESSION_START_WINDOW_MS).toISOString(),
       expireTime: new Date(now + LIVE_TOKEN_MAX_SESSION_MS).toISOString(),
-      ...(constraints ? { liveConnectConstraints: constraints } : {}),
+      ...(constraints ? { bidiGenerateContentSetup: constraints } : {}),
     }),
   })
   if (!res.ok) {

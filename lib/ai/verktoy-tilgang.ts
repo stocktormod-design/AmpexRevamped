@@ -66,6 +66,10 @@ export type Verktoyrett =
   | 'eksport.send'
   /** Fryse en ordre til arkiv. Irreversibelt. */
   | 'arkiv.frys'
+  /** Opprette en kunde i registeret. Alle i felt — kunden dukker opp når ordren gjør det. */
+  | 'kunde.opprett'
+  /** Endre firmaets registre: timetyper (aktiviteter) med timepris. */
+  | 'register.endre'
 
 const FELT: Verktoyrett[] = [
   'ordre.opprett',
@@ -75,14 +79,15 @@ const FELT: Verktoyrett[] = [
   'skjema.fyll',
   'maaling.registrer',
   'materiell.for',
+  'kunde.opprett',
 ]
 
 const MATRISE: Record<Rolle, Verktoyrett[]> = {
-  owner: [...FELT, 'timer.andre', 'tilbud.skriv', 'faktura.marker', 'eksport.send', 'arkiv.frys'],
-  admin: [...FELT, 'timer.andre', 'tilbud.skriv', 'faktura.marker', 'eksport.send', 'arkiv.frys'],
+  owner: [...FELT, 'timer.andre', 'tilbud.skriv', 'faktura.marker', 'eksport.send', 'arkiv.frys', 'register.endre'],
+  admin: [...FELT, 'timer.andre', 'tilbud.skriv', 'faktura.marker', 'eksport.send', 'arkiv.frys', 'register.endre'],
   // Installatøren er den faglig ansvarlige. Han skal kunne alt i felt, og han
   // eier det som går ut av huset.
-  installator: [...FELT, 'timer.andre', 'tilbud.skriv', 'faktura.marker', 'eksport.send', 'arkiv.frys'],
+  installator: [...FELT, 'timer.andre', 'tilbud.skriv', 'faktura.marker', 'eksport.send', 'arkiv.frys', 'register.endre'],
   // Basen leder jobben og fører timer på laget sitt, men fakturerer ikke og
   // sender ingenting ut. Skillet følger `kontor-tilgang.ts`, der basen heller
   // ikke ser firmaets samlede timeliste.
