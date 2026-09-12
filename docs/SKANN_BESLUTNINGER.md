@@ -3718,3 +3718,62 @@ Nyttig par som faktisk skiller dem, til neste gang:
 Vinnerveien har fortsatt et bredt, mykt vannrett slør over veggen (tonespenn 51 =
 20 % av skalaen, mot avskyggingens mål på 6 %). Det er den ekte gjenstående feilen,
 og den skal angripes i tonelaget — ikke ved å bytte ut fargevalget.
+
+## 91. «Rutene» var avskyggingens eget rutenett, 2026-09-12
+
+Funnet ved å hente Tormods egen skann-bundle fra telefonen og bake den på Mac —
+den reproduserte telefonen eksakt (tonespenn 45,0, tonesteg 0,50). Det var
+fixturen jeg manglet: begge de gamle fixturene har vegger UTEN panel, og det er
+panelveggen som viser feilen.
+
+### Mekanismen
+
+Avskyggingen (§79) samler hjørnenes ønskede lys i 25 cm-ruter, snitter nabo-rutene,
+og skyver hvert hjørne mot planets median. Snittet valgte nabolaget etter **hvilken
+celle hjørnet tilfeldigvis lå i**, med lik vekt på hver celle. Det gjør korreksjonen
+til et TRAPPEFELT: to hjørner på hver side av en cellegrense slår opp ulike nabolag,
+får ulik korreksjon, og tonen hopper langs grensa.
+
+Resultatet er rektangler på 25 og 75 cm tvers over veggen. Med utflatingen skrudd på
+maks (`avskygging 1.0`, `avskyggingskala 0`, `avskyggingmaal 1`) var de umulige å ta
+feil av — og det var beviset: **mer styrke gjorde rutene TYDELIGERE, ikke svakere**,
+fordi det er selve korreksjonen som er trappete.
+
+Det forklarer også hvorfor ingen av de tidligere forsøkene bet. Jeg skrudde på
+styrke, tak, klemme og skala — alle fire endrer bare hvor hardt et trappefelt trykkes
+på veggen.
+
+### Fiksen
+
+Hver celle vektes nå med et separabelt telt fra hjørnets EGEN posisjon til cellens
+senter; vekten faller lineært til 0 ved (R+1) ruter. Feltet blir kontinuerlig, så
+korreksjonen glir. Det store lysfallet fjernes like godt som før.
+
+Vekten måles mot cellens senter, ikke mot løkkas `dx/dy/dz` — ellers er den igjen
+bundet til hvilken celle hjørnet lå i, som var hele feilen.
+
+| fixture | rutethet før | etter | tonespenn før | etter |
+|---|---|---|---|---|
+| panel (Tormods vegg) | 8,3 | **7,5** | 45 | **39** |
+| nyskann | 7,8 | **5,7** | 50 | 51 |
+| soverom | 7,2 | **6,2** | 54 | **47** |
+
+Ingen forverring noe sted. Standardstyrken holder — `avskygging 0.85` med telt ser
+like bra ut som 1,0, så defaultene er urørt. `meshscan.avskyggingtelt = "off"` gir
+boksen tilbake. Kostnad: 125 oppslag per hjørne i stedet for 27, ~0,5 s.
+
+### Måltallet som fant det
+
+`veggtone.py` i harness-mappa. Tre tall på et frontalt veggrender:
+
+- **tonespenn** — maks − min etter gauss(12). Fanget snitt-regresjonen i §90.
+- **tonesteg p90** — 90-persentil av |∇| på samme felt.
+- **rutethet** — 99,5-persentil delt på median av |andrederivert| av RADPROFILEN
+  etter gauss(6). Høy = trappetrinn. Rangerte de fire avskyggings-armene nøyaktig
+  som øyet: 5,5 / 7,5 / 8,3 / 13,0.
+
+Rutethet er RADVIS med vilje. Kolonnevis drukner i panelsporene, som er loddrette,
+og skiller ikke armene.
+
+**Og dette er regelen fra §90 fulgt:** begge måltallene ble først vist å rangere
+bilder jeg alt hadde dømt med øyet, FØR de ble brukt til å velge noe.
