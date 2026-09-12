@@ -2743,12 +2743,42 @@ enum MeshBakeV2 {
                         // (4,75 m ga 14,06 → 14,09 %, altså ingen virkning); smalere begynner å spise
                         // lokal skygge. meshscan.avskyggingskala i ruter à 25 cm.
                         let R = Int(flaggTall("meshscan.avskyggingskala", 1))
-                        for dx in -R...R { for dy in -R...R where abs(dx) + abs(dy) <= R + 4 {
-                            for dz in -R...R where abs(dx) + abs(dy) + abs(dz) <= R + 6 {
+                        // ── TELTVEKTER, IKKE BOKS (2026-09-12, §91). DETTE ER «RUTENE».
+                        // Før ble cellene i nabolaget snittet med LIK vekt, valgt etter hvilken
+                        // celle hjørnet tilfeldigvis lå i. Da er `glatt` et TRAPPEFELT: to hjørner
+                        // på hver side av en cellegrense slår opp ulike nabolag og får ulik
+                        // korreksjon, og tonen hopper langs grensa. Resultatet er rektangler på
+                        // 25/75 cm tvers over veggen — med utflatingen på maks var de umulige å
+                        // ta feil av. Ingen mengde ekstra styrke fjerner dem; styrken gjør dem
+                        // tydeligere, fordi det er selve korreksjonen som er trappete.
+                        // Nå vektes hver celle med et telt fra hjørnets EGEN posisjon til cellens
+                        // senter — vekten faller lineært til 0 ved (R+1) ruter. Feltet blir
+                        // kontinuerlig, så korreksjonen glir i stedet for å hoppe, og det store
+                        // lysfallet fjernes like godt. meshscan.avskyggingtelt = "off" gir boksen.
+                        let telt = UserDefaults.standard.string(forKey: "meshscan.avskyggingtelt") != "off"
+                        if telt {
+                            let rad = Float(R + 1) * rute
+                            let W = R + 1
+                            for dx in -W...W { for dy in -W...W { for dz in -W...W {
                                 let q = p + SIMD3(Float(dx), Float(dy), Float(dz)) * rute
-                                if let c = celle[nøkkel(q, slot)] { sum += c.sum; n += c.n }
-                            }
-                        } }
+                                guard let c = celle[nøkkel(q, slot)] else { continue }
+                                // Vekten måles mot cellens SENTER, ikke mot dx/dy/dz, ellers er
+                                // den igjen bundet til hvilken celle hjørnet lå i.
+                                let senter = SIMD3((q.x / rute).rounded(), (q.y / rute).rounded(),
+                                                   (q.z / rute).rounded()) * rute
+                                let d = simd_abs(senter - p) / rad
+                                let w = max(0, 1 - d.x) * max(0, 1 - d.y) * max(0, 1 - d.z)
+                                guard w > 1e-4 else { continue }
+                                sum += c.sum * w; n += c.n * w
+                            } } }
+                        } else {
+                            for dx in -R...R { for dy in -R...R where abs(dx) + abs(dy) <= R + 4 {
+                                for dz in -R...R where abs(dx) + abs(dy) + abs(dz) <= R + 6 {
+                                    let q = p + SIMD3(Float(dx), Float(dy), Float(dz)) * rute
+                                    if let c = celle[nøkkel(q, slot)] { sum += c.sum; n += c.n }
+                                }
+                            } }
+                        }
                         guard n > 0 else { continue }
                         let glatt = sum / n
                         let glattLum = 0.299 * glatt.x + 0.587 * glatt.y + 0.114 * glatt.z
