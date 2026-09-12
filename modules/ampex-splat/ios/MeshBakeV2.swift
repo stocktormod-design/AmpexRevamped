@@ -2953,6 +2953,28 @@ enum MeshBakeV2 {
             // referansen. Kun for måling; den ordinære eksporten røres ikke.
             let projAtlas = Int(flaggTall("meshscan.projektivatlas", Float(atlasSize)))
             let projStr = [4096, 6144, 8192, 12288, 16384].contains(projAtlas) ? projAtlas : atlasSize
+            // ── MINNET MÅLES PÅ NYTT HER (2026-09-12, §92). Budsjettet lenger opp
+            // (atlas/maxKF/topK) leses FØR TSDF, xatlas og pose-raffinering har tatt sitt.
+            // På et 6×6 m rom med 258 000 trekanter var det 40 sekunder og flere hundre
+            // megabyte tidligere, og ingenting sjekket på nytt. Flisemalingen — det tyngste
+            // steget i hele baken — fortsatte på et tall som ikke gjaldt lenger, og appen ble
+            // drept på flis 3 av 4.
+            // Kostnaden per flis er ARITMETIKK, ikke en gjetning: atlasparet pluss lesebufferet
+            // (3×S²×4 B), plan-akkumulatoren i halv oppløsning rgba16F (S²×2), fjæringslaget
+            // (S²×1) og ett dekodet kildefoto (~33 MB) → S²×15 + 33 MB. 8192 koster ~1,0 GB,
+            // 6144 ~0,6 GB, 4096 ~0,3 GB. Grensa på 70 % av ledig minne er det ENESTE valgte
+            // tallet her; resten følger av størrelsene. meshscan.flisbudsjett = "off" slår av.
+            func flisKost(_ s: Int) -> Int { s * s * 15 + 33 * 1024 * 1024 }
+            var flisStr = projStr
+            if UserDefaults.standard.string(forKey: "meshscan.flisbudsjett") != "off" {
+                let ledig = MeshSimMem.available()
+                for kandidat in [projStr, 6144, 4096] where kandidat <= projStr {
+                    flisStr = kandidat
+                    if flisKost(kandidat) <= Int(Double(ledig) * 0.7) { break }
+                }
+                MeshLog.log("V2 fliser — ledig \(ledig / 1024 / 1024)MB, kost \(flisKost(flisStr) / 1024 / 1024)MB per flis → \(flisStr)"
+                            + (flisStr < projStr ? " (NED fra \(projStr))" : ""))
+            }
             // FIRE FLISER (2026-09-10). Måling: hele atlaset til veggfeltene ga kildeskala
             // 0,43 → 0,486 og sporkontrast 0,436 → 0,488 %, mens bruddene holdt seg på
             // referansenivå (0,033 mot 0,0305 %). Skarpheten følger altså atlasarealet nesten
@@ -2962,7 +2984,7 @@ enum MeshBakeV2 {
             let fliser = kvalitetFliser ? 2 : (Int(flaggTall("meshscan.projektivfliser", 1)) == 2 ? 2 : 1)
             let kollaps = UserDefaults.standard.string(forKey: "meshscan.projektivkollaps") == "on"
             guard let alternative = projectiveFixtureUV(uv: uv, region: feltKey, projected: projected,
-                                                        atlasSize: projStr, fliser: fliser,
+                                                        atlasSize: flisStr, fliser: fliser,
                                                         kollapsRest: kollaps) else { return failG }
             if fliser > 1 {
                 // Én rasterisering per flis: UV-ene kroppes til flisens eget [0,1], og
@@ -2975,7 +2997,7 @@ enum MeshBakeV2 {
                     kroppet.uvs = alternative.uv.uvs.enumerated().map { i, v in
                         v * Float(fliser) - (i % 2 == 0 ? kol : rad)
                     }
-                    kroppet.atlasSize = projStr
+                    kroppet.atlasSize = flisStr
                     guard let bilde = autoreleasepool(invoking: { () -> Data? in
                         rasterize(uv: kroppet, winner: winner, region: region, regionFrame: regionFrame,
                                   regionOfs: regionOfs, cornerOfs: cornerOfs,
@@ -2983,10 +3005,11 @@ enum MeshBakeV2 {
                                   topF: topF, topFavg: topFavgUse, topK: topK, seamBand: seamBand,
                                   kfUse: kfUse, gains: gains, warpGrids: rasterWarpGrids, fieldWarpFace: fieldWarpFace,
                                   blendAll: blendAll, blendRaw: blendRaw,
-                                  framesDir: framesDir, atlasSize: projStr,
+                                  framesDir: framesDir, atlasSize: flisStr,
                                   planeAvg: (kvalitetFliser && !kvalitetTone) ? [:] : planeAvgByFrame, planeFace: onPlane)
                     }) else { return failG }
                     flisData.append(bilde)
+                    MeshLog.log("V2 fliser — flis \(f + 1)/\(fliser * fliser) malt, ledig \(MeshSimMem.available() / 1024 / 1024)MB")
                     for t in 0..<triCount where flisAv[t] < 0 {
                         let inne = (0..<3).allSatisfy { j -> Bool in
                             let u = kroppet.uvs[Int(alternative.uv.indices[t * 3 + j]) * 2]
@@ -3015,7 +3038,7 @@ enum MeshBakeV2 {
                         tileOf: flisAv, tiles: flisData, to: flisURL)
                     let dekket = flisAv.filter { $0 >= 0 }.count
                     let bytes = ((try? FileManager.default.attributesOfItem(atPath: flisURL.path))?[.size] as? Int) ?? 0
-                    MeshLog.log("prosjektive fliser — \(fliser * fliser) à \(projStr), \(dekket)/\(triCount) trekanter plassert, \(bytes / 1024 / 1024)MB → \(flisURL.lastPathComponent)")
+                    MeshLog.log("prosjektive fliser — \(fliser * fliser) à \(flisStr), \(dekket)/\(triCount) trekanter plassert, \(bytes / 1024 / 1024)MB → \(flisURL.lastPathComponent)")
                     if kvalitetFliser {
                         fase("maling + eksport")
                         MeshLog.log("V2 bake ferdig — KVALITET/fliser \(bytes / 1024 / 1024)MB fylt=\(Int(filled * 100))% geometri=\(geometryPath) totalt \(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
@@ -3031,7 +3054,7 @@ enum MeshBakeV2 {
                           topF: topF, topFavg: topFavgUse, topK: topK, seamBand: seamBand,
                           kfUse: kfUse, gains: gains, warpGrids: rasterWarpGrids, fieldWarpFace: fieldWarpFace,
                           blendAll: blendAll, blendRaw: blendRaw, framesDir: framesDir,
-                          atlasSize: projStr, planeAvg: planeAvgByFrame, planeFace: onPlane)
+                          atlasSize: flisStr, planeAvg: planeAvgByFrame, planeFace: onPlane)
             }
             guard let texture else { return failG }
             let url = glbURL.deletingLastPathComponent().appendingPathComponent("projective-fixture-\(UUID().uuidString).glb")
