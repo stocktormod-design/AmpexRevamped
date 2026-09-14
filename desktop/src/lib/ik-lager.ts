@@ -1,3 +1,4 @@
+import { parseSchema, type FormSection } from '@delt/forms/schema'
 import type { Auditrad, Revisjonsrad } from '@delt/ik/hendelser'
 import { IK_SKJELETT, maaVaereSkriftlig } from '@delt/ik/skjelett'
 import { supabase } from '@/supabase'
@@ -397,6 +398,95 @@ export async function hentSkjemamaler(): Promise<Skjemamal[]> {
     .order('title')
   if (error) throw new Error(`Kunne ikke lese skjemamalene: ${error.message}`)
   return (data ?? []) as unknown as Skjemamal[]
+}
+
+/**
+ * Seksjonene i den gjeldende versjonen av en mal — det byggeren starter fra
+ * ved «Ny versjon». v1-rader (flat `items`) leses gjennom `toSections` i
+ * `lib/forms/schema.ts`, samme lesevei som appen.
+ */
+export async function hentMalSkjema(templateId: string, versjon: number): Promise<FormSection[]> {
+  const { data, error } = await supabase
+    .from('form_template_revisions')
+    .select('schema')
+    .eq('template_id', templateId)
+    .eq('version', versjon)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(`Kunne ikke lese malen: ${error.message}`)
+  return parseSchema((data as { schema: string | null } | null)?.schema)
+}
+
+/**
+ * Ny mal med første revisjon (v1). Samme to skrivinger som appens
+ * `createTemplate()` i `lib/forms.ts`, bare rett mot Supabase.
+ *
+ * `id` lages her: tabellen har ingen standardverdi for den, fordi appen
+ * lager id-ene lokalt i WatermelonDB og synker dem opp. `company_id` må
+ * oppgis for RLS (`company_id = current_company_id()`), og er den
+ * innloggedes eget firma — noe annet ville policyen avvist.
+ */
+export async function opprettMal(
+  inn: { tittel: string; kategori: string; seksjoner: FormSection[] },
+  bruker: { id: string; companyId: string },
+): Promise<string> {
+  const id = crypto.randomUUID()
+  const mal = await supabase.from('form_templates').insert({
+    id,
+    company_id: bruker.companyId,
+    title: inn.tittel,
+    category: inn.kategori || 'Diverse',
+    current_version: 1,
+    status: 'published',
+    created_by: bruker.id,
+  })
+  if (mal.error) throw new Error(`Kunne ikke opprette malen: ${mal.error.message}`)
+
+  const rev = await supabase.from('form_template_revisions').insert({
+    id: crypto.randomUUID(),
+    company_id: bruker.companyId,
+    template_id: id,
+    version: 1,
+    schema: JSON.stringify({ sections: inn.seksjoner }),
+    change_note: 'Opprettet',
+    changed_by: bruker.id,
+  })
+  if (rev.error) throw new Error(`Malen ble opprettet, men første versjon ble ikke lagret: ${rev.error.message}`)
+  return id
+}
+
+/**
+ * Ny versjon av en mal. Revisjonen skrives FØRST, så pekeren flyttes — en
+ * mal endres aldri in-place (kommentaren øverst i `lib/forms/types.ts`).
+ * Tittel og kategori følger med, siden byggeren viser dem sammen.
+ */
+export async function lagreMalversjon(
+  mal: Skjemamal,
+  inn: { tittel: string; kategori: string; seksjoner: FormSection[] },
+  notat: string,
+  bruker: { id: string; companyId: string },
+): Promise<number> {
+  const rent = notat.trim()
+  if (!rent) throw new Error('Endringsnotat er påkrevd. Skriv én linje om hva som ble endret og hvorfor.')
+  const neste = mal.current_version + 1
+
+  const rev = await supabase.from('form_template_revisions').insert({
+    id: crypto.randomUUID(),
+    company_id: bruker.companyId,
+    template_id: mal.id,
+    version: neste,
+    schema: JSON.stringify({ sections: inn.seksjoner }),
+    change_note: rent,
+    changed_by: bruker.id,
+  })
+  if (rev.error) throw new Error(`Kunne ikke arkivere versjonen: ${rev.error.message}`)
+
+  const { error } = await supabase
+    .from('form_templates')
+    .update({ title: inn.tittel, category: inn.kategori || 'Diverse', current_version: neste })
+    .eq('id', mal.id)
+  if (error) throw new Error(`Versjonen ble arkivert, men malen ble ikke oppdatert: ${error.message}`)
+  return neste
 }
 
 export async function knyttSkjema(punktId: string, templateId: string): Promise<void> {

@@ -2,9 +2,8 @@ import { kan, rollenavn } from '@delt/kontor-tilgang'
 import { useCallback, useEffect, useState } from 'react'
 import { hentFirma, type Firmaoppsett } from '@/lib/kontor-lager'
 import { Inviter } from '@/ui/Inviter'
-import { lagInnmeldingskode, settAmpexPool } from '@/lib/skann-lager'
 import { useAuth } from '@/auth'
-import { Beskjed, initialer, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
+import { Beskjed, initialer, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 
 /**
  * Firmaoppsettet.
@@ -13,19 +12,15 @@ import { Beskjed, initialer, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
  *
  * 1. **Innstillingene** — oppbevaringstid, faglig ansvarlig, regnskapssystem.
  * 2. **Ansatte og roller.** Rollen bestemmer hva folk ser, både her og i appen.
- * 3. **Bake-nodene.** `docs/STATUS.md` slår fast at poolens klientside hører i
- *    Desktop og ikke i montørappen. Dette er begynnelsen på den: se hvilke
- *    maskiner som er meldt inn og om de svarer.
+ * 3. ~~Bake-nodene.~~ Tatt ut av flata 14. september (Tormod). Innmelding og
+ *    Ampex-pool-bryteren ligger fortsatt i `lib/skann-lager.ts` om de skal inn
+ *    igjen.
  *
  * Invitasjon er den ene tingen her som SKRIVER. Den gjør det gjennom
  * `supabase/functions/inviter-ansatt`, fordi `profiles.company_id` ikke kan
  * settes fra en klient — se migrasjonen 20260822120000. Resten er fortsatt
  * lesing; endring av innstillinger er neste steg.
  */
-
-const DATO = new Intl.DateTimeFormat('nb-NO', {
-  day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-})
 
 const REGNSKAP: Record<string, string> = {
   ingen: 'Ikke koblet',
@@ -38,17 +33,13 @@ export function Firma() {
   const { profil } = useAuth()
   const [data, setData] = useState<Firmaoppsett | null>(null)
   const [feil, setFeil] = useState<string | null>(null)
-  const [kode, setKode] = useState<string | null>(null)
-  const [poolPa, setPoolPa] = useState<boolean | null>(null)
-  const [jobber, setJobber] = useState(false)
-  const styrer = kan(profil?.role, 'pool.styr')
 
   // Trukket ut av useEffect fordi invitasjonen må kunne be om lista på nytt:
   // den som nettopp ble invitert skal stå der med en gang, ikke etter en
   // oppfriskning av siden.
   const last = useCallback(() => {
     hentFirma()
-      .then(d => { setData(d); setPoolPa(d.innstillinger?.ampex_pool ?? false) })
+      .then(setData)
       .catch(e => setFeil(e instanceof Error ? e.message : String(e)))
   }, [])
 
@@ -60,7 +51,7 @@ export function Firma() {
     <>
       <Sidehode
         tittel="Firma"
-        under={data?.company?.name ?? 'Innstillinger, ansatte og bake-noder'}
+        under={data?.company?.name ?? 'Innstillinger og ansatte'}
       />
 
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
@@ -129,132 +120,6 @@ export function Firma() {
             ) : null}
           </Kort>
 
-          <Kort tittel="Bake-noder" merkelapp="Maskiner som kan kjøre GPU-bake">
-            {!data ? (
-              <p className="kort-hjelp">Henter …</p>
-            ) : data.noder.length === 0 ? (
-              <p className="kort-hjelp">
-                Ingen maskiner meldt inn. En PC med skjermkort melder seg inn med en engangskode
-                herfra, og blir da firmaets egen bakekapasitet.
-              </p>
-            ) : (
-              <table className="linjer">
-                <thead>
-                  <tr>
-                    <th>Maskin</th>
-                    <th>GPU</th>
-                    <th className="h" style={{ width: 90 }}>VRAM</th>
-                    <th style={{ width: 110 }}>Status</th>
-                    <th style={{ width: 130 }}>Sist sett</th>
-                    <th style={{ width: 90 }}>Pool</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.noder.map(n => (
-                    <tr key={n.id}>
-                      <td style={{ fontWeight: 500 }}>{n.name}</td>
-                      <td className="dempet">{n.gpu_name ?? '–'}</td>
-                      <td className="h dempet">{n.vram_mb ? `${Math.round(n.vram_mb / 1024)} GB` : '–'}</td>
-                      {/* Statusene er tabellens egne: idle, busy, offline.
-                          Sto tidligere som online/paused, som er verdier
-                          `worker_nodes` ikke kan inneholde — kolonna har en
-                          check-constraint. Alt havnet derfor på «Nede». */}
-                      <td>
-                        {n.revoked_at ? (
-                          <Merke stil="feil">Trukket</Merke>
-                        ) : n.status === 'idle' ? (
-                          <Merke stil="ny">Ledig</Merke>
-                        ) : n.status === 'busy' ? (
-                          <Merke stil="endret">Baker</Merke>
-                        ) : (
-                          <Merke stil="noytral">Nede</Merke>
-                        )}
-                      </td>
-                      <td className="dempet-mer">
-                        {n.last_heartbeat_at ? DATO.format(new Date(n.last_heartbeat_at)) : 'aldri'}
-                      </td>
-                      {/* Hvorvidt maskinen tar jobber fra ANDRE firmaer. Verdt
-                          en kolonne: det er den ene innstillingen på en node
-                          som har noe å si utenfor firmaets egne vegger. */}
-                      <td className="dempet-mer">
-                        {n.is_public ? 'Ampex' : 'Egen'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-
-            {/* ── Innmelding ────────────────────────────────────────────────
-                Koden vises ÉN gang og lever i 30 minutter. Den byttes mot et
-                node-token som lagres på PC-en; selve tokenet ser vi aldri, og
-                basen lagrer kun en hash av det. */}
-            {styrer ? (
-              <div style={{ marginTop: 14 }}>
-                <Knapp
-                  stil="stille"
-                  disabled={jobber}
-                  onClick={() => {
-                    setJobber(true)
-                    setFeil(null)
-                    lagInnmeldingskode()
-                      .then(setKode)
-                      .catch(e => setFeil(e instanceof Error ? e.message : String(e)))
-                      .finally(() => setJobber(false))
-                  }}
-                >
-                  {jobber ? 'Lager kode …' : 'Meld inn en PC'}
-                </Knapp>
-                {kode ? (
-                  <div style={{ marginTop: 12 }}>
-                    <p className="felt-hjelp">
-                      Kjør dette på maskinen. Koden gjelder i 30 minutter og kan brukes én gang.
-                    </p>
-                    <pre className="kode-blokk valgbar">ampex-worker enroll --code {kode}</pre>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {/* ── Ampex-poolen ──────────────────────────────────────────────
-                Dette er ikke en ytelsesbryter. Slått på betyr at et skann —
-                LiDAR av kundens bolig — kan pakkes ut på en maskin firmaet
-                ikke eier. Basen håndhever det uansett, men den som krysser av
-                skal forstå hva han krysser av for. */}
-            <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--kant)' }}>
-              <div className="rad" style={{ justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontWeight: 500 }}>Ampex-poolen</div>
-                  <p className="felt-hjelp" style={{ margin: '4px 0 0', maxWidth: 460 }}>
-                    Har firmaet ingen egen maskin oppe, kan skann bakes hos Ampex etter halvannet
-                    minutts ventetid. Da forlater skannet — LiDAR av kundens bolig — firmaets egne
-                    maskiner. Av som standard.
-                  </p>
-                </div>
-                <Knapp
-                  stil={poolPa ? 'merke' : 'stille'}
-                  disabled={!styrer || jobber || poolPa == null}
-                  onClick={() => {
-                    const ny = !poolPa
-                    setJobber(true)
-                    setFeil(null)
-                    settAmpexPool(ny)
-                      .then(() => setPoolPa(ny))
-                      .catch(e => setFeil(e instanceof Error ? e.message : String(e)))
-                      .finally(() => setJobber(false))
-                  }}
-                >
-                  {poolPa ? 'På' : 'Av'}
-                </Knapp>
-              </div>
-              {!styrer ? (
-                <p className="felt-hjelp" style={{ marginTop: 8 }}>
-                  Bare eier og administrator kan endre dette.
-                </p>
-              ) : null}
-            </div>
-
-          </Kort>
         </div>
 
         <div className="stabel">
@@ -291,9 +156,8 @@ export function Firma() {
           <div className="seksjon">
             <div className="seksjon-tittel">Kommer</div>
             <p className="kort-hjelp">
-              Endre innstillinger og importere fra
-              SpeedyCraft. Alt tre hører på denne maskinen fordi det er her den gamle databasen
-              ligger.
+              Endre innstillinger og importere fra SpeedyCraft. Importen hører på denne
+              maskinen fordi det er her den gamle databasen ligger.
             </p>
           </div>
         </div>

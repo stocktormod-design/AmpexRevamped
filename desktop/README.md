@@ -60,12 +60,12 @@ igjen. Regel 2 i `CLAUDE.md` gjelder montørappens skjermer.
 
 ## Hva som finnes nå
 
-Ni flater i menyen, fire grupper. **Alt er lesing** bortsett fra prisfilimporten
-og det som gjelder deg selv på Meg.
+Åtte flater i menyen, fire grupper. **Alt er lesing** bortsett fra skjemamalene,
+internkontrollen og det som gjelder deg selv på Meg.
 
-**Timer, Skann og Prisfiler er tatt ut av menyen (14. september)** — koden
-ligger fortsatt i `src/ruter/`, det er bare radene i `RUTER` (App.tsx) som er
-borte. Dine egne timer ligger på Meg.
+**Timer, Skann, Tilbud og Prisfiler er tatt ut av menyen (14. september)** —
+koden ligger fortsatt i `src/ruter/`, det er bare radene i `RUTER` (App.tsx)
+som er borte. Dine egne timer ligger på Meg.
 
 **Arbeid** — Ordre (liste og detalj side om side, fem faner, statusfilter),
 Prosjekter (rom, oppgaver, deltakere), Tilbud (sum og effektiv status), Timer
@@ -74,7 +74,14 @@ Prosjekter (rom, oppgaver, deltakere), Tilbud (sum og effektiv status), Timer
 **Register** — Kunder (org.nr og kildesystem), Varer (kartoteket med
 prissammenligning), Prisfiler (import, og alder på siste import per grossist).
 
-**Firma** — innstillinger, ansatte med rolle, bake-noder.
+**Kvalitet** — Internkontroll (punkter, rutiner, vedtak, lesebekreftelse) og
+Skjemaer. Skjemamaler LAGES her (`src/ui/Malbygger.tsx`, 14. september):
+seksjoner og punkter i `lib/forms/schema.ts`-formatet, validert med
+`validateFirmSections()` før lagring; hver lagring er en ny versjon med
+endringsnotat.
+
+**Firma** — innstillinger og ansatte med rolle. (Bake-nodene er tatt ut av
+flata 14. september; `lib/skann-lager.ts` har fortsatt innmelding og pool-bryter.)
 
 **Meg** — tema (hvit er standard, papir/kobber som valg, lagret per maskin i
 localStorage — se `src/lib/tema.ts`), dine timer uke for uke,
