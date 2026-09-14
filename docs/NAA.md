@@ -273,6 +273,22 @@ meny riktig, tema overlever reload, feil passord gir «Feil passord.» fra funks
 Selve slettingen er IKKE kjørt mot en ekte bruker ennå. Brukerpillen i sidehodet
 åpner Meg. Snarveien «Importer prisfil» på Oversikt er tatt bort.
 
+## 14. september, formiddag — kontoret rydder
+
+Bake-node-kortet er ute av Firma (innmelding og pool-bryter ligger igjen i
+`desktop/src/lib/skann-lager.ts`). Tilbud er ute av menyen, Oversikt fikk hus-ikon.
+**Skjemamaler lages nå på kontoret:** `desktop/src/ui/Malbygger.tsx` bygger
+seksjoner og punkter i `lib/forms/schema.ts`-formatet (check/text/multiline/
+number/choice/table/info/photo), `validateFirmSections()` er porten før lagring,
+`opprettMal`/`lagreMalversjon` i `ik-lager.ts` skriver `form_templates` +
+`form_template_revisions` med klientgenerert uuid (tabellen har ingen default).
+«Ny versjon» på en eksisterende mal åpner gjeldende skjema og krever endringsnotat.
+Teksten «selve malen redigeres i appen» er borte. **Internkontroll-detaljen er
+flatet ut:** kort-i-kort er byttet med `.blokk` (luft + hårlinje), forklaringskortet
+om «de fem» er redusert til én linje i listehodet, hero-linja gjentar ikke
+gjennomgangen som står i sidespalten, rutinens historikk er en fotnote. Listen og
+looken er uendret. Ikke pushet ennå.
+
 ## Åpne tråder
 
 - **Skann:** bad og stue må skannes på nytt med dagens app. Bare ett komplett LiDAR-skann

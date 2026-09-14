@@ -988,3 +988,59 @@ textarea.skrivefelt-lav { height: 110px; }
    til mer enn tallet og jobbene, og trenger ikke det heller. */
 .uke-sum { display: block; font-size: 16px; font-weight: 500; letter-spacing: -0.01em; }
 .uke-sum-tom { color: var(--blekk-4); }
+
+/* Blokker i detaljen ------------------------------------------------------ */
+
+/* Detaljen er ETT dokument, ikke en samling kort. Seksjonene skilles med luft
+   og én hårlinje — ikke med rammer rundt hver (kort i kort er alltid feil).
+   `.seksjon` brukes fortsatt for det som skal RAMMES INN: skrivemodus og
+   rutinene, som er egne dokumenter. Alt annet er `.blokk`. */
+.blokker { display: flex; flex-direction: column; }
+.blokk { padding: 20px 0; }
+.blokk + .blokk { border-top: 1px solid var(--kant); }
+.blokker > .blokk:first-child { padding-top: 4px; }
+.blokk-hode { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; min-height: 32px; }
+.blokk-hode > .knapp { margin-left: auto; }
+.blokk-tittel { font-family: var(--f-display); font-size: 14px; font-weight: 600; }
+.blokk-tall { color: var(--blekk-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Historikken inne i en rutine er en fotnote, ikke et kort. */
+.rutine-historikk { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--kant); }
+.rutine-historikk .blokk-tittel { font-size: 12px; color: var(--blekk-3); font-weight: 500; margin-bottom: 8px; }
+
+/* Malbyggeren ------------------------------------------------------------- */
+
+.malbygger { display: flex; flex-direction: column; gap: 16px; }
+.mal-seksjon { border: 1px solid var(--kant); border-radius: var(--r-kort); overflow: hidden; }
+.mal-seksjon-hode { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; background: var(--dis); border-bottom: 1px solid var(--kant); }
+.mal-seksjon-tittel {
+  flex: 1; min-width: 0; border: none; background: none; outline: none; padding: 6px 0;
+  font-family: var(--f-display); font-weight: 600; font-size: 14px; color: var(--blekk);
+}
+.mal-seksjon-tittel::placeholder { color: var(--blekk-4); font-weight: 500; }
+.mal-punkter { display: flex; flex-direction: column; }
+.mal-punkt {
+  display: grid; grid-template-columns: 170px minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  gap: 8px; align-items: center; padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--kant);
+}
+.mal-punkt:last-child { border-bottom: none; }
+.mal-punkt .felt-inn { height: 34px; }
+.mal-type { height: 34px; }
+.mal-enhet { max-width: 110px; }
+/* Uten ekstrafelt tar etiketten begge midtkolonnene. */
+.mal-punkt:not(:has(.mal-ekstra)) .mal-etikett { grid-column: 2 / 4; }
+.mal-pakrevd { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--blekk-3); white-space: nowrap; min-width: 78px; }
+.mal-verktoy { display: inline-flex; gap: 2px; }
+.mal-fjern {
+  width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--r-input);
+  color: var(--blekk-4);
+}
+.mal-fjern:hover:not(:disabled) { background: var(--fyll); color: var(--blekk); }
+.mal-fjern:disabled { opacity: 0.25; }
+.mal-legg-til {
+  display: inline-flex; align-items: center; gap: 6px; width: 100%;
+  padding: 9px 14px; font-size: 13px; font-weight: 500; color: var(--blekk-2);
+  border-top: 1px solid var(--kant); background: var(--papir);
+}
+.mal-legg-til:hover { background: var(--dis); color: var(--blekk); }

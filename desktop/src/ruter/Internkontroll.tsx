@@ -205,23 +205,9 @@ export function Internkontroll() {
         under={`${status.pa_plass} av ${status.kreves} skriftlige krav vedtatt · ${medInnhold} av ${punkter.length} punkter har rutine${forfalte.length > 0 ? ` · ${stk(forfalte.length, 'forfalt', 'forfalte')}` : ''}`}
       />
 
-      {/* To tall, ikke ett. «0 / 5» alene fikk folk til å tro at fem var alt
-          firmaet trengte. Det ene tallet svarer på om forskriftens
-          skriftlighetskrav er dekket; det andre på hvor langt hele systemet er
-          kommet. Setningen under sier hvilket som er hvilket. */}
-
-      <Kort tett>
-        <p className="kort-hjelp" style={{ maxWidth: 'none' }}>
-          <strong>De fem</strong> er internkontrollforskriften § 5 andre ledd nr. 4–8, som tredje ledd
-          krever skriftlig: mål, organisasjon, risikovurdering, avvikshåndtering og systematisk
-          gjennomgang. Det er punkt 1–5 i lista.{' '}
-          <span className="dempet-mer">
-            De øvrige er ikke valgfrie. Punkt 6–8 er nr. 1–3 i samme paragraf og like bindende, de har
-            bare ikke kravet om skriftlighet. Punkt 9–13 følger av FEK og FEL, der flere har egne
-            dokumentasjonskrav — faglig ansvarlig må vurdere hvilke.
-          </span>
-        </p>
-      </Kort>
+      {/* Forklaringen av «de fem» sto som et eget kort over lista og ble lest
+          hver gang for å ignoreres. Den står nå som én linje i listehodet;
+          hele begrunnelsen ligger i tom-tilstanden over, der den leses én gang. */}
 
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
 
@@ -230,7 +216,7 @@ export function Internkontroll() {
           <div className="liste">
             <div className="liste-verktoy">
               <div className="dempet-mer" style={{ fontSize: 12 }}>
-                {laster ? 'Henter …' : stk(punkter.length, 'punkt', 'punkter')}
+                {laster ? 'Henter …' : `${stk(punkter.length, 'punkt', 'punkter')} · 1–5 skal være skriftlige (§ 5)`}
               </div>
             </div>
             {/* Gruppert, ikke én lang rull. Fjorten punkter uten inndeling er
@@ -429,8 +415,8 @@ function Rutine({
             </div>
           ) : null}
 
-          <div className="seksjon" style={{ marginTop: 16 }}>
-            <div className="seksjon-tittel">Historikk</div>
+          <div className="rutine-historikk">
+            <div className="blokk-tittel">Historikk</div>
             <Historikk
               hentRevisjoner={hentRev}
               hentAudit={hentAud}
@@ -605,11 +591,6 @@ function Punkt({
         <div className="hero-linje">
           <span className="valgbar">{punkt.hjemmel || 'Ingen hjemmel oppgitt'}</span>
           <span>Versjon {punkt.gjeldende_versjon}</span>
-          <span>
-            {punkt.sist_gjennomgatt
-              ? `Gjennomgått ${dato(punkt.sist_gjennomgatt)}, neste ${dato(neste)}`
-              : 'Aldri gjennomgått'}
-          </span>
         </div>
       </div>
 
@@ -617,7 +598,7 @@ function Punkt({
         {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
 
         <div className="to-spalter">
-          <div className="stabel">
+          <div className="blokker">
             {/* LESER eller SKRIVER — aldri tvil om hvilken av delene.
                 I lesemodus er rutinen tekst på en flate, ikke et skrivefelt som
                 ser tomt ut fordi ingen har skrevet noe. I skrivemodus er hele
@@ -626,10 +607,9 @@ function Punkt({
                 endrer noe i ved uhell. */}
             {!redigerer ? (
               <>
-                <div className="seksjon">
-                  <div className="seksjon-hode">
-                    <div className="seksjon-tittel">Formål</div>
-                    <Merke stil="noytral">Kapittel · v{punkt.gjeldende_versjon}</Merke>
+                <div className="blokk">
+                  <div className="blokk-hode">
+                    <div className="blokk-tittel">Formål</div>
                     {kanSkrive ? (
                       <Knapp stil="stille" onClick={start}>
                         <Pencil size={15} strokeWidth={1.9} />
@@ -646,10 +626,10 @@ function Punkt({
                     rutinen for tavle, for høyden, for AUS og for graving, og
                     presset ned i ett tekstfelt blir de fire til et veggteppe
                     ingen leser. */}
-                <div className="seksjon">
-                  <div className="seksjon-hode">
-                    <div className="seksjon-tittel">Rutiner</div>
-                    <Merke stil="noytral">{stk(rutiner.length, 'rutine', 'rutiner')}</Merke>
+                <div className="blokk">
+                  <div className="blokk-hode">
+                    <div className="blokk-tittel">Rutiner</div>
+                    <span className="blokk-tall">{stk(rutiner.length, 'rutine', 'rutiner')}</span>
                     {kanSkrive ? (
                       <Knapp stil="stille" onClick={() => setNyRutine('')}>
                         <Plus size={15} strokeWidth={1.9} />
@@ -710,7 +690,7 @@ function Punkt({
                 </div>
               </>
             ) : (
-              <div className="seksjon seksjon-redigerer">
+              <div className="seksjon seksjon-redigerer" style={{ marginTop: 4 }}>
                 <div className="seksjon-hode">
                   <div className="seksjon-tittel">Redigerer kapittel {punkt.nummer}</div>
                   <Merke stil="endret">Blir versjon {punkt.gjeldende_versjon + 1}</Merke>
@@ -774,10 +754,10 @@ function Punkt({
             )}
           </div>
 
-          <div className="stabel">
-            <div className="seksjon">
-              <div className="seksjon-tittel">Gjennomgang</div>
-              <div className="stabel" style={{ gap: 14 }}>
+          <div className="blokker">
+            <div className="blokk">
+              <div className="blokk-hode"><div className="blokk-tittel">Gjennomgang</div></div>
+              <div className="fakta">
                 <div>
                   <div className="fakta-navn">Sist gjennomgått</div>
                   <div className="fakta-verdi">{punkt.sist_gjennomgatt ? dato(punkt.sist_gjennomgatt) : 'Aldri'}</div>
@@ -823,8 +803,8 @@ function Punkt({
               ) : null}
             </div>
 
-            <div className="seksjon">
-              <div className="seksjon-tittel">Skjemaer</div>
+            <div className="blokk">
+              <div className="blokk-hode"><div className="blokk-tittel">Skjemaer</div></div>
               {skjemaer.length === 0 ? (
                 <p className="dempet-mer">Ingen skjemaer knyttet til punktet.</p>
               ) : (
@@ -878,12 +858,10 @@ function Punkt({
             {/* Lesebekreftelse. § 5 andre ledd nr. 2 krever at folk kjenner
                 rutinene «herunder informasjon om endringer» — og det er
                 endringsdelen som er vanskelig å dokumentere. */}
-            <div className="seksjon">
-              <div className="seksjon-hode">
-                <div className="seksjon-tittel">Lest av</div>
-                <span className="dempet-mer" style={{ fontSize: 12 }}>
-                  {antall(harLest.length)} av {antall(relevante.length)}
-                </span>
+            <div className="blokk">
+              <div className="blokk-hode">
+                <div className="blokk-tittel">Lest av</div>
+                <span className="blokk-tall">{antall(harLest.length)} av {antall(relevante.length)}</span>
               </div>
 
               {punkt.status !== 'vedtatt' ? (
@@ -937,8 +915,8 @@ function Punkt({
 
             {/* Historikken står ÅPEN, ikke bak et trykk. Poenget med at et
                 IK-system er levende er at man ser at det lever. */}
-            <div className="seksjon">
-              <div className="seksjon-tittel">Historikk</div>
+            <div className="blokk">
+              <div className="blokk-hode"><div className="blokk-tittel">Historikk</div></div>
               <Historikk
                 hentRevisjoner={hentRev}
                 hentAudit={hentAud}
