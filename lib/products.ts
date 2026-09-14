@@ -1,6 +1,7 @@
 import { Q } from '@nozbe/watermelondb'
 import { useEffect, useMemo, useState } from 'react'
 import { database } from './db'
+import type { Katalogvare } from './katalog'
 import { Product } from './db/models/product'
 import { ProductPrice } from './db/models/product-price'
 import { StockMovement } from './db/models/stock-movement'
@@ -386,6 +387,46 @@ export async function finnEllerOpprettVare(input: {
       p.unit = input.enhet ?? 'stk'
       p.vatType = 'hoy'
       p.searchText = byggSokeTekst([navn, el])
+    }),
+  )
+  syncQuietly()
+  return ny
+}
+
+/**
+ * Ta en vare fra den felles katalogen inn i firmaets eget kartotek.
+ *
+ * Katalogen (lib/katalog.ts) er lesbar for alle og har ingen priser. Idet
+ * montøren velger en vare derfra, får firmaet sin egen `products`-rad med alt
+ * varekortet vet — og prisfeltene tomme til firmaets prisfil fyller dem. Finnes
+ * el-nummeret fra før, brukes den raden: katalogen skal aldri lage dubletter.
+ */
+export async function opprettFraKatalog(k: Katalogvare): Promise<Product> {
+  const collection = database.get<Product>('products')
+  const [finnes] = await collection.query(Q.where('elnummer', k.elnummer)).fetch()
+  if (finnes) return finnes
+  const ny = await database.write(async () =>
+    collection.create(p => {
+      p.name = k.navn
+      p.elnummer = k.elnummer
+      p.unit = k.enhet
+      p.vatType = 'hoy'
+      p.incomeAccount = '3000'
+      p.fabrikat = k.fabrikat
+      p.typeBetegnelse = k.type
+      p.discountGroup = k.rabattgruppe
+      p.ean = k.ean
+      p.nrf = k.nrf
+      p.imageUrl = k.bilde
+      p.fdvUrl = k.fdv
+      p.hmsUrl = k.hms
+      p.efobaseId = k.efobase
+      p.replacedBy = k.erstattesAv
+      p.salesPack = k.salgspakning
+      p.extra = Object.keys(k.ekstra).length ? JSON.stringify(k.ekstra) : null
+      p.searchText = byggSokeTekst([k.navn, k.elnummer, k.fabrikat, k.type, k.ean, k.nrf])
+      p.category = k.kategori
+      p.sourceSystem = `katalog:${k.grossist}`
     }),
   )
   syncQuietly()

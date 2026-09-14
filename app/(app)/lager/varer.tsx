@@ -13,8 +13,9 @@ import { PapirChip, usePapirFokus } from '../../../components/papir-surface'
 import { PromptSheet } from '../../../components/sheet'
 import {
   useVaresok, useFabrikater, useGrossister, useVareantall, useKategorier, useMenteDu,
-  formatBeholdning, finnEllerOpprettVare, type Varetreff, type Varefilter,
+  formatBeholdning, finnEllerOpprettVare, opprettFraKatalog, type Varetreff, type Varefilter,
 } from '../../../lib/products'
+import { useKatalogsok, type Katalogvare } from '../../../lib/katalog'
 import { sorteringLabel, type Sortering } from '../../../lib/product-search'
 import { useDemoAntall } from '../../../lib/pricefile/demo'
 import { formatKr, tilOre } from '../../../lib/invoicing'
@@ -150,6 +151,53 @@ function VareRute({ treff, bredde, indeks }: { treff: Varetreff; bredde: number;
   )
 }
 
+/**
+ * Vare fra den felles katalogen: ikke i firmaets kartotek ennå, uten pris.
+ * Trykk legger den inn (`opprettFraKatalog`) og åpner varekortet.
+ */
+function KatalogRad({ vare, first, last }: { vare: Katalogvare; first: boolean; last: boolean }) {
+  const [jobber, setJobber] = useState(false)
+  return (
+    <Pressable
+      disabled={jobber}
+      onPress={async () => {
+        setJobber(true)
+        try {
+          const p = await opprettFraKatalog(vare)
+          router.push({ pathname: '/(app)/lager/vare', params: { id: p.id } })
+        } finally {
+          setJobber(false)
+        }
+      }}
+      style={{
+        backgroundColor: colors.bg, marginHorizontal: spacing.screen,
+        paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+        flexDirection: 'row', alignItems: 'center',
+        borderTopLeftRadius: first ? radius.lg : 0, borderTopRightRadius: first ? radius.lg : 0,
+        borderBottomLeftRadius: last ? radius.lg : 0, borderBottomRightRadius: last ? radius.lg : 0,
+        borderTopWidth: first ? 0 : 0.5, borderTopColor: colors.separator,
+      }}
+    >
+      <View style={{
+        width: 44, height: 44, borderRadius: radius.md,
+        backgroundColor: vare.bilde ? colors.brandSoft : colors.fill,
+        alignItems: 'center', justifyContent: 'center', marginRight: spacing.md, overflow: 'hidden',
+      }}>
+        {vare.bilde
+          ? <Image source={{ uri: vare.bilde }} style={{ width: 44, height: 44 }} resizeMode="contain" />
+          : <Package size={19} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />}
+      </View>
+      <View style={{ flex: 1, marginRight: spacing.sm }}>
+        <Text style={t.bodyMedium} numberOfLines={2}>{vare.navn}</Text>
+        <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>
+          {[vare.fabrikat, `EL ${vare.elnummer}`, vare.utgaar ? 'utgått' : null].filter(Boolean).join(' · ')}
+        </Text>
+      </View>
+      <Plus size={18} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+    </Pressable>
+  )
+}
+
 export default function Varekartotek() {
   const insets = useSafeAreaInsets()
   // Kremet klokke og batteri på mørk grunn — settes tilbake når skjermen forlates.
@@ -168,6 +216,13 @@ export default function Varekartotek() {
 
   const [sortering, setSortering] = useState<Sortering>('relevans')
   const treff = useVaresok(sok, filter, sortering)
+  // Den felles katalogen (Solar, uten priser) under firmaets egne treff. Det
+  // som alt står i kartoteket vises ikke to ganger.
+  const katalog = useKatalogsok(sok, 20)
+  const katalogTreff = useMemo(() => {
+    const egne = new Set(treff.map(x => x.product.elnummer).filter(Boolean))
+    return katalog.treff.filter(k => !egne.has(k.elnummer))
+  }, [katalog.treff, treff])
   const fabrikater = useFabrikater()
   const grossister = useGrossister()
   const antall = useVareantall()
@@ -489,12 +544,26 @@ export default function Varekartotek() {
             ? <VareRute treff={item} bredde={ruteBredde} indeks={index} />
             : <VareRad treff={item} first={index === 0} last={index === treff.length - 1} />
         )}
+        ListFooterComponent={
+          sok.trim().length >= 2 && (katalogTreff.length > 0 || katalog.status.lasterNed) ? (
+            <View style={{ marginTop: treff.length > 0 ? spacing.xl : spacing.lg }}>
+              <Text style={[t.caption, { textTransform: 'uppercase', marginBottom: spacing.sm, marginHorizontal: spacing.screen + spacing.xs }]}>
+                {katalog.status.lasterNed ? 'Henter katalogen …' : `Fra katalogen · ${katalog.status.grossist}`}
+              </Text>
+              {katalogTreff.map((k, i) => (
+                <KatalogRad key={k.elnummer} vare={k} first={i === 0} last={i === katalogTreff.length - 1} />
+              ))}
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <Text style={[t.footnote, { textAlign: 'center', paddingHorizontal: spacing.screen, marginTop: spacing.xl }]}>
             {antall === 0
               ? 'Last inn en V4- eller P4-fil fra grossisten, så fylles kartoteket med navn, produsent, bilder og priser.'
               : sok.trim()
-                ? 'Ingen treff. Prøv el-nummer, produsent eller færre ord.'
+                ? katalogTreff.length > 0
+                  ? 'Ikke i kartoteket ditt ennå. Velg fra katalogen under, så legges varen inn.'
+                  : 'Ingen treff. Prøv el-nummer, produsent eller færre ord.'
                 : 'Ingen varer passer filteret.'}
           </Text>
         }

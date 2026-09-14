@@ -33,7 +33,13 @@ const BUCKET = 'ampex-tiles'
 // Prefikser klientene bruker i dag (lib/drawings-storage.ts, lib/scan-storage.ts,
 // lib/foto.ts, lib/archive/bundle.ts). Alt annet avvises.
 const FIRMA_PREFIKS = /^(drawings|room-scans|foto|arkiv)\//
-const DELT_PREFIKS = /^tale\//
+// katalog/ er det andre unntaket (2026-09-14): den FELLES varekatalogen —
+// én SQLite-fil per grossist bygget av en standard V4-varefil, uten priser
+// (docs/GROSSIST_INTEGRASJON.md, «Katalog felles, pris privat»). Alle
+// innloggede får LESE den; bare Ampex-administratorer (`ampex_admins`) får
+// SKRIVE, for det som ligger der vises for alle firmaer.
+const DELT_PREFIKS = /^(tale|katalog)\//
+const KUN_AMPEX_SKRIVER = /^katalog\//
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -58,7 +64,17 @@ export default {
     const method = (payload.method ?? 'get').toLowerCase()
     if (method !== 'put' && method !== 'get') return json({ error: 'method må være put eller get' }, 400)
     if (!key || !gyldigNokkel(key) || !(FIRMA_PREFIKS.test(key) || DELT_PREFIKS.test(key))) {
-      return json({ error: 'ugyldig key (må starte med drawings/, room-scans/, foto/, arkiv/ eller tale/)' }, 400)
+      return json({ error: 'ugyldig key (må starte med drawings/, room-scans/, foto/, arkiv/, tale/ eller katalog/)' }, 400)
+    }
+
+    // Skriving til den felles katalogen: kun Ampex-administratorer. Sjekken
+    // går mot basen med brukerens egen økt — `ampex_admins` har én policy,
+    // «du ser din egen rad», så et tomt svar er et nei.
+    if (method === 'put' && KUN_AMPEX_SKRIVER.test(key)) {
+      const { data: admin, error: adminFeil } = await ctx.supabase
+        .from('ampex_admins').select('user_id').maybeSingle()
+      if (adminFeil) return json({ error: adminFeil.message }, 500)
+      if (!admin) return json({ error: 'Bare Ampex kan skrive til katalogen.' }, 403)
     }
 
     // Firmaet kommer fra basen via brukerens egen økt. Ingen firma → ingen signatur.

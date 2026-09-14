@@ -4,7 +4,8 @@ import { Text, TextInput } from './text'
 import { Package, Plus, TrendingDown } from 'lucide-react-native'
 import { Pressable } from './pressable'
 import { Product } from '../lib/db/models/product'
-import { useVaresok, formatBeholdning } from '../lib/products'
+import { useVaresok, formatBeholdning, opprettFraKatalog } from '../lib/products'
+import { useKatalogsok } from '../lib/katalog'
 import { formatKr, tilOre } from '../lib/invoicing'
 import { colors, spacing, radius, sizes, type as papirType, type } from '../lib/theme'
 
@@ -36,6 +37,12 @@ export function ProductPicker({ onVelg, onNy, autoFocus, flate = 'verktoy' }: {
   const [sok, setSok] = useState('')
   const treff = useVaresok(sok)
   const q = sok.trim()
+  // Katalogen under firmaets egne treff: varen finnes hos grossisten selv om
+  // firmaet aldri har kjøpt den. Velges den, legges den inn i kartoteket idet
+  // den velges — uten pris, til prisfila fyller den.
+  const katalog = useKatalogsok(sok, 8)
+  const egne = new Set(treff.map(x => x.product.elnummer).filter(Boolean))
+  const katalogTreff = katalog.treff.filter(k => !egne.has(k.elnummer))
 
   return (
     <View>
@@ -74,7 +81,7 @@ export function ProductPicker({ onVelg, onNy, autoFocus, flate = 'verktoy' }: {
       {treff.length === 0 ? (
         <Text style={[t.footnote, { paddingHorizontal: spacing.lg }]}>
           {q
-            ? 'Ingen treff.'
+            ? katalogTreff.length > 0 ? 'Ikke i kartoteket ennå — velg fra katalogen under.' : 'Ingen treff.'
             : 'Ingen varer ennå. Last inn en prisfil fra grossisten, eller opprett varen når du tar den ut.'}
         </Text>
       ) : (
@@ -139,6 +146,49 @@ export function ProductPicker({ onVelg, onNy, autoFocus, flate = 'verktoy' }: {
               </View>
             </Pressable>
           ))}
+        </View>
+      )}
+
+      {katalogTreff.length > 0 && (
+        <View style={{ marginTop: spacing.md }}>
+          <Text style={[t.caption, { textTransform: 'uppercase', marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
+            {`Fra katalogen · ${katalog.status.grossist}`}
+          </Text>
+          <View style={{
+            backgroundColor: f.kort, borderRadius: radius.md,
+            borderWidth: 1, borderColor: f.kant, overflow: 'hidden',
+          }}>
+            {katalogTreff.map((k, i) => (
+              <Pressable
+                key={k.elnummer}
+                haptic="light"
+                onPress={async () => onVelg(await opprettFraKatalog(k))}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                  paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+                  borderBottomWidth: i === katalogTreff.length - 1 ? 0 : 0.5,
+                  borderBottomColor: f.kant,
+                }}
+              >
+                <View style={{
+                  width: 34, height: 34, borderRadius: radius.sm,
+                  backgroundColor: k.bilde ? colors.brandSoft : f.felt,
+                  alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                }}>
+                  {k.bilde
+                    ? <Image source={{ uri: k.bilde }} style={{ width: 34, height: 34 }} resizeMode="contain" />
+                    : <Package size={17} color={f.ikon} strokeWidth={sizes.lucideStroke} />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={t.body} numberOfLines={2}>{k.navn}</Text>
+                  <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>
+                    {[k.fabrikat, `EL ${k.elnummer}`, 'uten pris ennå'].filter(Boolean).join('  ·  ')}
+                  </Text>
+                </View>
+                <Plus size={16} color={f.hint} strokeWidth={sizes.lucideStroke} />
+              </Pressable>
+            ))}
+          </View>
         </View>
       )}
     </View>

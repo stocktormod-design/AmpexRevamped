@@ -283,11 +283,28 @@ number/choice/table/info/photo), `validateFirmSections()` er porten før lagring
 `opprettMal`/`lagreMalversjon` i `ik-lager.ts` skriver `form_templates` +
 `form_template_revisions` med klientgenerert uuid (tabellen har ingen default).
 «Ny versjon» på en eksisterende mal åpner gjeldende skjema og krever endringsnotat.
-Teksten «selve malen redigeres i appen» er borte. **Internkontroll-detaljen er
+Teksten «selve malen redigeres i appen» er borte. Byggeren ble skrevet om samme formiddag etter Tormod: «gir ikke helt mening for meg hva som er svar og spørsmål» — hvert punkt er nå SPØRSMÅLET øverst og «Svares med …» under, med en forhåndsvisning av skjemaet slik montøren ser det til høyre; problemlista vises først ved lagring og sier «spørsmål 3», ikke felt-id. Tom Skjemaer-flate går rett i byggeren. **Internkontroll-detaljen er
 flatet ut:** kort-i-kort er byttet med `.blokk` (luft + hårlinje), forklaringskortet
 om «de fem» er redusert til én linje i listehodet, hero-linja gjentar ikke
 gjennomgangen som står i sidespalten, rutinens historikk er en fotnote. Listen og
 looken er uendret. Ikke pushet ennå.
+
+## 14. september, formiddag — Solar-fila er her, katalogen på telefonen
+
+Jørn Normand (Solar) opprettet sFTP-testkonto; fila hentet med FTPS (eksplisitt TLS
+på 21, vanlig FTP gir 503). **126 739 varer, 0 avvik.** `npm run katalog:bygg` lager
+felles SQLite uten priser (43,4 MB / 11,5 MB gzip, FTS5 under 5 ms); `npm run
+katalog:publiser` legger den i R2 under `katalog/` (r2-sign v16: GET for alle
+innloggede, PUT kun ampex_admins — krever AMPEX_ADMIN_EPOST/PASSORD i .env.local,
+**ikke kjørt ennå**: Tormod må kjøre den, han er eneste admin). `expo-sqlite` lagt
+til (native modul → appen må bygges på nytt). `lib/katalog.ts` laster ned og søker;
+Lager → Varer og ProductPicker viser katalogtreff under egne varer, trykk legger
+varen inn uten pris (`opprettFraKatalog`). Svar sendt til Jørn med spørsmål om
+oppdateringsfrekvens og videre bruk av kontoen. **Boligmappa:** de tre blokkerne
+(redirect-URI, PROPERTY_NOT_FOUND, filopplasting) sendt til
+integrasjon@ambita.atlassian.net med kopi til integrasjon@boligmappa.atlassian.net
+og Shaibal — svaret fra 11.09 var ubesvart. Detaljer i docs/GROSSIST_INTEGRASJON.md
+(«Talt opp»). Katalogsøket er ikke verifisert på enhet/simulator ennå.
 
 ## Åpne tråder
 
