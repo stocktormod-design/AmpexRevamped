@@ -1010,7 +1010,13 @@ textarea.skrivefelt-lav { height: 110px; }
 
 /* Malbyggeren ------------------------------------------------------------- */
 
-.malbygger { display: flex; flex-direction: column; gap: 16px; }
+/* To spalter: det du skriver til venstre, skjemaet slik montøren ser det til
+   høyre. Forhåndsvisningen følger med når lista blir lang (sticky). */
+.malbygger { display: flex; flex-direction: column; }
+.malbygger-spalter { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+@media (max-width: 1240px) { .malbygger-spalter { grid-template-columns: minmax(0, 1fr); } .mal-vis { position: static; } }
+.malbygger-skjema { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
 .mal-seksjon { border: 1px solid var(--kant); border-radius: var(--r-kort); overflow: hidden; }
 .mal-seksjon-hode { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; background: var(--dis); border-bottom: 1px solid var(--kant); }
 .mal-seksjon-tittel {
@@ -1018,20 +1024,33 @@ textarea.skrivefelt-lav { height: 110px; }
   font-family: var(--f-display); font-weight: 600; font-size: 14px; color: var(--blekk);
 }
 .mal-seksjon-tittel::placeholder { color: var(--blekk-4); font-weight: 500; }
-.mal-punkter { display: flex; flex-direction: column; }
+
+/* Ett spørsmål = to linjer: SPØRSMÅLET stort øverst, og under det hva det
+   svares med. Nummeret til venstre er det samme montøren ser. */
 .mal-punkt {
-  display: grid; grid-template-columns: 170px minmax(0, 1fr) minmax(0, 1fr) auto auto;
-  gap: 8px; align-items: center; padding: 6px 8px 6px 14px;
-  border-bottom: 1px solid var(--kant);
+  display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px 10px; align-items: start;
+  padding: 12px 8px 12px 14px; border-bottom: 1px solid var(--kant);
 }
-.mal-punkt:last-child { border-bottom: none; }
-.mal-punkt .felt-inn { height: 34px; }
-.mal-type { height: 34px; }
-.mal-enhet { max-width: 110px; }
-/* Uten ekstrafelt tar etiketten begge midtkolonnene. */
-.mal-punkt:not(:has(.mal-ekstra)) .mal-etikett { grid-column: 2 / 4; }
-.mal-pakrevd { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--blekk-3); white-space: nowrap; min-width: 78px; }
-.mal-verktoy { display: inline-flex; gap: 2px; }
+.mal-punkt:last-of-type { border-bottom: none; }
+.mal-nr {
+  margin-top: 6px; width: 24px; height: 24px; display: grid; place-items: center;
+  border-radius: var(--r-pille); background: var(--fyll); color: var(--blekk-2);
+  font-family: var(--f-mono); font-size: 11px; font-weight: 500;
+}
+.mal-punkt-kropp { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mal-sporsmal {
+  width: 100%; border: none; border-bottom: 1px solid var(--kant); background: none; outline: none;
+  padding: 6px 0; font-size: 15px; font-weight: 500; color: var(--blekk);
+}
+.mal-sporsmal::placeholder { color: var(--blekk-4); font-weight: 400; }
+.mal-sporsmal:focus { border-bottom-color: var(--blekk); }
+.mal-svar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mal-svar-etikett { color: var(--blekk-3); font-size: 12px; white-space: nowrap; }
+.mal-type { height: 32px; font-size: 13px; }
+.mal-ekstra { height: 32px; font-size: 13px; flex: 1; min-width: 180px; }
+.mal-enhet { flex: 0 1 120px; min-width: 100px; }
+.mal-pakrevd { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--blekk-3); white-space: nowrap; margin-left: auto; }
+.mal-verktoy { display: inline-flex; gap: 2px; margin-top: 2px; }
 .mal-fjern {
   width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--r-input);
   color: var(--blekk-4);
@@ -1044,3 +1063,43 @@ textarea.skrivefelt-lav { height: 110px; }
   border-top: 1px solid var(--kant); background: var(--papir);
 }
 .mal-legg-til:hover { background: var(--dis); color: var(--blekk); }
+
+/* Forhåndsvisningen: et lite ark i dokumentgrå, som i appen. Ikke appens
+   renderer, men samme rekkefølge og samme slags svarfelt. */
+.mal-vis { position: sticky; top: 0; }
+.mal-vis-hode { color: var(--blekk-3); font-size: 12px; font-weight: 500; margin-bottom: 8px; }
+.mal-vis-ark {
+  background: var(--dis); border: 1px solid var(--kant); border-radius: 18px;
+  padding: 18px 16px 22px; display: flex; flex-direction: column; gap: 14px;
+  max-height: calc(100vh - 220px); overflow: auto;
+}
+.mal-vis-tittel { font-family: var(--f-display); font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+.mal-vis-tom { color: var(--blekk-4); font-weight: 400; }
+.mal-vis-del { display: flex; flex-direction: column; gap: 12px; }
+.mal-vis-del-tittel { color: var(--blekk-3); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+.mal-vis-punkt { display: flex; flex-direction: column; gap: 6px; }
+.mal-vis-sporsmal { display: flex; align-items: baseline; gap: 6px; font-size: 13px; font-weight: 500; line-height: 1.35; }
+.mal-vis-nr { color: var(--blekk-3); font-family: var(--f-mono); font-size: 11px; min-width: 14px; }
+.mal-vis-krav { color: var(--gul); font-weight: 600; }
+.mal-vis-info { color: var(--blekk-2); font-size: 12px; line-height: 1.45; margin: 0; }
+.mal-vis-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 20px; }
+.mal-vis-chip {
+  padding: 5px 10px; border-radius: var(--r-pille); font-size: 12px;
+  background: var(--papir); border: 1px solid var(--kant-sterk); color: var(--blekk);
+}
+.mal-vis-chip-tom { color: var(--blekk-4); border-style: dashed; }
+.mal-vis-felt {
+  margin-left: 20px; height: 34px; border-radius: var(--r-input);
+  background: var(--papir); border: 1px solid var(--kant-sterk);
+  display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 12px; color: var(--blekk-3);
+}
+.mal-vis-hoy { height: 64px; align-items: flex-start; padding-top: 8px; }
+.mal-vis-tall { justify-content: space-between; }
+.mal-vis-enhet { color: var(--blekk-2); font-family: var(--f-mono); }
+.mal-vis-bilde { border-style: dashed; justify-content: center; }
+.mal-vis-tabell {
+  margin-left: 20px; display: flex; gap: 1px; background: var(--kant-sterk);
+  border: 1px solid var(--kant-sterk); border-radius: var(--r-input); overflow: hidden; font-size: 11px;
+}
+.mal-vis-tabell > .mal-vis-tom { background: var(--papir); padding: 8px 10px; flex: 1; }
+.mal-vis-kolonne { flex: 1; background: var(--papir); padding: 7px 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

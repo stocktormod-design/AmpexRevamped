@@ -17,7 +17,7 @@ import {
   type Skjemamal,
 } from '@/lib/ik-lager'
 import { Historikk } from '@/ui/Historikk'
-import { antall, Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
+import { antall, Beskjed, Felt, Knapp, Merke, Sidehode, stk } from '@/ui/kit'
 import { Malbygger, tomSeksjon, type Malutkast } from '@/ui/Malbygger'
 
 /**
@@ -114,26 +114,17 @@ export function Skjemaer() {
     </Knapp>
   ) : null
 
-  if (!laster && maler.length === 0 && !nyMal) {
+  // Tom flate: rett i byggeren. En forklaring på hva en mal er, er dårligere
+  // enn å se byggeren og forhåndsvisningen ved siden av hverandre.
+  const tom = !laster && maler.length === 0
+  useEffect(() => { if (tom && kanSkrive) setNyMal(true) }, [tom, kanSkrive])
+
+  if (tom && !kanSkrive) {
     return (
       <>
-        <Sidehode tittel="Skjemaer" under="Firmaets maler" handling={nyMalKnapp} />
+        <Sidehode tittel="Skjemaer" under="Firmaets maler" />
         {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
-        <Kort tittel="Ingen skjemamaler ennå">
-          <p className="kort-hjelp">
-            En mal er firmaets eget skjema — sluttkontroll, SJA, kursfortegnelse — som montøren
-            fyller ut på ordren. Lag den her, punkt for punkt, og knytt den til riktig punkt i
-            internkontrollen. Ampex-malene i appen finnes uansett.
-          </p>
-          {kanSkrive ? (
-            <div style={{ marginTop: 16 }}>
-              <Knapp stil="merke" onClick={() => setNyMal(true)}>
-                <Plus size={15} strokeWidth={2} />
-                Lag den første malen
-              </Knapp>
-            </div>
-          ) : null}
-        </Kort>
+        <p className="dempet-mer">Ingen skjemamaler ennå.</p>
       </>
     )
   }
@@ -202,7 +193,7 @@ export function Skjemaer() {
                   <div className="hero-topp"><span className="hero-nr">Ny mal</span></div>
                   <h1 className="hero-tittel">Nytt skjema</h1>
                   <div className="hero-linje">
-                    <span>Blir versjon 1. Montøren får den i appen ved neste synk.</span>
+                    <span>Skriv spørsmålene montøren skal svare på. Til høyre ser du skjemaet slik det blir.</span>
                   </div>
                 </div>
                 <div className="detalj-kropp">
@@ -211,7 +202,7 @@ export function Skjemaer() {
                     kategorier={kategorier}
                     lagreTekst="Lagre malen"
                     onLagre={opprett}
-                    onAvbryt={() => setNyMal(false)}
+                    onAvbryt={() => { if (!tom) setNyMal(false) }}
                   />
                 </div>
               </>
