@@ -1,4 +1,5 @@
-<svg width="1024" height="1024" viewBox="0 0 1254 1254" xmlns="http://www.w3.org/2000/svg"><rect width="1254" height="1254" rx="268" fill="#211C15"/><g transform="translate(0.000000,1254.000000) scale(0.100000,-0.100000)" fill="#B98A5C"><path d="M5463 10197 c-5 -7 -34 -68 -65 -137 -123 -273 -667 -1460 -1498
+<!-- Fane-ikon: sort merke på hvit flis, uavhengig av tema. Kilde: assets/ampex-icon-black-on-white.svg -->
+<svg width="1024" height="1024" viewBox="0 0 1254 1254" xmlns="http://www.w3.org/2000/svg"><rect width="1254" height="1254" rx="280" fill="#FFFFFF"/><rect x="14" y="14" width="1226" height="1226" rx="268" fill="none" stroke="#D1D1D6" stroke-width="12"/><g transform="translate(0.000000,1254.000000) scale(0.100000,-0.100000)" fill="#000000"><path d="M5463 10197 c-5 -7 -34 -68 -65 -137 -123 -273 -667 -1460 -1498
 -3270 -224 -489 -463 -1006 -597 -1295 -65 -139 -173 -373 -648 -1410 -136
 -297 -286 -623 -332 -725 -47 -102 -170 -370 -274 -596 -104 -226 -189 -416
 -189 -423 0 -6 3 -11 6 -11 3 0 99 73 212 163 290 229 1506 1174 1853 1439 69
