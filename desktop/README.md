@@ -60,7 +60,12 @@ igjen. Regel 2 i `CLAUDE.md` gjelder montørappens skjermer.
 
 ## Hva som finnes nå
 
-Åtte flater i tre grupper. **Alt er lesing** bortsett fra prisfilimporten.
+Ni flater i menyen, fire grupper. **Alt er lesing** bortsett fra prisfilimporten
+og det som gjelder deg selv på Meg.
+
+**Timer, Skann og Prisfiler er tatt ut av menyen (14. september)** — koden
+ligger fortsatt i `src/ruter/`, det er bare radene i `RUTER` (App.tsx) som er
+borte. Dine egne timer ligger på Meg.
 
 **Arbeid** — Ordre (liste og detalj side om side, fem faner, statusfilter),
 Prosjekter (rom, oppgaver, deltakere), Tilbud (sum og effektiv status), Timer
@@ -70,6 +75,14 @@ Prosjekter (rom, oppgaver, deltakere), Tilbud (sum og effektiv status), Timer
 prissammenligning), Prisfiler (import, og alder på siste import per grossist).
 
 **Firma** — innstillinger, ansatte med rolle, bake-noder.
+
+**Meg** — tema (hvit er standard, papir/kobber som valg, lagret per maskin i
+localStorage — se `src/lib/tema.ts`), dine timer uke for uke,
+totrinnsbekreftelse (koble til og fra), utlogging og sletting av egen bruker.
+Slettingen går gjennom `supabase/functions/slett-bruker`: passordet sjekkes på
+serveren, profilen anonymiseres og soft-slettes, innloggingen slettes mykt i
+GoTrue, og timer/signaturer beholdes (bokføringsloven). Den eneste eieren i et
+firma med andre ansatte får ikke slette seg.
 
 ## Roller
 

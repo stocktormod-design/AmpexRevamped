@@ -349,6 +349,25 @@ export async function hentTimerIPerioden(fra: Date, til: Date): Promise<Timerad[
   ) as Timerad[]
 }
 
+/**
+ * Bare én persons timer. Brukes av Meg, og skiller seg fra
+ * `hentTimerIPerioden` ved at den ikke drar hele firmaets uke over nettet for
+ * å vise sju tall — og ved at den ikke trenger `timer.les`: dine timer er dine.
+ */
+export async function hentMineTimer(brukerId: string, fra: Date, til: Date): Promise<Timerad[]> {
+  return sjekk(
+    await supabase
+      .from('time_entries')
+      .select('id,user_id,user_name,date,hours,billable,activity_id,order_id')
+      .eq('user_id', brukerId)
+      .gte('date', fra.toISOString())
+      .lte('date', til.toISOString())
+      .is('deleted_at', null)
+      .order('date'),
+    'Kunne ikke lese timene dine',
+  ) as Timerad[]
+}
+
 export type Aktivitet = { id: string; name: string; billable: boolean }
 
 /** Aktivitetene timene føres på. Arkiverte er ute — de skal ikke kunne velges. */

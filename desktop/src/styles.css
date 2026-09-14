@@ -67,42 +67,53 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 :root {
+  /* ── HVITT OG SORT er standard (byttet 2026-09-14) ─────────────────────────
+   *
+   * Samme beslutning som montørappen tok 6. september (regel 9 i CLAUDE.md,
+   * `lib/tokens.js`): grunnflaten er hvit, blekket er sort, ÉN grå grupperer,
+   * og platen skiller seg fra grunnen med hårlinje og en nøytral skygge — ikke
+   * med farge. Kobberet er borte fra kromet; `--kobber` peker på sort, så alt
+   * som var «den ene aksenten» nå er den ene SORTE handlingen.
+   *
+   * Papir og kobber lever videre som valgbart tema — se `[data-tema='papir']`
+   * nederst i blokka og `src/lib/tema.ts`. Variabelnavnene er beholdt med
+   * vilje: 880 linjer stilark skal ikke skrives om for et fargebytte, og
+   * navnet «kobber» forteller fortsatt hva rollen er (aksent), ikke kuløren.
+   */
+
   /* Flater */
-  --lerret: #EFEAE1;
+  --lerret: #FFFFFF;
   --papir: #FFFFFF;
-  --dis: #F7F4EE;
-  --fyll: #E5DDCE;
+  --dis: #F5F5F7;
+  --fyll: #F2F2F4;
 
   /* Hårlinjene. Kanten er systemet — ikke skyggen. */
-  --kant: #DED6C7;
-  --kant-sterk: #CDC4B1;
+  --kant: #E5E5EA;
+  --kant-sterk: #D1D1D6;
 
-  /* Blekk.
-   *
-   * `paperSecondary #96896F` og `paperTertiary #C9C0AC` er mørknet. De er valgt
-   * for en telefonskjerm man holder 30 cm unna; på en kontorskjerm i et opplyst
-   * rom lander de på 3,4:1 og 1,9:1 mot hvitt, altså under kravet. Samme rolle,
-   * justert for underlaget — tredje gang samme argument brukes i denne fila,
-   * og alltid samme vei: fargen skal LESES der den står. */
-  --blekk: #2E281F;    /* 13,1:1 */
-  --blekk-2: #5C5340;  /*  7,6:1 — sekundærtekst */
-  --blekk-3: #776B55;  /*  5,3:1 — hjelpetekst, var #96896F */
-  --blekk-4: #9A8E76;  /*  3,6:1 — kun plassholder og deaktivert, aldri innhold */
+  /* Blekk. Sort, og fire trinn ned. Kontrast mot hvitt i parentes. */
+  --blekk: #1D1D1F;    /* 16,1:1 */
+  --blekk-2: #48484A;  /*  8,6:1 — sekundærtekst */
+  --blekk-3: #6E6E73;  /*  4,7:1 — hjelpetekst */
+  --blekk-4: #AEAEB2;  /*  2,2:1 — kun plassholder og deaktivert, aldri innhold */
 
-  /* Den ene aksenten. Erstatter electric blue og deep sapphire. */
-  --kobber: #A97C4F;      /* ikon og kanter */
-  --kobber-dyp: #7A5630;  /* 4,8:1 mot hvitt — all kobbertekst */
-  --kobber-flate: rgba(169, 124, 79, 0.10);
-  --kobber-kant: rgba(169, 124, 79, 0.34);
+  /* Den ene aksenten er SORT. Sort på hvitt leser som beslutning. */
+  --kobber: #1D1D1F;
+  --kobber-dyp: #1D1D1F;
+  --kobber-flate: rgba(29, 29, 31, 0.06);
+  --kobber-kant: rgba(29, 29, 31, 0.22);
 
-  /* Semantikk, mørknet for papir. Betydningen er uendret. */
-  --gronn: #1E7A40;
-  --gronn-flate: rgba(30, 122, 64, 0.10);
-  --gul: #9A5B00;
-  --gul-flate: rgba(154, 91, 0, 0.10);
-  --rod: #A32B22;
-  --rod-flate: rgba(163, 43, 34, 0.09);
-  --skifer: #3F4B5C;
+  /* Semantikk. Farge = mening, aldri pynt. Verdiene er tokens.js sine. */
+  --gronn: #1F7A3F;
+  --gronn-flate: rgba(31, 122, 63, 0.10);
+  --gronn-kant: rgba(31, 122, 63, 0.24);
+  --gul: #B4530A;
+  --gul-flate: rgba(180, 83, 10, 0.10);
+  --gul-kant: rgba(180, 83, 10, 0.24);
+  --rod: #B3261E;
+  --rod-flate: rgba(179, 38, 30, 0.08);
+  --rod-kant: rgba(179, 38, 30, 0.24);
+  --skifer: #48484A;
 
   /* Radius: fire trinn, ingen ad hoc-avrunding. */
   --r-input: 6px;
@@ -111,29 +122,32 @@
   --r-stor: 16px;
   --r-pille: 9999px;
 
-  /* Skygger. Tre tilfeller, ikke flere. */
-  --skygge-knapp: rgba(46, 40, 31, 0.06) 0 1px 2px 0;
-  --skygge-ring: rgba(46, 40, 31, 0.08) 0 0 0 4px;
+  /* Skygger. Nøytrale og knapt synlige — det er de som løfter platen fra den
+     hvite grunnen når kanten alene ikke gjør det. */
+  --skygge-knapp: rgba(0, 0, 0, 0.06) 0 1px 2px 0;
+  --skygge-ring: rgba(29, 29, 31, 0.08) 0 0 0 4px;
+  --skygge-kort: rgba(0, 0, 0, 0.04) 0 1px 2px 0, rgba(0, 0, 0, 0.03) 0 2px 8px 0;
+  --skygge-logginn: rgba(0, 0, 0, 0.10) 0 20px 44px -14px;
+  --skygge-skuff: rgba(0, 0, 0, 0.08) -10px 0 30px 0;
+  --dim: rgba(29, 29, 31, 0.24);
 
-  /* ── Kromet er BRUNT ────────────────────────────────────────────────────
+  /* ── Kromet er den ene grå ──────────────────────────────────────────────
    *
-   * Regel 9 sier at brunt er verktøyflaten og kremet papir er dokumentet. Det
-   * er nøyaktig skillet mellom sidemenyen og innholdet: menyen er verktøyet du
-   * navigerer med, flaten til høyre er dokumentet du leser og skriver.
-   *
-   * Verdiene er montørappens egne (`tokens.js`: canvas, label, secondaryLabel,
-   * tertiaryLabel, border). Kobberet er lysnet fra #A97C4F til #B98A5C, samme
-   * kulør — det er den samme justeringen som gjøres andre veien på papiret, og
-   * grunnen er at #A97C4F forsvinner mot brunt.
+   * Sidemenyen er verktøyet, flaten til høyre er dokumentet. I det hvite
+   * temaet skilles de med tokens.js sin `groupedBg` og en hårlinje — ikke med
+   * en mørk flate. Aktivt valg er en svak sort flate med sort tekst; en sort
+   * pille her ville konkurrert med den ene sorte handlingen på flaten.
    */
-  --krom: #211C15;
-  --krom-hev: rgba(255, 255, 255, 0.06);
-  --krom-kant: rgba(255, 255, 255, 0.08);
-  --krom-blekk: #F6F1E8;
-  --krom-blekk-2: rgba(246, 241, 232, 0.58);
-  --krom-blekk-3: rgba(246, 241, 232, 0.34);
-  --krom-kobber: #B98A5C;
-  --krom-kobber-flate: rgba(185, 138, 92, 0.16);
+  --krom: #F5F5F7;
+  --krom-hev: rgba(29, 29, 31, 0.05);
+  --krom-kant: #E5E5EA;
+  --krom-blekk: #1D1D1F;
+  --krom-blekk-2: #48484A;
+  --krom-blekk-3: #6E6E73;
+  --krom-kobber: #1D1D1F;
+  --krom-kobber-flate: rgba(29, 29, 31, 0.08);
+  --krom-rull: rgba(29, 29, 31, 0.16);
+  --krom-rull-hev: rgba(29, 29, 31, 0.28);
 
   --f-display: 'Schibsted Grotesk', 'Geist Sans', system-ui, sans-serif;
   --f-ui: 'Geist Sans', system-ui, sans-serif;
@@ -143,6 +157,63 @@
   --rad: 44px;
 
   color-scheme: light;
+}
+
+/* ── PAPIR OG KOBBER, som valgbart tema ─────────────────────────────────────
+ *
+ * Verdiene under er kontorets opprinnelige palett (august 2026), beholdt slik
+ * de sto. Slås på med `data-tema="papir"` på <html>; se `src/lib/tema.ts` og
+ * Meg → Utseende. Kommentarene om kontrast og valg står i git-historikken til
+ * denne fila. */
+:root[data-tema='papir'] {
+  --lerret: #EFEAE1;
+  --papir: #FFFFFF;
+  --dis: #F7F4EE;
+  --fyll: #E5DDCE;
+
+  --kant: #DED6C7;
+  --kant-sterk: #CDC4B1;
+
+  --blekk: #2E281F;
+  --blekk-2: #5C5340;
+  --blekk-3: #776B55;
+  --blekk-4: #9A8E76;
+
+  --kobber: #A97C4F;
+  --kobber-dyp: #7A5630;
+  --kobber-flate: rgba(169, 124, 79, 0.10);
+  --kobber-kant: rgba(169, 124, 79, 0.34);
+
+  --gronn: #1E7A40;
+  --gronn-flate: rgba(30, 122, 64, 0.10);
+  --gronn-kant: rgba(30, 122, 64, 0.2);
+  --gul: #9A5B00;
+  --gul-flate: rgba(154, 91, 0, 0.10);
+  --gul-kant: rgba(154, 91, 0, 0.2);
+  --rod: #A32B22;
+  --rod-flate: rgba(163, 43, 34, 0.09);
+  --rod-kant: rgba(163, 43, 34, 0.2);
+  --skifer: #3F4B5C;
+
+  --skygge-knapp: rgba(46, 40, 31, 0.06) 0 1px 2px 0;
+  --skygge-ring: rgba(46, 40, 31, 0.08) 0 0 0 4px;
+  --skygge-kort: none;
+  --skygge-logginn: rgba(0, 0, 0, 0.32) 0 20px 44px -14px;
+  --skygge-skuff: rgba(46, 40, 31, 0.10) -10px 0 30px 0;
+  --dim: rgba(46, 40, 31, 0.28);
+
+  /* Kromet er BRUNT: montørappens gamle verktøyflate, kobberet lysnet så det
+     ikke forsvinner mot brunt. */
+  --krom: #211C15;
+  --krom-hev: rgba(255, 255, 255, 0.06);
+  --krom-kant: rgba(255, 255, 255, 0.08);
+  --krom-blekk: #F6F1E8;
+  --krom-blekk-2: rgba(246, 241, 232, 0.58);
+  --krom-blekk-3: rgba(246, 241, 232, 0.34);
+  --krom-kobber: #B98A5C;
+  --krom-kobber-flate: rgba(185, 138, 92, 0.16);
+  --krom-rull: rgba(255, 255, 255, 0.14);
+  --krom-rull-hev: rgba(255, 255, 255, 0.24);
 }
 
 html, body, #rot { height: 100%; margin: 0; }
@@ -204,7 +275,7 @@ button:disabled { cursor: default; opacity: 0.4; }
   padding: 12px;
   background: var(--krom);
   color: var(--krom-blekk-2);
-  border-right: 1px solid var(--krom);
+  border-right: 1px solid var(--krom-kant);
 }
 
 .merke {
@@ -259,7 +330,8 @@ button:disabled { cursor: default; opacity: 0.4; }
 }
 .ikonknapp:hover { background: var(--dis); color: var(--blekk); border-color: var(--kant-sterk); }
 
-.bruker { display: flex; align-items: center; gap: 10px; padding-left: 4px; }
+.bruker { display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 4px; border-radius: var(--r-knapp); text-decoration: none; color: inherit; }
+.bruker:hover { background: var(--kobber-flate); }
 .bruker-merke {
   width: 34px; height: 34px; border-radius: var(--r-pille); flex: none;
   background: var(--kobber-flate); border: 1px solid var(--kobber-kant); color: var(--kobber-dyp);
@@ -273,6 +345,9 @@ button:disabled { cursor: default; opacity: 0.4; }
 .kort {
   background: var(--papir); border: 1px solid var(--kant);
   border-radius: var(--r-kort); padding: 16px;
+  /* Hvitt på hvitt: kanten alene er for lite, skyggen alene for mye. Sammen
+     er de «platen» fra regel 9. Papirtemaet setter den til none. */
+  box-shadow: var(--skygge-kort);
 }
 .kort-tett { padding: 12px 16px; }
 .kort-flat { padding: 0; overflow: hidden; }
@@ -309,7 +384,9 @@ button:disabled { cursor: default; opacity: 0.4; }
 }
 /* Den ene fylte handlingen per flate. Kobber, ikke nesten-svart: det er Ampex'
    forpliktende farge, og den skal fortjene oppmerksomheten. */
-.knapp-merke { background: var(--kobber); color: #FFFFFF; box-shadow: var(--skygge-knapp); }
+.knapp-merke { background: var(--kobber); color: var(--papir); box-shadow: var(--skygge-knapp); }
+/* Farlig handling — sletting. Rød er mening, ikke pynt, og den er aldri fylt. */
+.knapp-fare { background: var(--rod-flate); color: var(--rod); border: 1px solid var(--rod-kant); }
 .knapp-merke:hover:not(:disabled) { background: var(--kobber-dyp); }
 .knapp-primar { background: var(--blekk); color: var(--papir); box-shadow: var(--skygge-knapp); }
 .knapp-primar:hover:not(:disabled) { filter: brightness(1.25); }
@@ -379,9 +456,9 @@ textarea.skrivefelt-lav { height: 110px; }
 .merkelapp-noytral { background: var(--dis); color: var(--blekk-2); border: 1px solid var(--kant); }
 
 .beskjed { padding: 12px 14px; border-radius: var(--r-knapp); border: 1px solid; }
-.beskjed-feil { background: var(--rod-flate); border-color: rgba(163, 43, 34, 0.2); color: var(--rod); }
-.beskjed-varsel { background: var(--gul-flate); border-color: rgba(154, 91, 0, 0.2); color: var(--gul); }
-.beskjed-ok { background: var(--gronn-flate); border-color: rgba(30, 122, 64, 0.2); color: var(--gronn); }
+.beskjed-feil { background: var(--rod-flate); border-color: var(--rod-kant); color: var(--rod); }
+.beskjed-varsel { background: var(--gul-flate); border-color: var(--gul-kant); color: var(--gul); }
+.beskjed-ok { background: var(--gronn-flate); border-color: var(--gronn-kant); color: var(--gronn); }
 
 .teller {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px;
@@ -441,7 +518,7 @@ textarea.skrivefelt-lav { height: 110px; }
   border: 1px solid var(--kant);
   transition: color 100ms ease, border-color 100ms ease, background 100ms ease;
 }
-.inviter-fjern:hover { color: var(--rod); border-color: rgba(163, 43, 34, 0.3); background: var(--rod-flate); }
+.inviter-fjern:hover { color: var(--rod); border-color: var(--rod-kant); background: var(--rod-flate); }
 
 /* ── Totrinnsbekreftelse ─────────────────────────────────────────────────── */
 
@@ -530,14 +607,14 @@ textarea.skrivefelt-lav { height: 110px; }
   letter-spacing: -0.02em;
   color: var(--krom-blekk);
 }
-.logginn-under { font-size: 13px; color: rgba(246, 241, 232, 0.68); }
+.logginn-under { font-size: 13px; color: var(--krom-blekk-2); }
 .logginn-kort {
   padding: 26px;
   background: var(--papir);
   border: 1px solid var(--kant);
   border-radius: var(--r-stor);
   /* Loefter papiret fra kromet. Uten skyggen ser kortet klistret ut. */
-  box-shadow: rgba(0, 0, 0, 0.32) 0 20px 44px -14px;
+  box-shadow: var(--skygge-logginn);
 }
 /* Knappene fyller kortet. Et halvbredt «Logg inn» ville vaert det eneste
    elementet paa skjermen som ikke fulgte kolonna. */
@@ -569,7 +646,7 @@ textarea.skrivefelt-lav { height: 110px; }
   font-size: 12px;
   line-height: 1.5;
   text-align: center;
-  color: rgba(246, 241, 232, 0.58);
+  color: var(--krom-blekk-3);
 }
 
 /* Ordre: liste og detalj ------------------------------------------------- */
@@ -745,14 +822,14 @@ textarea.skrivefelt-lav { height: 110px; }
 
 .skuff-bak {
   position: fixed; inset: 0; z-index: 50;
-  background: rgba(46, 40, 31, 0.28);
+  background: var(--dim);
   display: flex; justify-content: flex-end;
 }
 .skuff {
   width: 400px; max-width: 92vw; height: 100%;
   display: flex; flex-direction: column; min-height: 0;
   background: var(--papir); border-left: 1px solid var(--kant-sterk);
-  box-shadow: rgba(46, 40, 31, 0.10) -10px 0 30px 0;
+  box-shadow: var(--skygge-skuff);
 }
 .skuff-hode { display: flex; align-items: center; gap: 12px; padding: 20px 20px 16px; }
 .skuff-merke {
@@ -789,8 +866,8 @@ textarea.skrivefelt-lav { height: 110px; }
   border: 3.5px solid transparent; background-clip: content-box;
 }
 *::-webkit-scrollbar-thumb:hover { background: var(--blekk-4); background-clip: content-box; }
-.rail::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); background-clip: content-box; }
-.rail::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.24); background-clip: content-box; }
+.rail::-webkit-scrollbar-thumb { background: var(--krom-rull); background-clip: content-box; }
+.rail::-webkit-scrollbar-thumb:hover { background: var(--krom-rull-hev); background-clip: content-box; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
@@ -877,3 +954,37 @@ textarea.skrivefelt-lav { height: 110px; }
 .rutine-navn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rutine-navn:hover > span { color: var(--kobber); }
 .rutine .dokument, .rutine .dokument-tom { margin-top: 12px; }
+
+/* Meg ------------------------------------------------------------------- */
+
+/* Temavalget: to små flater som viser seg selv, ikke to radioknapper med
+   navn. Den valgte får sort kant — samme regel som valgt filterchip. */
+.temaer { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tema {
+  display: flex; flex-direction: column; gap: 10px; text-align: left;
+  padding: 10px; border-radius: var(--r-kort);
+  border: 1px solid var(--kant); background: var(--papir);
+  transition: border-color 100ms ease, box-shadow 100ms ease;
+}
+.tema:hover { border-color: var(--kant-sterk); }
+.tema[aria-checked='true'] { border-color: var(--blekk); box-shadow: 0 0 0 1px var(--blekk); }
+.tema-prove {
+  height: 64px; border-radius: var(--r-knapp); overflow: hidden;
+  display: grid; grid-template-columns: 34% 1fr;
+  border: 1px solid var(--kant);
+}
+.tema-prove-rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; }
+.tema-prove-rail i { display: block; height: 5px; border-radius: 3px; width: 70%; opacity: 0.55; }
+.tema-prove-rail i:first-child { width: 90%; opacity: 1; }
+.tema-prove-flate { padding: 8px; }
+.tema-prove-kort { height: 100%; border-radius: 5px; border: 1px solid; }
+.tema-navn { font-weight: 500; }
+.tema-om { color: var(--blekk-3); font-size: 12px; margin-top: 2px; }
+
+/* Konto-fakta: samme rutenett som `.fakta`, men med litt mer luft under. */
+.meg-fakta { margin-bottom: 4px; }
+
+/* Ukevisningen på Meg gjenbruker `.uke` fra forsiden. Dagene har ikke plass
+   til mer enn tallet og jobbene, og trenger ikke det heller. */
+.uke-sum { display: block; font-size: 16px; font-weight: 500; letter-spacing: -0.01em; }
+.uke-sum-tom { color: var(--blekk-4); }

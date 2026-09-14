@@ -21,7 +21,20 @@
     -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="theme-color" content="#211C15" />
+    <meta name="theme-color" content="#F5F5F7" />
+    <!--
+      Temaet leses FØR React, ellers maler siden seg hvit og så brun for den
+      som har valgt papir. Samme nøkkel som i src/lib/tema.ts.
+    -->
+    <script>
+      try {
+        var tema = localStorage.getItem('ampex.kontor.tema')
+        if (tema === 'papir') {
+          document.documentElement.dataset.tema = tema
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#211C15')
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="rot"></div>

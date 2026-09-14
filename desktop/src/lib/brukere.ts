@@ -166,3 +166,15 @@ export async function erAmpexAdmin(): Promise<boolean> {
   if (error) return false
   return data !== null
 }
+
+/**
+ * Slett din egen bruker.
+ *
+ * Passordet sendes med og sjekkes PÅ SERVEREN, ikke her: en økt som står åpen
+ * på en delt kontor-PC skal ikke kunne slette kontoen til den som glemte å
+ * logge ut. Hva som slettes og hva som beholdes står i
+ * `supabase/functions/slett-bruker`.
+ */
+export async function slettMeg(passord: string) {
+  return kall<{ slettet: true }>('slett-bruker', { passord })
+}
