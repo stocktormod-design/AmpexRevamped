@@ -1,5 +1,5 @@
 import { kan, rollenavn, type Rettighet } from '@delt/kontor-tilgang'
-import { Building2, ClipboardList, Clock, FileSpreadsheet, FileText, FolderKanban, Globe, LayoutGrid, Package, Scan, ShieldCheck, Users } from 'lucide-react'
+import { Building2, ClipboardList, FileText, FolderKanban, Globe, LayoutGrid, Package, ShieldCheck, UserRound, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/auth'
 import { erAmpexAdmin } from '@/lib/brukere'
@@ -8,14 +8,12 @@ import { Firma } from '@/ruter/Firma'
 import { Internkontroll } from '@/ruter/Internkontroll'
 import { Kunder } from '@/ruter/Kunder'
 import { Logginn, NyttPassord } from '@/ruter/Logginn'
+import { Meg } from '@/ruter/Meg'
 import { Ordre } from '@/ruter/Ordre'
 import { Oversikt } from '@/ruter/Oversikt'
-import { Prisfil } from '@/ruter/Prisfil'
 import { Prosjekter } from '@/ruter/Prosjekter'
 import { Skjemaer } from '@/ruter/Skjemaer'
 import { Tilbud } from '@/ruter/Tilbud'
-import { Timer } from '@/ruter/Timer'
-import { Skann } from '@/ruter/Skann'
 import { Varer } from '@/ruter/Varer'
 import { mangler } from '@/supabase'
 import { AmpexLogo } from '@/ui/AmpexLogo'
@@ -51,15 +49,18 @@ import { Beskjed, Knapp, Kort } from '@/ui/kit'
  * KVALITET er internkontrollen og skjemaene. Det finnes ingen egen logg-flate:
  * historikken til en rutine står PÅ rutinen, ikke i et arkiv man må huske at
  * finnes. Se `desktop/src/ui/Historikk.tsx`.
- * FIRMA er oppsettet man rører sjelden.
+ * FIRMA er oppsettet man rører sjelden. MEG er det som gjelder deg selv.
+ *
+ * **Timer, Skann og Prisfiler står ikke i menyen** (14. september). Flatene
+ * finnes fortsatt i `src/ruter/` og kan hentes tilbake ved å legge raden inn
+ * igjen; det er knappene som er tatt bort, ikke koden. Dine egne timer ligger
+ * på Meg.
  */
 const RUTER = [
   { id: 'oversikt', navn: 'Oversikt', gruppe: 'Arbeid', ikon: LayoutGrid, rett: 'kontor' as Rettighet, vis: () => <Oversikt /> },
   { id: 'ordre', navn: 'Ordre', gruppe: 'Arbeid', ikon: ClipboardList, rett: 'ordre.les' as Rettighet, vis: () => <Ordre /> },
   { id: 'prosjekt', navn: 'Prosjekter', gruppe: 'Arbeid', ikon: FolderKanban, rett: 'prosjekt.les' as Rettighet, vis: () => <Prosjekter /> },
   { id: 'tilbud', navn: 'Tilbud', gruppe: 'Arbeid', ikon: FileText, rett: 'tilbud.les' as Rettighet, vis: () => <Tilbud /> },
-  { id: 'timer', navn: 'Timer', gruppe: 'Arbeid', ikon: Clock, rett: 'timer.les' as Rettighet, vis: () => <Timer /> },
-  { id: 'skann', navn: 'Skann', gruppe: 'Arbeid', ikon: Scan, rett: 'skann.les' as Rettighet, vis: () => <Skann /> },
 
   { id: 'kunder', navn: 'Kunder', gruppe: 'Register', ikon: Users, rett: 'kunder.les' as Rettighet, vis: () => <Kunder /> },
   { id: 'varer', navn: 'Varer', gruppe: 'Register', ikon: Package, rett: 'varer.les' as Rettighet, vis: () => <Varer /> },
@@ -68,7 +69,8 @@ const RUTER = [
   { id: 'skjema', navn: 'Skjemaer', gruppe: 'Kvalitet', ikon: FileText, rett: 'skjema.les' as Rettighet, vis: () => <Skjemaer /> },
 
   { id: 'firma', navn: 'Firma', gruppe: 'Firma', ikon: Building2, rett: 'firma.les' as Rettighet, vis: () => <Firma /> },
-  { id: 'prisfil', navn: 'Prisfiler', gruppe: 'Firma', ikon: FileSpreadsheet, rett: 'priser.importer' as Rettighet, vis: () => <Prisfil /> },
+
+  { id: 'meg', navn: 'Meg', gruppe: 'Meg', ikon: UserRound, rett: 'kontor' as Rettighet, vis: () => <Meg /> },
 ] as const
 
 /**

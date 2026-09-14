@@ -104,3 +104,17 @@ export async function bekreftKode(faktorId: string, kode: string): Promise<void>
     )
   }
 }
+
+/**
+ * Koble autentiseringsappen fra.
+ *
+ * Krever en kode først. Supabase nekter å fjerne en verifisert faktor fra en
+ * økt som ikke er `aal2`, og det er en sperre vi vil ha: en åpen økt på en
+ * ulåst kontor-PC skal ikke kunne skru av totrinnsbekreftelsen. Koden
+ * verifiseres derfor mot den samme faktoren som fjernes.
+ */
+export async function kobleFra(faktorId: string, kode: string): Promise<void> {
+  await bekreftKode(faktorId, kode)
+  const { error } = await supabase.auth.mfa.unenroll({ factorId: faktorId })
+  if (error) throw new Error(error.message)
+}

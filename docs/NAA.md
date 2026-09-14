@@ -1,6 +1,6 @@
 # Hvor vi står nå
 
-**Sist oppdatert: 2026-09-08, natt til mandag.**
+**Sist oppdatert: 2026-09-13, kveld.**
 
 Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 `docs/GJENNOMGANG_2026-09-08.md`), så les denne først.
@@ -104,6 +104,174 @@ brukte feil feltnavn og brøt økten ved første ord; live-modellen er låst til
 (antall kunder, timetyper med pris), oppretter kunder og timetyper på forespørsel og
 følger faste manus, aldri åpne spørsmål. `Documents/ai.log` på telefonen for feilsøking.
 Testbrukere: `glenn-test@ampex.no` / `ampex-glenn-2026` (uten firma), `test@ampex.no`.
+
+## 13. september — prosjekthierarkiet (mapper for tegninger)
+
+Mappene kunne opprettes, men ikke endres: ingen vei til å gi nytt navn, flytte eller
+slette, og et prosjekt uten mapper kunne ikke få sin første tegning (rota hadde bare
+«Ny mappe»). Nå: hold inne en mappe → gi nytt navn / flytt til … / slett. Flytting
+avviser seg selv og egne etterkommere (ingen sirkler). Sletting er myk og flytter
+undermapper og tegninger ett hakk opp i samme skriving, så ingenting blir foreldreløst.
+«Legg til tegning» finnes på alle nivåer; et prosjekt uten mapper viser tegningene rett
+på rota. Ren trelogikk i `lib/tegning-tre.ts` med `npm run verify:tegning-tre` (25
+påstander). Oppgave-seksjonen på prosjektet fikk én stiplet rad som tom tilstand i
+stedet for en fylt knapp nr. 2 (regel 9); overskriften åpner hele oppgavelista.
+Verifisert i simulatoren (iPhone 17 Pro, Debug-bygg mot Metro). Fortsatt åpent:
+prosjektet selv kan ikke redigeres eller arkiveres fra appen.
+
+**Tegningsvisningen samme dag:** firkantikonet (rom-modus med målestokk og «Del inn i
+rom») er tatt bort fra verktøylinja; rommene nås fortsatt med hold på tegningen, og
+`rom=1`/`delInn` i ruta virker som før. Toppraden viser ÉN tegning (navn + plan), trykk
+åpner et ark med alle tegningene i prosjektet. Den gamle chip-raden viste bare tegninger
+i samme plan (en «samme plan»-abonnering overskrev prosjektlista) — fjernet.
+**PDF-cachen var ødelagt:** et 403-svar fra R2 ble lagret som «tegningen» og aldri prøvd
+på nytt, så «Kunne ikke vise tegningen» satt fast selv etter at fila fantes. Nå må en
+cachet fil starte med `%PDF`, ellers slettes den og hentes på nytt. **Testbrukeren har
+fire syntetiske plantegninger** (`firma/<company>/drawings/<id>.pdf`, lastet opp via
+r2-sign 13. september, generert med `.tmp/lag-plan.py`-oppskriften i økten); de fire
+seed-PDF-ene fra 4. juli ligger fortsatt uten prefiks og er ikke hentet ut.
+
+## 13. september — brannkomponenter fra tegningens egen forklaring
+
+Tormod: «lag algo for hver detektor basert på ikonbeskrivelsene på høyre siden, sånn at
+man kan trykke på alle komponentene i brann». Løst uten noen fast symbolkatalog:
+tegningen forklarer selv symbolene sine (SYMBOLFORKLARING), og `lib/symbol-detekt.ts`
+leser hvert symbol ved siden av etiketten som en MAL (et sett streker) og glir malen
+over planen. Målt på en ekte Norconsult-brannplan (Moskenes transformatorstasjon, 1:50,
+19 000 streker, unntatt offentlighet — ligger IKKE i repoet): 39 av 39 komponenter funnet
+med riktig type (17 multikriteriedetektorer, 7 sløyfeenheter, 6 manuelle meldere,
+4 sirener, 2 ASD, sentral, orienteringsplan, Ex-barriere) og 4 av 4 «med summer», null
+falske. Det som måtte til står øverst i fila: skala per symbol med anisotropigrense,
+rotasjon bare for små maler, kabler ut på strekbredde, dekning målt på streker som ligger
+helt i boksen, konkurranse på score (ikke størrelse), tilleggssymboler bare i stripa
+under en detektor, tekstsymboler (ASD) som tekst. Selvtest `npm run verify:symbol-detekt`
+(30 påstander på en syntetisk tegning). Ren del i `lib/brann-symboler.ts`, innpakning i
+`lib/brann-fra-tegning.ts`; knappen «Finn fra tegningen» under brann-verktøyet i
+tegningsvisningen lager én `fire_devices`-rad per symbol (auto-tag 01.xxx, etiketten i
+`note`), hopper over dem som alt står der. **pdf.js på Hermes hang** på denne fila (Metro
+avbrøt den lazy-lastede bundelen; 486 kB base64 gjennom JS i tillegg), så strekene OG
+teksten leses nå av en ny native funksjon `AmpexPdf.vectors` (CGPDFScanner med Tj/TJ og
+ToUnicode-oppslag, følger form-XObjects; 110 ms på A0-planen) — pdf.js er reserve.
+PDFKit sine `characterBounds` ble prøvd først og satte «SYMBOLFORKLARING» 200 pt unna på
+denne CAD-eksporten, derfor egen tekstlesing i samme skanner. Selve søket kjører i JS:
+Node 1,7 s, **Hermes 34 s** (avstandsfelt i Uint8Array; Map-rutenett tok over to
+minutter). Verifisert i simulatoren 13. september: «39 lagt til», riktig plassert.
+Neste ytelsessteg er å flytte søket til Swift. Komponentene fra forklaringen får
+`fire_devices.source = 'tegning'` (ny kolonne, skjema v38 + live-migrasjon
+`20260913140000_fire_devices_source.sql`) og TEGNES IKKE oppå symbolet — symbolet står
+der alt; de er usynlige trykkflater, og et trykk uten verktøy åpner komponentarket
+(Tormod: «trenger ikke branndetektor-ikonet over ikonene, det burde være som å trykke på
+en»). NB: `sync_pull_columns` sender den nye kolonnen til alle klienter, så et
+telefonbygg fra før 13. september avviser fire_devices-rader til det er bygd på nytt. Prototypen i Python (PyMuPDF) ligger i
+øktens scratchpad, ikke i repoet. **Andre testtegning (Torvhaugan BF1 fra Aqila) er et
+rasterbilde** (362 fliser à 1024 px, 8,3 px/pt, null tekst, null streker) — der må
+neste trinn være bildebasert. Målt 13. september (Python-prototype i scratchpad): alle
+brannsymbolene er GRØNNE, lampene magenta, sentral rød — 102 fargede klatter i
+symbolstørrelse skiller seg rent fra den grå tegningen. Symboltabellen i tittelfeltet har
+ett ikon på ~4 pt foran hver linje; ved 8 px/pt er «MK», «O/H», «BP» og sidemerkene
+(blink/summer) lesbare. Plan: native (Swift) flisrendering → fargede komponenter →
+Vision-OCR av tabellrader → ikon = klatt rett til venstre for raden → maskesammenligning
+(24×24, NCC, samme farge) → `fire_devices` med source 'tegning'. Ikke bygd ennå.
+
+Også rettet: sløyfe-verktøyet viste ikke det nye punktet før neste panorering —
+`observe()` varsler bare når rader kommer/går, ikke når `nodes` endres; nå
+`observeWithColumns` for sløyfer og rom i lerretet og tegningsskjermene.
+
+## 13. september, sent — analysen ved første opplasting
+
+Tormod: «bruk telefonens CPU på hver initial opplast … bare på initial upload, etter det
+ligger det inne». `lib/tegning-analyse.ts`: når en tegning har fil og `drawings.analyzed_at`
+er null (ny kolonne, skjema v39, live-migrasjon `20260913150000_drawings_analyzed_at.sql`),
+kjører telefonen som har fila ÉN jobb: leser PDF-en én gang (native på iOS, pdf.js
+ellers), leser målestokken av tittelfeltet («1 : 50»), finner komponenter fra forklaringen
+og rom fra strekene, skriver radene og stempler tegningen. Andre telefoner får radene via
+synk. Termisk vakt (`AmpexPdf.thermalState`, venter ved serious/critical), bare i forgrunn,
+og søket slipper JS-tråden hvert 300. hypotese (generator + `setTimeout(0)`) så appen
+svarer imens — tynn stripe under toppbaren viser «Finner komponenter … 68 %». Verifisert i
+simulatoren på Norconsult-planen: 42 s, 0 nye komponenter (de 39 fantes), **9 rom funnet
+automatisk med målestokk lest av tegningen**, polygonene stemmer med rommene.
+pdf.js importeres nå statisk (den late Metro-bundelen ble avbrutt i dev).
+Torvhaugan BF1 (rasterbilde, lastet som «Tele og data» i testprosjektet): komponenter 0
+(ingen forklaring å lese — bildeveien er ikke bygd), **rom 69 via rasterveien** på 43 s,
+uten navn (ingen tekst i bildet) og med standard 1:50. Rettet underveis: vektorveien ga
+null rom av bare ramma (1 124 streker ≥ 200) og returnerte tomt i stedet for å ta
+rasteret; nå faller den gjennom ved null rom. Polygonene følger husene og korridoren,
+men er ikke sjekket rom for rom.
+
+Romdelingen fylte polygonet ut til veggMIDTEN («ingen hvite belter»); Tormod: «rommene er
+riktig, men for store». Nå stopper omrisset ved innsiden av veggen (`omriss` på `lab2`, ikke
+`fyllTilVegg`); rom 108 målt: kanten lå 10–20 pt inne i veggen, ligger nå på innerlinja.
+Arealet var alt gulvareal og er uendret. **Trafo 1/2 deles nå riktig (13. september, sent):** grensa går på veggen (x 0,336), 60 og
+59 m² mot oppgitt 60,8. Tre grep i `lib/rom-detekt.ts`, alle prinsipielle: (1) fargekalibreringen
+beholder alle pennklasser med ≥ 3 % av vinnerens veggbånd — brannveggene (svart, 227 m) ble
+kastet mot 5 155 m grå innervegger, og rommene sto åpne i bunnen; tykke streker (> 2 pt, kabler)
+og fyll er aldri veggflater. (2) «Spor» i forlengelsen av frie veggender (≥ 1,5 m) fram til
+neste vegg innen dørbredde, brukt BARE til å dele en navnløs region som grenser til flere
+rom, og bare fra vegger som har ulike rom på hver side (dyp prøving gjennom navnløse
+regioner). (3) **Arealregnskap:** tegningens egne påskrifter («60,8 m²») avgjør hvem som får
+en navnløs bit — rommet som mangler mest av oppgitt areal vinner; biter som grenser til
+andre navnløse regioner venter til de er avgjort. Selvtest `npm run verify:rom-detekt`.
+Forkastet: hard sperre i veggforlengelsen (slo sammen/delte feil), dempet vekstprioritet
+(stripa var ett eget frø og ble slått inn hel). Tidligere notat:
+**Trafo 1/2 deles feil (åpen tråd, løst over):** veggen mellom 106 og 107 slutter ved kabelkjeller-
+stripa øverst, så rommene henger sammen gjennom en 1,4 m åpning; regionsveksten deler
+stripa der frontene møtes (x 0,29), ikke i veggens forlengelse (x 0,336). Prøvd: (1) filter
+mot skravur som vegg — rutenettet på det hevede gulvet ga 187 falske veggbånd, nå 29
+(beholdt: par med ≥ 2 streker mellom, eller nabo i nøyaktig samme avstand på begge
+sider, er skravur); endret ikke resultatet. (2) Tynn sperre i veggens forlengelse
+gjennom døråpninger ≤ 2,8 m — slo sammen 108 og 107 og delte andre feil; forkastet.
+Riktig neste grep er vannskille som legger grensa der stripa er smalest/langs
+vegglinja, ikke der BFS-frontene møtes. Rommet kan rettes med håndtakene i rom-modus.
+Funn underveis: alle sløyfekablene i Norconsult-planen er PDF-ANNOTASJONER (84 Line,
+10 Ink, 4 Stamp, 4 FreeText), ikke sideinnhold; `AmpexPdf.vectors` skanner nå også
+annotasjonenes utseende-strømmer (/AP /N, plassert etter PDF 12.5.5) — 19 663 streker
+mot 13 445 før — så appen ser det samme som tegningen viser.
+**Overleggene traff feil ved zoom — rotårsak i den native rendereren:** `CGPDFPage
+getDrawingTransform` skalerer ALDRI opp (dokumentert). Siden er 2 384 pt bred, så
+2048-rasteret ble skalert ned og fylte bildet, men 3072/4096-rasteret (som appen bytter
+til ved zoom) fikk siden tegnet 1:1 midt i bildet med hvite kanter (innhold 58 % av
+bredden). Alt som lå oppå (rom, sløyfer, komponenter) traff da feil så snart en zoomet
+inn — også med knip, og også før i dag. I tillegg brukte UIGraphicsImageRenderer skjermens
+3×, så «4096» ble 12 288 × 8 679 px (106 MP). Nå: ren CGBitmapContext, egen skalering
+før transformen (som bare tar rotasjon), cache-nøkkel v5. Verifisert: 4096-rasteret fyller
+100 %, og ved 3× ligger rom og noder nøyaktig på veggene. Dobbelttrykket tegner
+romhåndtakene på nytt når animasjonen er ferdig (de er RN-visninger i skjermrommet).
+Alt som ligger oppå tegningen holder nå samme skjermstørrelse uansett zoom (Tormod: «alt
+må være dynamisk basert på zoom»): sløyfenoder og -strek, komponentsymboler (invers
+skala rundt eget senter), romkanter og pinner deles på zoomen; blekket skalerer med
+tegningen som før. Toppbaren fikk en **rom-knapp** ved siden av delt visning (rutenett-ikon): rom av/på, så
+en ser om romdelingen traff. Lerretet fikk **dobbelttrykk-zoom** (3× der du trykker, tilbake på nytt dobbelttrykk),
+bare uten verktøy i hånda så enkelttrykket i redigering ikke får ventetid. På Mac er
+knip ⌥-drag i simulatoren; dobbelttrykk er raskere.
+
+**Android:** logikken er JS og plattformnøytral, men `modules/ampex-splat` har ingen
+Android-del (`platforms: ["apple"]`) — verken raster (`renderPage`) eller vektorer. Uten
+den kan Android hverken vise PDF-tegninger eller kjøre analysen native; pdf.js-reserven
+gir vektorene, men ikke rasteret. Neste for Android: Kotlin-modul `AmpexPdf` med
+`PdfRenderer` for raster og PDFBox-Android for innholdsstrømmen.
+
+## 14. september — kontoret: hvitt tema, Meg-fane, sletting av bruker
+
+Ampex Kontor (`desktop/`) går nå i **hvitt og sort som standard**, samme palett
+som montørappen fikk 6. september (regel 9). Papir/kobber er beholdt som valgbart
+tema (`data-tema="papir"` på `<html>`, lagret i localStorage per maskin, lest i
+`index.html` før React så det ikke blinker). Variabelnavnene i `styles.css` er
+uendret; `--kobber` peker på sort i hvitt tema. **Timer, Skann og Prisfiler er ute
+av menyen**, ikke av koden (radene i `RUTER` i App.tsx). Ny rute **Meg** for alle
+med kontortilgang: tema, dine timer uke for uke (`hentMineTimer`, bare egne rader),
+totrinnsbekreftelse (koble til/fra — frakobling krever kode), logg ut, og **slett
+brukeren min**. Slettingen er en ny Edge Function `slett-bruker` (deployet v1):
+passordet sjekkes på serveren med `signInWithPassword`, profilen anonymiseres
+(«Slettet bruker») og soft-slettes, MFA-faktorer fjernes, auth-brukeren slettes
+MYKT (`deleteUser(id, true)`) fordi `profiles.id` kaskaderer fra `auth.users` og
+40 tabeller peker på profilen uten kaskade; timer/signaturer/audit beholdes
+(bokføringsloven § 13). Eneste eier i et firma med andre aktive ansatte avvises.
+Audit-rad `bruker.slettet_seg_selv` skrives først. Verifisert i Chrome mot
+Vite på port 5175 (port 5174 holdes av en Vite-prosess fra 6. september i
+`~/Documents/AmpexRevamp-kontor` — en annen checkout, la den være eller drep den):
+meny riktig, tema overlever reload, feil passord gir «Feil passord.» fra funksjonen.
+Selve slettingen er IKKE kjørt mot en ekte bruker ennå. Brukerpillen i sidehodet
+åpner Meg. Snarveien «Importer prisfil» på Oversikt er tatt bort.
 
 ## Åpne tråder
 
@@ -687,3 +855,34 @@ hvitbalanse fra taket, og kvalitetsvei + fullt minnebudsjett i ett steg. Ingen a
 av måleskriptene; alle ble funnet ved å rendre side om side og se.
 
 **Alt dette er fortsatt ukommittert.** Det er nå den viktigste oppgaven.
+
+## 13. september (kveld) — skann: posedrift funnet og rettet
+
+Tormod: «drifter mens jeg går rundt og møter en plass jeg alt har skannet, + baker og
+kutter fliser fire ganger». Målt i bundlen (§97): kameraet glir ~11 cm loddrett på 80 s,
+gulv og tak begge, veggene står. Re-ankringen mot ARMeshAnchor kunne aldri se det (ARKit
+retter verteksene, ikke transformen), og de 411 rå dybdekartene ble aldri rettet. Ny
+`driftrett` i `MeshTsdfBuild` (plan-forankret, kun translasjon, glattet langs tida) retter
+alle 537 kart før fusjonen og sender nøkkelbildeposene videre til teksturbaken. Resultat
+på samme bundle: gulvspenn 123 → 20 mm, tak 115 → 46, vegger uendret; i modellen 100 % av
+gulvhjørnene innen ±2 cm (63 % før). Baken: standardatlaset som ble malt og kastet er
+borte, og hver flis dekoder bare fotoene den bruker — harness 226 → 149 s. Romgrensene
+er robuste (20 mm voxel, ikke 24). Verktøy: `tools/audit-scan-drift.py`,
+`tools/audit-scan-shell.py`. Release-bygg til iPhonen bygges nå; **ikke verifisert på
+telefon ennå** — neste skann i samme rom avgjør om hakket er borte.
+
+## 13. september (sent) — Meg, Ordre og internkontroll i appen
+
+Tormods runde på simulatoren: **Ordre åpner nå i kalenderen** (grafen), og lista under
+grafen er dato-basert — alle dager i uken med jobber, «I dag · søndag 13. sep», «I morgen»,
+så ukedag + dato; søylen du trykker løfter fram sin dag. Tilbud-lenken på Ordre er tatt
+bort inntil videre (ruta finnes, `avtalt-pris-kort` peker fortsatt inn). Ampex-merket
+står KUN i docken: knappene på Timer, Tillegg, Skjema og Tilbud er borte, og lynet i
+stemme-orben er borte (VFX på selve merket i docken kommer senere). **Meg:** «Aktiviteter
+og timepriser» er ute av lista (assistenten oppretter timetyper); stemmene er én lukket rad
+med den som brukes, trykk åpner lista; bilkortet viser ingen plassholderbil mens 3D-en
+kommer, og samme regnr slås aldri opp to ganger (`hentBilmodellForRegnr`, slug per regnr i
+local_storage, bom prøves igjen etter et døgn). **Internkontroll** har eget punkt på Meg:
+`app/(app)/internkontroll.tsx` leser `ik_punkter` + `ik_rutiner` fra den lokale basen
+(skjema v40, kun lesing; kontoret skriver). Tabellene er lagt i `sync_tables` LIVE
+(migrasjon `20260913200000_ik_til_appen.sql`). Verifisert i simulatoren med Release-bygg.

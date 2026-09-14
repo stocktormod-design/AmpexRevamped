@@ -1,6 +1,6 @@
 import { kan } from '@delt/kontor-tilgang'
 import { arbeidsperiode, byggUkeplan, DAGER, flyttUke, ukeSlutt, ukeStart } from '@delt/schedule-calc'
-import { ChevronLeft, ChevronRight, CircleCheck, FileSpreadsheet, FileText, Package, ShieldCheck } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CircleCheck, FileText, Package, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/auth'
 import { hentOrdrer, type Ordrerad } from '@/lib/ordre-lager'
@@ -35,7 +35,6 @@ export function Oversikt() {
   const seTilbud = kan(rolle, 'tilbud.les')
   const skriveIk = kan(rolle, 'ik.skriv')
   const fakturere = kan(rolle, 'faktura.marker')
-  const importere = kan(rolle, 'priser.importer')
 
   const [data, setData] = useState<Data | null>(null)
   const [ordrer, setOrdrer] = useState<Ordrerad[]>([])
@@ -68,7 +67,9 @@ export function Oversikt() {
   const hurtig = [
     skriveIk ? { navn: 'Internkontroll', ikon: ShieldCheck, rute: '#/ik' } : null,
     skriveIk ? { navn: 'Skjemaer', ikon: FileText, rute: '#/skjema' } : null,
-    importere ? { navn: 'Importer prisfil', ikon: FileSpreadsheet, rute: '#/prisfil' } : null,
+    // «Importer prisfil» sto her til 14. september. Prisfil-flata er ute av
+    // menyen (se RUTER i App.tsx); en snarvei til en rute som ikke finnes
+    // ville bare lastet Oversikt på nytt.
     { navn: 'Varekartotek', ikon: Package, rute: '#/varer' },
   ].filter((x): x is { navn: string; ikon: typeof Package; rute: string } => x !== null)
 

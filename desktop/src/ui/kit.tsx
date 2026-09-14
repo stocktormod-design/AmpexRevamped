@@ -9,7 +9,7 @@ import { useAuth } from '@/auth'
  * komponent som skal vente på at fargen får et navn.
  */
 
-type KnappStil = 'primar' | 'merke' | 'stille' | 'naken'
+type KnappStil = 'primar' | 'merke' | 'stille' | 'naken' | 'fare'
 
 export function Knapp({
   stil = 'stille',
@@ -80,14 +80,16 @@ export function Sidehode({
       </div>
       <div className="sidehode-hoyre">
         {handling}
+        {/* Pillen er inngangen til Meg — samme sted en forventer å finne seg
+            selv i alle andre kontorprogrammer. */}
         {profil ? (
-          <div className="bruker">
+          <a className="bruker" href="#/meg" title="Meg">
             <div className="bruker-merke">{initialer(profil.full_name)}</div>
             <div>
               <div className="bruker-navn">{profil.full_name}</div>
               <div className="bruker-rolle">{rollenavn(profil.role)}</div>
             </div>
-          </div>
+          </a>
         ) : null}
         <Ikonknapp onClick={loggUt} title="Logg ut" aria-label="Logg ut">
           <LogOut size={17} strokeWidth={1.8} />
