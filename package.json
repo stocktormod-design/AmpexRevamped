@@ -43,6 +43,7 @@
     "expo-sensors": "~56.0.6",
     "expo-sharing": "~56.0.26",
     "expo-speech": "~56.0.3",
+    "expo-sqlite": "~56.0.6",
     "expo-status-bar": "~56.0.4",
     "expo-three": "^8.0.0",
     "expo-widgets": "~56.0.26",
@@ -100,6 +101,9 @@
     "verify:tegning": "tsc tools/verify-tegning.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/tegning --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/tegning/tools/verify-tegning.js",
     "verify:kalender": "tsc tools/verify-kalender.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/kalender --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/kalender/tools/verify-kalender.js",
     "verify:varesok": "tsc tools/verify-varesok.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/varesok --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/varesok/tools/verify-varesok.js",
+    "verify:tegning-tre": "tsc tools/verify-tegning-tre.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/tegning-tre --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/tegning-tre/tools/verify-tegning-tre.js",
+    "verify:symbol-detekt": "tsc tools/verify-symbol-detekt.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/symbol-detekt --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/symbol-detekt/tools/verify-symbol-detekt.js",
+    "verify:rom-detekt": "tsc tools/verify-rom-detekt.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/rom-detekt --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/rom-detekt/tools/verify-rom-detekt.js",
     "verify:approvals": "tsc tools/verify-approvals.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/approvals --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/approvals/tools/verify-approvals.js",
     "verify:form-import": "tsc tools/verify-form-import.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/form-import --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/form-import/tools/verify-form-import.js",
     "verify:id-repair": "tsc tools/verify-id-repair.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/id-repair --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/id-repair/tools/verify-id-repair.js",
@@ -107,7 +111,9 @@
     "verify:pdf": "tsc tools/verify-pdf.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/pdf --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/pdf/tools/verify-pdf.js",
     "verify:e2e": "tsc tools/verify-e2e.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/e2e --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/e2e/tools/verify-e2e.js",
     "verify:service": "tsc tools/verify-service.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/service --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/service/tools/verify-service.js",
-    "verify:boligmappa": "tsc tools/verify-boligmappa.ts lib/boligmappa/klient.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/boligmappa --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/boligmappa/tools/verify-boligmappa.js"
+    "verify:boligmappa": "tsc tools/verify-boligmappa.ts lib/boligmappa/klient.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/boligmappa --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/boligmappa/tools/verify-boligmappa.js",
+    "katalog:bygg": "tsc tools/bygg-katalog.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-bygg --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-bygg/tools/bygg-katalog.js",
+    "katalog:publiser": "tsc tools/publiser-katalog.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-publiser --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-publiser/tools/publiser-katalog.js"
   },
   "private": true
 }

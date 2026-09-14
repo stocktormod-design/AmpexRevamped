@@ -478,3 +478,41 @@ om full sletting ved oppsigelse kan etterleves.
 Om `EFOBASE`-feltet er en ID eller en ferdig URL, og om produktsidene er åpne
 uten innlogging. Begge deler avgjøres av den første ekte V4-fila og ett klikk.
 Er de åpne, er nivå 1 en ettermiddags arbeid.
+
+
+## Talt opp — 2026-09-14
+
+Solars standardfil er hentet (sFTP-testkonto fra Jørn Normand, `b2bs.solar.eu`,
+`touser/V4varefil.zip`; serveren krever **eksplisitt TLS på port 21**, vanlig
+FTP avvises med 503; brukernavn/passord står i e-posten fra bit.no@solarnorge.no
+14.09, ikke i repoet). Tallene skjemaet skulle vente på:
+
+| | |
+|---|---|
+| Kildefil | 18,3 MB tekst, 249 506 linjer, datert 01.09.2026 |
+| Varer | **126 739**, 0 avvik fra parseren, ren standardfil (ingen kjøper/kunde/avtale) |
+| Katalog-SQLite | 126 589 varer, **43,4 MB** på disk, **11,5 MB** gzip, 13 s å bygge |
+| Søk (FTS5) | 0,1–4 ms per spørring i Node |
+| `utledKategori` | 5 915 «kategorier» — navneheuristikken holder ikke på ekte data; rabattgruppe er bedre |
+
+**Bygget:** `npm run katalog:bygg -- <V4-fil> --grossist solar` (`tools/bygg-katalog.ts`)
+lager `.tmp/katalog/solar.sqlite` + `solar.json`. Nekter P4/kundefiler.
+Skjema: `varer` (uten pris, `without rowid`, indekser på ean/nrf/fabrikat/kategori),
+`sok` (fts5, `unicode61 remove_diacritics 2 tokenchars '-.,/'`), `meta`
+(`format=1`, grossist, sha256 av kilden, generert, antall).
+
+**Publisert:** `npm run katalog:publiser` laster begge filene til R2 under
+`katalog/` gjennom `r2-sign`, som nå slipper `katalog/` gjennom for GET for alle
+innloggede og PUT bare for `ampex_admins` (versjon 16). Krever
+`AMPEX_ADMIN_EPOST`/`AMPEX_ADMIN_PASSORD` i `.env.local`.
+
+**Telefonen:** `lib/katalog.ts` (expo-sqlite, lagt til 14.09) henter manifestet
+ved første varesøk, laster fila hvis sha-en er ny, åpner den skrivebeskyttet og
+søker med FTS5 (`"ord"*` per ord, el-nummer/EAN-treff først). `useKatalogsok`
+brukes av Lager → Varer og av `ProductPicker`: katalogvarer vises under firmaets
+egne treff, og et trykk legger varen inn i kartoteket via `opprettFraKatalog`
+(alle varekortfelt, ingen pris, `source_system = katalog:solar`). Prisen kommer
+når firmaets egen prisfil leses inn — `product_prices` er fortsatt per firma.
+
+**Ikke gjort ennå:** `products` er fortsatt firmascopet og i synken (planen
+over står); kategorigrupperingen på ekte data; en «Etterspør prisfil»-knapp.
