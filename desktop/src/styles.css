@@ -216,7 +216,22 @@
   --krom-rull-hev: rgba(255, 255, 255, 0.24);
 }
 
+/*
+ * Skallets høyde.
+ *
+ * `100%` var feil på telefon, og feilen var ikke synlig på en PC. Prosenten
+ * måles mot det STORE visningsområdet — skjermen slik den er når nettleserens
+ * URL-linje er skjult. Med URL-linja framme er skallet altså høyere enn det du
+ * ser, og siden ALL rulling her skjer inne i `.liste-kropp` og `.detalj-kropp`
+ * ruller dokumentet aldri. Bunnlinja ble stående under folden permanent, uten
+ * noen måte å nå den på. Symptomet er «navbaren følger ikke scroll».
+ *
+ * `dvh` er det dynamiske visningsområdet: det krymper og vokser med URL-linja,
+ * som er nettopp det vi vil. `100%` står igjen som reserve for nettlesere uten
+ * `dvh`; de får oppførselen som før, ikke en tom side.
+ */
 html, body, #rot { height: 100%; margin: 0; }
+html, body, #rot { height: 100dvh; }
 
 body {
   background: var(--lerret);
@@ -228,6 +243,11 @@ body {
   /* Kontorappen er ikke en nettside: ingenting skal dra-velges ved uhell.
      Tekst som SKAL kunne kopieres merkes med .valgbar. */
   user-select: none;
+  /* Dokumentet skal ikke kunne rulles eller strekkes i det hele tatt — det er
+     listene inni som ruller. Uten dette spretter hele flata når du drar forbi
+     bunnen av en liste, og bunnlinja blir med på sprettet. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .valgbar { user-select: text; }
