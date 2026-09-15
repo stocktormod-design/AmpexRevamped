@@ -80,20 +80,26 @@ export function Sidehode({
       </div>
       <div className="sidehode-hoyre">
         {handling}
-        {/* Pillen er inngangen til Meg — samme sted en forventer å finne seg
-            selv i alle andre kontorprogrammer. */}
-        {profil ? (
-          <a className="bruker" href="#/meg" title="Meg">
-            <div className="bruker-merke">{initialer(profil.full_name)}</div>
-            <div>
-              <div className="bruker-navn">{profil.full_name}</div>
-              <div className="bruker-rolle">{rollenavn(profil.role)}</div>
-            </div>
-          </a>
-        ) : null}
-        <Ikonknapp onClick={loggUt} title="Logg ut" aria-label="Logg ut">
-          <LogOut size={17} strokeWidth={1.8} />
-        </Ikonknapp>
+        {/* Kontodelen står i en egen boks fordi TELEFONEN skjuler den: der er
+            «Meg» en av knappene i bunnlinja, og navnet sitt trenger man ikke se
+            på hver eneste flate når skjermen er 390 px bred. Flatens egen
+            `handling` blir stående — den hører til arbeidet, ikke til kontoen. */}
+        <div className="sidehode-konto">
+          {/* Pillen er inngangen til Meg — samme sted en forventer å finne seg
+              selv i alle andre kontorprogrammer. */}
+          {profil ? (
+            <a className="bruker" href="#/meg" title="Meg">
+              <div className="bruker-merke">{initialer(profil.full_name)}</div>
+              <div>
+                <div className="bruker-navn">{profil.full_name}</div>
+                <div className="bruker-rolle">{rollenavn(profil.role)}</div>
+              </div>
+            </a>
+          ) : null}
+          <Ikonknapp onClick={loggUt} title="Logg ut" aria-label="Logg ut">
+            <LogOut size={17} strokeWidth={1.8} />
+          </Ikonknapp>
+        </div>
       </div>
     </header>
   )

@@ -1,6 +1,6 @@
 # Hvor vi står nå
 
-**Sist oppdatert: 2026-09-13, kveld.**
+**Sist oppdatert: 2026-09-15, formiddag.**
 
 Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 `docs/GJENNOMGANG_2026-09-08.md`), så les denne først.
@@ -9,12 +9,13 @@ Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 
 ## Tilstand i repoet
 
-- **Gren:** `grossist-og-pool`.
-- **147 ukommitterte filer**, 63 av dem nye. Siste commit er `efdb7d2` fra 2026-09-01.
-  En uke med arbeid ligger usikret. Dette er det første som bør ryddes.
+- **Gren:** `main` (ikke `grossist-og-pool` — det arbeidet er landet).
+- **68 ukommitterte filer**, 21 av dem nye. Siste commit er `d486a0e` fra 2026-09-14.
+  Fortsatt det første som bør ryddes.
+- `main` og `origin/main` står likt — alt som er committet, er pushet. Det er de
+  ukommitterte filene som er usikret.
 - `npm run typecheck` er grønn.
-- 12 rene selvtester grønne. `verify:tripletex` grønn mot sandkasse.
-- Ingenting er pushet.
+- `verify:tripletex` og `verify:boligmappa` grønne mot sine sandkasser.
 
 ## Det som ble gjort natt til 8. september
 
@@ -303,15 +304,137 @@ varen inn uten pris (`opprettFraKatalog`). Svar sendt til Jørn med spørsmål o
 oppdateringsfrekvens og videre bruk av kontoen. **Boligmappa:** de tre blokkerne
 (redirect-URI, PROPERTY_NOT_FOUND, filopplasting) sendt til
 integrasjon@ambita.atlassian.net med kopi til integrasjon@boligmappa.atlassian.net
-og Shaibal — svaret fra 11.09 var ubesvart. Detaljer i docs/GROSSIST_INTEGRASJON.md
+og Shaibal — svaret fra 11.09 var ubesvart. **Utdatert: se 15. september under,
+to av de tre er løst.** Detaljer i docs/GROSSIST_INTEGRASJON.md
 («Talt opp»). Katalogsøket er ikke verifisert på enhet/simulator ennå.
+
+## 14. september, ettermiddag — Fiken
+
+Fiken-adapteren er skrevet om mot den ekte spesifikasjonen (den gamle sendte felt som
+ikke finnes) og har fått hele kjeden Tripletex har: kunde, vare, prosjekt, aktivitet,
+timebruker, timer, utkast, faktura. `npm run verify:fiken` er klar og nekter å kjøre
+mot annet enn et Fiken-testforetak. **Mangler:** Tormod må lage testforetaket («foretak
+som ikke er i Brønnøysundregistrene») og en personlig API-nøkkel, og legge
+`FIKEN_TOKEN`/`FIKEN_COMPANY_SLUG` i `.env.local`. Detaljer i
+docs/REGNSKAPSINTEGRASJON.md, siste kapittel.
+
+## 15. september — Boligmappa: hele filveien virker
+
+De tre blokkerne fra 14. september er nede i én. Shaibal svarte to ganger med de
+samme Stoplight-lenkene, så veien videre ble å lese dem selv: sidene rendres i
+nettleseren og gir bare tittelen til `curl`/`WebFetch`, men headless Chrome med
+`--dump-dom --virtual-time-budget=20000` henter alt. Oppskriften står i
+`docs/BOLIGMAPPA.md`.
+
+**Filene går ikke gjennom Jobs API.** De går gjennom proff-api, via et mellomledd
+som heter **plant** — et arbeidsrom firmaet får på eiendommen. Ordet er ikke nevnt
+i Jobs-API-et, og uten plant finnes det ingen fil-ID å gi til
+`POST /jobs/{nr}/files`. Kjeden er nå kjørt ende til ende mot sandkassen
+(`npm run verify:boligmappa -- --opprett --fil`, alt grønt): gatesøk → adresse →
+eiendom → jobb → plant → filmetadata → PUT av bytes på signert lenke → koblet til
+jobben → bekreftet at fila ligger på eiendommen.
+
+**`PROPERTY_NOT_FOUND` er forklart, og det er ikke plantet.** Testet direkte: jobb
+på samme eiendom går like fint før som etter at plantet finnes. Det handler om
+hvilken eiendom. Numrene på kontoens egne jobber er produksjonsdata som ikke finnes
+i staging — det Shaibal mente. Men i tillegg: **søket og eiendomsbasen er ikke
+enige i staging.** For Oslo gate 1A gir søket FPH4639/46/53/60, og alle fire feiler
+(500 på plant, `PROPERTY_NOT_FOUND` på jobb), mens Boligmappas egen dokumentasjon
+oppgir ABH8615/ABH8622 for samme adresse — og de virker overalt. Deres anbefalte
+oppskrift leder altså til ubrukelige numre. Meldt inn samme dag.
+
+Rettet i `lib/boligmappa/klient.ts`: `opprettJobb` leste `jobNumber` utenfor
+`{success, response}`-konvolutten og ga `undefined`. Dokumentasjonen tar dessuten
+feil på to punkter (plant er ikke idempotent, `documentType` er påkrevd) — begge
+håndtert, begge meldt tilbake.
+
+**Eneste som står på Boligmappa nå:** `http://localhost:8081` som redirect-URI på
+`ampex-staging`. `ampex://oauth` er registrert og virker.
+
+**Men ingenting av dette er koblet til produktet.** Klienten importeres bare av
+selvtesten, og `boligmappaNumber` finnes ikke i datamodellen. Fire ting står igjen
+før en montør kan bruke det:
+
+1. **Feltet mangler.** `boligmappaNumber` må lagres per kunde eller ordre. Minst
+   jobb av de fire, men må gjøres først — uten det vet vi ikke hvilken eiendom.
+2. **Innlogging i produksjon er en annen.** Password grant er sandkassevei;
+   produksjon er authorization_code, og krever begge redirect-URI-ene registrert.
+   Produksjonsnøkler krever i tillegg verifiseringsmøte og signert
+   integrasjonsavtale — ikke satt i gang.
+3. **Hvor sendingen skjer er ikke bestemt.** Regel 2 sier at montørappen bare
+   snakker med lokal SQLite, så dette må ligge på kontoret eller i en edge
+   function. Arkitekturbeslutning, ikke koding.
+4. **PDF-ene finnes i `lib/pdf/`, men ingen skjerm bruker dem** — samme hull som
+   står under Åpne tråder fra før.
+
+## 15. september — kontoret på telefon, som PWA
+
+Bakgrunnen er konkret: Tormods far skal begynne på internkontrollsystemet, og
+trengte en vei inn fra telefon. ampex.no (som er `desktop/`, ikke montørappen)
+hadde tre mediespørringer i hele stilarket, hvorav to bare kollapset spalter.
+
+Under **820 px** er kontoret nå lagt om til én hånd: sidemenyen blir en
+bunnlinje med fire flater pluss «Mer», delt visning blir to flater med en
+tilbake-knapp og et historikksteg (så Androids tilbakeknapp ikke lukker appen),
+og autovalget av første rad slås av. Detaljene står i `desktop/README.md`,
+avsnittet «Telefonformen».
+
+PWA-delen er manifest, ikoner (192/512/maskable, generert fra `favicon.svg`) og
+en bevisst tynn tjenestearbeider som bare tar skallet og de hashede filene —
+**aldri** noe som ikke ligger på vårt eget opphav. Kontoret skriver rett mot
+Supabase, og en mellomlagret ordreliste ville vært feil data vist som riktig.
+Dette er samtidig den eneste veien inn i Ampex på **Android**, som ikke har noe
+app-bygg i det hele tatt.
+
+Verifisert i Chromium på 390 × 844 med test-innloggingen: Oversikt,
+Internkontroll (liste → detalj → tilbake), Ordre og «Mer»-arket, alle uten
+vannrett rull, og skjermvisningen på 1440 px uendret ved siden av. Tre ekte
+feil ble funnet av selve målingen og rettet:
+
+- **Innloggingskortet stakk ut over høyre kant.** `place-items: center` uten
+  oppgitt spalte gjorde spalten like bred som kortet, så `max-width: 100%` målte
+  seg mot seg selv. Gjaldt også et smalt nettleservindu på skjerm.
+- **Ordre blåste layoutbredden fra 390 til 577 px** — et søkefelt låst til
+  250 px pluss eksportknappen i samme rad i sidehodet.
+- **Uke-stripa på Oversikt ble klippet:** sju kolonner à ~48 px, med «Man 14»
+  ved siden av hverandre i hver. Navnet ligger nå over tallet.
+
+Ikke gjort: montørappen kjører fortsatt ikke på web i det hele tatt (verken
+`react-native-web`, `react-dom` eller en LokiJS-adapter er installert), og
+`"web": { "bundler": "metro" }` i `app.json` er død konfigurasjon. Det er et
+eget løp, ikke en utvidelse av dette.
+
+**Samme dag, senere: montør og lærling slippes inn — på sin egen flate.**
+`montor` og `laerling` sto med TOMME rettighetslister i `lib/kontor-tilgang.ts`,
+med begrunnelsen «alt de trenger ligger i appen på telefonen». Det holdt ikke,
+av samme grunn som over: appen er iOS-bare. De har nå `min.dag` — en egen
+inngang ved siden av `kontor`, ikke et svakere kontor. Selvtesten håndhever at
+ingen rolle har begge, og at montøren fortsatt ikke får `ordre.les`,
+`faktura.les` eller `db.les`.
+
+Tre ruter: **Hjem** (`MinDag` — i dag, senere, ikke planlagt), **Ordre**
+(`MineOrdre` — alle mine, også ferdige) og **Meg**, som er nøyaktig samme rute
+kontoret bruker. Ordren tegnes av `src/ui/MontorOrdre.tsx`, som begge flatene
+deler: hvor, hvem man ringer (adresse og telefon som trykkbare rader, kart og
+`tel:`), hva som skal gjøres, egne timer og ført materiell. **Ingen priser.**
+Været fra appens Hjem er ikke med — `lib/weather.ts` setter et `User-Agent`-hode
+som en nettleser ikke har lov til å sette.
+
+Verifisert på 390 × 844 ved å bytte `role` til `montor` **i svaret fra
+Supabase**, ikke i basen — en skriving til den delte testkontoen er ikke verdt
+et skjermbilde. Bunnlinja ble «Hjem, Ordre, Meg», ingen sperreskjerm, og
+`#/ik` skrevet rett i adressefeltet ga fortsatt bare montørens egen Hjem.
+Kontorsiden er kjørt om igjen ved siden av, på telefon og på 1440 px, uendret.
 
 ## Åpne tråder
 
 - **Skann:** bad og stue må skannes på nytt med dagens app. Bare ett komplett LiDAR-skann
   (soverommet) finnes å måle på, så standardverdiene er ikke bekreftet på andre rom.
   Hull ved glass, speil og under møbler er uløst.
-- **Boligmappa:** søknad sendt 7. september, venter på oppstartsmøte og sandkassenøkler.
+- **Boligmappa:** sandkassen virker ende til ende (se 15. september over). Det som
+  gjenstår er produktarbeid, ikke API-arbeid: feltet `boligmappaNumber`, hvor
+  sendingen skal kjøre fra, og produksjonsnøkler via verifiseringsmøte og signert
+  integrasjonsavtale.
 - **Fiken-adapteren** ville feilet ved første ekte kall og har ingen test. Tripletex er
   veien som virker i dag.
 - **PDF-laget er bygget og testet, men ingen skjerm importerer det.** «Del» på faktura

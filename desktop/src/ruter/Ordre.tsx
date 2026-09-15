@@ -24,6 +24,7 @@ import {
   type Ordredetalj,
   type Ordrerad,
 } from '@/lib/ordre-lager'
+import { Delt, paaTelefon } from '@/ui/Delt'
 import { antall, Beskjed, Felt, Knapp, Merke, Sidehode, stk } from '@/ui/kit'
 
 /**
@@ -138,7 +139,11 @@ export function Ordre() {
         if (mitt !== teller.current) return
         setRader(ut)
         setFeil(null)
-        setValgt(v => (v && ut.some(o => o.id === v) ? v : (ut[0]?.id ?? null)))
+        // Autovalg av første rad hører til spaltevisningen, der en tom
+        // høyrespalte bare er bortkastet plass. På telefon er detaljen HELE
+        // flata, så det samme valget ville kastet deg rett inn i den øverste
+        // ordren hver gang lista lastet.
+        setValgt(v => (v && ut.some(o => o.id === v) ? v : (paaTelefon() ? null : (ut[0]?.id ?? null))))
       } catch (e) {
         if (mitt === teller.current) setFeil(e instanceof Error ? e.message : String(e))
       } finally {
@@ -362,7 +367,7 @@ export function Ordre() {
       ) : null}
 
       <div className="arbeidsflate">
-        <div className="delt">
+        <Delt valgt={!!valgt} tilbake={() => setValgt(null)}>
           <div className="liste">
             <div className="liste-verktoy">
               <div className="filter">
@@ -438,7 +443,7 @@ export function Ordre() {
               />
             )}
           </div>
-        </div>
+        </Delt>
       </div>
 
       <div className="dempet-mer" style={{ fontSize: 12, paddingLeft: 4 }}>

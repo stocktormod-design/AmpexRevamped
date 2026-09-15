@@ -321,6 +321,7 @@ button:disabled { cursor: default; opacity: 0.4; }
 .sidehode-tekst { min-width: 0; }
 .sidehode-under { color: var(--blekk-3); margin-top: 4px; font-size: 14px; }
 .sidehode-hoyre { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.sidehode-konto { display: flex; align-items: center; gap: 10px; }
 
 .ikonknapp {
   width: 36px; height: 36px; border-radius: var(--r-pille); flex: none;
@@ -579,6 +580,11 @@ textarea.skrivefelt-lav { height: 110px; }
    `panel` aldri har eksistert i denne fila. Krem paa krem. */
 .logginn {
   display: grid;
+  /* Spalten MÅ oppgis. Uten den blir den `auto` og dermed like bred som
+     kortets 372 px, og `max-width: 100%` på kortet måler seg da mot seg selv i
+     stedet for mot skjermen — kortet stakk ut over høyre kant på telefon.
+     `minmax(0, 1fr)` lar spalten krympe under innholdet. */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   min-height: 100%;
   padding: 32px;
@@ -1103,3 +1109,174 @@ textarea.skrivefelt-lav { height: 110px; }
 }
 .mal-vis-tabell > .mal-vis-tom { background: var(--papir); padding: 8px 10px; flex: 1; }
 .mal-vis-kolonne { flex: 1; background: var(--papir); padding: 7px 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Montørflaten ------------------------------------------------------------
+   Adresse og telefon på en ordre er HANDLINGER, ikke opplysninger: de åpner
+   kart og ringer. Derfor ser de ut som rader man kan treffe, med 44 px høyde
+   også på skjerm — den som bruker denne flaten sitter i en bil. */
+.montor-handling {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 44px; padding: 4px 0;
+  color: var(--blekk); text-decoration: none;
+}
+.montor-handling > svg { color: var(--blekk-3); flex: none; }
+.montor-handling:hover { color: var(--kobber-dyp); }
+.montor-handling:hover > svg { color: var(--kobber-dyp); }
+.montor-handling + .montor-handling { border-top: 1px solid var(--kant); }
+
+/* Telefon ================================================================= */
+
+/* Bunnlinja og tilbake-knappen finnes i markupen hele tiden, men tegnes bare
+   på telefonformen. Se kommentaren i App.tsx om hvorfor de ikke byttes i JS. */
+.bunnlinje { display: none; }
+.delt-tilbake { display: none; }
+
+/* «Mer»-arket. Åpnes bare fra bunnlinja, men stilen står utenfor
+   mediespørringen så den ikke avhenger av hvor arket kalles fra. */
+.ark-bak {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0, 0, 0, 0.32);
+  display: flex; align-items: flex-end;
+  animation: ark-tone 140ms ease;
+}
+.ark {
+  width: 100%; max-height: 80vh; overflow: auto;
+  background: var(--papir);
+  border-radius: var(--r-stor) var(--r-stor) 0 0;
+  border-top: 1px solid var(--kant);
+  padding: 8px 12px calc(16px + env(safe-area-inset-bottom));
+  animation: ark-opp 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.ark-tak {
+  width: 36px; height: 4px; border-radius: 2px;
+  background: var(--kant-sterk); margin: 6px auto 10px;
+}
+.ark-bolk + .ark-bolk { margin-top: 4px; }
+.ark-lenke {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 48px; padding: 0 10px; border-radius: var(--r-knapp);
+  color: var(--blekk); text-align: left;
+}
+.ark-lenke[aria-current='page'] { background: var(--dis); font-weight: 500; }
+
+@keyframes ark-tone { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ark-opp { from { transform: translateY(12px) } to { transform: none } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ark-bak, .ark { animation: none; }
+}
+
+@media (max-width: 820px) {
+  /* Skallet snus: menyen fra venstre kant til nedre kant.
+     `black-translucent` i index.html legger flata under statuslinja, så toppen
+     må ta innsettingen selv — ellers ligger overskriften under klokka. */
+  .skjerm { flex-direction: column; }
+  .rail { display: none; }
+
+  .flate {
+    padding: 12px 14px 0;
+    padding-top: calc(12px + env(safe-area-inset-top));
+    padding-left: calc(14px + env(safe-area-inset-left));
+    padding-right: calc(14px + env(safe-area-inset-right));
+    gap: 12px;
+  }
+
+  .bunnlinje {
+    display: flex; flex: none;
+    border-top: 1px solid var(--kant);
+    background: var(--papir);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .bunnknapp {
+    flex: 1 1 0; min-width: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    /* 52 px er ikke pyntetall: under 44 bommer tommelen, og teksten under
+       ikonet trenger resten. Innsettingen kommer i tillegg, på linja over. */
+    min-height: 52px; padding: 6px 2px 8px;
+    color: var(--blekk-3); font-size: 10px; letter-spacing: -0.01em;
+  }
+  .bunnknapp > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Sort på hvitt for valgt flate, som i appen (regel 9) — ikke en farget
+     pille, og ikke en stolpe i kanten. */
+  .bunnknapp[aria-current='page'] { color: var(--blekk); font-weight: 500; }
+
+  /* Overskriften tar for mye av en telefonskjerm i skjermstørrelse. */
+  h1 { font-size: 22px; }
+  .sidehode { flex-wrap: wrap; gap: 10px; }
+  .sidehode-under { font-size: 13px; }
+  /* Flatenes egne handlinger — søkefelt, eksportknapp, filtre — er satt opp for
+     en bred skjerm, og noen har fast bredde satt rett på elementet (Ordre har
+     et søkefelt på 250 px). På 390 px la de seg ikke om, de dyttet hele
+     layoutbredden ut til 577 px og skrumpet resten av siden med seg. Raden får
+     derfor sin egen linje, lov til å brekke, og et tak på barna. */
+  .sidehode-hoyre { width: 100%; margin-left: 0; flex-wrap: wrap; }
+  .sidehode-hoyre > * { min-width: 0; max-width: 100%; }
+  /* Navn, rolle og utlogging tok en hel rad midt på skjermen. Alt tre ligger
+     på «Meg», som er én knapp unna i bunnlinja. */
+  .sidehode-konto { display: none; }
+
+  /* Delt visning blir to flater i stedet for to spalter: lista, og detaljen
+     over den. `display: none` tar den skjulte HELT ut, så det som er igjen
+     fyller skjermen. */
+  .delt { display: flex; flex-direction: column; }
+  .delt[data-valgt='0'] > .detalj { display: none; }
+  .delt[data-valgt='1'] > .liste { display: none; }
+  .delt[data-valgt='1'] > .delt-tilbake {
+    display: flex; align-items: center; gap: 4px;
+    flex: none; min-height: 44px; padding: 0 10px;
+    border-bottom: 1px solid var(--kant);
+    color: var(--blekk-2); font-size: 14px;
+  }
+  /* Den synlige av de to skal fylle høyden. Uten dette tar den bare
+     innholdshøyden, og en kort liste etterlot en tom hvit halvdel under seg. */
+  .delt > .liste, .delt > .detalj { flex: 1; min-height: 0; }
+  .liste { border-right: none; }
+
+  .arbeidsflate { border-radius: var(--r-kort); }
+  .detalj-kropp { padding: 14px 14px 28px; }
+  .hero { padding: 14px; }
+  .hero-tittel { font-size: 19px; }
+  /* Tre merkelapper får ikke plass på 390 px. De skal legge seg under
+     hverandre, ikke brekke INNI pilla — «Punkt 1» ble til «Punkt» over «1». */
+  .hero-topp { flex-wrap: wrap; }
+  .hero-topp > * { white-space: nowrap; }
+  .hero-handling { position: static; margin-top: 12px; }
+  .detalj .hero { position: static; }
+
+  /* Radene er det man treffer mest. 48 px, og pekeren styrer ikke noe her —
+     `:hover` henger igjen på berøring og får forrige rad til å se valgt ut. */
+  .ordrerad { min-height: 48px; padding: 10px 12px; }
+  .ordrerad:hover { background: none; }
+  .ordrerad[aria-selected='true'] { background: var(--papir); border-color: var(--kant); }
+
+  .knapp { min-height: 44px; }
+  .ikonknapp { min-width: 40px; min-height: 40px; }
+
+  /* Under 16 px zoomer iOS inn på feltet når det får fokus, og zoomer aldri
+     ut igjen. Det er derfor dette tallet er 16 og ikke 14. */
+  .felt-inn, input.felt-inn, textarea.felt-inn, select.felt-inn { font-size: 16px; }
+  .felt-firkant input.felt-inn { height: 44px; }
+
+  /* To tall i bredden i stedet for ett — nøkkeltallene er korte. */
+  .statrad { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+
+  .kort { padding: 14px; }
+  .to-spalter { grid-template-columns: minmax(0, 1fr); }
+
+  /* Uka: sju kolonner på 390 px blir ~48 px hver, og «Man 14» ved siden av
+     hverandre er bredere enn det. Navnet legges over tallet, og da holder det.
+     Uten dette rant dagene ut av kortet og ble klippet på høyre side. */
+  .uke-hode { flex-direction: column; align-items: center; gap: 0; padding: 8px 2px 6px; }
+  .uke-navn { font-size: 10px; }
+  .uke-tall { font-size: 13px; }
+  .uke-dag { min-height: 84px; }
+  .uke-jobber { padding: 0 4px 8px; }
+  .uke-jobb { padding: 4px 5px; }
+
+  /* Innlogging: 32 px luft på hver side er en femtedel av en telefonskjerm. */
+  .logginn {
+    padding: 24px 16px;
+    padding-top: calc(24px + env(safe-area-inset-top));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+}

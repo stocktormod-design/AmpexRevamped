@@ -2,7 +2,16 @@
 <html lang="nb">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      `viewport-fit=cover` lar flata gå helt ut i kantene på en telefon med
+      hakk, og er det som gjør `env(safe-area-inset-*)` i stilarket levende.
+      Uten den er innsettingene alltid 0, og bunnlinja havner under
+      hjemindikatoren.
+
+      `maximum-scale` står IKKE her. Å sperre knipezoom er en
+      tilgjengelighetsregresjon, og iOS ignorerer det uansett siden 10.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
     <title>Ampex Kontor</title>
     <meta name="description" content="Ampex Kontor — kontorflaten for elektrikerfirmaet: ordre, prosjekter, tilbud, timer og internkontroll." />
@@ -22,7 +31,25 @@
     -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="theme-color" content="#F5F5F7" />
+    <meta name="theme-color" content="#FFFFFF" />
+
+    <!--
+      Hjemskjerm.
+
+      Manifestet er det Android og desktop-Chrome leser for å tilby «installer».
+      iOS leser det ikke til fullt: der er det `apple-mobile-web-app-*` som
+      avgjør at siden åpnes uten adresselinje, og `apple-touch-icon` over som
+      blir ikonet. Begge må derfor stå.
+
+      `black-translucent` lar flata gå under statuslinja, slik at
+      safe-area-innsettingene i stilarket får noe å gjøre. Uten den ligger det
+      en hvit stripe over toppen i stedet.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Ampex" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <!--
       Temaet leses FØR React, ellers maler siden seg hvit og så brun for den
       som har valgt papir. Samme nøkkel som i src/lib/tema.ts.

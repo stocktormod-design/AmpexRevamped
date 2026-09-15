@@ -32,6 +32,7 @@ import {
   type Skjemamal,
 } from '@/lib/ik-lager'
 import { hentFirma } from '@/lib/kontor-lager'
+import { Delt, paaTelefon } from '@/ui/Delt'
 import { Historikk } from '@/ui/Historikk'
 import { antall, Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 
@@ -100,7 +101,9 @@ export function Internkontroll() {
       setMaler(m)
       setAnsatte(a.ansatte)
       setFeil(null)
-      setValgt(v => (v && p.some((x: IkPunkt) => x.id === v) ? v : (p[0]?.id ?? null)))
+      // Se `paaTelefon()`: autovalg hører til spaltevisningen. På telefon er
+      // detaljen hele flata, og skal ikke åpne seg av seg selv.
+      setValgt(v => (v && p.some((x: IkPunkt) => x.id === v) ? v : (paaTelefon() ? null : (p[0]?.id ?? null))))
     } catch (e) {
       setFeil(e instanceof Error ? e.message : String(e))
     } finally {
@@ -212,7 +215,7 @@ export function Internkontroll() {
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
 
       <div className="arbeidsflate">
-        <div className="delt">
+        <Delt valgt={!!aktiv} tilbake={() => setValgt(null)}>
           <div className="liste">
             <div className="liste-verktoy">
               <div className="dempet-mer" style={{ fontSize: 12 }}>
@@ -286,7 +289,7 @@ export function Internkontroll() {
               />
             )}
           </div>
-        </div>
+        </Delt>
       </div>
     </>
   )
