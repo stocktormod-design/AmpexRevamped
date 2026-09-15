@@ -26,6 +26,26 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {})
   })
+
+  /**
+   * Tar en NY arbeider over, må sida hente seg selv på nytt.
+   *
+   * `skipWaiting` + `claim` gjør at den nye arbeideren overtar med en gang,
+   * men fanen som alt står åpen beholder HTML-en og filene den startet med.
+   * Resultatet er en app som ser oppdatert ut i nettverksfanen og oppfører seg
+   * som før på skjermen — nøyaktig det som skjedde da rullerettelsen var ute
+   * og telefonen fortsatt ikke kunne rulle.
+   *
+   * `controllerchange` fyrer når overtakelsen er et faktum. Vakta hindrer
+   * løkke: uten den kan en ny arbeider som tar over under omlastingen sette i
+   * gang en ny omlasting.
+   */
+  let laster = false
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (laster) return
+    laster = true
+    window.location.reload()
+  })
 }
 
 createRoot(rot).render(
