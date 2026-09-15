@@ -23,11 +23,30 @@ function sjekk(navn: string, faktisk: unknown, forventet: unknown) {
 
 const ROLLER: Rolle[] = ['owner', 'admin', 'bas', 'installator', 'montor', 'laerling', 'regnskapsforer']
 
-// ── Feltet slipper ikke inn ────────────────────────────────────────────────
+// ── Feltet slipper ikke inn PÅ KONTORET ────────────────────────────────────
+//
+// Fram til 15. september sto montør og lærling med tomme rettighetslister.
+// Nå har de sin egen flate (`min.dag`) — dagen sin, ordrene sine, seg selv —
+// men kontoret er fortsatt stengt. Det er skillet disse påstandene vokter:
+// at «montøren slipper inn på web» aldri blir til «montøren ser
+// dekningsbidraget».
 
 sjekk('montør kommer ikke inn på kontoret', kan('montor', 'kontor'), false)
 sjekk('lærling kommer ikke inn på kontoret', kan('laerling', 'kontor'), false)
-sjekk('montør har ingen rettigheter i det hele tatt', rettigheter('montor'), [])
+sjekk('montør har SIN EGEN flate', kan('montor', 'min.dag'), true)
+sjekk('lærling har sin egen flate', kan('laerling', 'min.dag'), true)
+sjekk('montør har bare den ene rettigheten', rettigheter('montor'), ['min.dag'])
+sjekk('lærling har bare den ene rettigheten', rettigheter('laerling'), ['min.dag'])
+
+// Montørflaten er IKKE kontorets ordreflate. Den åpner hele firmaets
+// portefølje med fakturering og DB, og den skal montøren ikke ha.
+sjekk('montør får ikke kontorets ordreflate', kan('montor', 'ordre.les'), false)
+sjekk('montør ser ikke dekningsbidraget', kan('montor', 'db.les'), false)
+sjekk('montør fakturerer ikke', kan('montor', 'faktura.les'), false)
+
+// Og ingen av kontorrollene skal havne på montørflaten — de har «Mine ordrer»
+// i sin egen ordreliste i stedet.
+sjekk('bare feltet har min.dag', ROLLER.filter(r => kan(r, 'min.dag')), ['montor', 'laerling'])
 
 // ── Ukjent rolle er «nei», ikke «kanskje» ──────────────────────────────────
 
@@ -151,7 +170,16 @@ for (const r of ROLLER) {
     // gir et system der halvparten av rutinene peker i løse lufta.
     ['ik.skriv uten skjema.skriv', kan(r, 'ik.skriv') && !kan(r, 'skjema.skriv')],
     ['bruker.inviter uten firma.les', kan(r, 'bruker.inviter') && !kan(r, 'firma.les')],
-    ['en rettighet uten kontor', rettigheter(r).length > 0 && !kan(r, 'kontor')],
+    // Alt som ikke er `min.dag` forutsetter `kontor`. `min.dag` er den ENE
+    // rettigheten som er en egen inngang og ikke en kontorrettighet — uten
+    // unntaket her ville montørflaten sett ut som et hull i matrisa.
+    [
+      'en kontorrettighet uten kontor',
+      rettigheter(r).some(x => x !== 'min.dag') && !kan(r, 'kontor'),
+    ],
+    // Og motsatt: de to inngangene skal ikke kunne stå sammen. Da ville det
+    // vært uklart hvilken flate brukeren faktisk får.
+    ['både kontor og min.dag', kan(r, 'kontor') && kan(r, 'min.dag')],
   ]
   for (const [hva, brutt] of avhengig) sjekk(`${r}: ${hva}`, brutt, false)
 }
@@ -179,7 +207,7 @@ sjekk('installatør styrer ikke poolen', kan('installator', 'pool.styr'), false)
 sjekk('bas styrer ikke poolen', kan('bas', 'pool.styr'), false)
 sjekk('regnskapsfører styrer ikke poolen', kan('regnskapsforer', 'pool.styr'), false)
 
-// Montoer og laerling jobber i appen, ikke paa kontorflaten.
+// Montoer og laerling jobber i felt, ikke paa kontorflaten.
 sjekk('montør har fortsatt ingenting på kontoret', kan('montor', 'skann.les'), false)
 
 // ── Hvem slipper folk inn i firmaet ────────────────────────────────

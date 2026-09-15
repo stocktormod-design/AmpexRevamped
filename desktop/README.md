@@ -49,14 +49,67 @@ gjenbruken som betyr noe.
 
 UI-et er skrevet fra bunnen, og det er med vilje. Et kontor-ordresystem er tette
 tabeller, tastatur og flere ruter samtidig; montørappen er én hånd og berøring.
-Radhøyden her er 30 px, ikke 44. Fargene er derimot de samme, og de leses fra
-`lib/tokens.js` gjennom en virtuell Vite-modul, så paletten har fortsatt bare
-ett sted å endres.
+Radhøyden på skjerm er 30 px, ikke 44. Fargene er derimot de samme, og de leses
+fra `lib/tokens.js` gjennom en virtuell Vite-modul, så paletten har fortsatt
+bare ett sted å endres.
+
+**Under 820 px er det likevel én hånd og berøring** — se neste avsnitt. Det er
+ikke et brudd på delingen over: det er de samme kontorflatene, lagt om for en
+tommel. Montørappens skjermer finnes fortsatt bare i `app/`.
 
 **Kontoret skriver rett mot Supabase.** Montørappen er offline-først via
 WatermelonDB fordi telefonen mister dekning i en kjeller. Kontor-PC-en gjør ikke
 det, og skal ikke lagre en hel grossistkatalog lokalt bare for å synke den opp
 igjen. Regel 2 i `CLAUDE.md` gjelder montørappens skjermer.
+
+## Telefonformen, og appen på hjemskjermen
+
+Kontoret er en PWA: på ampex.no kan «Legg til på Hjem-skjerm» kjøre den uten
+adresselinje, med eget ikon. Det er i dag den eneste veien inn i Ampex på en
+Android-telefon — `modules/ampex-splat` er kun Apple, og montørappen har ikke
+noe Android-bygg.
+
+**Grensa er 820 px**, og den står to steder som MÅ holdes like: konstanten
+`TELEFON` i `src/ui/Delt.tsx` og mediespørringen nederst i `src/styles.css`.
+744 px (iPad mini i portrett) skal ha telefonformen, 1024 skal ha spaltene.
+
+Tre ting endrer seg under grensa:
+
+1. **Sidemenyen blir en bunnlinje.** Fire flater pluss «Mer», som åpner et ark
+   med hele menyen gruppert som i sidemenyen. Rekkefølgen står i `TELEFONORDEN`
+   i `App.tsx` og er ikke den samme som sidemenyens — bunnlinja sorteres etter
+   hvor ofte en tommel treffer flata, ikke etter arbeidsdagen.
+2. **Delt visning blir to flater.** `<Delt>` setter `data-valgt`, og stilarket
+   viser lista eller detaljen. Komponenten legger også på et historikksteg, så
+   Androids tilbakeknapp går ett hakk opp i stedet for å lukke appen.
+3. **Autovalg av første rad slås av.** På skjerm fyller det en tom
+   høyrespalte; på telefon ville det kastet deg rett inn i detaljen. Flatene
+   spør `paaTelefon()` før de velger.
+
+Legger du til en flate med delt visning: bruk `<Delt>`, og husk `paaTelefon()`
+rundt autovalget. Glemmer du det andre, lander telefonen i detaljen hver gang —
+det var akkurat den feilen Internkontroll hadde til den ble målt.
+
+### Montørflatene
+
+Montøren og lærlingen får tre ruter, ikke kontorets ni: **Hjem** (`MinDag` —
+dagen din, og ingenting annet), **Ordre** (`MineOrdre` — alle dine, også de
+ferdige) og **Meg**, som er nøyaktig den samme ruta kontoret bruker.
+
+Selve ordren tegnes av `src/ui/MontorOrdre.tsx`, som BEGGE flatene bruker — det
+er hele grunnen til at den er en egen fil. Den viser hvor, hvem man ringer, hva
+som skal gjøres, egne timer og ført materiell. **Ingen priser**, verken kost,
+utpris eller sum: en flate som viser hva firmaet tar for jobben blir før eller
+siden vist fram til feil person.
+
+Været fra appens Hjem er ikke med. `lib/weather.ts` setter et
+`User-Agent`-hode, som met.no og Nominatim krever og som en nettleser ikke har
+lov til å sette. Skal det hit, må det gå gjennom en edge function.
+
+Tjenestearbeideren (`public/sw.js`) er bevisst tynn: den mellomlagrer skallet og
+de hashede filene, og rører **aldri** noe som ikke ligger på vårt eget opphav.
+Kontoret skriver rett mot Supabase, og en mellomlagret ordreliste ville vært feil
+data vist som om den var riktig. Den registreres bare i produksjonsbygg.
 
 ## Hva som finnes nå
 
@@ -95,8 +148,18 @@ firma med andre ansatte får ikke slette seg.
 
 Menyen viser bare det rollen faktisk kan bruke. Matrisen ligger i
 `lib/kontor-tilgang.ts` med selvtest, og den er en VISNINGSregel — RLS og
-databasesperrene er sikkerheten. Montør og lærling slippes ikke inn; alt de
-trenger ligger i appen på telefonen.
+databasesperrene er sikkerheten.
+
+**To innganger, ikke én med gradering.** `kontor` gir kontorflatene;
+`min.dag` gir montørflatene. Ingen rolle har begge, og selvtesten håndhever
+det. En montør er ikke en kontorbruker med færre knapper — han får et annet
+sett ruter (`MONTOR_RUTER` i `App.tsx`), og å skrive `#/ik` i adressefeltet
+gir ham fortsatt bare sin egen Hjem.
+
+Montør og lærling sto med tomme rettighetslister fram til 15. september, med
+begrunnelsen «alt de trenger ligger i appen på telefonen». Det holdt ikke:
+appen er iOS-bare, så en montør med Android hadde ingen vei inn i det hele
+tatt.
 
 «Kan godkjenne faglig» kommer fra `kan_godkjenne_faglig()` i databasen, ikke
 fra rollen. En installatør er ikke automatisk firmaets faglig ansvarlige.

@@ -1,5 +1,5 @@
 import { kan, rollenavn, type Rettighet } from '@delt/kontor-tilgang'
-import { Building2, ClipboardList, FileText, FolderKanban, Globe, House, Package, ShieldCheck, UserRound, Users } from 'lucide-react'
+import { Building2, ClipboardList, Ellipsis, FileText, FolderKanban, Globe, House, Package, ShieldCheck, UserRound, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/auth'
 import { erAmpexAdmin } from '@/lib/brukere'
@@ -9,6 +9,8 @@ import { Internkontroll } from '@/ruter/Internkontroll'
 import { Kunder } from '@/ruter/Kunder'
 import { Logginn, NyttPassord } from '@/ruter/Logginn'
 import { Meg } from '@/ruter/Meg'
+import { MinDag } from '@/ruter/MinDag'
+import { MineOrdre } from '@/ruter/MineOrdre'
 import { Ordre } from '@/ruter/Ordre'
 import { Oversikt } from '@/ruter/Oversikt'
 import { Prosjekter } from '@/ruter/Prosjekter'
@@ -83,7 +85,40 @@ const AMPEX_RUTE = {
   id: 'ampex', navn: 'Ampex', gruppe: 'Ampex', ikon: Globe, vis: () => <AmpexAdmin />,
 } as const
 
-type Rute = (typeof RUTER)[number] | typeof AMPEX_RUTE
+/**
+ * MONTØRFLATENE — en annen app i samme skall.
+ *
+ * Montøren og lærlingen har ikke kontoret; de har jobben sin. Se `min.dag` i
+ * `lib/kontor-tilgang.ts` for hvorfor det er en egen inngang og ikke et
+ * svakere kontor.
+ *
+ * `Meg` er den samme ruta som kontoret bruker, og det er med vilje: egne timer,
+ * tema, tofaktor og «slett meg» er de samme spørsmålene uansett hvilken flate
+ * du kom fra. Den har ingen rollesperre i seg.
+ */
+const MONTOR_RUTER = [
+  { id: 'hjem', navn: 'Hjem', gruppe: 'Jobb', ikon: House, rett: 'min.dag' as Rettighet, vis: () => <MinDag /> },
+  { id: 'mine-ordre', navn: 'Ordre', gruppe: 'Jobb', ikon: ClipboardList, rett: 'min.dag' as Rettighet, vis: () => <MineOrdre /> },
+  { id: 'meg', navn: 'Meg', gruppe: 'Meg', ikon: UserRound, rett: 'min.dag' as Rettighet, vis: () => <Meg /> },
+] as const
+
+/**
+ * Rekkefølgen bunnlinja på telefon plukker fra.
+ *
+ * Sidemenyen står i den rekkefølgen kontoret JOBBER i flatene, ovenfra og ned,
+ * og har plass til alle ni. Bunnlinja har plass til fem, og da er det ikke
+ * arbeidsdagen som bestemmer, men hvor ofte en tommel treffer dem. Resten ligger
+ * ett trykk unna under «Mer» — ingenting er borte, bare lenger ned.
+ *
+ * Internkontroll står foran Prosjekter med vilje: det er den flata noen faktisk
+ * sitter med på telefon.
+ */
+const TELEFONORDEN = ['oversikt', 'ordre', 'ik', 'meg'] as const
+
+/** Maks antall knapper i bunnlinja, «Mer» medregnet. Over fem blir de for smale å treffe. */
+const BUNNPLASSER = 5
+
+type Rute = (typeof RUTER)[number] | (typeof MONTOR_RUTER)[number] | typeof AMPEX_RUTE
 
 export function App() {
   const { sesjon, profil, laster, feil, gjenoppretting, loggUt } = useAuth()
@@ -96,6 +131,7 @@ export function App() {
   }, [])
 
   const [assistent, setAssistent] = useState(false)
+  const [mer, setMer] = useState(false)
 
   // Spoerres for hver innlogging, ikke bufres. Svaret er nei for alle andre enn
   // et par personer, og en tabell med én policy er billig å spørre.
@@ -107,10 +143,15 @@ export function App() {
     return () => { avbrutt = true }
   }, [profil])
 
-  const synlige: Rute[] = [
-    ...RUTER.filter(r => kan(profil?.role, r.rett)),
-    ...(ampexAdmin ? [AMPEX_RUTE] : []),
-  ]
+  // Rollen velger FLATESETT, ikke bare hvilke rader som filtreres bort. En
+  // montør er ikke en kontorbruker med færre knapper — han skal ha en annen app.
+  const iFelt = kan(profil?.role, 'min.dag')
+  const synlige: Rute[] = iFelt
+    ? MONTOR_RUTER.filter(r => kan(profil?.role, r.rett))
+    : [
+        ...RUTER.filter(r => kan(profil?.role, r.rett)),
+        ...(ampexAdmin ? [AMPEX_RUTE] : []),
+      ]
 
   useEffect(() => {
     const påTast = (e: KeyboardEvent) => {
@@ -166,13 +207,16 @@ export function App() {
   // dette ville den eneste som kan lage kunder stått med «kontoret er ikke for
   // denne rollen» — og `synlige` inneholder da bare Ampex-flata uansett, fordi
   // alle andre ruter filtreres på nettopp rollen.
-  if (!ampexAdmin && !kan(profil.role, 'kontor')) {
+  // Sperra gjelder den som verken har kontoret eller feltflaten. Montøren og
+  // lærlingen slapp tidligere ikke inn i det hele tatt, med beskjed om å bruke
+  // appen — den beskjeden holdt ikke for en Android-telefon, som ikke har noen
+  // app å bruke. Nå har de `min.dag`.
+  if (!ampexAdmin && !kan(profil.role, 'kontor') && !iFelt) {
     return (
-      <Sperre tittel="Kontoret er ikke for denne rollen" avslutt={loggUt}>
+      <Sperre tittel="Ingen flate for denne rollen" avslutt={loggUt}>
         <p className="kort-hjelp">
-          Du er logget inn som {rollenavn(profil.role).toLowerCase()}. Kontorflaten er for eier,
-          administrator, installatør, bas og regnskapsfører. Alt en montør trenger ligger i appen på
-          telefonen.
+          Du er logget inn som {rollenavn(profil.role).toLowerCase()}, og den rollen har ingen flater
+          her. Be en administrator se på rolleoppsettet.
         </p>
       </Sperre>
     )
@@ -210,6 +254,18 @@ export function App() {
     else grupper.push({ navn: r.gruppe, ruter: [r] })
   }
 
+  // Bunnlinja på telefon. Får alt plass, slipper «Mer» — en knapp som bare
+  // åpner et ark med ingenting nytt i er verre enn ingen knapp.
+  const alt_får_plass = synlige.length <= BUNNPLASSER
+  const bunn = alt_får_plass
+    ? synlige
+    : [
+        ...TELEFONORDEN.map(id => synlige.find(r => r.id === id)).filter(r => r !== undefined),
+        // Har rollen mistet en av de fire, fylles plassen fra menyens egen
+        // rekkefølge i stedet for å stå tom.
+        ...synlige.filter(r => !TELEFONORDEN.some(id => id === r.id)),
+      ].slice(0, BUNNPLASSER - 1)
+
   return (
     <div className="skall">
       <div className="skjerm">
@@ -242,9 +298,108 @@ export function App() {
           ))}
         </nav>
         <main className="flate">{aktiv.vis()}</main>
+
+        {/* Bunnlinja erstatter sidemenyen på telefon. Begge tegnes alltid;
+            stilarket viser den ene og skjuler den andre. Å bytte mellom dem i
+            JS ville betydd en mediespørring i React, en ny tegning ved hver
+            rotasjon, og en flimrende meny mens den avgjorde seg. */}
+        <nav className="bunnlinje">
+          {bunn.map(r => (
+            <button
+              key={r.id}
+              className="bunnknapp"
+              aria-current={r.id === aktiv.id ? 'page' : undefined}
+              onClick={() => { window.location.hash = `#/${r.id}` }}
+            >
+              <r.ikon size={22} strokeWidth={1.8} />
+              <span>{r.navn}</span>
+            </button>
+          ))}
+          {!alt_får_plass ? (
+            <button
+              className="bunnknapp"
+              aria-expanded={mer}
+              // Den er «gjeldende» når du står på en flate som ikke har egen
+              // knapp — ellers ser bunnlinja ut som om ingenting er valgt.
+              aria-current={bunn.some(r => r.id === aktiv.id) ? undefined : 'page'}
+              onClick={() => setMer(true)}
+            >
+              <Ellipsis size={22} strokeWidth={1.8} />
+              <span>Mer</span>
+            </button>
+          ) : null}
+        </nav>
       </div>
 
+      {mer ? (
+        <Mer
+          grupper={grupper}
+          aktiv={aktiv.id}
+          lukk={() => setMer(false)}
+          gaaTil={id => { window.location.hash = `#/${id}`; setMer(false) }}
+          assistent={() => { setMer(false); setAssistent(true) }}
+        />
+      ) : null}
+
       <Assistent apen={assistent} lukk={() => setAssistent(false)} kommandoer={kommandoer} />
+    </div>
+  )
+}
+
+/**
+ * «Mer»-arket: resten av menyen, gruppert akkurat som sidemenyen.
+ *
+ * Det er et ark fra bunnen og ikke en skjerm, fordi det er en meny og ikke en
+ * flate — du skal se at kontoret fortsatt ligger bak. Bakgrunnen lukker det,
+ * som alle ark på en telefon.
+ */
+function Mer({
+  grupper,
+  aktiv,
+  lukk,
+  gaaTil,
+  assistent,
+}: {
+  grupper: { navn: string; ruter: readonly { id: string; navn: string; ikon: typeof House }[] }[]
+  aktiv: string
+  lukk: () => void
+  gaaTil: (id: string) => void
+  assistent: () => void
+}) {
+  useEffect(() => {
+    const paaTast = (e: KeyboardEvent) => { if (e.key === 'Escape') lukk() }
+    window.addEventListener('keydown', paaTast)
+    return () => window.removeEventListener('keydown', paaTast)
+  }, [lukk])
+
+  return (
+    <div className="ark-bak" onClick={lukk}>
+      <div className="ark" onClick={e => e.stopPropagation()} role="dialog" aria-label="Mer">
+        <div className="ark-tak" />
+        {grupper.map(g => (
+          <div key={g.navn} className="ark-bolk">
+            <div className="rail-gruppe">{g.navn}</div>
+            {g.ruter.map(r => (
+              <button
+                key={r.id}
+                className="ark-lenke"
+                aria-current={r.id === aktiv ? 'page' : undefined}
+                onClick={() => gaaTil(r.id)}
+              >
+                <r.ikon size={20} strokeWidth={1.8} />
+                {r.navn}
+              </button>
+            ))}
+          </div>
+        ))}
+        <div className="ark-bolk">
+          <div className="rail-gruppe">Assistent</div>
+          <button className="ark-lenke" onClick={assistent}>
+            <AmpexLogo size={20} />
+            Spør Ampex
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

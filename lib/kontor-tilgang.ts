@@ -25,6 +25,20 @@ export type Rolle =
 export type Rettighet =
   /** Slippes inn på kontorflaten i det hele tatt. */
   | 'kontor'
+  /**
+   * Slippes inn på MONTØRFLATEN på web — dagen sin, ordrene sine, seg selv.
+   *
+   * Dette er ikke en svakere `kontor`, det er en annen flate. Den som har
+   * `kontor` får saksbehandlingen; den som har `min.dag` får jobben sin. Ingen
+   * rolle trenger begge: kontorrollene ser sine egne ordrer gjennom
+   * ordrelistas «Mine ordrer», og montøren har ikke noe på kontoret å gjøre.
+   *
+   * Hvorfor den finnes i det hele tatt: montørappen er iOS-bare
+   * (`modules/ampex-splat` har ingen Android-del), og TestFlight forutsetter en
+   * godkjent Apple-konto. Uten denne flaten finnes det ingen vei inn i Ampex
+   * for en montør med Android-telefon.
+   */
+  | 'min.dag'
   /** Se ordrelista. */
   | 'ordre.les'
   /** Se ALLE firmaets ordrer, ikke bare dem du er med på. */
@@ -211,9 +225,19 @@ const MATRISE: Record<Rolle, Rettighet[]> = {
     'ik.les', 'skjema.les', 'skann.les',
   ],
 
-  // Alt en montør og en lærling trenger ligger i appen på telefonen.
-  montor: [],
-  laerling: [],
+  // Montøren og lærlingen har IKKE kontoret — de har sin egen flate.
+  //
+  // Sto som tomme lister fram til 15. september, med begrunnelsen «alt en
+  // montør trenger ligger i appen på telefonen». Det holdt så lenge appen var
+  // eneste vei inn. Den er iOS-bare, så en montør med Android hadde ingen vei
+  // i det hele tatt — derfor `min.dag`.
+  //
+  // Merk at de fortsatt ikke har `ordre.les`: den åpner KONTORETS ordreflate,
+  // med hele firmaets portefølje, fakturering og dekningsbidrag. Montørflaten
+  // henter sine egne ordrer selv, og RLS er uansett det som avgjør hva basen
+  // slipper ut.
+  montor: ['min.dag'],
+  laerling: ['min.dag'],
 }
 
 const ALLE_ROLLER = Object.keys(MATRISE) as Rolle[]
