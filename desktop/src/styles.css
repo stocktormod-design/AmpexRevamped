@@ -332,6 +332,21 @@ button:disabled { cursor: default; opacity: 0.4; }
   flex: 1; min-width: 0; min-height: 0;
   display: flex; flex-direction: column; gap: 16px;
   padding: 24px;
+  /*
+   * Rullingen bor HER, ikke på dokumentet.
+   *
+   * Seks flater har sin egen `.arbeidsflate` som ruller innvendig. De ti andre
+   * — Meg, Oversikt, Firma, Kunder, Prosjekter … — er bare kort under
+   * hverandre, og lot dokumentet ta rullingen. Det sluttet å virke i det
+   * øyeblikket body fikk `overflow: hidden` (som bunnlinja trengte), og da var
+   * de ti ikke til å rulle i det hele tatt.
+   *
+   * Med rullingen her blir begge deler riktig samtidig: sidemenyen og
+   * bunnlinja står stille fordi de er søsken av denne boksen, og innholdet
+   * ruller under dem. Flatene med `.arbeidsflate` passer nøyaktig og får ingen
+   * rullefelt.
+   */
+  overflow-y: auto;
 }
 .flate-rull { overflow: auto; }
 .smal { max-width: 1200px; }
@@ -1194,7 +1209,10 @@ textarea.skrivefelt-lav { height: 110px; }
   .rail { display: none; }
 
   .flate {
-    padding: 12px 14px 0;
+    /* 12 px under også, ikke 0: når flata ruller skal ikke det siste kortet
+       ende klistret inntil bunnlinja. Det gir samtidig kortet med
+       `.arbeidsflate` en synlig underkant i stedet for å løpe ut av skjermen. */
+    padding: 12px 14px;
     padding-top: calc(12px + env(safe-area-inset-top));
     padding-left: calc(14px + env(safe-area-inset-left));
     padding-right: calc(14px + env(safe-area-inset-right));
