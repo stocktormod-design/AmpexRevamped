@@ -55,7 +55,21 @@
  * linjene fjernes igjen.
  */
 
-const VERSJON = 'ampex-kontor-v1'
+/**
+ * Cachenavnet ER oppryddingen.
+ *
+ * `activate` sletter hver cache som ikke heter dette. Bumper du tallet, blir
+ * alt fra forrige runde borte i samme slengen — gamle hashede filer OG det
+ * forhåndslagrede skallet. Det er den eneste sikre måten å få en telefon som
+ * har satt seg fast på gammel kode tilbake på sporet.
+ *
+ * v2 (15. september, kveld): v1 kunne pinne et skall fra
+ * installasjonsøyeblikket. Gikk én navigering i vasken — dårlig dekning er
+ * normalen for denne brukergruppen — falt den tilbake på det skallet, og det
+ * pekte på gamle filnavn som lå trygt i samme cache. Da satt du fast til noen
+ * tømte nettleseren for hånd.
+ */
+const VERSJON = 'ampex-kontor-v2'
 const SKALL = '/'
 
 // Filene som må ligge der for at appen skal kunne TEGNE seg uten nett. Selve
