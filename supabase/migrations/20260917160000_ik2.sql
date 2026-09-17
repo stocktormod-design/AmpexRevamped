@@ -100,3 +100,14 @@ create policy ik2_rutiner_update on public.ik2_rutiner
 -- Teksten under dem er firmaets egen, og fylles ikke ut av oss.
 alter table public.ik2_formal add column if not exists nummer text;
 alter table public.ik2_formal add column if not exists hjemmel text;
+
+-- v2 henger på de EKTE kapitlene (2026-09-17, kveld): `ik2_punkter.kapittel_id`
+-- peker på `ik_punkter`, ikke på en egen kopi. Rammeverket, versjonene,
+-- vedtakene og historikken finnes allerede der, og to kopier av det samme
+-- kravet ville før eller siden sagt hver sin ting. v2 eier bare nivået under.
+alter table public.ik2_punkter drop constraint ik2_punkter_formal_id_fkey;
+alter table public.ik2_punkter rename column formal_id to kapittel_id;
+alter table public.ik2_punkter
+  add constraint ik2_punkter_kapittel_id_fkey foreign key (kapittel_id) references public.ik_punkter (id);
+alter index ik2_punkter_formal_idx rename to ik2_punkter_kapittel_idx;
+drop table public.ik2_formal;
