@@ -12,7 +12,6 @@
 
   "headers": [
     {
-      "_": "Tjenestearbeideren MÅ hentes på nytt. Cachenavnet i sw.js stemples med byggetidspunktet (desktop/scripts/stemple-sw.mjs), og en fane som får en gammel sw.js fra kanten vet ikke at det finnes noe nyere.",
       "source": "/sw.js",
       "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     },
