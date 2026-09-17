@@ -38,6 +38,8 @@ sjekk('ingen punkter uten tittel', IK_SKJELETT.filter(p => !p.tittel.trim()).len
 sjekk('skjelettet leverer ingen ferdige formål',
   Object.prototype.hasOwnProperty.call(IK_SKJELETT[0], 'formal'), false)
 sjekk('ingen punkter uten hint til den som skal skrive', IK_SKJELETT.filter(p => !p.hint.trim()).length, 0)
+sjekk('alle kapitler har forslag til punkter', IK_SKJELETT.filter(p => p.forslag.length < 3).length, 0)
+sjekk('forslagene er titler, ikke tekst', IK_SKJELETT.flatMap(p => p.forslag).filter(t => t.length > 48).length, 0)
 sjekk('alle intervaller er innenfor det basen godtar', IK_SKJELETT.every(p => p.intervallMnd >= 1 && p.intervallMnd <= 120), true)
 
 // ── Det forskriften krever skriftlig ───────────────────────────────────────

@@ -1460,6 +1460,53 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
 .ik2-mer > summary .ik2-rad-mer { margin-left: 4px; }
 .ik2-mer > .ik2-avsnitt:first-of-type { border-top: 1px solid var(--kant); padding-top: 16px; }
 
+/* «Å gjøre»: prikken sier hvor mye det haster. Oransje er den ene semantiske
+   fargen på oversiktene (regel 9); rødt finnes ikke her. */
+.ik2-prikk { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.ik2-prikk-na { background: var(--gul); }
+.ik2-prikk-snart { background: transparent; border: 1.5px solid var(--gul); }
+
+/* Forslag til punkter: chips med pluss. Samme form som filterchipene, så de
+   leser som «trykk for å velge», ikke som knapper. */
+.ik2-forslag { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--kant); }
+.ik2-forslag-etikett { display: block; color: var(--blekk-3); font-size: 12px; margin-bottom: 8px; }
+.ik2-forslag-knapp { border-color: var(--kant); color: var(--blekk-2); }
+.ik2-forslag-knapp:hover:not(:disabled) { border-color: var(--kant-sterk); background: var(--papir); color: var(--blekk); }
+.ik2-forslag-knapp:disabled { opacity: 0.5; }
+
+/* Alvorlighet på avvik. Kritisk og høy er varsel-oransje; resten er nøytrale. */
+.ik2-alvor { flex: none; font-size: 11px; font-weight: 500; padding: 1px 8px; line-height: 18px; border-radius: var(--r-pille); border: 1px solid var(--kant); color: var(--blekk-2); background: var(--fyll); }
+.ik2-alvor-kritisk { background: var(--gul); border-color: var(--gul); color: #fff; }
+.ik2-alvor-hoy { background: var(--gul-flate); border-color: transparent; color: var(--gul); }
+
+/* Gyldighet i opplæringsregisteret. Fire tilstander, fire tydelige former. */
+.ik2-gyldig { display: inline-flex; align-items: center; font-size: 12px; font-weight: 500; padding: 1px 8px; line-height: 18px; border-radius: var(--r-pille); white-space: nowrap; }
+.ik2-gyldig-gyldig { background: var(--gronn-flate); color: var(--gronn); }
+.ik2-gyldig-utgaar { background: var(--gul-flate); color: var(--gul); }
+.ik2-gyldig-utgatt { background: var(--rod-flate); color: var(--rod); }
+.ik2-gyldig-mangler { border: 1px dashed var(--kant-sterk); color: var(--blekk-3); }
+
+/* Tabellen: ansatte som rader, kursene som kolonner. */
+.ik2-tabell { display: flex; flex-direction: column; }
+.ik2-tabell-hode, .ik2-tabell-rad {
+  display: grid; grid-template-columns: minmax(160px, 1.4fr) minmax(130px, 1fr) minmax(130px, 1fr) minmax(70px, 0.6fr) 20px;
+  gap: 12px; align-items: center; padding: 0 4px;
+}
+.ik2-tabell-hode { height: 36px; color: var(--blekk-3); font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--kant); }
+.ik2-tabell-rad { min-height: 48px; text-align: left; border-bottom: 1px solid var(--kant); }
+.ik2-tabell-rad:hover { background: var(--dis); }
+.ik2-tabell-rad:hover .ik2-rad-pil { color: var(--blekk); }
+.ik2-tabell-navn { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ik2-rad-stille { cursor: default; }
+.ik2-rad-stille:hover { background: none; }
+@media (max-width: 820px) {
+  .ik2-tabell-hode { display: none; }
+  .ik2-tabell-rad { grid-template-columns: 1fr 20px; gap: 4px 12px; padding: 10px 4px; }
+  .ik2-tabell-rad > span:nth-child(2)::before { content: 'FSE '; color: var(--blekk-3); font-size: 12px; }
+  .ik2-tabell-rad > span:nth-child(3)::before { content: 'Førstehjelp '; color: var(--blekk-3); font-size: 12px; }
+  .ik2-tabell-rad > .ik2-rad-pil { grid-row: 1; grid-column: 2; }
+}
+
 .ik2-bunn { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--kant); }
 
 /* Sletting i to trykk, der knappen står. */
