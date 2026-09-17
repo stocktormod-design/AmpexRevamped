@@ -110,6 +110,12 @@ sjekk('ingen fører timer uten å se dem', ROLLER.every(r => !kan(r, 'timer.skri
 // ── Tilbud og kunder ───────────────────────────────────────────────────────
 
 sjekk('basen ser ikke tilbud — det er priser ut mot kunde', kan('bas', 'tilbud.les'), false)
+sjekk('regnskapsføreren leser tilbud, men kalkulerer ikke',
+  [kan('regnskapsforer', 'tilbud.les'), kan('regnskapsforer', 'tilbud.skriv')], [true, false])
+sjekk('installatøren kalkulerer', kan('installator', 'tilbud.skriv'), true)
+sjekk('ingen kan skrive tilbud uten å kunne lese dem',
+  (['owner', 'admin', 'installator', 'bas', 'regnskapsforer', 'montor', 'laerling'] as const)
+    .filter(r => kan(r, 'tilbud.skriv') && !kan(r, 'tilbud.les')), [])
 sjekk('men kunderegisteret trenger han', kan('bas', 'kunder.les'), true)
 sjekk('alle med kontortilgang ser kundene', ROLLER.filter(r => kan(r, 'kontor')).every(r => kan(r, 'kunder.les')), true)
 

@@ -68,6 +68,17 @@ export type Rettighet =
   /** Se tilbud og hva de summerer til. */
   | 'tilbud.les'
   /**
+   * Kalkulere: lage og endre områder og linjer i et tilbud.
+   *
+   * Tyngre enn `tilbud.les`, fordi dette ER prisen ut mot kunden. Den ligger på
+   * kontoret og ikke i appen med vilje — en kalkulasjon med tolv rom er en
+   * skrivebordsjobb, og et sendt tilbud er uansett låst (`kanRedigeres`).
+   *
+   * Regnskapsføreren har den IKKE: hun fakturerer det som er avtalt, hun
+   * avtaler ikke prisen.
+   */
+  | 'tilbud.skriv'
+  /**
    * Se HELE firmaets timeliste, ikke bare timene på egne ordrer.
    *
    * Dette er lønnsgrunnlag. En bas har ikke denne, og det er med vilje: timene
@@ -175,7 +186,7 @@ export type Rettighet =
 const ALT: Rettighet[] = [
   'kontor',
   'ordre.les', 'ordre.alle', 'ordre.endre', 'ordre.skriv',
-  'prosjekt.les', 'prosjekt.skriv', 'tilbud.les', 'timer.les', 'timer.skriv',
+  'prosjekt.les', 'prosjekt.skriv', 'tilbud.les', 'tilbud.skriv', 'timer.les', 'timer.skriv',
   'kunder.les', 'kunder.skriv',
   'faktura.les', 'faktura.marker', 'db.les',
   'varer.les', 'priser.importer',
@@ -209,7 +220,7 @@ const MATRISE: Record<Rolle, Rettighet[]> = {
   // eier og administrator som kan skrive dem.
   installator: [
     'kontor', 'ordre.les', 'ordre.alle', 'ordre.endre', 'ordre.skriv',
-    'prosjekt.les', 'prosjekt.skriv', 'tilbud.les', 'timer.les', 'timer.skriv',
+    'prosjekt.les', 'prosjekt.skriv', 'tilbud.les', 'tilbud.skriv', 'timer.les', 'timer.skriv',
     'kunder.les', 'kunder.skriv',
     'faktura.les', 'varer.les',
     'ik.les', 'ik.skriv', 'skjema.les', 'skjema.skriv', 'logg.les',

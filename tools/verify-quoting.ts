@@ -8,8 +8,9 @@
  * linjene på arket gir en diskusjon med kunden man alltid taper.
  */
 import {
-  byggTilbudssum, effektivStatus, kanRedigeres, linjeNettoOre, somRabatt, somTilbudStatus,
-  type TilbudslinjeInn,
+  byggTilbudssum, effektivStatus, grupperTilbud, kanRedigeres, linjeNettoOre,
+  paslagProsent, prisFraPaslagOre, somRabatt, somTilbudStatus,
+  type Omrade, type TilbudslinjeInn,
 } from '../lib/quoting'
 import { formatKr, tilOre } from '../lib/invoicing'
 
@@ -119,6 +120,92 @@ sjekk('sendt tilbud etter frist er utløpt', effektivStatus('sendt', naa - 1000,
 sjekk('akseptert tilbud utløper ALDRI — avgjørelsen er tatt', effektivStatus('akseptert', naa - 1000, naa), 'akseptert')
 sjekk('avslått tilbud utløper heller ikke', effektivStatus('avslatt', naa - 1000, naa), 'avslatt')
 sjekk('utkast utløper ikke', effektivStatus('utkast', naa - 1000, naa), 'utkast')
+
+// ── Påslag ───────────────────────────────────────────────────────────────────
+// Påslag er av KOST, dekningsbidrag er av SALGSPRIS. Blandes de to, tror man at
+// 50 % påslag er 50 % fortjeneste — og priser jobben for lavt hele året.
+
+sjekk('påslag: 100 kjøpt, 150 solgt = 50 %', paslagProsent(10000, 15000), 50)
+sjekk('samme linje er 33,3 % dekningsbidrag, ikke 50',
+  byggTilbudssum([{ id: 'p', art: 'materiell', beskrivelse: 'V', antall: 1, enhetsprisKr: 150, kostprisKr: 100 }]).dbProsent, 33.3)
+sjekk('påslag uten kost er null, ikke uendelig', paslagProsent(null, 15000), null)
+sjekk('påslag på null kost er null', paslagProsent(0, 15000), null)
+sjekk('salg under kost gir negativt påslag — det skal SES, ikke skjules', paslagProsent(10000, 8000), -20)
+sjekk('pris fra kost + påslag', prisFraPaslagOre(10000, 50), 15000)
+sjekk('pris fra kost + påslag rundes til hele øre', prisFraPaslagOre(3333, 12.5), 3750)
+sjekk('påslag og pris er hverandres omvendte', paslagProsent(10000, prisFraPaslagOre(10000, 35)), 35)
+
+// ── Områder ──────────────────────────────────────────────────────────────────
+// Et område er en overskrift MED SUM. Den ene regelen alt annet henger på:
+// områdene på øverste nivå pluss linjene uten område er HELE tilbudet. En linje
+// som telles to ganger gir et for høyt tilbud; en som faller ut gir en jobb
+// gjort gratis. Begge deler oppdages her, ikke av kunden.
+
+const omrader: Omrade[] = [
+  { id: 'etg1', forelderId: null, navn: '1. etasje', sortOrder: 0 },
+  { id: 'stue', forelderId: 'etg1', navn: 'Stue', sortOrder: 0 },
+  { id: 'kjokken', forelderId: 'etg1', navn: 'Kjøkken', sortOrder: 1 },
+  { id: 'ute', forelderId: null, navn: 'Utvendig', sortOrder: 1 },
+]
+const medOmrade = byggTilbudssum([
+  { id: 'l1', art: 'tekst', beskrivelse: 'Forbehold', omradeId: null },
+  { id: 'l2', art: 'materiell', beskrivelse: 'Downlight', antall: 10, enhetsprisKr: 249, kostprisKr: 130, omradeId: 'stue' },
+  { id: 'l3', art: 'arbeid', beskrivelse: 'Montasje stue', antall: 4, enhetsprisKr: 895, omradeId: 'stue' },
+  { id: 'l4', art: 'materiell', beskrivelse: 'Stikk', antall: 6, enhetsprisKr: 199, kostprisKr: 90, omradeId: 'kjokken' },
+  { id: 'l5', art: 'materiell', beskrivelse: 'Utelampe', antall: 2, enhetsprisKr: 1490, omradeId: 'ute' },
+  { id: 'l6', art: 'materiell', beskrivelse: 'Sikringsskap', antall: 1, enhetsprisKr: 12000, omradeId: 'slettet' },
+])
+const innhold = grupperTilbud(medOmrade.linjer, omrader)
+const finn = (id: string) => innhold.omrader.find(o => o.id === id)!
+
+sjekk('områdene kommer i visningsrekkefølge, barn rett under forelder',
+  innhold.omrader.map(o => o.id), ['etg1', 'stue', 'kjokken', 'ute'])
+sjekk('nivået sier hvor langt inn raden skal rykkes',
+  innhold.omrader.map(o => o.niva), [0, 1, 1, 0])
+sjekk('linjer uten område ligger utenfor', innhold.utenOmrade.map(l => l.id), ['l1', 'l6'])
+sjekk('stua summerer sine egne to linjer', finn('stue').nettoOre, 249000 + 358000)
+sjekk('forelderen ruller sammen barna, ikke bare sine egne',
+  finn('etg1').nettoOre, finn('stue').nettoOre + finn('kjokken').nettoOre)
+sjekk('forelderen har ingen egne linjer', finn('etg1').linjer.length, 0)
+sjekk('antall linjer teller hele grenen', finn('etg1').antallLinjer, 3)
+sjekk('DB per område regnes av områdets egne tall', finn('kjokken').dbOre, 119400 - 54000)
+sjekk('område uten kjent kost gir DB null, ikke 100 %', finn('ute').dbOre, null)
+
+// DETTE er regelen hele oppdelingen står og faller på.
+const rot = innhold.omrader.filter(o => o.niva === 0).reduce((n, o) => n + o.nettoOre, 0)
+const løse = innhold.utenOmrade.reduce((n, l) => n + l.nettoOre, 0)
+sjekk('rotområdene + løse linjer = hele tilbudet', rot + løse, medOmrade.nettoOre)
+sjekk('ingen linje er borte',
+  innhold.omrader.reduce((n, o) => n + o.linjer.length, 0) + innhold.utenOmrade.length,
+  medOmrade.linjer.length)
+
+// Et slettet område skal aldri kunne ta penger med seg ut av summen.
+sjekk('linje som peker på et slettet område faller tilbake til tilbudet',
+  innhold.utenOmrade.some(l => l.id === 'l6'), true)
+
+// Ring i forelderpekerne: A under B under A. Uten vern henger visningen — den
+// viser ikke bare feil tall. Samme felle som tegningsmappene.
+const ringInnhold = grupperTilbud(
+  byggTilbudssum([{ id: 'r1', art: 'materiell', beskrivelse: 'Vare', antall: 1, enhetsprisKr: 100, omradeId: 'a' }]).linjer,
+  [
+    { id: 'a', forelderId: 'b', navn: 'A', sortOrder: 0 },
+    { id: 'b', forelderId: 'a', navn: 'B', sortOrder: 1 },
+  ],
+)
+sjekk('ring i forelderpekerne henger ikke, begge blir rotområder',
+  ringInnhold.omrader.map(o => [o.id, o.niva]), [['a', 0], ['b', 0]])
+sjekk('ringen mister ingen penger',
+  ringInnhold.omrader.filter(o => o.niva === 0).reduce((n, o) => n + o.nettoOre, 0), 10000)
+
+sjekk('forelder som ikke finnes gjør området til et rotområde',
+  grupperTilbud([], [{ id: 'x', forelderId: 'finnes-ikke', navn: 'X', sortOrder: 0 }]).omrader.map(o => o.niva), [0])
+sjekk('tilbud uten områder ser ut som før',
+  grupperTilbud(medOmrade.linjer, []).utenOmrade.length, medOmrade.linjer.length)
+sjekk('samme sortOrder gir stabil rekkefølge, ikke tilfeldig',
+  grupperTilbud([], [
+    { id: 'b', forelderId: null, navn: 'B', sortOrder: 0 },
+    { id: 'a', forelderId: null, navn: 'A', sortOrder: 0 },
+  ]).omrader.map(o => o.id), ['a', 'b'])
 
 // ── Formatering deles med fakturaen ──────────────────────────────────────────
 sjekk('beløp formateres med hardt mellomrom, som på fakturaen', formatKr(sum.bruttoOre), '13 183,00')

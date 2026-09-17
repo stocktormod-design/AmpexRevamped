@@ -1,5 +1,5 @@
 import { kan, rollenavn, type Rettighet } from '@delt/kontor-tilgang'
-import { Building2, ClipboardList, Ellipsis, FileText, FolderKanban, Globe, House, Package, ShieldCheck, UserRound, Users } from 'lucide-react'
+import { Building2, Calculator, ClipboardList, Ellipsis, FileText, FolderKanban, Globe, House, Package, ShieldCheck, UserRound, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/auth'
 import { erAmpexAdmin } from '@/lib/brukere'
@@ -15,6 +15,7 @@ import { Ordre } from '@/ruter/Ordre'
 import { Oversikt } from '@/ruter/Oversikt'
 import { Prosjekter } from '@/ruter/Prosjekter'
 import { Skjemaer } from '@/ruter/Skjemaer'
+import { Tilbud } from '@/ruter/Tilbud'
 import { Varer } from '@/ruter/Varer'
 import { mangler } from '@/supabase'
 import { AmpexLogo } from '@/ui/AmpexLogo'
@@ -52,7 +53,7 @@ import { Beskjed, Knapp, Kort } from '@/ui/kit'
  * finnes. Se `desktop/src/ui/Historikk.tsx`.
  * FIRMA er oppsettet man rører sjelden. MEG er det som gjelder deg selv.
  *
- * **Timer, Skann, Tilbud og Prisfiler står ikke i menyen** (14. september). Flatene
+ * **Timer, Skann og Prisfiler står ikke i menyen** (14. september). Flatene
  * finnes fortsatt i `src/ruter/` og kan hentes tilbake ved å legge raden inn
  * igjen; det er knappene som er tatt bort, ikke koden. Dine egne timer ligger
  * på Meg.
@@ -61,6 +62,7 @@ const RUTER = [
   { id: 'oversikt', navn: 'Oversikt', gruppe: 'Arbeid', ikon: House, rett: 'kontor' as Rettighet, vis: () => <Oversikt /> },
   { id: 'ordre', navn: 'Ordre', gruppe: 'Arbeid', ikon: ClipboardList, rett: 'ordre.les' as Rettighet, vis: () => <Ordre /> },
   { id: 'prosjekt', navn: 'Prosjekter', gruppe: 'Arbeid', ikon: FolderKanban, rett: 'prosjekt.les' as Rettighet, vis: () => <Prosjekter /> },
+  { id: 'tilbud', navn: 'Tilbud', gruppe: 'Arbeid', ikon: Calculator, rett: 'tilbud.les' as Rettighet, vis: () => <Tilbud /> },
 
   { id: 'kunder', navn: 'Kunder', gruppe: 'Register', ikon: Users, rett: 'kunder.les' as Rettighet, vis: () => <Kunder /> },
   { id: 'varer', navn: 'Varer', gruppe: 'Register', ikon: Package, rett: 'varer.les' as Rettighet, vis: () => <Varer /> },
