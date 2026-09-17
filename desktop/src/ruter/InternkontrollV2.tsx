@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/auth'
 import {
-  endre, hentIk2, nyRutine, nyttFormal, nyttPunkt, slett, taggene,
+  endre, hentIk2, hentRammeverket, nyRutine, nyttFormal, nyttPunkt, slett, taggene,
   type Ik2Formal, type Ik2Punkt, type Ik2Rutine,
 } from '@/lib/ik2-lager'
 import { Beskjed, Felt, Knapp, Merke, Sidehode, stk } from '@/ui/kit'
@@ -316,19 +316,28 @@ export function InternkontrollV2() {
 
       {!laster && tre.length === 0 ? (
         <div className="tomt-mykt">
-          <p>Ingen formål ennå. Start med det overordnede: hva internkontrollen skal sikre.</p>
+          <p>Tomt. Hent de fjorten punktene fra forskriften, så står rammeverket klart.</p>
+          {kanSkrive ? (
+            <div style={{ marginTop: 12 }}>
+              <Knapp stil="primar" onClick={() => void skriv(() => hentRammeverket())}>
+                Hent de fjorten punktene
+              </Knapp>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       {synlig.map(f => (
         <div key={f.id} className="kort">
           <div className="ik2-rad">
+            {f.nummer ? <Merke stil="noytral">Punkt {f.nummer}</Merke> : null}
             <Overskrift
               stor
               verdi={f.tittel}
               laast={!kanSkrive}
               lagre={v => void skriv(() => endre('ik2_formal', f.id, { tittel: v }))}
             />
+            {f.skriftlig ? <Merke stil="varsel">Lovpålagt skriftlig</Merke> : null}
             <Merke stil="noytral">{stk(f.punkter.length, 'punkt', 'punkter')}</Merke>
             {kanSkrive ? (
               <>
@@ -349,12 +358,20 @@ export function InternkontrollV2() {
             ) : null}
           </div>
 
-          <Skrivefelt
-            verdi={f.tekst ?? ''}
-            laast={!kanSkrive}
-            plassholder="Hva dette formålet skal sikre, med deres egne ord."
-            lagre={v => void skriv(() => endre('ik2_formal', f.id, { tekst: v.trim() || null }))}
-          />
+          {f.hjemmel ? <div className="ik2-hjemmel">{f.hjemmel}</div> : null}
+
+          {/* Tomt formål ber deg SKRIVE det. Ampex fyller ikke ut formål — se
+              lib/ik/skjelett.ts. */}
+          {!f.tekst && !kanSkrive ? (
+            <p className="kort-hjelp">Ikke skrevet ennå.</p>
+          ) : (
+            <Skrivefelt
+              verdi={f.tekst ?? ''}
+              laast={!kanSkrive}
+              plassholder="Ikke skrevet ennå. Skriv hva dette punktet skal sikre hos dere."
+              lagre={v => void skriv(() => endre('ik2_formal', f.id, { tekst: v.trim() || null }))}
+            />
+          )}
 
           {f.punkter.length === 0 ? (
             <p className="kort-hjelp" style={{ marginTop: 12 }}>

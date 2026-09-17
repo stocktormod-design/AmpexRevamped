@@ -93,3 +93,10 @@ create policy ik2_rutiner_insert on public.ik2_rutiner
 create policy ik2_rutiner_update on public.ik2_rutiner
   for update using (company_id = public.current_company_id())
   with check (company_id = public.current_company_id());
+
+-- Rammeverket inn i v2 (2026-09-17, samme kveld): de fjorten punktene fra
+-- forskriften ER strukturen, også her. Nummeret og hjemmelen står på formålet
+-- slik at «Punkt 4 · § 5 andre ledd nr. 7» kan vises uten et oppslag.
+-- Teksten under dem er firmaets egen, og fylles ikke ut av oss.
+alter table public.ik2_formal add column if not exists nummer text;
+alter table public.ik2_formal add column if not exists hjemmel text;
