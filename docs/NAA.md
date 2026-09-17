@@ -348,8 +348,13 @@ Rettet i `lib/boligmappa/klient.ts`: `opprettJobb` leste `jobNumber` utenfor
 feil på to punkter (plant er ikke idempotent, `documentType` er påkrevd) — begge
 håndtert, begge meldt tilbake.
 
-**Eneste som står på Boligmappa nå:** `http://localhost:8081` som redirect-URI på
-`ampex-staging`. `ampex://oauth` er registrert og virker.
+**Alt er lukket samme kveld.** Shaibal registrerte `http://localhost:8081` —
+grunnen til at den ikke gikk inn første gang var vår: adressen i e-posten vår
+var pakket inn i Googles klikksporing, så han la inn innpakningen. Han oppga
+også tjue boligmappanumre som virker, med «there are issues with the data in
+staging». `verify:boligmappa` bruker `ACQ3920`; hele kjeden er kjørt på den
+(plant 373117, jobb 5348998, fil 632755). Søkefeilen består — deres egen
+oppskrift gir fortsatt ubrukelige numre — men den blokkerer oss ikke lenger.
 
 **Men ingenting av dette er koblet til produktet.** Klienten importeres bare av
 selvtesten, og `boligmappaNumber` finnes ikke i datamodellen. Fire ting står igjen
@@ -425,6 +430,33 @@ Supabase**, ikke i basen — en skriving til den delte testkontoen er ikke verdt
 et skjermbilde. Bunnlinja ble «Hjem, Ordre, Meg», ingen sperreskjerm, og
 `#/ik` skrevet rett i adressefeltet ga fortsatt bare montørens egen Hjem.
 Kontorsiden er kjørt om igjen ved siden av, på telefon og på 1440 px, uendret.
+
+## 17. september (kveld) — internkontroll v2: hele treet synlig, kapittelet som dokument
+
+Den første v2-en (02d6611) hadde søk og tagg-chips; omskrivingen som hengte
+punktene på de ekte kapitlene (cd20595) mistet begge, og brukte «punkt» om to
+nivåer samtidig. Første forsøk på å rette det la filteret tilbake i samme
+oppsett — Tormod: «det er ikke noe mer oversiktlig». Oppsettet er derfor byttet,
+i `desktop/src/ruter/InternkontrollV2.tsx` (ikke committet):
+
+- **Venstre er hele systemet som ett tre** (380 px): kapittel → punkt → rutine
+  under hverandre, alltid, med tagg på rutinen og «Ingen punkter ennå» der det
+  er tomt. Søkefelt og tagg-chips med antall øverst i treet. Filteret skjærer
+  treet ned til treffene med veien ned beholdt; klikk på punkt eller rutine
+  åpner kapittelet og ruller dokumentet dit.
+- **Høyre er kapittelet som ett dokument** i lesebredde: hero, én statuslinje
+  (vedtatt/utkast, gjennomgås innen, lest av, skjemaer, og den ene handlingen
+  til høyre), formål, så punktene som overskrifter med rutinene og teksten
+  SYNLIG under. Ingen piler å åpne. Redigering av en rutine er et eget valg med
+  Lagre/Avbryt (tittel, tagg, tekst i ett skjema); bare den nyopprettede åpner
+  i skrivemodus av seg selv.
+- Skjemaer, lest av og historikk står nederst i dokumentet, ikke i en spalte
+  ved siden av teksten.
+- Navnene er kapittel → punkt → rutine overalt. Sletting er to trykk der
+  knappen står. Én `<datalist>` for hele flata.
+
+Sett i Safari på port 5175 med test-innloggingen. `cd desktop && npm run build`
+grønn. Ikke prøvd på telefonbredde.
 
 ## Åpne tråder
 

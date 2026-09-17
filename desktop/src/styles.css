@@ -1373,25 +1373,124 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
 /* Internkontroll v2 (prøveflate) ------------------------------------------ */
 /* Slettes sammen med src/ruter/InternkontrollV2.tsx. */
 
-.ik2-rad { display: flex; align-items: center; gap: 8px; min-height: 34px; }
-.ik2-punkt {
-  border: 1px solid var(--kant); border-radius: var(--r-kort);
-  padding: 12px 14px; margin-top: 12px; background: var(--papir);
+/* Treet til venstre er hele systemet: kapittel, punkt, rutine under
+   hverandre. Bredere enn ordrelista, fordi tre nivåer trenger innrykk. */
+.delt:has(> .ik2-tre) { grid-template-columns: 380px 1fr; }
+.ik2-tre .liste-kropp { padding: 6px 10px 24px; }
+
+.ik2-status { display: flex; align-items: center; gap: 10px; min-height: 20px; margin-top: 10px; }
+.ik2-nullstill {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
+  font-size: 12px; color: var(--blekk-2); padding: 2px 8px; border-radius: var(--r-pille);
+  border: 1px solid var(--kant);
 }
-/* Rutinen ligger ETT hakk inn under punktet — innrykket er det som gjør at
-   nivåene kan leses uten å telle rammer. */
-.ik2-rutine { margin: 6px 0 0 18px; padding-left: 12px; border-left: 2px solid var(--kant); }
-.ik2-innhold { padding: 8px 0 10px; }
-.ik2-pil { color: var(--blekk-3); display: inline-flex; align-items: center; }
-.ik2-pil:hover { color: var(--blekk); }
+.ik2-nullstill:hover { color: var(--blekk); border-color: var(--kant-sterk); background: var(--papir); }
+
+.ik2-tre-kapittel { border-radius: var(--r-knapp); padding: 4px 0 6px; margin-bottom: 2px; border: 1px solid transparent; }
+.ik2-tre-kapittel[aria-selected='true'] { background: var(--papir); border-color: var(--kant); }
+.ik2-tre-kap, .ik2-tre-punkt, .ik2-tre-rutine {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  border-radius: var(--r-input); border: 1px solid transparent;
+}
+.ik2-tre-kap { padding: 6px 10px; font-weight: 500; }
+.ik2-tre-kap:hover, .ik2-tre-punkt:hover, .ik2-tre-rutine:hover { background: var(--fyll); }
+.ik2-tre-nr {
+  flex: none; min-width: 18px; color: var(--kobber-dyp); font-size: 12px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ik2-tre-tittel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Punktet ett hakk inn, rutinen to. Innrykket ER nivået. */
+.ik2-tre-punkt { padding: 4px 10px 4px 36px; font-size: 13px; }
+.ik2-tre-rutine { padding: 3px 10px 3px 54px; font-size: 12px; color: var(--blekk-2); }
+.ik2-tre-rutine::before {
+  content: ''; width: 4px; height: 4px; border-radius: 50%; background: var(--kant-sterk); flex: none;
+}
+.ik2-tre-punkt[aria-current='true'], .ik2-tre-rutine[aria-current='true'] { background: var(--fyll); border-color: var(--kant); }
+.ik2-tre-tall { color: var(--blekk-4); font-size: 11px; flex: none; }
+.ik2-tre-tom { padding: 2px 10px 4px 36px; font-size: 12px; color: var(--blekk-4); }
+
+/* Statuslinja under hero-en: det administrative på én linje. */
+.ik2-strip {
+  flex: none; display: flex; align-items: center; gap: 8px 22px; flex-wrap: wrap;
+  padding: 10px 24px; border-bottom: 1px solid var(--kant); background: var(--dis);
+  font-size: 13px; color: var(--blekk-2);
+}
+.ik2-strip-post { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ik2-strip-handling { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; }
+
+/* Dokumentet: én spalte, lesebredde. */
+.ik2-dok { gap: 0; max-width: 860px; }
+.ik2-etikett { font-family: var(--f-display); font-size: 12px; font-weight: 600; color: var(--blekk-3); letter-spacing: 0.02em; text-transform: uppercase; }
+.ik2-formal { padding-bottom: 20px; border-bottom: 1px solid var(--kant); margin-bottom: 20px; }
+.ik2-formal-hode { display: flex; align-items: center; gap: 12px; min-height: 32px; margin-bottom: 4px; }
+.ik2-formal-hode > .knapp { margin-left: auto; }
+.ik2-formal-tekst { line-height: 1.6; max-width: 72ch; white-space: pre-wrap; }
+.ik2-punkter-hode { display: flex; align-items: center; gap: 12px; min-height: 32px; margin-bottom: 8px; }
+.ik2-punkter-hode > .knapp { margin-left: auto; }
+
+.ik2-filterlinje {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  padding: 8px 12px; border-radius: var(--r-input);
+  background: var(--fyll); font-size: 12px; color: var(--blekk-2);
+}
+
+/* Punktet: overskrift, så rutinene som avsnitt under. Ikke kort-i-kort. */
+.ik2-punkt { padding: 14px 0 8px; border-top: 1px solid var(--kant); scroll-margin-top: 12px; }
+.ik2-punkt[data-fokus] > .ik2-punkt-hode .ik2-punkt-tittel { text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--kant-sterk); }
+.ik2-punkt-hode { display: flex; align-items: center; gap: 12px; min-height: 32px; margin-bottom: 6px; }
+.ik2-punkt-tittel { font-family: var(--f-display); font-size: 16px; font-weight: 600; flex: 1; min-width: 0; }
+
+/* Tittel som redigeres der den står. Ser ut som tekst til man peker på den. */
+.ik2-tittel-inn {
+  flex: 1; min-width: 0; background: none; border: 1px solid transparent;
+  border-radius: var(--r-input); padding: 2px 6px; margin: -2px -6px;
+  font: inherit; color: inherit;
+}
+.ik2-tittel-inn:hover { border-color: var(--kant); }
+.ik2-tittel-inn:focus { outline: none; border-color: var(--kant-sterk); background: var(--papir); }
+
+/* Rutinen: tittel, tagg, og teksten synlig som avsnitt. Ett hakk inn. */
+.ik2-rutine { margin: 0 0 6px 18px; padding: 8px 0 8px 14px; border-left: 2px solid var(--kant); scroll-margin-top: 12px; }
+.ik2-rutine[data-fokus] { border-left-color: var(--blekk); }
+.ik2-rutine-hode { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.ik2-rutine-tittel { flex: 1; min-width: 0; font-weight: 500; }
+.ik2-rutine-tekst { margin-top: 4px; white-space: pre-wrap; line-height: 1.6; max-width: 72ch; color: var(--blekk-2); }
+.ik2-tom-tekst { margin: 4px 0 0; color: var(--blekk-4); font-size: 13px; }
+.ik2-rutine-red { margin: 8px 0 12px 18px; scroll-margin-top: 12px; }
 .ik2-tag {
-  font-size: 11px; color: var(--blekk-2); background: var(--fyll);
+  flex: none; font-size: 11px; color: var(--blekk-2); background: var(--fyll);
   border: 1px solid var(--kant); border-radius: var(--r-pille);
   padding: 1px 8px; line-height: 17px;
 }
-.ik2-tag:hover { border-color: var(--kant-sterk); color: var(--blekk); }
-.ik2-ny { display: flex; align-items: flex-end; gap: 8px; margin: 10px 0 0 18px; flex-wrap: wrap; }
-.ik2-ny .felt { flex: 1; min-width: 180px; }
+button.ik2-tag:hover { border-color: var(--kant-sterk); color: var(--blekk); background: var(--papir); }
+
+/* Sletting i to trykk, der knappen står. */
+.ik2-slett { width: 28px; height: 28px; }
+.ik2-bekreft { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--blekk-2); flex: none; }
+.ik2-bekreft-ja, .ik2-bekreft-nei {
+  padding: 3px 10px; border-radius: var(--r-pille); font-size: 12px; border: 1px solid var(--kant);
+}
+.ik2-bekreft-ja { background: var(--rod); border-color: var(--rod); color: #fff; }
+.ik2-bekreft-nei:hover { border-color: var(--kant-sterk); }
+
+/* Ny rutine: tittel og tagg på én linje, knappene etter. */
+.ik2-ny { display: flex; align-items: flex-end; gap: 10px; margin: 4px 0 12px 18px; flex-wrap: wrap; }
+.ik2-ny > .felt { flex: 1; min-width: 200px; }
+.ik2-ny > .rad { padding-bottom: 1px; }
+
+/* Det administrative nederst: to blokker side om side, historikken bred. */
+.ik2-bunn {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 32px;
+  margin-top: 28px; padding-top: 8px; border-top: 2px solid var(--kant);
+}
+.ik2-bunn > .blokk + .blokk { border-top: none; }
+.ik2-bunn-bred { grid-column: 1 / -1; border-top: 1px solid var(--kant) !important; }
+
+@media (max-width: 820px) {
+  .ik2-strip { padding: 10px 14px; }
+  .ik2-strip-handling { margin-left: 0; flex-basis: 100%; }
+  .ik2-rutine, .ik2-rutine-red, .ik2-ny { margin-left: 0; }
+}
 
 /* Firmachat --------------------------------------------------------------- */
 
@@ -1469,4 +1568,3 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
   .chat-panel { right: 12px; left: 12px; width: auto; bottom: 140px; }
   .chat-boble { right: 14px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
 }
-.ik2-hjemmel { color: var(--blekk-3); font-size: 12px; margin: 2px 0 8px; }
