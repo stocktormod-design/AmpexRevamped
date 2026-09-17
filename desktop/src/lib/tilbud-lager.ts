@@ -3,7 +3,10 @@ import {
   type Omrade, type TilbudsInnhold, type TilbudslinjeArt, type TilbudslinjeInn,
   type Tilbudssum, type TilbudStatus,
 } from '@delt/quoting'
-import { mittFirma, nyId } from '@/lib/kontor-lager'
+import { dokumentHtml } from '@delt/pdf/dokument'
+import { tilbudInnholdHtml, type TilbudslinjeUt } from '@delt/pdf/tilbud'
+import { mvaLabel } from '@delt/invoicing'
+import { hentFirma, mittFirma, nyId } from '@/lib/kontor-lager'
 import { supabase } from '@/supabase'
 
 /**
@@ -275,4 +278,151 @@ export async function byttPlass(a: Linjerad, b: Linjerad): Promise<void> {
   if (forste.error) throw new Error(`Kunne ikke flytte linja: ${forste.error.message}`)
   const andre = await supabase.from('quote_lines').update({ sort_order: a.sort_order }).eq('id', b.id)
   if (andre.error) throw new Error(`Kunne ikke flytte linja: ${andre.error.message}`)
+}
+
+/* ── Opprette og endre selve tilbudet ──────────────────────────────────── */
+
+/** 30 dager. Et tilbud uten frist er et tilbud uten slutt. */
+export const GYLDIGHET_DAGER = 30
+
+export type NyttTilbud = {
+  tittel: string
+  kundeId: string | null
+  /** Snapshot: dokumentet skal kunne leses uendret om registeret rettes. */
+  kundeNavn: string | null
+  kundeTelefon: string | null
+  adresse: string | null
+  gyldigDager: number
+}
+
+export async function opprettTilbud(inn: NyttTilbud): Promise<string> {
+  const tittel = inn.tittel.trim()
+  if (!tittel) throw new Error('Tilbudet må ha en tittel.')
+
+  const dager = Number.isFinite(inn.gyldigDager) && inn.gyldigDager > 0 ? inn.gyldigDager : GYLDIGHET_DAGER
+  const id = nyId()
+  const r = await supabase.from('quotes').insert({
+    id,
+    company_id: await mittFirma(),
+    title: tittel,
+    customer_id: inn.kundeId,
+    customer_name: inn.kundeNavn,
+    customer_phone: inn.kundeTelefon,
+    address: inn.adresse,
+    status: 'utkast',
+    valid_until: new Date(Date.now() + dager * 24 * 60 * 60 * 1000).toISOString(),
+  })
+  if (r.error) throw new Error(`Kunne ikke opprette tilbudet: ${r.error.message}`)
+  return id
+}
+
+export type Tilbudspatch = Partial<{
+  title: string
+  description: string | null
+  customer_id: string | null
+  customer_name: string | null
+  customer_phone: string | null
+  address: string | null
+  valid_until: string | null
+}>
+
+export async function endreTilbud(id: string, patch: Tilbudspatch): Promise<void> {
+  if (Object.keys(patch).length === 0) return
+  const r = await supabase.from('quotes').update(patch).eq('id', id)
+  if (r.error) throw new Error(`Kunne ikke endre tilbudet: ${r.error.message}`)
+}
+
+/**
+ * Markerer tilbudet som sendt. Fra da av er det et DOKUMENT: `kanRedigeres`
+ * sier nei, og både kontoret og appen slutter å slippe folk til i linjene.
+ * Angrevalget finnes, men det er et valg noen må ta, ikke en gråsone.
+ */
+export async function markerSendt(id: string): Promise<void> {
+  const r = await supabase.from('quotes')
+    .update({ status: 'sendt', sent_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'utkast')
+  if (r.error) throw new Error(`Kunne ikke markere tilbudet som sendt: ${r.error.message}`)
+}
+
+export async function angreSendt(id: string): Promise<void> {
+  const r = await supabase.from('quotes')
+    .update({ status: 'utkast', sent_at: null })
+    .eq('id', id).eq('status', 'sendt')
+  if (r.error) throw new Error(`Kunne ikke angre: ${r.error.message}`)
+}
+
+export async function slettTilbud(id: string): Promise<void> {
+  const r = await supabase.from('quotes').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+  if (r.error) throw new Error(`Kunne ikke slette tilbudet: ${r.error.message}`)
+}
+
+/* ── Dokumentet kunden får ─────────────────────────────────────────────── */
+
+/**
+ * Tilbudet som HTML — det samme dokumentet appen lager (`lib/pdf/tilbud.ts`).
+ *
+ * **Kost, påslag og dekningsbidrag følger IKKE med.** En PDF videresendes og
+ * skrives ut; det finnes ingen «intern» versjon av et dokument som har forlatt
+ * huset. Derfor bygges innholdet av bare det kunden skal se, og
+ * `verify:pdf` står vakt over at ingen legger tilbake et tall.
+ */
+export async function byggTilbudsutskrift(id: string): Promise<string> {
+  const [d, f] = await Promise.all([hentTilbudsdetalj(id), hentFirma()])
+
+  const ut = (l: { art: TilbudslinjeArt; beskrivelse: string; antall: number; enhet: string; enhetsprisOre: number; rabattProsent: number; nettoOre: number; elnummer?: string | null }): TilbudslinjeUt => ({
+    art: l.art,
+    beskrivelse: l.beskrivelse,
+    antall: l.antall,
+    enhet: l.enhet,
+    enhetsprisOre: l.enhetsprisOre,
+    rabattProsent: l.rabattProsent,
+    nettoOre: l.nettoOre,
+    elnummer: l.elnummer ?? null,
+  })
+
+  return dokumentHtml({
+    meta: {
+      type: 'Tilbud',
+      nummer: d.hode.quote_number != null ? String(d.hode.quote_number) : null,
+      tittel: d.hode.title,
+      dato: d.hode.sent_at ?? new Date().toISOString(),
+    },
+    avsender: { navn: f.company?.name ?? 'Ampex', orgnr: f.company?.org_number ?? null },
+    mottaker: { navn: d.hode.customer_name, adresse: d.hode.address },
+    innhold: tilbudInnholdHtml({
+      linjer: d.innhold.utenOmrade.map(ut),
+      omrader: d.innhold.omrader.map(o => ({
+        navn: o.navn,
+        niva: o.niva,
+        nettoOre: o.nettoOre,
+        linjer: o.linjer.map(ut),
+      })),
+      sum: {
+        nettoOre: d.sum.nettoOre,
+        rabattOre: d.sum.rabattOre,
+        bruttoOre: d.sum.bruttoOre,
+        mvaFordeling: d.sum.mvaFordeling.map(m => ({ mva: m.mva, nettoOre: m.nettoOre, mvaOre: m.mvaOre })),
+      },
+      mvaEtikett: (m: string) => mvaLabel[m as keyof typeof mvaLabel] ?? m,
+      gyldigTil: d.hode.valid_until,
+      beskrivelse: d.hode.description,
+    }),
+  })
+}
+
+/** Åpner tilbudet i et utskriftsvindu — veien fra kalkyle til noe kunden kan få. */
+export async function skrivUtTilbud(id: string): Promise<void> {
+  const vindu = window.open('', '_blank')
+  if (!vindu) throw new Error('Nettleseren blokkerte utskriftsvinduet. Tillat popup for denne siden.')
+  vindu.document.write('<!doctype html><meta charset="utf-8"><title>Henter …</title><p>Henter tilbudet …</p>')
+  try {
+    const html = await byggTilbudsutskrift(id)
+    vindu.document.open()
+    vindu.document.write(html)
+    vindu.document.close()
+    vindu.focus()
+  } catch (e) {
+    vindu.close()
+    throw e
+  }
 }

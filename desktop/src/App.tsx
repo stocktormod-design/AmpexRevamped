@@ -1,11 +1,12 @@
 import { kan, rollenavn, type Rettighet } from '@delt/kontor-tilgang'
-import { Building2, Calculator, ClipboardList, Ellipsis, FileText, FolderKanban, Globe, House, Package, ShieldCheck, UserRound, Users } from 'lucide-react'
+import { Building2, Calculator, ClipboardList, Ellipsis, FileText, FlaskConical, FolderKanban, Globe, House, Package, ShieldCheck, UserRound, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/auth'
 import { erAmpexAdmin } from '@/lib/brukere'
 import { AmpexAdmin } from '@/ruter/AmpexAdmin'
 import { Firma } from '@/ruter/Firma'
 import { Internkontroll } from '@/ruter/Internkontroll'
+import { InternkontrollV2 } from '@/ruter/InternkontrollV2'
 import { Kunder } from '@/ruter/Kunder'
 import { Logginn, NyttPassord } from '@/ruter/Logginn'
 import { Meg } from '@/ruter/Meg'
@@ -20,6 +21,7 @@ import { Varer } from '@/ruter/Varer'
 import { mangler } from '@/supabase'
 import { AmpexLogo } from '@/ui/AmpexLogo'
 import { Assistent, type Kommando } from '@/ui/Assistent'
+import { Chatboble } from '@/ui/Chatboble'
 import { Beskjed, Knapp, Kort } from '@/ui/kit'
 
 /**
@@ -68,6 +70,10 @@ const RUTER = [
   { id: 'varer', navn: 'Varer', gruppe: 'Register', ikon: Package, rett: 'varer.les' as Rettighet, vis: () => <Varer /> },
 
   { id: 'ik', navn: 'Internkontroll', gruppe: 'Kvalitet', ikon: ShieldCheck, rett: 'ik.les' as Rettighet, vis: () => <Internkontroll /> },
+  // PRØVEFLATE (17. september). Tre nivåer: formål → punkt → rutine, med tagger.
+  // Skal den bort: slett denne raden, de to importene, src/ruter/InternkontrollV2.tsx,
+  // src/lib/ik2-lager.ts og de tre ik2_-tabellene. Ingenting annet peker på den.
+  { id: 'ik2', navn: 'Internkontroll v2', gruppe: 'Kvalitet', ikon: FlaskConical, rett: 'ik.les' as Rettighet, vis: () => <InternkontrollV2 /> },
   { id: 'skjema', navn: 'Skjemaer', gruppe: 'Kvalitet', ikon: FileText, rett: 'skjema.les' as Rettighet, vis: () => <Skjemaer /> },
 
   { id: 'firma', navn: 'Firma', gruppe: 'Firma', ikon: Building2, rett: 'firma.les' as Rettighet, vis: () => <Firma /> },
@@ -344,6 +350,11 @@ export function App() {
       ) : null}
 
       <Assistent apen={assistent} lukk={() => setAssistent(false)} kommandoer={kommandoer} />
+
+      {/* Chatten ligger i skallet og følger derfor med på hver flate — det er
+          hele poenget: endringsønsket skrives mens flata det gjelder står
+          foran deg. Se src/ui/Chatboble.tsx. */}
+      <Chatboble />
     </div>
   )
 }

@@ -69,7 +69,14 @@
  * pekte på gamle filnavn som lå trygt i samme cache. Da satt du fast til noen
  * tømte nettleseren for hånd.
  */
-const VERSJON = 'ampex-kontor-v2'
+// `__BYGG__` byttes ut med byggetidspunktet av `stempleSw()` i vite.config.ts.
+// Det gjør at HVER utrulling får et nytt cachenavn, og `activate` under sletter
+// alt som het noe annet. Ingen trenger å huske å bumpe et tall, og ingen blir
+// sittende på gammel kode fordi noen glemte det.
+//
+// Innlogging ligger IKKE i cachen — den bor i localStorage hos Supabase — så
+// en full cachetømming logger ingen ut.
+const VERSJON = 'ampex-kontor-__BYGG__'
 const SKALL = '/'
 
 // Filene som må ligge der for at appen skal kunne TEGNE seg uten nett. Selve

@@ -24,7 +24,22 @@ if (!rot) throw new Error('Fant ikke #rot')
  */
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {})
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      /**
+       * Se etter ny kode mens fanen står åpen.
+       *
+       * Nettleseren spør av seg selv bare ved navigering, og kontoret er én
+       * side som aldri navigerer — en fane som står åpen hele dagen ville
+       * ikke sett en utrulling før noen lastet på nytt. `update()` er en
+       * betinget GET mot `sw.js`; er den uendret, koster den et 304.
+       *
+       * Bare når fanen er synlig: en minimert fane skal ikke banke på
+       * serveren hvert minutt.
+       */
+      const se_etter = () => { if (!document.hidden) reg.update().catch(() => {}) }
+      setInterval(se_etter, 60_000)
+      document.addEventListener('visibilitychange', se_etter)
+    }).catch(() => {})
   })
 
   /**
