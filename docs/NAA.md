@@ -431,32 +431,30 @@ et skjermbilde. Bunnlinja ble «Hjem, Ordre, Meg», ingen sperreskjerm, og
 `#/ik` skrevet rett i adressefeltet ga fortsatt bare montørens egen Hjem.
 Kontorsiden er kjørt om igjen ved siden av, på telefon og på 1440 px, uendret.
 
-## 17. september (kveld) — internkontroll v2: hele treet synlig, kapittelet som dokument
+## 17. september (kveld) — internkontroll v2: ett nivå om gangen
 
-Den første v2-en (02d6611) hadde søk og tagg-chips; omskrivingen som hengte
-punktene på de ekte kapitlene (cd20595) mistet begge, og brukte «punkt» om to
-nivåer samtidig. Første forsøk på å rette det la filteret tilbake i samme
-oppsett — Tormod: «det er ikke noe mer oversiktlig». Oppsettet er derfor byttet,
-i `desktop/src/ruter/InternkontrollV2.tsx` (ikke committet):
+Tre forsøk på samme kveld. Omskrivingen som hengte punktene på de ekte
+kapitlene (cd20595) mistet søket og tagg-filteret. Forsøk én la filteret tilbake
+i liste+detalj-oppsettet: «ikke noe mer oversiktlig». Forsøk to viste hele treet
+til venstre og kapittelet som dokument til høyre (82ecac2): «for mye å se på».
+Det som står nå, i `desktop/src/ruter/InternkontrollV2.tsx`:
 
-- **Venstre er hele systemet som ett tre** (380 px): kapittel → punkt → rutine
-  under hverandre, alltid, med tagg på rutinen og «Ingen punkter ennå» der det
-  er tomt. Søkefelt og tagg-chips med antall øverst i treet. Filteret skjærer
-  treet ned til treffene med veien ned beholdt; klikk på punkt eller rutine
-  åpner kapittelet og ruller dokumentet dit.
-- **Høyre er kapittelet som ett dokument** i lesebredde: hero, én statuslinje
-  (vedtatt/utkast, gjennomgås innen, lest av, skjemaer, og den ene handlingen
-  til høyre), formål, så punktene som overskrifter med rutinene og teksten
-  SYNLIG under. Ingen piler å åpne. Redigering av en rutine er et eget valg med
-  Lagre/Avbryt (tittel, tagg, tekst i ett skjema); bare den nyopprettede åpner
-  i skrivemodus av seg selv.
-- Skjemaer, lest av og historikk står nederst i dokumentet, ikke i en spalte
-  ved siden av teksten.
-- Navnene er kapittel → punkt → rutine overalt. Sletting er to trykk der
-  knappen står. Én `<datalist>` for hele flata.
+- **Ett nivå per side, som Innstillinger på telefonen.** Kapitler (én liste med
+  nummer, tittel, «3 punkter»/«Tomt», vedtatt-hake) → ett kapittel (formål,
+  punktene som rader, én vedtakslinje med én knapp, og «Skjemaer, lest av og
+  historikk» lukket bak ett trykk) → ett punkt (rutinene som rader, med tagg og
+  «Ikke skrevet») → én rutine (teksten, «Skriv rutinen»/«Rediger», slett).
+- **Stien ligger i hash-en** `#/ik2/<kapittel>/<punkt>/<rutine>`, så
+  tilbake-knappen i nettleseren og på telefonen virker og en rutine kan lenkes.
+  `App.tsx` ruter nå på FØRSTE ledd av hashen (`split('/')[0]`); de andre
+  flatene merker ingenting.
+- **Søk og tagg-chips** øverst på kapittellista svarer med en flat treffliste
+  der hver rad sier «1 Mål for HMS › Arbeid i tavle»; trykk går rett til rutinen.
+- Nyopprettet punkt går rett til punktsida; nyopprettet rutine går rett til
+  rutinesida i skrivemodus. Sletting er to trykk der knappen står.
 
-Sett i Safari på port 5175 med test-innloggingen. `cd desktop && npm run build`
-grønn. Ikke prøvd på telefonbredde.
+Sett i Safari på port 5175 (fire sider via adressen). `cd desktop && npm run
+build` grønn. Ikke prøvd på telefonbredde.
 
 ## Åpne tråder
 
