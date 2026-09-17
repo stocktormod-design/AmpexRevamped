@@ -3,12 +3,12 @@ import { View, ScrollView, Alert } from 'react-native'
 import { Text } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { setStatusBarStyle } from 'expo-status-bar'
-import { Check, CloudOff } from 'lucide-react-native'
+import { Check, ChevronDown, CloudOff } from 'lucide-react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { Pressable } from '../../components/pressable'
-import { AmpexMarkButton } from '../../components/ampex-mark-button'
 import { BilKort } from '../../components/bil-kort'
 import { useTilGodkjenning, useKanGodkjenne } from '../../lib/approvals'
+import { useApneAvvik } from '../../lib/avvik'
 import { useSynkStatus } from '../../lib/db/sync'
 import { useUserId } from '../../lib/auth-user'
 import { supabase } from '../../lib/supabase'
@@ -36,12 +36,21 @@ function TrykkMaaler() {
 }
 
 export default function Screen() {
+  // Lista er lukket til du trykker på stemmen som brukes (Tormod 13.09): åtte
+  // rader for et valg man gjør én gang tok halve skjermen.
+  const [velgerStemme, setVelgerStemme] = useState(false)
   // Papir-grunn → mørk statuslinje mens fanen er i fokus.
-  useFocusEffect(useCallback(() => { setStatusBarStyle('dark') }, []))
+  useFocusEffect(useCallback(() => {
+    setStatusBarStyle('dark')
+    // Fanen avmonteres aldri, så en åpen stemmeliste ville blitt stående til
+    // neste gang. Lukk når du går videre.
+    return () => setVelgerStemme(false)
+  }, []))
   const userId = useUserId()
   const tilGodkjenning = useTilGodkjenning()
   const synk = useSynkStatus()
   const kanGodkjenne = useKanGodkjenne()
+  const apneAvvik = useApneAvvik()
   const insets = useSafeAreaInsets()
   const [voice, setVoice] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -54,6 +63,8 @@ export default function Screen() {
   }, [])
 
   async function choose(id: string | null) {
+    setVelgerStemme(false)
+    if (id === voice) return
     setVoice(id)
     await setPreferredVoice(id)
   }
@@ -147,6 +158,40 @@ export default function Screen() {
             <Text style={[t.body]}>Skann</Text>
           </View>
         </Pressable>
+        {/* Avvik: det montøren faktisk melder. Antall åpne står i raden,
+            i varsel-tone — den ene semantiske fargen på oversiktene. */}
+        <Pressable
+          haptic="light"
+          onPress={() => router.push('/(app)/avvik')}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+            paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
+            borderTopWidth: 1, borderTopColor: colors.separator,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[t.body]}>Avvik</Text>
+          </View>
+          {apneAvvik.length > 0 && (
+            <Text style={[t.footnote, { color: colors.warning }]}>
+              {apneAvvik.length === 1 ? '1 åpent' : `${apneAvvik.length} åpne`}
+            </Text>
+          )}
+        </Pressable>
+        {/* Firmaets IK-system, til å lese. Kontoret skriver det. */}
+        <Pressable
+          haptic="light"
+          onPress={() => router.push('/(app)/internkontroll')}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+            paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
+            borderTopWidth: 1, borderTopColor: colors.separator,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[t.body]}>Internkontroll</Text>
+          </View>
+        </Pressable>
       </View>
 
       {/* Registrene. Ligger her fordi de settes opp sjelden og brukes via ordren. */}
@@ -164,26 +209,36 @@ export default function Screen() {
         >
           <Text style={[t.body, { flex: 1, color: colors.label }]}>Kunder</Text>
         </Pressable>
-        <Pressable
-          haptic="light"
-          onPress={() => router.push('/(app)/aktiviteter')}
-          style={{
-            flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-            paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
-            borderTopWidth: 1, borderTopColor: colors.border,
-          }}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={[t.body]}>Aktiviteter og timepriser</Text>
-          </View>
-        </Pressable>
+        {/* Aktiviteter og timepriser er tatt ut herfra (13.09): assistenten
+            oppretter timetyper på forespørsel, og kontoret eier prisene. */}
       </View>
 
       <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel, marginBottom: spacing.sm, marginLeft: spacing.xs }]}>
         AI-assistentens stemme
       </Text>
       <View style={{ backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, borderRadius: radius.lg, overflow: 'hidden' }}>
-        {loaded &&
+        {loaded && !velgerStemme && (() => {
+          // Lukket: én rad med stemmen som brukes nå. Trykk åpner lista.
+          const aktiv = rows.find(r => r.id === voice) ?? rows[0]
+          return (
+            <Pressable
+              haptic="light"
+              onPress={() => setVelgerStemme(true)}
+              accessibilityLabel="Velg stemme"
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+                paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 4,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[t.body, { color: colors.label, fontWeight: '700' }]}>{aktiv.label}</Text>
+                <Text style={[t.footnote, { marginTop: 1 }]}>{aktiv.description}</Text>
+              </View>
+              <ChevronDown size={18} color={colors.tertiaryLabel} strokeWidth={2.2} />
+            </Pressable>
+          )
+        })()}
+        {loaded && velgerStemme &&
           rows.map((row, i) => {
             const active = voice === row.id
             return (
@@ -203,6 +258,7 @@ export default function Screen() {
               >
                 <View style={{ flex: 1 }}>
                   <Text style={[t.body, { color: colors.label, fontWeight: active ? '700' : '400' }]}>{row.label}</Text>
+                  <Text style={[t.footnote, { marginTop: 1 }]}>{row.description}</Text>
                 </View>
                 {active && <Check size={18} color={colors.brand} strokeWidth={2.6} />}
               </Pressable>

@@ -456,6 +456,28 @@ Det som står nå, i `desktop/src/ruter/InternkontrollV2.tsx`:
 Sett i Safari på port 5175 (fire sider via adressen). `cd desktop && npm run
 build` grønn. Ikke prøvd på telefonbredde.
 
+## 17. september (natt) — det de andre IK-systemene har, inn i v2
+
+`docs/IK_KONKURRENTER.md` er gjennomgangen (NHO Elektro Integrator/NIK, ElektroUnion
+HMS-IK, AEK IKAPP, Devinco, SmartDok, Kvalitetskontroll, Landax, og hva DLE spør om).
+Fellesnevneren hos alle: håndbok + sjekklister + avvik + opplæringsregister, én ting per
+skjerm. Det Ampex manglet er bygd:
+
+- **Avvik** (`#/ik2/avvik`, `desktop/src/lib/avvik-lager.ts`): åpne først, lukkede bak ett
+  trykk, meld med tittel + alvorlighet, lukk med påkrevd tiltak. Samme `deviations`-tabell
+  som appen. **Montørappen** har fått `app/(app)/avvik.tsx` med «Meld avvik» som den ene
+  sorte knappen og lukking med tiltak, via lokal base som alt annet; rad på Meg med antall
+  åpne i varsel-tone. Ikke sett på enhet ennå — bare typesjekket.
+- **Opplæring** (`#/ik2/opplaering`, ny tabell `kompetanse`, migrasjon kjørt mot live):
+  ansatte × FSE/førstehjelp med gyldig/utgår/utgått/mangler, kursregistrering per person.
+  FSE og førstehjelp får 12 måneders gyldighet automatisk.
+- **Å gjøre** øverst på kapittellista: forfalte og snart forfalte kapitler, utgått eller
+  utgående FSE, kritiske og høye avvik. Finnes ikke når tom.
+- **Forslag til punkter** i `lib/ik/skjelett.ts` (`forslag[]`, 3–8 titler per kapittel,
+  aldri tekst) som chips under punktene. Selvtesten krever minst tre per kapittel.
+
+Kapittel 4 og 7 lenker til Avvik og Opplæring. Alt pushet.
+
 ## Åpne tråder
 
 - **Skann:** bad og stue må skannes på nytt med dagens app. Bare ett komplett LiDAR-skann
