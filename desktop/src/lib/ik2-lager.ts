@@ -1,3 +1,4 @@
+import { IK_SKJELETT, maaVaereSkriftlig } from '@delt/ik/skjelett'
 import { mittFirma, nyId } from '@/lib/kontor-lager'
 import { supabase } from '@/supabase'
 
@@ -38,19 +39,24 @@ export type Ik2Punkt = {
 
 export type Ik2Formal = {
   id: string
+  /** «1»–«14» fra forskriften. Null på formål firmaet har laget selv. */
+  nummer: string | null
   tittel: string
+  hjemmel: string | null
   tekst: string | null
   sort_order: number
   punkter: Ik2Punkt[]
+  /** Utledet fra skjelettet, ikke lagret: krever forskriften dette skriftlig? */
+  skriftlig: boolean
 }
 
 /** Hele treet i tre spørringer — ikke én per punkt. */
 export async function hentIk2(): Promise<Ik2Formal[]> {
   const formal = sjekk(
-    await supabase.from('ik2_formal').select('id,tittel,tekst,sort_order')
+    await supabase.from('ik2_formal').select('id,nummer,tittel,hjemmel,tekst,sort_order')
       .is('deleted_at', null).order('sort_order'),
     'Kunne ikke lese formålene',
-  ) as Omit<Ik2Formal, 'punkter'>[]
+  ) as Omit<Ik2Formal, 'punkter' | 'skriftlig'>[]
 
   if (formal.length === 0) return []
 
@@ -75,7 +81,11 @@ export async function hentIk2(): Promise<Ik2Formal[]> {
     perFormal.set(p.formal_id, [...(perFormal.get(p.formal_id) ?? []), med])
   }
 
-  return formal.map(f => ({ ...f, punkter: perFormal.get(f.id) ?? [] }))
+  return formal.map(f => ({
+    ...f,
+    skriftlig: f.nummer ? maaVaereSkriftlig(f.nummer) : false,
+    punkter: perFormal.get(f.id) ?? [],
+  }))
 }
 
 /** Taggene som faktisk er i bruk — forslagslista i skrivefeltet. */
@@ -92,6 +102,43 @@ async function nesteRekkefolge(tabell: string, kolonne: string | null, verdi: st
   if (kolonne && verdi) q = q.eq(kolonne, verdi)
   const rader = sjekk(await q, 'Kunne ikke lese rekkefølgen') as { sort_order: number }[]
   return rader.reduce((maks, r) => Math.max(maks, r.sort_order), -1) + 1
+}
+
+/**
+ * Henter de fjorten punktene fra forskriften inn som formål.
+ *
+ * Rammeverket er det samme i v2 — forskriften har ikke endret seg fordi vi
+ * bygget en ny flate. Det som IKKE følger med er tekst: hvert formål står
+ * tomt, og flata ber deg skrive det.
+ *
+ * Unntaket er det firmaet alt har skrevet i v1. Har faglig ansvarlig formulert
+ * HMS-målet sitt der, skal han ikke skrive det på nytt for å prøve v2 — det
+ * kopieres over på punktet med samme nummer.
+ */
+export async function hentRammeverket(): Promise<number> {
+  const finnes = await hentIk2()
+  if (finnes.length > 0) throw new Error('Rammeverket er allerede hentet inn.')
+
+  const gamle = sjekk(
+    await supabase.from('ik_punkter').select('nummer,formal').is('deleted_at', null),
+    'Kunne ikke lese internkontrollen',
+  ) as { nummer: string; formal: string | null }[]
+  const skrevet = new Map(gamle.filter(p => p.formal?.trim()).map(p => [p.nummer, p.formal]))
+
+  const firma = await mittFirma()
+  const rader = IK_SKJELETT.map((p, i) => ({
+    id: nyId(),
+    company_id: firma,
+    nummer: p.nummer,
+    tittel: p.tittel,
+    hjemmel: p.hjemmel || null,
+    tekst: skrevet.get(p.nummer) ?? null,
+    sort_order: i,
+  }))
+
+  const r = await supabase.from('ik2_formal').insert(rader)
+  if (r.error) throw new Error(`Kunne ikke hente rammeverket: ${r.error.message}`)
+  return rader.length
 }
 
 export async function nyttFormal(tittel: string): Promise<string> {

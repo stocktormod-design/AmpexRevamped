@@ -114,12 +114,7 @@ export function Chatboble() {
           </div>
 
           <div className="chat-kropp">
-            {meldinger.length === 0 ? (
-              <p className="kort-hjelp">
-                Ingenting her ennå. Skriv det du vil ha endret mens du ser på det — da blir
-                det konkret.
-              </p>
-            ) : null}
+            {meldinger.length === 0 ? <p className="kort-hjelp">Ingen meldinger.</p> : null}
 
             {meldinger.map(m => {
               const min = m.bruker_id === brukerId
