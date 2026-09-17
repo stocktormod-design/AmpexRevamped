@@ -4,19 +4,24 @@
 #
 # `lib/` er IKKE med i lista, og det er hele poenget: desktop importerer den
 # delte logikken med `@delt/…`, og uten den mappa faller bygget.
+#
+# SKRÅSTREKEN FORAN ER IKKE PYNT (17. september). Uten den treffer mønsteret på
+# ALLE nivåer: `scripts/` kastet også ut `desktop/scripts/`, og utrullingen døde
+# på `Cannot find module .../desktop/scripts/stemple-sw.mjs`. Bygget var grønt
+# lokalt — .vercelignore leses bare av Vercel.
 
-app/
-modules/
-plugins/
-scripts/
-worker/
-supabase/
-assets/
-ios/
-android/
+/app/
+/modules/
+/plugins/
+/scripts/
+/worker/
+/supabase/
+/assets/
+/ios/
+/android/
 .expo/
-docs/
-tools/
+/docs/
+/tools/
 
 node_modules
 desktop/node_modules
