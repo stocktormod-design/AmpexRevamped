@@ -576,9 +576,9 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
               placeholder="Slå opp paragrafen i gjeldende forskrift"
               onChange={e => setUtkast(u => ({ ...u, hjemmel: e.target.value || null }))} />
             <label className="felt felt-firkant">
-              <span className="felt-etikett">Formål</span>
+              <span className="felt-etikett">Hovedformål</span>
               <textarea className="felt-inn skrivefelt skrivefelt-lav" value={utkast.formal ?? ''}
-                placeholder="Hva dette kapittelet skal sikre hos dere."
+                placeholder="Hva hele kapittelet skal sikre hos dere. Punktene under spisser det."
                 onChange={e => setUtkast(u => ({ ...u, formal: e.target.value || null }))} />
             </label>
             <Felt firkant etikett="Hva ble endret, og hvorfor?" value={notat}
@@ -600,7 +600,7 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
       ) : (
         <section className="ik2-avsnitt">
           <div className="ik2-avsnitt-hode">
-            <span className="ik2-etikett">Formål</span>
+            <span className="ik2-etikett">Hovedformål</span>
             {kanSkrive && kapittel.formal ? (
               <button className="ik2-lenke" onClick={startRedigering}><Pencil size={13} strokeWidth={2} />Rediger</button>
             ) : null}
@@ -608,7 +608,7 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
           {kapittel.formal ? (
             <p className="ik2-tekst valgbar">{kapittel.formal}</p>
           ) : kanSkrive ? (
-            <Knapp stil="stille" onClick={startRedigering}><Plus size={15} strokeWidth={1.9} />Skriv formålet</Knapp>
+            <Knapp stil="stille" onClick={startRedigering}><Plus size={15} strokeWidth={1.9} />Skriv hovedformålet</Knapp>
           ) : (
             <p className="ik2-tom-tekst">Ikke skrevet ennå.</p>
           )}
