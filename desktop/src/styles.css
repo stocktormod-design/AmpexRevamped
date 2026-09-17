@@ -1376,6 +1376,14 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
 
 .ik2-side { flex: 1; min-height: 0; overflow: auto; padding: 20px 28px 56px; }
 .ik2-innhold { max-width: 680px; }
+.ik2-innhold-bred { max-width: 1240px; }
+/* Kapittelsida: formålet venstre, punktene høyre. Stables under 1100 px. */
+.ik2-kapittel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 520px); gap: 0 56px; align-items: start; }
+.ik2-kapittel-hoyre > .ik2-avsnitt:first-of-type { border-top: none; padding-top: 0; }
+@media (max-width: 1100px) {
+  .ik2-kapittel { grid-template-columns: minmax(0, 1fr); }
+  .ik2-kapittel-hoyre > .ik2-avsnitt:first-of-type { border-top: 1px solid var(--kant); padding-top: 16px; }
+}
 
 /* Stien øverst: hele kjeden, der du er i sort. */
 .ik2-sti { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-height: 36px; margin-bottom: 16px; font-size: 14px; color: var(--blekk-3); }
@@ -1407,7 +1415,6 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
 .ik2-lenke:hover { color: var(--blekk); background: var(--fyll); }
 .ik2-tekst { white-space: pre-wrap; line-height: 1.6; max-width: 66ch; margin: 0; }
 .ik2-tekst-stor { font-size: 15px; line-height: 1.7; }
-.ik2-tekst-klippet { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .ik2-tom { padding: 18px 16px; border-radius: var(--r-input); border: 1px dashed var(--kant-sterk); color: var(--blekk-3); display: grid; gap: 6px; }
 .ik2-tom p { margin: 0; }
 .ik2-tom-tekst { margin: 0; color: var(--blekk-4); font-size: 13px; }

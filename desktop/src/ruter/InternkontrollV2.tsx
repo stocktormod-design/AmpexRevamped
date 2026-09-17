@@ -206,7 +206,7 @@ export function InternkontrollV2() {
 
       <div className="arbeidsflate">
         <div className="ik2-side">
-          <div className="ik2-innhold">
+          <div className={kapittel && !punkt ? 'ik2-innhold ik2-innhold-bred' : 'ik2-innhold'}>
             {laster && kapitler.length === 0 ? (
               <div className="tomt-mykt"><p>Henter …</p></div>
             ) : rutine && punkt && kapittel ? (
@@ -326,26 +326,6 @@ function Slett({ hva, sporsmal, jobber, slett }: {
       <Trash2 size={13} strokeWidth={2} />
       {hva}
     </button>
-  )
-}
-
-/**
- * Lang tekst vises klippet til noen linjer, med «Vis alt». Hovedformålet
- * kan være ti linjer, og da lå punktene under kanten av skjermen — det var
- * «hvor er punktene?». Selve teksten står der, bare ikke i veien.
- */
-function Klippet({ tekst }: { tekst: string }) {
-  const [alt, setAlt] = useState(false)
-  const lang = tekst.length > 280 || tekst.split('\n').length > 4
-  return (
-    <div>
-      <p className={`ik2-tekst valgbar${lang && !alt ? ' ik2-tekst-klippet' : ''}`}>{tekst}</p>
-      {lang ? (
-        <button className="ik2-lenke" style={{ marginLeft: -8, marginTop: 4 }} onClick={() => setAlt(v => !v)}>
-          {alt ? 'Vis mindre' : 'Vis alt'}
-        </button>
-      ) : null}
-    </div>
   )
 }
 
@@ -582,6 +562,12 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
 
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
 
+      {/* Bredden brukes: hovedformålet i hele sin lengde til venstre, punktene
+          ved siden av til høyre, så begge står synlig samtidig. Å klippe
+          teksten bak «Vis alt» var å gjemme det viktigste for å få plass til
+          det nest viktigste, på en skjerm med plass til begge. */}
+      <div className="ik2-kapittel">
+      <div className="ik2-kapittel-venstre">
       {redigerer ? (
         <div className="seksjon seksjon-redigerer">
           <div className="seksjon-hode">
@@ -625,7 +611,7 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
             ) : null}
           </div>
           {kapittel.formal ? (
-            <Klippet tekst={kapittel.formal} />
+            <p className="ik2-tekst valgbar">{kapittel.formal}</p>
           ) : kanSkrive ? (
             <Knapp stil="stille" onClick={startRedigering}><Plus size={15} strokeWidth={1.9} />Skriv hovedformålet</Knapp>
           ) : (
@@ -633,7 +619,9 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
           )}
         </section>
       )}
+      </div>
 
+      <div className="ik2-kapittel-hoyre">
       <section className="ik2-avsnitt">
         <div className="ik2-avsnitt-hode">
           <span className="ik2-etikett">Punkter</span>
@@ -798,6 +786,8 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
             tom="Kapittelet står slik det ble opprettet." />
         </div>
       </details>
+      </div>
+      </div>
     </>
   )
 }
