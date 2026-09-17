@@ -1,6 +1,6 @@
 import { erForfalt, fullstendighet, IK_GRUPPENAVN, IK_SKJELETT, nesteGjennomgang } from '@delt/ik/skjelett'
 import { kan } from '@delt/kontor-tilgang'
-import { ChevronLeft, CircleCheck, FileText, Pencil, Plus, Trash2, TriangleAlert, Unlink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CircleCheck, FileText, Pencil, Plus, Trash2, TriangleAlert, Unlink } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/auth'
 import {
@@ -250,7 +250,12 @@ export function InternkontrollV2() {
 
 /* ── Byggeklosser ─────────────────────────────────────────────────────── */
 
-/** Stien over sida: der du er, og ett trykk tilbake til hvert nivå over. */
+/**
+ * Stien over sida: hele kjeden fra «Kapitler» og ned til der du er. Det du
+ * står på er sort og ikke trykkbart; alt over er grått og går dit. Pila
+ * lengst til venstre er ett hakk opp. Uten dette svarer ikke sida på «hvor
+ * er jeg» — og det var det første Tormod spurte om.
+ */
 function Sti({ ledd }: { ledd: { navn: string; til?: string[] }[] }) {
   const over = ledd.slice(0, -1)
   const her = ledd[ledd.length - 1]
@@ -258,23 +263,16 @@ function Sti({ ledd }: { ledd: { navn: string; til?: string[] }[] }) {
   return (
     <nav className="ik2-sti">
       {forrige ? (
-        <button className="ik2-sti-tilbake" onClick={() => gaa(...(forrige.til ?? []))}>
-          <ChevronLeft size={16} strokeWidth={2} />
-          {forrige.navn}
+        <button className="ik2-sti-tilbake" title={`Tilbake til ${forrige.navn}`} onClick={() => gaa(...(forrige.til ?? []))}>
+          <ChevronLeft size={18} strokeWidth={2} />
         </button>
       ) : null}
-      {/* Nivåene over det man går tilbake til, som lenker. Tilbake-knappen
-          står alt for det nærmeste; det gjentas ikke her. */}
-      {over.length > 1 ? (
-        <span className="ik2-sti-over">
-          {over.slice(0, -1).map((l, i) => (
-            <span key={i}>
-              {i > 0 ? <span className="ik2-sti-skille">›</span> : null}
-              <button className="ik2-sti-ledd" onClick={() => gaa(...(l.til ?? []))}>{l.navn}</button>
-            </span>
-          ))}
+      {over.map((l, i) => (
+        <span key={i} className="ik2-sti-ledd-boks">
+          <button className="ik2-sti-ledd" onClick={() => gaa(...(l.til ?? []))}>{l.navn}</button>
+          <span className="ik2-sti-skille">›</span>
         </span>
-      ) : null}
+      ))}
       <span className="ik2-sti-her">{her?.navn}</span>
     </nav>
   )
@@ -298,6 +296,7 @@ function Rad({ nr, tittel, mer, hoyre, under, onClick }: {
       </span>
       {mer ? <span className="ik2-rad-mer">{mer}</span> : null}
       {hoyre}
+      <ChevronRight size={16} strokeWidth={2} className="ik2-rad-pil" />
     </button>
   )
 }
@@ -327,6 +326,26 @@ function Slett({ hva, sporsmal, jobber, slett }: {
       <Trash2 size={13} strokeWidth={2} />
       {hva}
     </button>
+  )
+}
+
+/**
+ * Lang tekst vises klippet til noen linjer, med «Vis alt». Hovedformålet
+ * kan være ti linjer, og da lå punktene under kanten av skjermen — det var
+ * «hvor er punktene?». Selve teksten står der, bare ikke i veien.
+ */
+function Klippet({ tekst }: { tekst: string }) {
+  const [alt, setAlt] = useState(false)
+  const lang = tekst.length > 280 || tekst.split('\n').length > 4
+  return (
+    <div>
+      <p className={`ik2-tekst valgbar${lang && !alt ? ' ik2-tekst-klippet' : ''}`}>{tekst}</p>
+      {lang ? (
+        <button className="ik2-lenke" style={{ marginLeft: -8, marginTop: 4 }} onClick={() => setAlt(v => !v)}>
+          {alt ? 'Vis mindre' : 'Vis alt'}
+        </button>
+      ) : null}
+    </div>
   )
 }
 
@@ -551,7 +570,7 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
 
   return (
     <>
-      <Sti ledd={[{ navn: 'Kapitler', til: [] }, { navn: `Kapittel ${kapittel.nummer}` }]} />
+      <Sti ledd={[{ navn: 'Kapitler', til: [] }, { navn: `${kapittel.nummer} ${kapittel.tittel}` }]} />
 
       <header className="ik2-hode">
         <h2 className="ik2-tittel valgbar">{kapittel.tittel}</h2>
@@ -606,7 +625,7 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
             ) : null}
           </div>
           {kapittel.formal ? (
-            <p className="ik2-tekst valgbar">{kapittel.formal}</p>
+            <Klippet tekst={kapittel.formal} />
           ) : kanSkrive ? (
             <Knapp stil="stille" onClick={startRedigering}><Plus size={15} strokeWidth={1.9} />Skriv hovedformålet</Knapp>
           ) : (
@@ -800,7 +819,7 @@ function PunktSide({ kapittel, punkt, opprettet, kanSkrive, etterEndring }: {
     <>
       <Sti ledd={[
         { navn: 'Kapitler', til: [] },
-        { navn: `Kapittel ${kapittel.nummer}`, til: [kapittel.id] },
+        { navn: `${kapittel.nummer} ${kapittel.tittel}`, til: [kapittel.id] },
         { navn: punkt.tittel },
       ]} />
 
@@ -931,7 +950,7 @@ function RutineSide({ kapittel, punkt, rutine, startISkrivemodus, kanSkrive, ett
     <>
       <Sti ledd={[
         { navn: 'Kapitler', til: [] },
-        { navn: `Kapittel ${kapittel.nummer}`, til: [kapittel.id] },
+        { navn: `${kapittel.nummer} ${kapittel.tittel}`, til: [kapittel.id] },
         { navn: punkt.tittel, til: [kapittel.id, punkt.id] },
         { navn: rutine.tittel },
       ]} />
