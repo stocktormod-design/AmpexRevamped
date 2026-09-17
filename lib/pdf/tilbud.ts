@@ -22,6 +22,23 @@ export type TilbudslinjeUt = {
   elnummer?: string | null
 }
 
+/**
+ * Et område i det trykte tilbudet: «Stue», med sin egen sum.
+ *
+ * Kunden som skal kutte 20 000 leter etter rommet pengene ligger i. Uten
+ * summen per område er et tilbud på hundre linjer ett eneste tall han kan si
+ * ja eller nei til.
+ */
+export type TilbudsomradeUt = {
+  navn: string
+  /** 0 = øverste nivå. Rykker inn i tabellen. */
+  niva: number
+  /** Hele grenen, underområder medregnet. */
+  nettoOre: number
+  /** Linjene som ligger direkte her. */
+  linjer: TilbudslinjeUt[]
+}
+
 export type TilbudSumUt = {
   nettoOre: number
   rabattOre: number
@@ -35,7 +52,10 @@ function tall(n: number): string {
 }
 
 export function tilbudInnholdHtml(opts: {
+  /** Linjene UTEN område. Uten `omrader` er dette hele tilbudet, som før. */
   linjer: TilbudslinjeUt[]
+  /** Områdene, i visningsrekkefølge. Utelatt = udelt tilbud. */
+  omrader?: TilbudsomradeUt[]
   sum: TilbudSumUt
   /** MVA-etikett per sats («25 %») — kommer fra `mvaLabel` i invoicing. */
   mvaEtikett: (mva: string) => string
@@ -44,9 +64,9 @@ export function tilbudInnholdHtml(opts: {
   /** Vilkår nederst. Uten tekst her sier dokumentet ingenting om hva som gjelder. */
   vilkaar?: string | null
 }): string {
-  const { linjer, sum, mvaEtikett, gyldigTil, beskrivelse, vilkaar } = opts
+  const { linjer, omrader = [], sum, mvaEtikett, gyldigTil, beskrivelse, vilkaar } = opts
 
-  const linjerHtml = linjer.map(l => {
+  const linjeHtml = (l: TilbudslinjeUt) => {
     if (l.art === 'tekst') {
       // Fritekstlinjer har ingen beløp — de er forklaring, ikke pris.
       return `<tr><td colspan="4">${esc(l.beskrivelse).replace(/\n/g, '<br>')}</td></tr>`
@@ -60,7 +80,18 @@ export function tilbudInnholdHtml(opts: {
       <td class="tall">${spesifikasjon}</td>
       <td class="tall">${formatKr(l.nettoOre)}</td>
     </tr>`
-  }).join('')
+  }
+
+  // Løse linjer først, så områdene — samme rekkefølge som på skjermen, slik at
+  // kunden og montøren ser det samme dokumentet.
+  const linjerHtml = linjer.map(linjeHtml).join('')
+    + omrader.map(o => `
+      <tr class="omrade-rad">
+        <td${o.niva > 0 ? ` style="padding-left:${o.niva * 12}pt"` : ''}><strong>${esc(o.navn)}</strong></td>
+        <td></td>
+        <td class="tall"><strong>${formatKr(o.nettoOre)}</strong></td>
+      </tr>
+      ${o.linjer.map(linjeHtml).join('')}`).join('')
 
   const mvaRader = sum.mvaFordeling
     .map(m => `<tr class="sum-rad"><td colspan="2" class="tall">Mva ${esc(mvaEtikett(m.mva))} av ${formatKr(m.nettoOre)}</td><td class="tall">${formatKr(m.mvaOre)}</td></tr>`)

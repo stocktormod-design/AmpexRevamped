@@ -4,8 +4,14 @@
  *
  * **Dette er et utgangspunkt, ikke en fasit.** Ampex kjenner ikke firmaets
  * arbeid, og et IK-system som er skrevet av noen andre er nettopp den døde
- * permen forskriften er ment å hindre. Skjelettet gir punktene og formålet;
- * rutinen må firmaet skrive selv.
+ * permen forskriften er ment å hindre. Skjelettet gir punktene og hjemmelen;
+ * formålet og rutinen må firmaet skrive selv.
+ *
+ * **Skjelettet har ingen ferdigskrevne formål** (17. september). Det hadde det
+ * før, og et punkt som åpnet med en setning Ampex hadde skrevet så ferdig ut —
+ * så det ble stående, og da eide ingen i firmaet det. Nå er feltet tomt, og
+ * flata ber deg opprette det. `hint` står igjen som hjelpetekst ved siden av
+ * skrivefeltet; den lagres aldri som innhold.
  *
  * ── Hva som MÅ være skriftlig ────────────────────────────────────────────
  *
@@ -34,8 +40,6 @@ export type IkSkjelettpunkt = {
   gruppe: IkGruppe
   /** Tom streng når vi ikke er sikre nok til å oppgi paragraf. */
   hjemmel: string
-  /** Hva punktet skal sikre. Endres sjelden. */
-  formal: string
   /** Hjelpetekst til den som skal skrive rutinen. Lagres ikke som innhold. */
   hint: string
   /** Krever forskriften at dette står skriftlig? */
@@ -57,7 +61,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Mål for helse, miljø og sikkerhet',
     gruppe: 'hms',
     hjemmel: 'Internkontrollforskriften § 5 andre ledd nr. 4',
-    formal: 'Firmaet skal ha uttalte mål for HMS-arbeidet, så det er noe å måle mot.',
     hint: 'Skriv få og konkrete mål. «Ingen strømgjennomgang» er et mål. «Vi tar HMS på alvor» er ikke.',
     maaVaereSkriftlig: true,
     intervallMnd: 12,
@@ -67,7 +70,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Organisasjon, ansvar og myndighet',
     gruppe: 'hms',
     hjemmel: 'Internkontrollforskriften § 5 andre ledd nr. 5',
-    formal: 'Hvem som har ansvar for hva skal være avklart før noe går galt, ikke etterpå.',
     hint: 'Navngi daglig leder, faglig ansvarlig og verneombud. Si hva hver av dem faktisk bestemmer over.',
     maaVaereSkriftlig: true,
     intervallMnd: 12,
@@ -77,7 +79,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Kartlegging av farer og risikovurdering',
     gruppe: 'hms',
     hjemmel: 'Internkontrollforskriften § 5 andre ledd nr. 6',
-    formal: 'Farene i arbeidet skal kartlegges, risikoen vurderes, og tiltak planlegges.',
     hint: 'Ta utgangspunkt i arbeidet dere faktisk gjør: AUS, arbeid i høyden, trange rom, asbest i eldre bygg. Knytt risikovurderingsskjemaet til dette punktet.',
     maaVaereSkriftlig: true,
     intervallMnd: 12,
@@ -87,7 +88,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Avvik: avdekke, rette opp og forebygge',
     gruppe: 'hms',
     hjemmel: 'Internkontrollforskriften § 5 andre ledd nr. 7',
-    formal: 'Det skal finnes en rutine for hva som skjer når noe går galt eller nesten går galt.',
     hint: 'Beskriv hvordan et avvik meldes, hvem som behandler det, og hvordan man vet at det er lukket. Dette punktet er selve motoren i et levende IK-system.',
     maaVaereSkriftlig: true,
     intervallMnd: 12,
@@ -97,7 +97,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Systematisk gjennomgang av internkontrollen',
     gruppe: 'hms',
     hjemmel: 'Internkontrollforskriften § 5 andre ledd nr. 8',
-    formal: 'Systemet skal gjennomgås jevnlig for å se om det virker som forutsatt.',
     hint: 'Sett en fast dato i året. Skriv hvem som deltar og hva som skal vurderes. Gjennomgangsdatoen på hvert punkt her i Ampex er verktøyet, ikke rutinen.',
     maaVaereSkriftlig: true,
     intervallMnd: 12,
@@ -109,7 +108,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Oversikt over lover og forskrifter',
     gruppe: 'hms',
     hjemmel: 'Internkontrollforskriften § 5 andre ledd nr. 1',
-    formal: 'Regelverket som gjelder arbeidet skal være tilgjengelig, og de viktigste kravene kjent.',
     hint: 'List forskriftene dere faktisk bruker og hvor de finnes. Lovdata-lenker er nok.',
     maaVaereSkriftlig: false,
     intervallMnd: 12,
@@ -119,7 +117,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Kompetanse og opplæring',
     gruppe: 'hms',
     hjemmel: 'Internkontrollforskriften § 5 andre ledd nr. 2',
-    formal: 'De ansatte skal ha kunnskapen som trengs, og få vite om endringer.',
     hint: 'Beskriv hvordan nyansatte og lærlinger settes inn i rutinene, og hvordan repetisjon av førstehjelp og AUS holdes ved like.',
     maaVaereSkriftlig: false,
     intervallMnd: 12,
@@ -129,7 +126,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Arbeidstakernes medvirkning',
     gruppe: 'hms',
     hjemmel: 'Internkontrollforskriften § 5 andre ledd nr. 3',
-    formal: 'De som gjør jobben skal være med på å utforme rutinene de skal følge.',
     hint: 'Beskriv hvor medvirkningen skjer: vernerunder, personalmøter, innspill på avvik.',
     maaVaereSkriftlig: false,
     intervallMnd: 12,
@@ -141,7 +137,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Faglig ansvarlig og kvalifikasjoner',
     gruppe: 'elfag',
     hjemmel: '',
-    formal: 'Virksomheten skal være registrert og ha en faglig ansvarlig med rett kompetanse.',
     hint: 'Se forskrift om elektroforetak og kvalifikasjonskrav (FEK). Skriv hvem som er faglig ansvarlig, hva registreringen i Elvirksomhetsregisteret dekker, og hvordan stedfortreder er ordnet. Slå opp paragrafen i gjeldende forskrift.',
     maaVaereSkriftlig: false,
     intervallMnd: 12,
@@ -151,7 +146,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Sluttkontroll før anlegget tas i bruk',
     gruppe: 'elfag',
     hjemmel: '',
-    formal: 'Hvert anlegg skal kontrolleres før det settes i drift, og kontrollen skal kunne vises fram.',
     hint: 'Beskriv hva som måles, hvem som utfører kontrollen og hva som skjer ved funn. Knytt sluttkontrollskjemaet til dette punktet.',
     maaVaereSkriftlig: false,
     intervallMnd: 12,
@@ -161,7 +155,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Erklæring om samsvar',
     gruppe: 'elfag',
     hjemmel: '',
-    formal: 'Kunden skal få en erklæring om at anlegget er i samsvar med kravene.',
     hint: 'Beskriv når erklæringen utstedes, hvem som signerer den, og hvordan den kommer fram til eier. Knytt samsvarserklæringen til dette punktet.',
     maaVaereSkriftlig: false,
     intervallMnd: 12,
@@ -171,7 +164,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Dokumentasjon som overleveres eier',
     gruppe: 'elfag',
     hjemmel: '',
-    formal: 'Eier skal få den dokumentasjonen som trengs for å bruke og vedlikeholde anlegget.',
     hint: 'List hva pakken inneholder: kursfortegnelse, samsvarserklæring, sluttkontroll, utstyrsdokumentasjon. Ampex bygger denne pakken automatisk fra ordren.',
     maaVaereSkriftlig: false,
     intervallMnd: 12,
@@ -181,7 +173,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Måleinstrumenter og verktøy',
     gruppe: 'elfag',
     hjemmel: '',
-    formal: 'Instrumentene som brukes til kontroll skal være i orden og kontrollert.',
     hint: 'Skriv hvilke instrumenter firmaet har, hvor ofte de kalibreres, og hvem som følger opp. Et måleinstrument uten gyldig kalibrering gjør sluttkontrollen verdiløs.',
     maaVaereSkriftlig: false,
     intervallMnd: 12,
@@ -193,7 +184,6 @@ export const IK_SKJELETT: IkSkjelettpunkt[] = [
     tittel: 'Oppbevaring av dokumentasjon',
     gruppe: 'dokumentasjon',
     hjemmel: '',
-    formal: 'Dokumentasjonen skal finnes igjen så lenge oppbevaringsplikten varer.',
     hint: 'Skriv hvor lenge dere oppbevarer, og hvor. Oppbevaringstiden firmaet har satt i Ampex står under Firma, og arkivpakken bygges per ordre.',
     maaVaereSkriftlig: false,
     intervallMnd: 24,

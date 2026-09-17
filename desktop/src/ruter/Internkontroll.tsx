@@ -613,14 +613,23 @@ function Punkt({
                 <div className="blokk">
                   <div className="blokk-hode">
                     <div className="blokk-tittel">Formål</div>
+                    {/* Tomt punkt sier OPPRETT, ikke «rediger». Ampex skriver
+                        ikke formålet for firmaet — se lib/ik/skjelett.ts — og
+                        da skal knappen be om det som mangler, ikke tilby å
+                        endre noe som ikke finnes. */}
                     {kanSkrive ? (
-                      <Knapp stil="stille" onClick={start}>
-                        <Pencil size={15} strokeWidth={1.9} />
-                        Rediger kapittelet
+                      <Knapp stil={punkt.formal ? 'stille' : 'merke'} onClick={start}>
+                        {punkt.formal
+                          ? <><Pencil size={15} strokeWidth={1.9} />Rediger kapittelet</>
+                          : <><Plus size={15} strokeWidth={1.9} />Opprett formål</>}
                       </Knapp>
                     ) : null}
                   </div>
-                  <p className="kort-hjelp valgbar">{punkt.formal || 'Ikke beskrevet.'}</p>
+                  <p className="kort-hjelp valgbar">
+                    {punkt.formal || (kanSkrive
+                      ? 'Ikke skrevet ennå. Skriv hva dette punktet skal sikre hos dere.'
+                      : 'Ikke skrevet ennå.')}
+                  </p>
                 </div>
 
                 {/* Rutinene. Punktet er kapittelet — forskriftens § 5 er

@@ -84,9 +84,10 @@ export async function hentRevisjoner(punktId: string): Promise<IkRevisjon[]> {
  * Oppretter skjelettet.
  *
  * Kjøres én gang, og bare når systemet er tomt. Punktene lages som UTKAST med
- * formål og hjemmel fylt ut, men uten innhold — innholdet er firmaets, og et
- * IK-system skrevet av leverandøren er nettopp den døde permen forskriften
- * skal hindre.
+ * tittel og hjemmel — og ellers TOMME. Verken formål eller innhold fylles ut:
+ * et IK-system skrevet av leverandøren er nettopp den døde permen forskriften
+ * skal hindre, og en ferdig setning blir stående nettopp fordi den ser ferdig
+ * ut. Hjelpeteksten ved siden av skrivefeltet sier hva punktet skal dekke.
  */
 export async function opprettSkjelett(brukerId: string): Promise<number> {
   const finnes = await hentPunkter()
@@ -96,7 +97,7 @@ export async function opprettSkjelett(brukerId: string): Promise<number> {
     nummer: p.nummer,
     tittel: p.tittel,
     hjemmel: p.hjemmel || null,
-    formal: p.formal,
+    formal: null,
     innhold: null,
     status: 'utkast',
     gjennomgang_intervall_mnd: p.intervallMnd,

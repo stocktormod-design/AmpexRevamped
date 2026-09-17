@@ -32,7 +32,11 @@ function sjekk(navn: string, faktisk: unknown, forventet: unknown) {
 
 sjekk('numrene er unike', new Set(IK_SKJELETT.map(p => p.nummer)).size, IK_SKJELETT.length)
 sjekk('ingen punkter uten tittel', IK_SKJELETT.filter(p => !p.tittel.trim()).length, 0)
-sjekk('ingen punkter uten formål', IK_SKJELETT.filter(p => !p.formal.trim()).length, 0)
+// Skjelettet skal IKKE ha ferdigskrevne formål. Et formål Ampex har skrevet
+// blir stående, og da eier ingen i firmaet det — som er den døde permen
+// forskriften finnes for å hindre.
+sjekk('skjelettet leverer ingen ferdige formål',
+  Object.prototype.hasOwnProperty.call(IK_SKJELETT[0], 'formal'), false)
 sjekk('ingen punkter uten hint til den som skal skrive', IK_SKJELETT.filter(p => !p.hint.trim()).length, 0)
 sjekk('alle intervaller er innenfor det basen godtar', IK_SKJELETT.every(p => p.intervallMnd >= 1 && p.intervallMnd <= 120), true)
 

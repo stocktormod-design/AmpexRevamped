@@ -135,6 +135,38 @@ paastand('gyldighetsdatoen er norsk', tilbud.includes('30.09.2026'))
 paastand('tilbudet nevner ALDRI dekningsbidrag',
   !/dekningsbidrag|kostpris|innkjøp/i.test(tilbud))
 
+/* ── Tilbud med områder ────────────────────────────────────────────────────── */
+
+const delt = tilbudInnholdHtml({
+  linjer: [
+    { art: 'tekst', beskrivelse: 'Stillas leies inn av kunde', antall: 0, enhet: '', enhetsprisOre: 0, rabattProsent: 0, nettoOre: 0 },
+  ],
+  omrader: [
+    { navn: '1. etasje', niva: 0, nettoOre: 624920, linjer: [] },
+    {
+      navn: 'Stue', niva: 1, nettoOre: 268920,
+      linjer: [{ art: 'materiell', beskrivelse: 'Downlight 8W', antall: 12, enhet: 'stk', enhetsprisOre: 24900, rabattProsent: 10, nettoOre: 268920 }],
+    },
+    {
+      navn: 'Kjøkken', niva: 1, nettoOre: 356000,
+      linjer: [{ art: 'arbeid', beskrivelse: 'Montasje', antall: 4, enhet: 't', enhetsprisOre: 89000, rabattProsent: 0, nettoOre: 356000 }],
+    },
+  ],
+  sum: {
+    nettoOre: 624920, rabattOre: 29880, bruttoOre: 781150,
+    mvaFordeling: [{ mva: 'hoy', nettoOre: 624920, mvaOre: 156230 }],
+  },
+  mvaEtikett,
+})
+paastand('området står som en rad med sin egen sum', delt.includes('Stue') && delt.includes(formatKr(268920)))
+paastand('underområdet rykkes inn', delt.includes('padding-left:12pt'))
+paastand('linjene under området følger med', delt.includes('Downlight 8W') && delt.includes('Montasje'))
+paastand('løse linjer står fortsatt i dokumentet', delt.includes('Stillas leies inn av kunde'))
+paastand('oppdelingen røper ikke kost', !/dekningsbidrag|kostpris|innkj\u00f8p|p\u00e5slag/i.test(delt))
+// Uten områder skal dokumentet være nøyaktig som før — en kunde med et udelt
+// tilbud skal ikke få en tom overskriftsrad.
+paastand('udelt tilbud får ingen områderad', !tilbud.includes('omrade-rad'))
+
 /* ── Fakturagrunnlag ───────────────────────────────────────────────────────── */
 
 const faktura = fakturaInnholdHtml({
