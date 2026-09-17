@@ -232,7 +232,9 @@ export function App() {
 
   // Rollen kan ha mistet en rettighet siden forrige økt. Da skal den falle
   // tilbake til første synlige rute, ikke vise en tom flate.
-  const bedt = hash.replace('#/', '')
+  // Bare første ledd velger flate. Leddene etter er flatens egne (internkontroll
+  // v2 legger kapittel/punkt/rutine der, så tilbake-knappen virker).
+  const bedt = hash.replace('#/', '').split('/')[0]
   const aktiv = synlige.find(r => r.id === bedt) ?? synlige[0]
 
   if (!aktiv) {
