@@ -1,6 +1,14 @@
 import { erForfalt, fullstendighet, IK_GRUPPENAVN, IK_SKJELETT, nesteGjennomgang } from '@delt/ik/skjelett'
 import { kan } from '@delt/kontor-tilgang'
 import { ChevronLeft, ChevronRight, CircleCheck, FileText, Pencil, Plus, Trash2, TriangleAlert, Unlink } from 'lucide-react'
+import {
+  ALVORLIGHET, ALVORLIGHET_NAVN, endreAvvik, gjenapneAvvik, hentAvvik, lukkAvvik, meldAvvik, slettAvvik,
+  type Alvorlighet, type Avvik,
+} from '@/lib/avvik-lager'
+import {
+  dagerTil, gyldighet, hentKompetanse, KOMPETANSE_NAVN, KOMPETANSE_TYPER, nyKompetanse, plussMaaneder, slettKompetanse,
+  type Gyldighet, type Kompetanse, type KompetanseType,
+} from '@/lib/kompetanse-lager'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/auth'
 import {
@@ -72,6 +80,7 @@ const GRUPPE_FOR: Record<string, string> = Object.fromEntries(
   IK_SKJELETT.map(p => [p.nummer, IK_GRUPPENAVN[p.gruppe]]),
 )
 const HINT_FOR: Record<string, string> = Object.fromEntries(IK_SKJELETT.map(p => [p.nummer, p.hint]))
+const FORSLAG_FOR: Record<string, string[]> = Object.fromEntries(IK_SKJELETT.map(p => [p.nummer, p.forslag]))
 
 type Ansatt = { id: string; full_name: string; role: string }
 
@@ -105,6 +114,8 @@ export function InternkontrollV2() {
   const [lesinger, setLesinger] = useState<Map<string, Lesing[]>>(new Map())
   const [maler, setMaler] = useState<Skjemamal[]>([])
   const [ansatte, setAnsatte] = useState<Ansatt[]>([])
+  const [avvik, setAvvik] = useState<Avvik[]>([])
+  const [kompetanse, setKompetanse] = useState<Kompetanse[]>([])
   /** Rutinen som nettopp ble opprettet: åpner i skrivemodus, én gang. */
   const [nyligOpprettet, setNyligOpprettet] = useState<string | null>(null)
   const [feil, setFeil] = useState<string | null>(null)
@@ -114,13 +125,15 @@ export function InternkontrollV2() {
   const last = useCallback(async () => {
     setLaster(true)
     try {
-      const [p, r, k, l, m, a] = await Promise.all([
+      const [p, r, k, l, m, a, av, ko] = await Promise.all([
         hentPunkter(),
         hentPunkterMedRutiner(),
         hentSkjemakoblinger(),
         hentLesinger(),
         hentSkjemamaler(),
         hentFirma(),
+        hentAvvik(),
+        hentKompetanse(),
       ])
       setKapitler(p)
       setPunkter(r)
@@ -128,6 +141,8 @@ export function InternkontrollV2() {
       setLesinger(l)
       setMaler(m)
       setAnsatte(a.ansatte)
+      setAvvik(av)
+      setKompetanse(ko)
       setFeil(null)
     } catch (e) {
       setFeil(e instanceof Error ? e.message : String(e))
@@ -192,8 +207,14 @@ export function InternkontrollV2() {
   const kapittel = kapitler.find(k => k.id === sti[0]) ?? null
   const punkt = kapittel ? (punkter.get(kapittel.id) ?? []).find(p => p.id === sti[1]) ?? null : null
   const rutine = punkt ? punkt.rutiner.find(r => r.id === sti[2]) ?? null : null
+  const paaAvvik = sti[0] === 'avvik'
+  const paaOpplaering = sti[0] === 'opplaering'
+  const valgtAvvik = paaAvvik ? avvik.find(a => a.id === sti[1]) ?? null : null
+  const valgtAnsatt = paaOpplaering ? ansatte.find(a => a.id === sti[1]) ?? null : null
 
   const felles = { kanSkrive, etterEndring: last }
+  const fse = fseOppsummering(ansatte, kompetanse, naa)
+  const apneAvvik = avvik.filter(a => a.status === 'apent')
 
   return (
     <>
@@ -206,9 +227,17 @@ export function InternkontrollV2() {
 
       <div className="arbeidsflate">
         <div className="ik2-side">
-          <div className={kapittel && !punkt ? 'ik2-innhold ik2-innhold-bred' : 'ik2-innhold'}>
+          <div className={(kapittel && !punkt) || (paaOpplaering && !valgtAnsatt) ? 'ik2-innhold ik2-innhold-bred' : 'ik2-innhold'}>
             {laster && kapitler.length === 0 ? (
               <div className="tomt-mykt"><p>Henter …</p></div>
+            ) : valgtAvvik ? (
+              <AvvikDetalj key={valgtAvvik.id} avvik={valgtAvvik} ansatte={ansatte} {...felles} />
+            ) : paaAvvik ? (
+              <AvvikSide avvik={avvik} ansatte={ansatte} naa={naa} {...felles} />
+            ) : valgtAnsatt ? (
+              <AnsattSide key={valgtAnsatt.id} ansatt={valgtAnsatt} kompetanse={kompetanse.filter(k => k.user_id === valgtAnsatt.id)} naa={naa} {...felles} />
+            ) : paaOpplaering ? (
+              <OpplaeringSide ansatte={ansatte} kompetanse={kompetanse} naa={naa} />
             ) : rutine && punkt && kapittel ? (
               <RutineSide
                 key={rutine.id}
@@ -235,11 +264,13 @@ export function InternkontrollV2() {
                 lesinger={lesinger.get(kapittel.id) ?? []}
                 maler={maler}
                 ansatte={ansatte}
+                apneAvvik={apneAvvik.length}
+                fse={fse}
                 naa={naa}
                 {...felles}
               />
             ) : (
-              <KapitlerSide kapitler={kapitler} punkter={punkter} naa={naa} />
+              <KapitlerSide kapitler={kapitler} punkter={punkter} avvik={apneAvvik} fse={fse} ansatte={ansatte} kompetanse={kompetanse} naa={naa} />
             )}
           </div>
         </div>
@@ -349,9 +380,28 @@ function useKjor(etterEndring: () => Promise<void>) {
 
 /* ── Side 1: kapitlene ────────────────────────────────────────────────── */
 
-function KapitlerSide({ kapitler, punkter, naa }: {
+/** «x av y har gyldig FSE» — det DLE spør om først. */
+type FseOppsummering = { gyldige: number; totalt: number; utgaar: number; utgatt: number; mangler: number }
+
+function fseOppsummering(ansatte: Ansatt[], kompetanse: Kompetanse[], naa: Date): FseOppsummering {
+  const ut: FseOppsummering = { gyldige: 0, totalt: ansatte.length, utgaar: 0, utgatt: 0, mangler: 0 }
+  for (const a of ansatte) {
+    const g = gyldighet(kompetanse, a.id, 'fse', naa).status
+    if (g === 'gyldig') ut.gyldige++
+    else if (g === 'utgaar') { ut.gyldige++; ut.utgaar++ }
+    else if (g === 'utgatt') ut.utgatt++
+    else ut.mangler++
+  }
+  return ut
+}
+
+function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa }: {
   kapitler: IkPunkt[]
   punkter: Map<string, Ik2Punkt[]>
+  avvik: Avvik[]
+  fse: FseOppsummering
+  ansatte: Ansatt[]
+  kompetanse: Kompetanse[]
   naa: Date
 }) {
   const [sok, setSok] = useState('')
@@ -416,6 +466,32 @@ function KapitlerSide({ kapitler, punkter, naa }: {
 
   const forfalte = kapitler.filter(k => erForfalt(k.sist_gjennomgatt, k.gjennomgang_intervall_mnd, naa)).length
 
+  // «Å gjøre» er HMS-kalenderen i den formen som er til å bruke: bare det som
+  // er forfalt eller forfaller snart, som rader man kan trykke på. Er lista
+  // tom, finnes den ikke — en tom kalender er ikke informasjon.
+  const gjore = useMemo(() => {
+    const ut: { id: string; tekst: string; mer: string; grad: 'na' | 'snart'; til: string[] }[] = []
+    for (const k of kapitler) {
+      const neste = nesteGjennomgang(k.sist_gjennomgatt, k.gjennomgang_intervall_mnd)
+      if (!neste) continue
+      const dager = Math.round((neste.getTime() - naa.getTime()) / 86_400_000)
+      if (dager < 0) ut.push({ id: k.id, tekst: `${k.nummer} ${k.tittel}`, mer: `Skulle vært gjennomgått ${dato(neste)}`, grad: 'na', til: [k.id] })
+      else if (dager <= 30) ut.push({ id: k.id, tekst: `${k.nummer} ${k.tittel}`, mer: `Gjennomgås innen ${dato(neste)}`, grad: 'snart', til: [k.id] })
+    }
+    for (const a of ansatte) {
+      for (const type of ['fse', 'forstehjelp'] as const) {
+        const g = gyldighet(kompetanse, a.id, type, naa)
+        if (g.status === 'utgatt') ut.push({ id: `${a.id}-${type}`, tekst: `${a.full_name}: ${KOMPETANSE_NAVN[type]} er utgått`, mer: g.rad?.gyldig_til ? `Gikk ut ${dato(g.rad.gyldig_til)}` : '', grad: 'na', til: ['opplaering', a.id] })
+        else if (g.status === 'utgaar') ut.push({ id: `${a.id}-${type}`, tekst: `${a.full_name}: ${KOMPETANSE_NAVN[type]} går ut`, mer: g.rad?.gyldig_til ? `Innen ${dato(g.rad.gyldig_til)}` : '', grad: 'snart', til: ['opplaering', a.id] })
+      }
+    }
+    const kritiske = avvik.filter(a => a.alvorlighet === 'kritisk' || a.alvorlighet === 'hoy')
+    for (const a of kritiske) {
+      ut.push({ id: a.id, tekst: a.tittel, mer: `${ALVORLIGHET_NAVN[a.alvorlighet]} avvik${a.frist_at ? ` · frist ${dato(a.frist_at)}` : ''}`, grad: a.alvorlighet === 'kritisk' ? 'na' : 'snart', til: ['avvik', a.id] })
+    }
+    return ut.sort((a, b) => (a.grad === b.grad ? 0 : a.grad === 'na' ? -1 : 1))
+  }, [kapitler, ansatte, kompetanse, avvik, naa])
+
   return (
     <>
       <div className="ik2-sok">
@@ -458,7 +534,42 @@ function KapitlerSide({ kapitler, punkter, naa }: {
         </>
       ) : (
         <>
-          <p className="ik2-ingress">
+          {gjore.length > 0 ? (
+            <section className="ik2-avsnitt ik2-gjore">
+              <div className="ik2-avsnitt-hode">
+                <span className="ik2-etikett">Å gjøre</span>
+                <span className="ik2-rad-mer">{stk(gjore.length, 'ting', 'ting')}</span>
+              </div>
+              {gjore.map(g => (
+                <Rad
+                  key={g.id}
+                  tittel={g.tekst}
+                  mer={g.mer}
+                  hoyre={<span className={`ik2-prikk ik2-prikk-${g.grad}`} aria-hidden />}
+                  onClick={() => gaa(...g.til)}
+                />
+              ))}
+            </section>
+          ) : null}
+
+          {/* De to registrene som ikke er kapitler, men som DLE ber om å se
+              først. Egen inngang, som hos alle andre systemer. */}
+          <section className="ik2-avsnitt">
+            <Rad
+              tittel="Avvik"
+              mer={avvik.length === 0 ? 'Ingen åpne' : `${stk(avvik.length, 'åpent', 'åpne')}`}
+              hoyre={avvik.some(a => a.alvorlighet === 'kritisk') ? <span className="ik2-prikk ik2-prikk-na" aria-hidden /> : null}
+              onClick={() => gaa('avvik')}
+            />
+            <Rad
+              tittel="Opplæring"
+              mer={fse.totalt === 0 ? 'Ingen ansatte' : `${fse.gyldige} av ${fse.totalt} har gyldig FSE`}
+              hoyre={fse.utgatt + fse.mangler > 0 ? <span className="ik2-prikk ik2-prikk-na" aria-hidden /> : fse.utgaar > 0 ? <span className="ik2-prikk ik2-prikk-snart" aria-hidden /> : null}
+              onClick={() => gaa('opplaering')}
+            />
+          </section>
+
+          <p className="ik2-ingress" style={{ marginTop: 18 }}>
             {status.pa_plass} av {status.kreves} lovpålagte kapitler vedtatt
             {forfalte > 0 ? ` · ${stk(forfalte, 'kapittel', 'kapitler')} til gjennomgang` : ''}
           </p>
@@ -493,13 +604,15 @@ function KapitlerSide({ kapitler, punkter, naa }: {
 
 /* ── Side 2: ett kapittel ─────────────────────────────────────────────── */
 
-function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, naa, kanSkrive, etterEndring }: {
+function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, apneAvvik, fse, naa, kanSkrive, etterEndring }: {
   kapittel: IkPunkt
   punkter: Ik2Punkt[]
   skjemaer: Skjemakobling[]
   lesinger: Lesing[]
   maler: Skjemamal[]
   ansatte: Ansatt[]
+  apneAvvik: number
+  fse: FseOppsummering
   naa: Date
   kanSkrive: boolean
   etterEndring: () => Promise<void>
@@ -534,6 +647,11 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
   const jegHarLest = harLest.find(l => l.user_id === profil?.id)
   const knyttede = new Set(skjemaer.map(s => s.template_id))
   const ledige = maler.filter(m => !knyttede.has(m.id))
+
+  // Forslagene som ikke alt er brukt. Titler, aldri tekst — se skjelettet.
+  const brukte = new Set(punkter.map(p => p.tittel.trim().toLowerCase()))
+  const forslag = (FORSLAG_FOR[kapittel.nummer] ?? []).filter(t => !brukte.has(t.toLowerCase()))
+  const [forslagJobber, setForslagJobber] = useState<string | null>(null)
 
   function startRedigering() {
     setUtkast({
@@ -669,7 +787,45 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, n
             onClick={() => gaa(kapittel.id, p.id)}
           />
         ))}
+
+        {/* Forslag: ett trykk lager punktet, uten tekst. Det er ikke NIKs
+            ferdige perm — det er overskriftene, så firmaet slipper å stirre
+            på et tomt kapittel. Rutinene under skriver de selv. */}
+        {kanSkrive && forslag.length > 0 ? (
+          <div className="ik2-forslag">
+            <span className="ik2-forslag-etikett">{punkter.length === 0 ? 'Vanlige punkter her' : 'Flere vanlige punkter'}</span>
+            <div className="filter">
+              {forslag.map(t => (
+                <button
+                  key={t}
+                  className="filter-knapp ik2-forslag-knapp"
+                  disabled={forslagJobber !== null}
+                  onClick={() => {
+                    setForslagJobber(t)
+                    void kjor(() => opprettIk2Punkt(kapittel.id, t).then(() => undefined)).finally(() => setForslagJobber(null))
+                  }}
+                >
+                  <Plus size={13} strokeWidth={2.2} />
+                  {forslagJobber === t ? 'Lager …' : t}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
+
+      {/* Kapittel 4 og 7 har et register bak seg. Rutinen sier hvordan;
+          registeret sier hva som faktisk står. */}
+      {kapittel.nummer === '4' ? (
+        <section className="ik2-avsnitt">
+          <Rad tittel="Avvik" under="Det som er meldt, og hva som ble gjort" mer={apneAvvik === 0 ? 'Ingen åpne' : stk(apneAvvik, 'åpent', 'åpne')} onClick={() => gaa('avvik')} />
+        </section>
+      ) : null}
+      {kapittel.nummer === '7' ? (
+        <section className="ik2-avsnitt">
+          <Rad tittel="Opplæringsregister" under="Hvem har hvilke kurs, og når de går ut" mer={fse.totalt === 0 ? '' : `${fse.gyldige} av ${fse.totalt} har gyldig FSE`} onClick={() => gaa('opplaering')} />
+        </section>
+      ) : null}
 
       {/* Vedtaket. Én linje og én knapp. */}
       <section className="ik2-avsnitt ik2-vedtak">
@@ -1010,6 +1166,426 @@ function RutineSide({ kapittel, punkt, rutine, startISkrivemodus, kanSkrive, ett
           ) : null}
         </>
       )}
+    </>
+  )
+}
+
+/* ── Avvik ────────────────────────────────────────────────────────────── */
+
+function Alvor({ grad }: { grad: Alvorlighet }) {
+  return <span className={`ik2-alvor ik2-alvor-${grad}`}>{ALVORLIGHET_NAVN[grad]}</span>
+}
+
+function navnPaa(ansatte: Ansatt[], id: string | null): string {
+  return ansatte.find(a => a.id === id)?.full_name ?? 'Ukjent'
+}
+
+const IDAG = () => new Date().toISOString().slice(0, 10)
+
+/**
+ * Avvikslista. Åpne først, det farligste øverst; lukkede bak ett trykk.
+ * «Meld avvik» er ett skjema med tittel og alvorlighet — resten er valgfritt,
+ * for det som teller er at det blir meldt.
+ */
+function AvvikSide({ avvik, ansatte, naa, kanSkrive, etterEndring }: {
+  avvik: Avvik[]
+  ansatte: Ansatt[]
+  naa: Date
+  kanSkrive: boolean
+  etterEndring: () => Promise<void>
+}) {
+  const { jobber, feil, kjor } = useKjor(etterEndring)
+  const [ny, setNy] = useState<{ tittel: string; alvorlighet: Alvorlighet; sted: string; frist: string; beskrivelse: string } | null>(null)
+  const apne = avvik.filter(a => a.status === 'apent')
+  const lukkede = avvik.filter(a => a.status === 'lukket')
+
+  function fristTekst(a: Avvik): string {
+    if (!a.frist_at) return `Meldt ${dato(a.funnet_at)}`
+    const d = dagerTil(a.frist_at.slice(0, 10), naa)
+    if (d < 0) return `Frist passert ${dato(a.frist_at)}`
+    if (d === 0) return 'Frist i dag'
+    return `Frist ${dato(a.frist_at)}`
+  }
+
+  return (
+    <>
+      <Sti ledd={[{ navn: 'Kapitler', til: [] }, { navn: 'Avvik' }]} />
+      <header className="ik2-hode">
+        <h2 className="ik2-tittel">Avvik</h2>
+        <p className="ik2-underlinje">
+          {apne.length === 0 ? 'Ingen åpne avvik.' : `${stk(apne.length, 'åpent avvik', 'åpne avvik')}.`}
+          {' '}Meldes her eller fra appen, lukkes med et tiltak.
+        </p>
+      </header>
+
+      {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+
+      <section className="ik2-avsnitt">
+        <div className="ik2-avsnitt-hode">
+          <span className="ik2-etikett">Åpne</span>
+          {kanSkrive && !ny ? (
+            <button className="ik2-lenke" onClick={() => setNy({ tittel: '', alvorlighet: 'middels', sted: '', frist: '', beskrivelse: '' })}>
+              <Plus size={14} strokeWidth={2} />Meld avvik
+            </button>
+          ) : null}
+        </div>
+
+        {ny ? (
+          <form
+            className="seksjon seksjon-redigerer"
+            onSubmit={ev => {
+              ev.preventDefault()
+              if (!ny.tittel.trim() || jobber) return
+              void kjor(async () => {
+                const id = await meldAvvik({ tittel: ny.tittel, alvorlighet: ny.alvorlighet, sted: ny.sted, frist: ny.frist ? `${ny.frist}T12:00:00Z` : null, beskrivelse: ny.beskrivelse })
+                setNy(null)
+                gaa('avvik', id)
+              })
+            }}
+          >
+            <div className="stabel" style={{ gap: 14 }}>
+              <Felt firkant autoFocus etikett="Hva er galt?" value={ny.tittel} placeholder="Manglende jordfeilbryter på kurs 12"
+                onChange={e => setNy(v => (v ? { ...v, tittel: e.target.value } : v))} />
+              <div className="rad" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
+                <label className="felt felt-firkant" style={{ width: 160 }}>
+                  <span className="felt-etikett">Alvorlighet</span>
+                  <select className="velger" value={ny.alvorlighet} onChange={e => setNy(v => (v ? { ...v, alvorlighet: e.target.value as Alvorlighet } : v))}>
+                    {ALVORLIGHET.map(a => <option key={a.verdi} value={a.verdi}>{a.navn}</option>)}
+                  </select>
+                </label>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <Felt firkant etikett="Hvor" value={ny.sted} placeholder="Ordre, adresse eller rom"
+                    onChange={e => setNy(v => (v ? { ...v, sted: e.target.value } : v))} />
+                </div>
+                <div style={{ width: 170 }}>
+                  <Felt firkant etikett="Frist" type="date" value={ny.frist}
+                    onChange={e => setNy(v => (v ? { ...v, frist: e.target.value } : v))} />
+                </div>
+              </div>
+              <label className="felt felt-firkant">
+                <span className="felt-etikett">Beskrivelse</span>
+                <textarea className="felt-inn skrivefelt skrivefelt-lav" rows={4} value={ny.beskrivelse}
+                  placeholder="Hva ble funnet, og hvordan."
+                  onChange={e => setNy(v => (v ? { ...v, beskrivelse: e.target.value } : v))} />
+              </label>
+              <div className="rad">
+                <Knapp stil="merke" type="submit" disabled={!ny.tittel.trim() || jobber}>{jobber ? 'Melder …' : 'Meld avviket'}</Knapp>
+                <Knapp stil="naken" type="button" disabled={jobber} onClick={() => setNy(null)}>Avbryt</Knapp>
+              </div>
+            </div>
+          </form>
+        ) : null}
+
+        {apne.length === 0 && !ny ? (
+          <div className="ik2-tom"><p>Ingen åpne avvik. Det er bra — så lenge det er sant.</p></div>
+        ) : apne.map(a => (
+          <Rad
+            key={a.id}
+            tittel={a.tittel}
+            under={[a.sted, fristTekst(a)].filter(Boolean).join(' · ')}
+            hoyre={<Alvor grad={a.alvorlighet} />}
+            onClick={() => gaa('avvik', a.id)}
+          />
+        ))}
+      </section>
+
+      {lukkede.length > 0 ? (
+        <details className="ik2-mer">
+          <summary>Lukkede<span className="ik2-rad-mer">{antall(lukkede.length)}</span></summary>
+          <div className="ik2-avsnitt">
+            {lukkede.map(a => (
+              <Rad
+                key={a.id}
+                tittel={a.tittel}
+                under={`Lukket ${dato(a.lukket_at)} av ${navnPaa(ansatte, a.lukket_av)}`}
+                onClick={() => gaa('avvik', a.id)}
+              />
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </>
+  )
+}
+
+function AvvikDetalj({ avvik, ansatte, kanSkrive, etterEndring }: {
+  avvik: Avvik
+  ansatte: Ansatt[]
+  kanSkrive: boolean
+  etterEndring: () => Promise<void>
+}) {
+  const { jobber, feil, kjor } = useKjor(etterEndring)
+  const [tiltak, setTiltak] = useState('')
+  const [redigerer, setRedigerer] = useState(false)
+  const [utkast, setUtkast] = useState({ tittel: avvik.tittel, alvorlighet: avvik.alvorlighet, sted: avvik.sted ?? '', beskrivelse: avvik.beskrivelse ?? '', frist: avvik.frist_at?.slice(0, 10) ?? '' })
+  const apent = avvik.status === 'apent'
+
+  return (
+    <>
+      <Sti ledd={[{ navn: 'Kapitler', til: [] }, { navn: 'Avvik', til: ['avvik'] }, { navn: avvik.tittel }]} />
+
+      {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+
+      {redigerer ? (
+        <div className="seksjon seksjon-redigerer">
+          <div className="stabel" style={{ gap: 14 }}>
+            <Felt firkant etikett="Hva er galt?" value={utkast.tittel} onChange={e => setUtkast(u => ({ ...u, tittel: e.target.value }))} />
+            <div className="rad" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
+              <label className="felt felt-firkant" style={{ width: 160 }}>
+                <span className="felt-etikett">Alvorlighet</span>
+                <select className="velger" value={utkast.alvorlighet} onChange={e => setUtkast(u => ({ ...u, alvorlighet: e.target.value as Alvorlighet }))}>
+                  {ALVORLIGHET.map(a => <option key={a.verdi} value={a.verdi}>{a.navn}</option>)}
+                </select>
+              </label>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <Felt firkant etikett="Hvor" value={utkast.sted} onChange={e => setUtkast(u => ({ ...u, sted: e.target.value }))} />
+              </div>
+              <div style={{ width: 170 }}>
+                <Felt firkant etikett="Frist" type="date" value={utkast.frist} onChange={e => setUtkast(u => ({ ...u, frist: e.target.value }))} />
+              </div>
+            </div>
+            <label className="felt felt-firkant">
+              <span className="felt-etikett">Beskrivelse</span>
+              <textarea className="felt-inn skrivefelt skrivefelt-lav" rows={5} value={utkast.beskrivelse} onChange={e => setUtkast(u => ({ ...u, beskrivelse: e.target.value }))} />
+            </label>
+            <div className="rad">
+              <Knapp stil="merke" disabled={!utkast.tittel.trim() || jobber} onClick={() => void kjor(async () => {
+                await endreAvvik(avvik.id, { tittel: utkast.tittel.trim(), alvorlighet: utkast.alvorlighet, sted: utkast.sted.trim() || null, beskrivelse: utkast.beskrivelse.trim() || null, frist_at: utkast.frist ? `${utkast.frist}T12:00:00Z` : null })
+                setRedigerer(false)
+              })}>{jobber ? 'Lagrer …' : 'Lagre'}</Knapp>
+              <Knapp stil="naken" disabled={jobber} onClick={() => setRedigerer(false)}>Avbryt</Knapp>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <header className="ik2-hode">
+            <h2 className="ik2-tittel valgbar">{avvik.tittel}</h2>
+            <p className="ik2-underlinje">
+              <Alvor grad={avvik.alvorlighet} />
+              {apent ? <Merke stil="varsel">Åpent</Merke> : <Merke stil="ny">Lukket {dato(avvik.lukket_at)}</Merke>}
+              <span>Meldt {dato(avvik.funnet_at)} av {navnPaa(ansatte, avvik.funnet_av)}</span>
+              {avvik.sted ? <span>· {avvik.sted}</span> : null}
+              {avvik.frist_at ? <span>· Frist {dato(avvik.frist_at)}</span> : null}
+            </p>
+          </header>
+
+          {avvik.beskrivelse ? <p className="ik2-tekst valgbar">{avvik.beskrivelse}</p> : <p className="ik2-tom-tekst">Ingen beskrivelse.</p>}
+
+          {avvik.tiltak ? (
+            <section className="ik2-avsnitt" style={{ marginTop: 18 }}>
+              <div className="ik2-avsnitt-hode"><span className="ik2-etikett">Tiltak</span></div>
+              <p className="ik2-tekst valgbar">{avvik.tiltak}</p>
+              {!apent ? <p className="felt-hjelp" style={{ marginTop: 6 }}>Lukket {dato(avvik.lukket_at)} av {navnPaa(ansatte, avvik.lukket_av)}.</p> : null}
+            </section>
+          ) : null}
+
+          {kanSkrive && apent ? (
+            <section className="ik2-avsnitt" style={{ marginTop: 18 }}>
+              <div className="ik2-avsnitt-hode"><span className="ik2-etikett">Lukk avviket</span></div>
+              <label className="felt felt-firkant">
+                <span className="felt-etikett">Hva ble gjort?</span>
+                <textarea className="felt-inn skrivefelt skrivefelt-lav" rows={4} value={tiltak}
+                  placeholder="Jordfeilbryter montert og funksjonstestet 17.09."
+                  onChange={e => setTiltak(e.target.value)} />
+                <span className="felt-hjelp">Påkrevd. Et avvik uten tiltak er ikke lukket, det er glemt.</span>
+              </label>
+              <div className="rad" style={{ marginTop: 12 }}>
+                <Knapp stil="primar" disabled={!tiltak.trim() || jobber} onClick={() => void kjor(() => lukkAvvik(avvik.id, tiltak))}>
+                  {jobber ? 'Lukker …' : 'Lukk avviket'}
+                </Knapp>
+              </div>
+            </section>
+          ) : null}
+
+          {kanSkrive ? (
+            <div className="ik2-bunn">
+              {apent ? (
+                <Knapp stil="stille" onClick={() => { setUtkast({ tittel: avvik.tittel, alvorlighet: avvik.alvorlighet, sted: avvik.sted ?? '', beskrivelse: avvik.beskrivelse ?? '', frist: avvik.frist_at?.slice(0, 10) ?? '' }); setRedigerer(true) }}>
+                  <Pencil size={14} strokeWidth={2} />Rediger
+                </Knapp>
+              ) : (
+                <Knapp stil="stille" disabled={jobber} onClick={() => void kjor(() => gjenapneAvvik(avvik.id))}>Gjenåpne</Knapp>
+              )}
+              <Slett hva="Slett avviket" sporsmal="Slette avviket? Bruk lukking om det er rettet." jobber={jobber}
+                slett={() => void kjor(async () => { await slettAvvik(avvik.id); gaa('avvik') })} />
+            </div>
+          ) : null}
+        </>
+      )}
+    </>
+  )
+}
+
+/* ── Opplæring ────────────────────────────────────────────────────────── */
+
+function GyldigMerke({ g, naa }: { g: { status: Gyldighet; rad: Kompetanse | null }; naa: Date }) {
+  const til = g.rad?.gyldig_til
+  const tekst =
+    g.status === 'mangler' ? 'Mangler'
+    : g.status === 'utgatt' ? `Utgått ${til ? dato(til) : ''}`
+    : g.status === 'utgaar' ? `Går ut om ${stk(dagerTil(til!, naa), 'dag', 'dager')}`
+    : til ? `Til ${dato(til)}` : `Tatt ${g.rad ? dato(g.rad.dato) : ''}`
+  return <span className={`ik2-gyldig ik2-gyldig-${g.status}`}>{tekst}</span>
+}
+
+/** Registeret som tabell: én rad per ansatt, FSE og førstehjelp som kolonner. */
+function OpplaeringSide({ ansatte, kompetanse, naa }: {
+  ansatte: Ansatt[]
+  kompetanse: Kompetanse[]
+  naa: Date
+}) {
+  const fse = fseOppsummering(ansatte, kompetanse, naa)
+  const sortert = [...ansatte].sort((a, b) => a.full_name.localeCompare(b.full_name, 'nb'))
+  return (
+    <>
+      <Sti ledd={[{ navn: 'Kapitler', til: [] }, { navn: 'Opplæring' }]} />
+      <header className="ik2-hode">
+        <h2 className="ik2-tittel">Opplæring</h2>
+        <p className="ik2-underlinje">
+          {fse.totalt === 0 ? 'Ingen ansatte registrert.' : `${fse.gyldige} av ${fse.totalt} har gyldig FSE.`}
+          {' '}FSE og førstehjelp går ut etter ett år. Trykk på en person for å registrere kurs.
+        </p>
+      </header>
+
+      {sortert.length === 0 ? (
+        <div className="ik2-tom"><p>Ansatte legges til under Firma.</p></div>
+      ) : (
+        <div className="ik2-tabell" role="table">
+          <div className="ik2-tabell-hode" role="row">
+            <span>Navn</span><span>FSE</span><span>Førstehjelp</span><span>Annet</span><span />
+          </div>
+          {sortert.map(a => {
+            const andre = kompetanse.filter(k => k.user_id === a.id && k.type !== 'fse' && k.type !== 'forstehjelp').length
+            return (
+              <button key={a.id} className="ik2-tabell-rad" role="row" onClick={() => gaa('opplaering', a.id)}>
+                <span className="ik2-tabell-navn">{a.full_name}</span>
+                <span><GyldigMerke g={gyldighet(kompetanse, a.id, 'fse', naa)} naa={naa} /></span>
+                <span><GyldigMerke g={gyldighet(kompetanse, a.id, 'forstehjelp', naa)} naa={naa} /></span>
+                <span className="ik2-rad-mer">{andre === 0 ? '–' : stk(andre, 'kurs', 'kurs')}</span>
+                <ChevronRight size={16} strokeWidth={2} className="ik2-rad-pil" />
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
+function AnsattSide({ ansatt, kompetanse, naa, kanSkrive, etterEndring }: {
+  ansatt: Ansatt
+  kompetanse: Kompetanse[]
+  naa: Date
+  kanSkrive: boolean
+  etterEndring: () => Promise<void>
+}) {
+  const { jobber, feil, kjor } = useKjor(etterEndring)
+  const [ny, setNy] = useState<{ type: KompetanseType; tittel: string; dato: string; gyldig_til: string; notat: string } | null>(null)
+
+  function velgType(type: KompetanseType) {
+    const def = KOMPETANSE_TYPER.find(t => t.verdi === type)!
+    setNy(v => {
+      if (!v) return v
+      const dato = v.dato || IDAG()
+      return { ...v, type, tittel: KOMPETANSE_TYPER.some(t => t.navn === v.tittel) || !v.tittel ? def.navn : v.tittel, gyldig_til: def.varighetMnd ? plussMaaneder(dato, def.varighetMnd) : '' }
+    })
+  }
+
+  const sortert = [...kompetanse].sort((a, b) => b.dato.localeCompare(a.dato))
+
+  return (
+    <>
+      <Sti ledd={[{ navn: 'Kapitler', til: [] }, { navn: 'Opplæring', til: ['opplaering'] }, { navn: ansatt.full_name }]} />
+      <header className="ik2-hode">
+        <h2 className="ik2-tittel">{ansatt.full_name}</h2>
+        <p className="ik2-underlinje">
+          <span>FSE: <GyldigMerke g={gyldighet(kompetanse, ansatt.id, 'fse', naa)} naa={naa} /></span>
+          <span>Førstehjelp: <GyldigMerke g={gyldighet(kompetanse, ansatt.id, 'forstehjelp', naa)} naa={naa} /></span>
+        </p>
+      </header>
+
+      {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+
+      <section className="ik2-avsnitt">
+        <div className="ik2-avsnitt-hode">
+          <span className="ik2-etikett">Kurs og sertifikater</span>
+          {kanSkrive && !ny ? (
+            <button className="ik2-lenke" onClick={() => setNy({ type: 'fse', tittel: 'FSE', dato: IDAG(), gyldig_til: plussMaaneder(IDAG(), 12), notat: '' })}>
+              <Plus size={14} strokeWidth={2} />Registrer kurs
+            </button>
+          ) : null}
+        </div>
+
+        {ny ? (
+          <form
+            className="seksjon seksjon-redigerer"
+            onSubmit={ev => {
+              ev.preventDefault()
+              if (!ny.tittel.trim() || !ny.dato || jobber) return
+              void kjor(async () => {
+                await nyKompetanse({ user_id: ansatt.id, type: ny.type, tittel: ny.tittel, dato: ny.dato, gyldig_til: ny.gyldig_til || null, notat: ny.notat })
+                setNy(null)
+              })
+            }}
+          >
+            <div className="stabel" style={{ gap: 14 }}>
+              <div className="rad" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
+                <label className="felt felt-firkant" style={{ width: 160 }}>
+                  <span className="felt-etikett">Type</span>
+                  <select className="velger" value={ny.type} onChange={e => velgType(e.target.value as KompetanseType)}>
+                    {KOMPETANSE_TYPER.map(t => <option key={t.verdi} value={t.verdi}>{t.navn}</option>)}
+                  </select>
+                </label>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <Felt firkant autoFocus etikett="Kurs" value={ny.tittel} placeholder="FSE med førstehjelp, Trainor"
+                    onChange={e => setNy(v => (v ? { ...v, tittel: e.target.value } : v))} />
+                </div>
+              </div>
+              <div className="rad" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ width: 170 }}>
+                  <Felt firkant etikett="Dato" type="date" value={ny.dato}
+                    onChange={e => {
+                      const d = e.target.value
+                      const def = KOMPETANSE_TYPER.find(t => t.verdi === ny.type)!
+                      setNy(v => (v ? { ...v, dato: d, gyldig_til: def.varighetMnd && d ? plussMaaneder(d, def.varighetMnd) : v.gyldig_til } : v))
+                    }} />
+                </div>
+                <div style={{ width: 170 }}>
+                  <Felt firkant etikett="Gyldig til" type="date" value={ny.gyldig_til} hjelp="Tomt = går ikke ut"
+                    onChange={e => setNy(v => (v ? { ...v, gyldig_til: e.target.value } : v))} />
+                </div>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <Felt firkant etikett="Notat" value={ny.notat} placeholder="Kursholder, kursbevis"
+                    onChange={e => setNy(v => (v ? { ...v, notat: e.target.value } : v))} />
+                </div>
+              </div>
+              <div className="rad">
+                <Knapp stil="merke" type="submit" disabled={!ny.tittel.trim() || !ny.dato || jobber}>{jobber ? 'Lagrer …' : 'Registrer'}</Knapp>
+                <Knapp stil="naken" type="button" disabled={jobber} onClick={() => setNy(null)}>Avbryt</Knapp>
+              </div>
+            </div>
+          </form>
+        ) : null}
+
+        {sortert.length === 0 && !ny ? (
+          <div className="ik2-tom"><p>Ingen kurs registrert.</p></div>
+        ) : sortert.map(k => {
+          const status = k.gyldig_til ? (dagerTil(k.gyldig_til, naa) < 0 ? 'utgatt' : dagerTil(k.gyldig_til, naa) <= 60 ? 'utgaar' : 'gyldig') : 'gyldig'
+          return (
+            <div key={k.id} className="ik2-rad ik2-rad-stille">
+              <span className="ik2-rad-tekst">
+                <span className="ik2-rad-tittel">{k.tittel}</span>
+                <span className="ik2-rad-under">{KOMPETANSE_NAVN[k.type]} · {dato(k.dato)}{k.notat ? ` · ${k.notat}` : ''}</span>
+              </span>
+              <span className={`ik2-gyldig ik2-gyldig-${status}`}>{k.gyldig_til ? `${status === 'utgatt' ? 'Utgått' : 'Til'} ${dato(k.gyldig_til)}` : 'Går ikke ut'}</span>
+              {kanSkrive ? (
+                <Slett hva="" sporsmal="Slette?" jobber={jobber} slett={() => void kjor(() => slettKompetanse(k.id))} />
+              ) : null}
+            </div>
+          )
+        })}
+      </section>
     </>
   )
 }
