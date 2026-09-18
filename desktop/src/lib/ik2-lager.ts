@@ -103,7 +103,8 @@ export async function nyttPunkt(kapittelId: string, tittel: string): Promise<str
   return id
 }
 
-export async function nyRutine(punktId: string, tittel: string, tag: string | null): Promise<string> {
+/** Teksten kan følge med fra start: ny rutine skrives på én side, så den lagres aldri tom først. */
+export async function nyRutine(punktId: string, tittel: string, tag: string | null, innhold: string | null = null): Promise<string> {
   const rene = tittel.trim()
   if (!rene) throw new Error('Rutinen må ha en overskrift.')
   const id = nyId()
@@ -113,6 +114,7 @@ export async function nyRutine(punktId: string, tittel: string, tag: string | nu
     punkt_id: punktId,
     tittel: rene,
     tag: tag?.trim() || null,
+    innhold: innhold?.trim() || null,
     sort_order: await nesteRekkefolge('ik2_rutiner', 'punkt_id', punktId),
   })
   if (r.error) throw new Error(`Kunne ikke opprette rutinen: ${r.error.message}`)
