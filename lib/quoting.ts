@@ -45,6 +45,16 @@ export type TilbudslinjeInn = {
   elnummer?: string | null
   /** Området linja hører til. null/ukjent = rett i tilbudet. */
   omradeId?: string | null
+  /**
+   * Tilvalg: kunden velger om linja skal med (Jobber-mønsteret, se
+   * docs/TILBUD_KONKURRENTER.md). Et fravalgt tilvalg teller ikke i summen,
+   * men beholder prisen sin — kunden skal se hva det koster å si ja.
+   */
+  valgfri?: boolean
+  /** Bare for tilvalg: står det på? Forhåndsvalgt = anbefalt. */
+  valgt?: boolean
+  /** Låst pris: «oppdater påslag» rører ikke linja (Cordel «Lås priser»). */
+  prisLaast?: boolean
 }
 
 export type Tilbudslinje = {
@@ -65,6 +75,11 @@ export type Tilbudslinje = {
   kostOre: number | null
   elnummer?: string | null
   omradeId: string | null
+  valgfri: boolean
+  valgt: boolean
+  prisLaast: boolean
+  /** Teller linja i summen? Alt som ikke er et fravalgt tilvalg. */
+  tellerMed: boolean
 }
 
 export type Tilbudssum = {
@@ -78,6 +93,21 @@ export type Tilbudssum = {
   dbOre: number | null
   dbProsent: number | null
   mvaFordeling: { mva: MvaType; nettoOre: number; mvaOre: number }[]
+  /** Antall tilvalg i tilbudet, valgte og fravalgte. */
+  antallTilvalg: number
+  /** Netto for de FRAVALGTE tilvalgene — det kunden fortsatt kan legge til. Ikke i netto. */
+  tilvalgUtenforOre: number
+}
+
+/**
+ * Tilvalg og lås, normalisert. `valgt` betyr ingenting på en vanlig linje —
+ * den er alltid med. På et tilvalg er standarden AV: å merke en linje som
+ * tilvalg skal synes på summen med en gang, ellers oppdages det ikke.
+ */
+function tilvalg(l: TilbudslinjeInn) {
+  const valgfri = l.valgfri === true
+  const valgt = valgfri ? l.valgt === true : true
+  return { valgfri, valgt, prisLaast: l.prisLaast === true, tellerMed: !valgfri || valgt }
 }
 
 /** 0 utenfor 0–100, ellers verdien. En «rabatt» på 150 % er alltid en tastefeil. */
@@ -89,6 +119,7 @@ function normaliser(l: TilbudslinjeInn): Tilbudslinje {
       antall: 0, enhet: '', enhetsprisOre: 0, rabattProsent: 0, mva,
       bruttoLinjeOre: 0, rabattOre: 0, nettoOre: 0, mvaOre: 0, totalOre: 0, kostOre: null,
       omradeId: l.omradeId ?? null,
+      ...tilvalg(l),
     }
   }
   const antall = typeof l.antall === 'number' && Number.isFinite(l.antall) ? l.antall : 0
@@ -114,6 +145,7 @@ function normaliser(l: TilbudslinjeInn): Tilbudslinje {
     kostOre: typeof l.kostprisKr === 'number' ? linjebelopOre(antall, tilOre(l.kostprisKr)) : null,
     elnummer: l.elnummer ?? null,
     omradeId: l.omradeId ?? null,
+    ...tilvalg(l),
   }
 }
 
@@ -123,9 +155,14 @@ export function byggTilbudssum(input: TilbudslinjeInn[]): Tilbudssum {
 
   let nettoOre = 0, mvaOre = 0, rabattOre = 0, kostOre = 0
   let harKost = false
+  let antallTilvalg = 0, tilvalgUtenforOre = 0
   const perMva = new Map<MvaType, { nettoOre: number; mvaOre: number }>()
 
   for (const l of linjer) {
+    if (l.valgfri) antallTilvalg++
+    // Et fravalgt tilvalg er utenfor summen — også utenfor kost og mva. Det
+    // eneste det bidrar med er tallet kunden kan velge å legge til.
+    if (!l.tellerMed) { tilvalgUtenforOre += l.nettoOre; continue }
     nettoOre += l.nettoOre
     mvaOre += l.mvaOre
     rabattOre += l.rabattOre
@@ -151,6 +188,8 @@ export function byggTilbudssum(input: TilbudslinjeInn[]): Tilbudssum {
     mvaFordeling: [...perMva.entries()]
       .map(([mva, v]) => ({ mva, ...v }))
       .sort((a, b) => b.nettoOre - a.nettoOre),
+    antallTilvalg,
+    tilvalgUtenforOre,
   }
 }
 
@@ -176,6 +215,102 @@ export function paslagProsent(kostOre: number | null | undefined, prisOre: numbe
 export function prisFraPaslagOre(kostOre: number, paslagProsent: number): number {
   if (!Number.isFinite(kostOre) || !Number.isFinite(paslagProsent)) return 0
   return Math.max(0, Math.round(kostOre * (1 + paslagProsent / 100)))
+}
+
+/**
+ * Prisen en linje får når den hentes inn utenfra — fra katalogen eller en
+ * pakke. Egen salgspris vinner; ellers kost + påslag; ellers ingenting. Null
+ * pris er riktig svar når ingen av delene finnes: en linje til 0 kr i et
+ * bindende tilbud er en jobb gjort gratis, og skal SES som tom.
+ */
+export function foreslaaPris(
+  kostprisKr: number | null | undefined,
+  salgsprisKr: number | null | undefined,
+  paslagProsent: number | null | undefined,
+): number | null {
+  if (typeof salgsprisKr === 'number' && Number.isFinite(salgsprisKr)) return salgsprisKr
+  if (typeof kostprisKr === 'number' && kostprisKr > 0
+    && typeof paslagProsent === 'number' && Number.isFinite(paslagProsent)) {
+    return fraOre(prisFraPaslagOre(tilOre(kostprisKr), paslagProsent))
+  }
+  return null
+}
+
+export type Prispatch = { id: string; enhetsprisKr: number }
+
+/**
+ * «Oppdater påslag» (Cordel): pris = kost + påslag på alle linjer det GÅR AN
+ * på — de har kost, er ikke tekst, og er ikke låst. Låste linjer og linjer
+ * uten kost røres ikke, og det er hele poenget med låsen: en pris som er
+ * avtalt med kunden skal ikke kunne skrives over av et tall for hele tilbudet.
+ *
+ * `bare` begrenser til de merkede linjene (Blokk). Returnerer bare linjene
+ * som faktisk endrer pris, så en uendret linje ikke gir en tom skriving.
+ */
+export function anvendPaslag(linjer: TilbudslinjeInn[], paslagProsent: number, bare?: ReadonlySet<string>): Prispatch[] {
+  if (!Number.isFinite(paslagProsent)) return []
+  const ut: Prispatch[] = []
+  for (const l of linjer) {
+    if (bare && !bare.has(l.id)) continue
+    if (l.art === 'tekst' || l.prisLaast === true) continue
+    if (typeof l.kostprisKr !== 'number' || l.kostprisKr <= 0) continue
+    const ny = fraOre(prisFraPaslagOre(tilOre(l.kostprisKr), paslagProsent))
+    if (typeof l.enhetsprisKr === 'number' && tilOre(l.enhetsprisKr) === tilOre(ny)) continue
+    ut.push({ id: l.id, enhetsprisKr: ny })
+  }
+  return ut
+}
+
+/* ── Pakker ───────────────────────────────────────────────────────────── */
+
+/**
+ * Én linje i en pakke — det samme som en tilbudslinje, men uten id, område og
+ * tilvalg: pakken er malen, ikke dokumentet. Mengden er PER PAKKE.
+ */
+export type Pakkelinje = {
+  art: TilbudslinjeArt
+  beskrivelse: string
+  antall: number | null
+  enhet: string | null
+  enhetsprisKr: number | null
+  kostprisKr: number | null
+  mvaType: string | null
+  elnummer: string | null
+  produktId: string | null
+}
+
+export type NyTilbudslinje = Omit<TilbudslinjeInn, 'id' | 'omradeId'> & { produktId: string | null }
+
+/**
+ * Pakke → tilbudslinjer. Antallet ganges inn på hver linje; prisen er pakkens
+ * egen om den har en, ellers kost + tilbudets påslag. Tekstlinjer følger med
+ * som de er, én gang — «leveres uten stillas» skal ikke stå tre ganger fordi
+ * det ble tre bad.
+ */
+export function utvidPakke(linjer: Pakkelinje[], antallPakker: number, paslagProsent: number | null): NyTilbudslinje[] {
+  const n = Number.isFinite(antallPakker) && antallPakker > 0 ? antallPakker : 1
+  return linjer.map(l => {
+    if (l.art === 'tekst') {
+      return {
+        art: 'tekst', beskrivelse: l.beskrivelse, antall: null, enhet: null,
+        enhetsprisKr: null, kostprisKr: null, rabattProsent: null, mvaType: l.mvaType,
+        elnummer: null, produktId: null,
+      }
+    }
+    const perPakke = typeof l.antall === 'number' && Number.isFinite(l.antall) ? l.antall : 1
+    return {
+      art: l.art,
+      beskrivelse: l.beskrivelse,
+      antall: Math.round(perPakke * n * 1000) / 1000,
+      enhet: l.enhet,
+      enhetsprisKr: foreslaaPris(l.kostprisKr, l.enhetsprisKr, paslagProsent),
+      kostprisKr: l.kostprisKr,
+      rabattProsent: null,
+      mvaType: l.mvaType,
+      elnummer: l.elnummer,
+      produktId: l.produktId,
+    }
+  })
 }
 
 /* ── Områder ──────────────────────────────────────────────────────────── */
@@ -308,6 +443,8 @@ export function grupperTilbud(linjer: Tilbudslinje[], omrader: Omrade[]): Tilbud
     let kost = 0
     let harKost = false
     for (const l of mine) {
+      // Fravalgte tilvalg står i området, men teller ikke i summen dets.
+      if (!l.tellerMed) continue
       rad.nettoOre += l.nettoOre
       rad.mvaOre += l.mvaOre
       if (l.kostOre !== null) { kost += l.kostOre; harKost = true }

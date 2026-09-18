@@ -1361,6 +1361,67 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
 
 .kalkyle-verktoy { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 
+/* Verktøylinja over regnearket: varesøket først (det er det man gjør oftest),
+   så hvor det havner, så resten. Påslag og «vis kost» til høyre — de er
+   innstillinger, ikke handlinger. */
+.kalkyle-linje { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.kalkyle-linje .felt-inn { height: 32px; }
+.kalkyle-linje select.felt-inn { width: auto; min-width: 140px; }
+.kalkyle-innstilling { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--blekk-2); white-space: nowrap; }
+.kalkyle-innstilling:first-of-type { margin-left: auto; }
+.kalkyle-innstilling .celle-inn { width: 56px; border-color: var(--kant); margin: 0; padding: 4px 6px; background: var(--papir); }
+.kalkyle-innstilling input[type='checkbox'] { margin: 0; }
+
+/* Varesøket: en nedtrekksliste under feltet. Enter på fritekst gir en
+   skaffevare — ikke alt finnes i katalogen, og det skal ikke stoppe noen. */
+.varesok { position: relative; flex: 1 1 280px; min-width: 220px; }
+.nedtrekk {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; min-width: 100%;
+  background: var(--papir); border: 1px solid var(--kant); border-radius: var(--r-kort);
+  box-shadow: var(--skygge-kort); max-height: 340px; overflow: auto; padding: 4px;
+}
+.nedtrekk-rad {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 14px; align-items: center;
+  width: 100%; text-align: left; padding: 6px 10px; border-radius: 8px;
+  background: none; border: 0; color: inherit; font: inherit; cursor: pointer;
+}
+.nedtrekk-rad:hover, .nedtrekk-rad[aria-selected='true'] { background: var(--dis); }
+.nedtrekk-navn { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nedtrekk-meta { grid-column: 1; color: var(--blekk-3); font-size: 12px; }
+.nedtrekk-tall { grid-row: 1 / span 2; font-variant-numeric: tabular-nums; text-align: right; color: var(--blekk-2); font-size: 13px; }
+.nedtrekk-hjelp { padding: 8px 10px; color: var(--blekk-3); font-size: 12px; }
+.nedtrekk-verktoy { display: flex; align-items: center; gap: 6px; }
+.nedtrekk-verktoy .celle-inn { width: 44px; border-color: var(--kant); margin: 0; padding: 3px 6px; }
+
+/* Blokk (Cordel): merk linjer, gjør én ting med alle. Utvalgslinja står der
+   verktøylinja sto — det er den samme plassen, med et annet ærend. */
+.kalkyle .avkryss { width: 22px; padding-left: 2px; }
+.kalkyle .avkryss input { margin: 0; vertical-align: middle; }
+.kalkyle tr[aria-selected='true'] > td { background: var(--kobber-flate); }
+.utvalg-linje {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px; margin-bottom: 12px; font-size: 13px;
+  border: 1px solid var(--kant-sterk); border-radius: var(--r-kort); background: var(--dis);
+}
+.utvalg-tall { font-weight: 600; margin-right: 6px; }
+.utvalg-linje select.celle-inn, .utvalg-linje input.celle-inn { border-color: var(--kant); background: var(--papir); margin: 0; padding: 4px 6px; }
+.utvalg-linje input.celle-inn { width: 56px; }
+.utvalg-linje .knapp-naken:last-child { margin-left: auto; }
+
+/* Tilvalg (Jobber): en linje kunden velger. Fravalgt står med prisen i
+   parentes og teller ikke — grått, ikke gjennomstreket; den er et tilbud, ikke
+   en feil. Låst pris er et hengelåsikon, ikke en farge. */
+.kalkyle tr.fravalgt > td, .kalkyle tr.fravalgt .celle-inn { color: var(--blekk-3); }
+.tilvalg-merke {
+  display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; vertical-align: middle;
+  font-size: 11px; font-weight: 500; color: var(--blekk-2);
+  border: 1px solid var(--kant); border-radius: var(--r-pille); padding: 1px 7px 1px 5px; cursor: pointer;
+}
+.tilvalg-merke input { margin: 0; }
+.tilvalg-merke:hover { border-color: var(--kant-sterk); }
+.laas-merke { display: inline-flex; align-items: center; margin-left: 6px; vertical-align: middle; color: var(--blekk-3); }
+.kalkyle .sum-parentes { color: var(--blekk-3); font-weight: 400; }
+
 /* Sjekklista før et tilbud sendes. Haken er ikke pynt: den sier hva som
    mangler FØR dokumentet forlater huset, ikke etterpå. */
 .sjekkliste { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 6px; }

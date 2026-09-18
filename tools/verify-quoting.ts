@@ -8,9 +8,9 @@
  * linjene på arket gir en diskusjon med kunden man alltid taper.
  */
 import {
-  byggTilbudssum, effektivStatus, grupperTilbud, kanRedigeres, linjeNettoOre,
-  paslagProsent, prisFraPaslagOre, somRabatt, somTilbudStatus,
-  type Omrade, type TilbudslinjeInn,
+  anvendPaslag, byggTilbudssum, effektivStatus, foreslaaPris, grupperTilbud, kanRedigeres, linjeNettoOre,
+  paslagProsent, prisFraPaslagOre, somRabatt, somTilbudStatus, utvidPakke,
+  type Omrade, type Pakkelinje, type TilbudslinjeInn,
 } from '../lib/quoting'
 import { formatKr, tilOre } from '../lib/invoicing'
 
@@ -206,6 +206,90 @@ sjekk('samme sortOrder gir stabil rekkefølge, ikke tilfeldig',
     { id: 'b', forelderId: null, navn: 'B', sortOrder: 0 },
     { id: 'a', forelderId: null, navn: 'A', sortOrder: 0 },
   ]).omrader.map(o => o.id), ['a', 'b'])
+
+// ── Tilvalg ──────────────────────────────────────────────────────────────────
+// Kunden velger om linja skal med (Jobber). Et fravalgt tilvalg er UTENFOR
+// summen — netto, mva, rabatt, kost og områdesum — men beholder prisen sin,
+// for det er den kunden skal se før hun sier ja. Regelen som ikke kan brytes:
+// en vanlig linje er alltid med, uansett hva `valgt` sier.
+
+const medTilvalg = byggTilbudssum([
+  { id: 'g', art: 'materiell', beskrivelse: 'Grunnpakke', antall: 1, enhetsprisKr: 10000, kostprisKr: 6000 },
+  { id: 'v1', art: 'materiell', beskrivelse: 'Varmekabel bad', antall: 1, enhetsprisKr: 4000, kostprisKr: 2500, rabattProsent: 10, valgfri: true, valgt: false },
+  { id: 'v2', art: 'arbeid', beskrivelse: 'Montasje varmekabel', antall: 2, enhetsprisKr: 900, valgfri: true, valgt: true },
+  { id: 'n', art: 'materiell', beskrivelse: 'Vanlig linje med valgt=false', antall: 1, enhetsprisKr: 500, valgt: false },
+])
+sjekk('fravalgt tilvalg beholder prisen sin på linja', medTilvalg.linjer[1].nettoOre, 360000)
+sjekk('fravalgt tilvalg teller ikke i netto', medTilvalg.nettoOre, 1000000 + 180000 + 50000)
+sjekk('fravalgt tilvalg teller ikke i rabatten', medTilvalg.rabattOre, 0)
+sjekk('fravalgt tilvalg teller ikke i kost', medTilvalg.kostOre, 600000)
+sjekk('fravalgt tilvalg teller ikke i mva', medTilvalg.mvaOre, Math.round(1230000 * 0.25))
+sjekk('valgt tilvalg teller som en vanlig linje', medTilvalg.linjer[2].tellerMed, true)
+sjekk('vanlig linje er ALLTID med, uansett valgt-feltet', medTilvalg.linjer[3].tellerMed, true)
+sjekk('tilvalg uten valgt-felt er AV — å merke som tilvalg skal synes på summen',
+  byggTilbudssum([{ id: 'x', art: 'materiell', beskrivelse: 'V', antall: 1, enhetsprisKr: 100, valgfri: true }]).nettoOre, 0)
+sjekk('antall tilvalg teller både valgte og fravalgte', medTilvalg.antallTilvalg, 2)
+sjekk('det kunden kan legge til er summen av de fravalgte', medTilvalg.tilvalgUtenforOre, 360000)
+sjekk('linjene som teller med summerer til netto',
+  medTilvalg.linjer.filter(l => l.tellerMed).reduce((n, l) => n + l.nettoOre, 0), medTilvalg.nettoOre)
+
+const tilvalgIOmrade = grupperTilbud(
+  byggTilbudssum([
+    { id: 'a', art: 'materiell', beskrivelse: 'Stikk', antall: 4, enhetsprisKr: 200, omradeId: 'bad' },
+    { id: 'b', art: 'materiell', beskrivelse: 'Varmekabel', antall: 1, enhetsprisKr: 5000, omradeId: 'bad', valgfri: true, valgt: false },
+  ]).linjer,
+  [{ id: 'bad', forelderId: null, navn: 'Bad', sortOrder: 0 }],
+)
+sjekk('området summerer uten det fravalgte tilvalget', tilvalgIOmrade.omrader[0].nettoOre, 80000)
+sjekk('men tilvalget står fortsatt i området', tilvalgIOmrade.omrader[0].linjer.map(l => l.id), ['a', 'b'])
+
+// ── Påslag på hele tilbudet ─────────────────────────────────────────────────
+// «Oppdater påslag» (Cordel) setter pris = kost + påslag der det går an. Låste
+// linjer, tekst og linjer uten kost røres ALDRI — låsen er der for at en
+// avtalt pris ikke skal kunne skrives over av ett tall for hele tilbudet.
+
+const forPaslag: TilbudslinjeInn[] = [
+  { id: 'p1', art: 'materiell', beskrivelse: 'Vare', antall: 1, enhetsprisKr: 100, kostprisKr: 100 },
+  { id: 'p2', art: 'materiell', beskrivelse: 'Låst', antall: 1, enhetsprisKr: 100, kostprisKr: 100, prisLaast: true },
+  { id: 'p3', art: 'arbeid', beskrivelse: 'Uten kost', antall: 1, enhetsprisKr: 900 },
+  { id: 'p4', art: 'tekst', beskrivelse: 'Forbehold' },
+  { id: 'p5', art: 'materiell', beskrivelse: 'Alt riktig fra før', antall: 1, enhetsprisKr: 150, kostprisKr: 100 },
+]
+sjekk('påslag treffer bare linjer med kost som ikke er låst, og hopper over uendrede',
+  anvendPaslag(forPaslag, 50), [{ id: 'p1', enhetsprisKr: 150 }])
+sjekk('påslag på et utvalg (Blokk) rører ikke resten',
+  anvendPaslag(forPaslag, 80, new Set(['p5'])), [{ id: 'p5', enhetsprisKr: 180 }])
+sjekk('låst linje i utvalget forblir låst', anvendPaslag(forPaslag, 80, new Set(['p2'])), [])
+sjekk('ugyldig påslag gjør ingenting', anvendPaslag(forPaslag, Number.NaN), [])
+sjekk('negativt påslag er lov — det er et varsel, ikke en feil',
+  anvendPaslag([{ id: 'q', art: 'materiell', beskrivelse: 'V', antall: 1, enhetsprisKr: 100, kostprisKr: 100 }], -10),
+  [{ id: 'q', enhetsprisKr: 90 }])
+
+sjekk('foreslått pris: egen salgspris vinner', foreslaaPris(100, 180, 50), 180)
+sjekk('foreslått pris: ellers kost + påslag', foreslaaPris(100, null, 50), 150)
+sjekk('foreslått pris: uten påslag og uten salgspris er den TOM, ikke null kroner', foreslaaPris(100, null, null), null)
+sjekk('foreslått pris: uten kost er den tom', foreslaaPris(null, null, 50), null)
+
+// ── Pakker ───────────────────────────────────────────────────────────────────
+// En pakke er malen for én liten oppgave. Antallet ganges inn på hver linje;
+// tekst følger med én gang.
+
+const dobbelStikk: Pakkelinje[] = [
+  { art: 'materiell', beskrivelse: 'Stikkontakt dobbel', antall: 1, enhet: 'stk', enhetsprisKr: null, kostprisKr: 60, mvaType: null, elnummer: '1400123', produktId: 'prod-1' },
+  { art: 'materiell', beskrivelse: 'PN 2,5', antall: 6, enhet: 'm', enhetsprisKr: 15, kostprisKr: 8, mvaType: null, elnummer: null, produktId: null },
+  { art: 'arbeid', beskrivelse: 'Montasje', antall: 0.5, enhet: 't', enhetsprisKr: 895, kostprisKr: null, mvaType: null, elnummer: null, produktId: null },
+  { art: 'tekst', beskrivelse: 'Inkl. innfelt boks', antall: null, enhet: null, enhetsprisKr: null, kostprisKr: null, mvaType: null, elnummer: null, produktId: null },
+]
+const treStikk = utvidPakke(dobbelStikk, 3, 40)
+sjekk('mengden ganges med antall pakker', treStikk.map(l => l.antall), [3, 18, 1.5, null])
+sjekk('linje uten egen pris får kost + tilbudets påslag', treStikk[0].enhetsprisKr, 84)
+sjekk('linje med egen pris beholder den', treStikk[1].enhetsprisKr, 15)
+sjekk('arbeid uten kost beholder timeprisen', treStikk[2].enhetsprisKr, 895)
+sjekk('tekstlinja følger med én gang, uten tall', [treStikk[3].art, treStikk[3].antall], ['tekst', null])
+sjekk('el-nummer og produkt følger med', [treStikk[0].elnummer, treStikk[0].produktId], ['1400123', 'prod-1'])
+sjekk('null eller negativt antall blir én pakke', utvidPakke(dobbelStikk, 0, 40)[1].antall, 6)
+sjekk('pakke uten påslag gir tom pris der pakken ikke har egen',
+  utvidPakke(dobbelStikk, 1, null)[0].enhetsprisKr, null)
 
 // ── Formatering deles med fakturaen ──────────────────────────────────────────
 sjekk('beløp formateres med hardt mellomrom, som på fakturaen', formatKr(sum.bruttoOre), '13 183,00')
