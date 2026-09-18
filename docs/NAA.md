@@ -1,6 +1,6 @@
 # Hvor vi står nå
 
-**Sist oppdatert: 2026-09-15, formiddag.**
+**Sist oppdatert: 2026-09-18, kveld.**
 
 Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 `docs/GJENNOMGANG_2026-09-08.md`), så les denne først.
@@ -16,6 +16,32 @@ Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
   ukommitterte filene som er usikret.
 - `npm run typecheck` er grønn.
 - `verify:tripletex` og `verify:boligmappa` grønne mot sine sandkasser.
+
+## Det som ble gjort 18. september — tilbudet er en kalkyle
+
+Tormod: tilbudsflaten «ser ut som en generic Ampex screen» mot Cordel, og
+Cordel-materialet vi skulle kopiere ble aldri skrevet ned. Nå er det skrevet ned:
+**`docs/TILBUD_KONKURRENTER.md`** — Cordel, Jobber, ServiceTitan, simPRO, Fergus,
+Tradify, Minuba, Gripr, Elinn, med kilder, og hva vi tar fra hvem. Les den før
+tilbudet røres igjen.
+
+Bygget samme dag, ukommittert: tilvalg (Jobber — kunden velger, fravalgt står
+med pris utenfor summen), låst pris og «oppdater påslag» på alle/merkede (Cordel),
+pakker lagret fra merkede linjer og satt inn × antall (Cordel/simPRO/Tradify),
+varesøk rett i kalkulasjonen med skaffevare på Enter, «vis kost» (Fergus).
+Kontorets kalkulasjon er et regneark: Enter/piler mellom radene, Enter på siste
+rad lager ny linje, avkryssing + shift-klikk er «Blokk». Appen krysser av tilvalg
+sammen med kunden fram til svar; et fravalgt tilvalg blir aldri planlagt materiell.
+
+Migrasjonen `20260918180000_tilbud_tilvalg_pakker.sql` er **kjørt mot live**
+(nye kolonner på `quote_lines`/`quotes`, nye tabeller `quote_packages` +
+`quote_package_lines`, kun kontor). Appens skjema er v45. `verify:quoting` og
+`verify:pdf` grønne med nye påstander; `typecheck` og kontorbygget grønne.
+Ikke verifisert i nettleser mot ekte data ennå.
+
+Neste på tilbud, i rekkefølge: akkordtariffen som data (fri PDF), kundeportal
+for tilvalg + aksept, redigerbare pakker. Internkontroll v2 fra samme dag er
+pushet (`bf3693e`) og ute på Vercel.
 
 ## Det som ble gjort natt til 8. september
 
@@ -477,6 +503,34 @@ skjerm. Det Ampex manglet er bygd:
   aldri tekst) som chips under punktene. Selvtesten krever minst tre per kapittel.
 
 Kapittel 4 og 7 lenker til Avvik og Opplæring. Alt pushet.
+
+## 18. september — internkontroll v2: lesing og oppretting
+
+Tormod: «bedre oversikt ved lesing og oppretting» (vanlig internkontroll venter på
+input fra faren hans). Oppsettet med ett nivå om gangen står; det som er endret er
+hva hver side sier og hvor tingene står. I `desktop/src/ruter/InternkontrollV2.tsx`:
+
+- **Stien gjentar ikke sida.** Den viser leddene over («‹ Kapitler › 1 Mål for HMS»),
+  sida selv er overskriften. Før sto tittelen to ganger, og på telefon på to linjer.
+- **Kapittellista sier tilstanden i ord** til høyre i hver rad: «Vedtatt», «Utkast»,
+  «Ikke startet», «Til gjennomgang», pluss «3 punkter · 7 rutiner» (skjult under 480 px).
+  Den stiplede ringen og haken alene er borte. Registrene (Avvik, Opplæring) har fått
+  etiketten «Registre»; søket står i hodet på kapittellista med taggene under, ikke
+  øverst på sida.
+- **Kapittelsida: innhold venstre, status høyre.** Venstre: hovedformål og punktene
+  (med «1 rutine · 1 ikke skrevet» per punkt). Høyre: én statusboks (Vedtatt/Utkast,
+  dato og versjon, neste gjennomgang, den ene knappen) og Skjemaer / Lest av /
+  Historikk som tre lukkede rader med tallet synlig. Før lå formålet alene til venstre
+  og punktene med vedtaket under til høyre. Stables under 1100 px, innholdet først.
+- **Ny rutine er én side** (`#/ik2/<k>/<p>/ny`): tittel, tagg og tekst, og ingenting
+  lagres før Lagre. Før ble rutinen opprettet tom etter et navneskjema, og den som
+  ombestemte seg satt igjen med en rad som het «Ikke skrevet». `nyRutine` i
+  `ik2-lager.ts` tar teksten med. Punktsida viser første linje av teksten under
+  hver rutine; rutinesida sier «Rutine 2 av 4» og har forrige/neste nederst.
+
+Verifisert headless i Chrome (puppeteer-core i scratchpad, testbrukeren) på 1440 og
+390 px: alle sju sidene, pluss hele flyten opprett → les → søk → slett mot live-basen
+(testrutinen er slettet igjen). `cd desktop && npm run build` grønn. Ikke committet.
 
 ## Åpne tråder
 

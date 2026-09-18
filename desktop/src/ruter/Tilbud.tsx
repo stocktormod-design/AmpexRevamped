@@ -1,17 +1,20 @@
 import { formatKr, tilOre } from '@delt/invoicing'
 import { kan } from '@delt/kontor-tilgang'
 import {
-  paslagProsent, prisFraPaslagOre, tilbudStatusLabel,
+  anvendPaslag, foreslaaPris, paslagProsent, prisFraPaslagOre, tilbudStatusLabel,
   type OmradeSum, type Tilbudslinje, type TilbudslinjeArt, type TilbudStatus,
 } from '@delt/quoting'
-import { ChevronDown, ChevronUp, FileText, FolderPlus, Plus, Printer, Send, Trash2, UserRound } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Boxes, ChevronDown, ChevronUp, FileText, FolderPlus, Lock, Plus, Printer, Send, Trash2, UserRound,
+} from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useAuth } from '@/auth'
 import { hentKunder, hentTilbud, type Kunde, type Tilbud as Rad } from '@/lib/kontor-lager'
 import {
-  angreSendt, byttPlass, endreLinje, endreOmradenavn, endreTilbud, GYLDIGHET_DAGER,
-  hentTilbudsdetalj, markerSendt, nyLinje, nyttOmrade, opprettTilbud, skrivUtTilbud,
-  slettLinje, slettOmrade, type Tilbudsdetalj,
+  angreSendt, byttPlass, endreLinje, endreLinjer, endreOmradenavn, endreTilbud, GYLDIGHET_DAGER,
+  hentPakker, hentTilbudsdetalj, lagrePakke, linjeSomInn, markerSendt, nyLinje, nyttOmrade,
+  opprettTilbud, settInnPakke, skrivPriser, skrivUtTilbud, slettLinje, slettLinjer, slettOmrade,
+  slettPakke, sokVarer, type Linjerad, type Pakke, type Tilbudsdetalj, type Varetreff,
 } from '@/lib/tilbud-lager'
 import { Beskjed, Felt, Knapp, Merke, Nokkeltall, Sidehode, stk } from '@/ui/kit'
 import { Delt } from '@/ui/Delt'
@@ -25,6 +28,13 @@ import { Delt } from '@/ui/Delt'
  * Det er en skrivebordsjobb med et tastatur. Appen viser den ferdige
  * oppdelingen med sum per område, og fører timer og materiell på ordren
  * etterpå.
+ *
+ * Kalkulasjonen er et REGNEARK, ikke en liste (docs/TILBUD_KONKURRENTER.md):
+ * piler og Enter går mellom radene, Enter på siste rad lager en ny, Escape
+ * angrer cella. Avkryssing merker linjer for én operasjon på alle («Blokk»):
+ * flytt, påslag, lås, tilvalg, pakke, slett. Varesøket står øverst fordi det
+ * er det man gjør oftest — el-nummer eller navn, Enter på fritekst gir en
+ * skaffevare.
  *
  * Summen REGNES IKKE HER. `lib/quoting.ts` gjør det, den har `verify:quoting`,
  * og montørappen bruker den samme. Kontoret og telefonen skal aldri kunne
@@ -56,20 +66,50 @@ function tallTekst(n: number | null | undefined): string {
   return n === null || n === undefined ? '' : String(n).replace('.', ',')
 }
 
+/* ── Regnearket: celler og tastatur ─────────────────────────────────────── */
+
+type Retning = 'opp' | 'ned'
+
+/**
+ * Cella i samme kolonne i neste (eller forrige) linjerad. Går forbi
+ * områderadene, som ikke har celler i tallkolonnene, og forbi tekstlinjer som
+ * mangler kolonnen — Enter i «Pris» skal lande i neste PRIS, ikke i ingenting.
+ */
+function naboCelle(fra: HTMLElement, retning: Retning): HTMLInputElement | null {
+  const kol = fra.dataset.kol
+  const rad = fra.closest('tr')
+  const tabell = fra.closest('table')
+  if (!kol || !rad || !tabell) return null
+  const rader = [...tabell.querySelectorAll<HTMLTableRowElement>('tr[data-linje]')]
+  const i = rader.indexOf(rad as HTMLTableRowElement)
+  if (i < 0) return null
+  const steg = retning === 'ned' ? 1 : -1
+  for (let j = i + steg; j >= 0 && j < rader.length; j += steg) {
+    const treff = rader[j].querySelector<HTMLInputElement>(`input[data-kol="${kol}"]`)
+    if (treff) return treff
+  }
+  return null
+}
+
 /**
  * Én redigerbar celle.
  *
  * Verdien commit-es på blur og på Enter, ikke på hvert tastetrykk: en runde til
  * basen per tegn ville både vært støy og gjort at markøren hoppet når svaret
- * kom tilbake. Escape forlater cella uten å lagre.
+ * kom tilbake. Escape forlater cella uten å lagre. Enter og piler går til
+ * samme kolonne i neste rad (Cordel); Enter på siste rad lager en ny linje.
  */
-function Celle({ verdi, onLagre, bredde, suffiks, tekst, laast }: {
+function Celle({ verdi, onLagre, bredde, suffiks, tekst, laast, kol, onSisteRad }: {
   verdi: string
   onLagre: (v: string) => void
   bredde?: number
   suffiks?: string
   tekst?: boolean
   laast?: boolean
+  /** Kolonnenavn for tastaturnavigasjonen. */
+  kol: string
+  /** Enter på siste rad: lag en ny linje. */
+  onSisteRad?: () => void
 }) {
   const [utkast, setUtkast] = useState(verdi)
   useEffect(() => { setUtkast(verdi) }, [verdi])
@@ -78,21 +118,197 @@ function Celle({ verdi, onLagre, bredde, suffiks, tekst, laast }: {
     return <span className={tekst ? '' : 'dempet'}>{verdi || '—'}{suffiks ? ` ${suffiks}` : ''}</span>
   }
 
+  function hopp(e: KeyboardEvent<HTMLInputElement>, retning: Retning, lagNy: boolean) {
+    const el = e.currentTarget
+    const nabo = naboCelle(el, retning)
+    e.preventDefault()
+    el.blur() // commit-er via onBlur
+    if (nabo) { nabo.focus(); nabo.select() }
+    else if (lagNy && onSisteRad) onSisteRad()
+  }
+
   return (
     <input
       className="celle-inn"
+      data-kol={kol}
       style={{ width: bredde, textAlign: tekst ? 'left' : 'right' }}
       value={utkast}
       inputMode={tekst ? 'text' : 'decimal'}
       onChange={e => setUtkast(e.target.value)}
+      onFocus={e => e.target.select()}
       onBlur={() => { if (utkast !== verdi) onLagre(utkast) }}
       onKeyDown={e => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-        if (e.key === 'Escape') { setUtkast(verdi); (e.target as HTMLInputElement).blur() }
+        if (e.key === 'Enter') hopp(e, 'ned', true)
+        else if (e.key === 'ArrowDown') hopp(e, 'ned', false)
+        else if (e.key === 'ArrowUp') hopp(e, 'opp', false)
+        else if (e.key === 'Escape') { setUtkast(verdi); e.currentTarget.blur() }
       }}
     />
   )
 }
+
+/** Lukk en nedtrekksliste når det klikkes utenfor den. */
+function useKlikkUtenfor(ref: React.RefObject<HTMLElement | null>, lukk: () => void) {
+  useEffect(() => {
+    function paa(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) lukk()
+    }
+    document.addEventListener('mousedown', paa)
+    return () => document.removeEventListener('mousedown', paa)
+  }, [ref, lukk])
+}
+
+/* ── Varesøket ──────────────────────────────────────────────────────────── */
+
+/**
+ * Katalogen rett i kalkulasjonen. Skriv el-nummer eller navn, pil ned, Enter.
+ * Enter uten treff legger til teksten som en egen vare (Cordel «skaffevare»)
+ * — ikke alt finnes i katalogen, og det skal ikke stoppe noen.
+ */
+function Varesok({ disabled, onVelg, onFritekst }: {
+  disabled: boolean
+  onVelg: (v: Varetreff) => void
+  onFritekst: (tekst: string) => void
+}) {
+  const [sok, setSok] = useState('')
+  const [treff, setTreff] = useState<Varetreff[]>([])
+  const [apen, setApen] = useState(false)
+  const [aktiv, setAktiv] = useState(0)
+  const teller = useRef(0)
+  const boks = useRef<HTMLDivElement>(null)
+  useKlikkUtenfor(boks, useCallback(() => setApen(false), []))
+
+  useEffect(() => {
+    if (sok.trim().length < 2) { setTreff([]); setApen(false); return }
+    // 200 ms: under det noen rekker å merke, over det som gjør hvert tastetrykk til en spørring.
+    const id = window.setTimeout(async () => {
+      const mitt = ++teller.current
+      try {
+        const r = await sokVarer(sok)
+        if (mitt !== teller.current) return
+        setTreff(r)
+        setAktiv(0)
+        setApen(true)
+      } catch {
+        // Søket er en hjelp, ikke en handling — feiler det, står fritekst igjen.
+      }
+    }, 200)
+    return () => window.clearTimeout(id)
+  }, [sok])
+
+  function velg(v: Varetreff) {
+    onVelg(v)
+    setSok('')
+    setTreff([])
+    setApen(false)
+  }
+
+  return (
+    <div className="varesok" ref={boks}>
+      <input
+        className="felt-inn"
+        placeholder="Legg til vare — el-nummer eller navn, Enter legger til"
+        value={sok}
+        disabled={disabled}
+        onChange={e => setSok(e.target.value)}
+        onFocus={() => { if (treff.length > 0) setApen(true) }}
+        onKeyDown={e => {
+          if (e.key === 'ArrowDown' && treff.length > 0) { e.preventDefault(); setApen(true); setAktiv(a => Math.min(a + 1, treff.length - 1)) }
+          else if (e.key === 'ArrowUp' && treff.length > 0) { e.preventDefault(); setAktiv(a => Math.max(a - 1, 0)) }
+          else if (e.key === 'Enter') {
+            e.preventDefault()
+            if (apen && treff[aktiv]) velg(treff[aktiv])
+            else if (sok.trim()) { onFritekst(sok.trim()); setSok('') }
+          }
+          else if (e.key === 'Escape') setApen(false)
+        }}
+      />
+      {apen ? (
+        <div className="nedtrekk">
+          {treff.length === 0 ? (
+            <div className="nedtrekk-hjelp">Ingen treff i katalogen. Enter legger til «{sok.trim()}» som egen vare.</div>
+          ) : treff.map((v, i) => (
+            <button
+              key={v.id}
+              type="button"
+              className="nedtrekk-rad"
+              aria-selected={i === aktiv}
+              onMouseEnter={() => setAktiv(i)}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => velg(v)}
+            >
+              <span className="nedtrekk-navn">{v.name}</span>
+              <span className="nedtrekk-tall">{v.unit_price !== null ? `${formatKr(tilOre(v.unit_price))} kr` : v.cost_price !== null ? `kost ${formatKr(tilOre(v.cost_price))}` : ''}</span>
+              <span className="nedtrekk-meta">{[v.elnummer, v.unit].filter(Boolean).join(' · ')}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/* ── Pakkene ────────────────────────────────────────────────────────────── */
+
+/**
+ * Pakker (Cordel «pakker», simPRO «pre-builds», Tradify «kits»): et sett
+ * linjer for én liten oppgave. Lages fra merkede linjer med «Lagre som pakke»;
+ * settes inn × antall i målområdet.
+ */
+function Pakkemeny({ pakker, disabled, onSettInn, onSlett }: {
+  pakker: Pakke[]
+  disabled: boolean
+  onSettInn: (p: Pakke, antall: number) => void
+  onSlett: (p: Pakke) => void
+}) {
+  const [apen, setApen] = useState(false)
+  const [antall, setAntall] = useState<Record<string, string>>({})
+  const boks = useRef<HTMLDivElement>(null)
+  useKlikkUtenfor(boks, useCallback(() => setApen(false), []))
+
+  return (
+    <div className="pakkemeny" ref={boks} style={{ position: 'relative' }}>
+      <Knapp stil="stille" disabled={disabled} onClick={() => setApen(a => !a)}>
+        <Boxes size={15} strokeWidth={1.8} /> Pakker{pakker.length > 0 ? ` (${pakker.length})` : ''}
+      </Knapp>
+      {apen ? (
+        <div className="nedtrekk" style={{ minWidth: 340 }}>
+          {pakker.length === 0 ? (
+            <div className="nedtrekk-hjelp">
+              Ingen pakker ennå. Merk linjene som hører sammen — f.eks. en dobbel stikkontakt med
+              kabel og montasje — og velg «Lagre som pakke».
+            </div>
+          ) : pakker.map(p => (
+            <div key={p.id} className="nedtrekk-rad" style={{ cursor: 'default' }}>
+              <span className="nedtrekk-navn">{p.name}</span>
+              <span className="nedtrekk-verktoy">
+                <input
+                  className="celle-inn"
+                  inputMode="decimal"
+                  value={antall[p.id] ?? '1'}
+                  title="Antall pakker"
+                  onChange={e => setAntall(a => ({ ...a, [p.id]: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') { onSettInn(p, somTall(antall[p.id] ?? '1') ?? 1); setApen(false) } }}
+                />
+                <button className="knapp knapp-stille" type="button" style={{ height: 26, padding: '0 10px' }}
+                  onClick={() => { onSettInn(p, somTall(antall[p.id] ?? '1') ?? 1); setApen(false) }}>
+                  Sett inn
+                </button>
+                <button className="ikonknapp" type="button" title="Slett pakken" style={{ width: 24, height: 24 }}
+                  onClick={() => { if (window.confirm(`Slette pakken «${p.name}»?`)) onSlett(p) }}>
+                  <Trash2 size={12} strokeWidth={2} />
+                </button>
+              </span>
+              <span className="nedtrekk-meta">{stk(p.linjer.length, 'linje', 'linjer')}: {p.linjer.map(l => l.beskrivelse).join(', ')}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/* ── Kalkulasjonen ──────────────────────────────────────────────────────── */
 
 type Fane = 'kunde' | 'kalkyle' | 'brev' | 'send'
 
@@ -126,9 +342,47 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
   const [jobber, setJobber] = useState(false)
   const [fane, setFane] = useState<Fane>('kalkyle')
   const [kunder, setKunder] = useState<Kunde[]>([])
+  const [pakker, setPakker] = useState<Pakke[]>([])
+  // Hvor det som legges til havner. Står i verktøylinja, ikke i hver knapp.
+  const [maal, setMaal] = useState<string>('')
+  // Kost og påslag er interne kolonner (Fergus «show/hide markups»). Standard
+  // PÅ for den som kan se DB — det er den som kalkulerer.
+  const [visKost, setVisKost] = useState(seDb)
+  // Blokk: merkede linjer. Shift-klikk merker et område.
+  const [valgte, setValgte] = useState<Set<string>>(new Set())
+  const [sisteMerket, setSisteMerket] = useState<string | null>(null)
+  const [utvalgPaslag, setUtvalgPaslag] = useState('')
+  // Linja som nettopp ble laget skal få markøren — Enter på siste rad.
+  const [fokusId, setFokusId] = useState<string | null>(null)
   const redigerbar = kanSkrive && detalj.redigerbar
+  // Tilvalg velges sammen med kunden — også etter at tilbudet er sendt, fram
+  // til det er besvart (Jobber-mønsteret).
+  const kanVelgeTilvalg = kanSkrive && hode.status !== 'akseptert' && hode.status !== 'avslatt'
 
   const perId = useMemo(() => new Map(linjer.map(l => [l.id, l])), [linjer])
+  const maalId = maal && omrader.some(o => o.id === maal) ? maal : null
+
+  /** Linje-id-ene i visningsrekkefølge — for shift-klikk. */
+  const rekkefolge = useMemo(() => [
+    ...innhold.utenOmrade.map(l => l.id),
+    ...innhold.omrader.flatMap(o => o.linjer.map(l => l.id)),
+  ], [innhold])
+
+  useEffect(() => { void hentPakker().then(setPakker).catch(() => {}) }, [])
+
+  // Merkingen skal ikke peke på linjer som er borte.
+  useEffect(() => {
+    setValgte(v => {
+      const ny = new Set([...v].filter(id => perId.has(id)))
+      return ny.size === v.size ? v : ny
+    })
+  }, [perId])
+
+  useEffect(() => {
+    if (!fokusId) return
+    const el = document.querySelector<HTMLInputElement>(`tr[data-linje="${fokusId}"] input[data-kol="navn"]`)
+    if (el) { el.focus(); el.select(); setFokusId(null) }
+  }, [fokusId, linjer])
 
   /** Alt som skriver går herfra: én feilvisning, én oppfriskning. */
   const skriv = useCallback(async (gjor: () => Promise<unknown>) => {
@@ -147,73 +401,179 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
   // Salgsverdien delt på materiell og arbeid. Spark kaller sine to tilsvarende
   // tall «Materialkost» og «Arbeidskost»; her står salgsprisen, fordi det er
   // den kunden betaler. Kosten vår står i DB-tallet ved siden av.
-  const materiell = sum.linjer.filter(l => l.art === 'materiell').reduce((n, l) => n + l.nettoOre, 0)
-  const arbeid = sum.linjer.filter(l => l.art === 'arbeid').reduce((n, l) => n + l.nettoOre, 0)
+  const medregnet = sum.linjer.filter(l => l.tellerMed)
+  const materiell = medregnet.filter(l => l.art === 'materiell').reduce((n, l) => n + l.nettoOre, 0)
+  const arbeid = medregnet.filter(l => l.art === 'arbeid').reduce((n, l) => n + l.nettoOre, 0)
+
+  /* ── Legge til ── */
+
+  function leggTil(kind: TilbudslinjeArt, sectionId: string | null, description = '') {
+    void skriv(async () => {
+      const id = await nyLinje(hode.id, { kind, sectionId, description, quantity: kind === 'tekst' ? null : 1 })
+      setFokusId(id)
+    })
+  }
+
+  function leggTilVare(v: Varetreff) {
+    void skriv(() => nyLinje(hode.id, {
+      kind: 'materiell',
+      sectionId: maalId,
+      description: v.name,
+      quantity: 1,
+      unit: v.unit,
+      // Egen salgspris vinner; ellers kost + tilbudets påslag; ellers tom — en
+      // linje til 0 kr i et bindende tilbud skal SES som tom.
+      unitPrice: foreslaaPris(v.cost_price, v.unit_price, hode.default_markup_percent),
+      costPrice: v.cost_price,
+      vatType: v.vat_type,
+      productId: v.id,
+      elnummer: v.elnummer,
+    }))
+  }
+
+  /* ── Blokk ── */
+
+  function merk(id: string, shift: boolean) {
+    setValgte(v => {
+      const ny = new Set(v)
+      if (shift && sisteMerket && rekkefolge.includes(sisteMerket)) {
+        const a = rekkefolge.indexOf(sisteMerket)
+        const b = rekkefolge.indexOf(id)
+        for (const x of rekkefolge.slice(Math.min(a, b), Math.max(a, b) + 1)) ny.add(x)
+      } else if (ny.has(id)) ny.delete(id)
+      else ny.add(id)
+      return ny
+    })
+    setSisteMerket(id)
+  }
+
+  const ids = [...valgte]
+  const merkede = ids.map(id => perId.get(id)).filter((l): l is Linjerad => !!l)
+
+  function paaUtvalg(patch: Parameters<typeof endreLinjer>[1]) {
+    void skriv(() => endreLinjer(ids, patch))
+  }
+
+  function oppdaterPaslag(prosent: number | null, bare?: Set<string>) {
+    if (prosent === null) return
+    const patcher = anvendPaslag(linjer.map(linjeSomInn), prosent, bare)
+    if (patcher.length === 0) { setFeil('Ingen linjer å oppdatere: låste linjer, tekst og linjer uten kost røres ikke.'); return }
+    void skriv(() => skrivPriser(patcher))
+  }
+
+  /* ── Radene ── */
+
+  const kolonner = 8 + (visKost ? 2 : 0)   // avkryss, navn, ant, enhet, [kost, påslag], pris, rabatt, sum, verktøy
+  const midten = 4 + (visKost ? 2 : 0)     // ant … rabatt
 
   function linjerad(l: Tilbudslinje, gruppe: Tilbudslinje[], i: number, innrykk: number) {
     const rad = perId.get(l.id)
     if (!rad) return null
     const paslag = paslagProsent(l.kostOre, l.enhetsprisOre)
-    const tapt = l.kostOre !== null && l.nettoOre < l.kostOre
+    const tapt = l.kostOre !== null && l.tellerMed && l.nettoOre < l.kostOre
+    const fravalgt = l.valgfri && !l.valgt
+    const merket = valgte.has(l.id)
 
     return (
-      <tr key={l.id}>
+      <tr
+        key={l.id}
+        data-linje={l.id}
+        aria-selected={merket}
+        className={fravalgt ? 'fravalgt' : undefined}
+      >
+        <td className="avkryss">
+          {redigerbar ? (
+            <input
+              type="checkbox"
+              checked={merket}
+              title="Merk linja (shift for et område)"
+              onClick={e => merk(l.id, e.shiftKey)}
+              onChange={() => {}}
+            />
+          ) : null}
+        </td>
         <td style={{ paddingLeft: 10 + innrykk * 18 }}>
           <Celle
             tekst
+            kol="navn"
             laast={!redigerbar}
             verdi={l.beskrivelse}
             onLagre={v => void skriv(() => endreLinje(l.id, { description: v }))}
+            onSisteRad={() => leggTil(l.art, rad.section_id)}
           />
           <span className="dempet-mer valgbar">
             {' '}· {ARTNAVN[l.art]}{l.elnummer ? ` · ${l.elnummer}` : ''}
           </span>
+          {l.valgfri ? (
+            <label className="tilvalg-merke" title={kanVelgeTilvalg ? 'Tilvalg — kryss av når kunden sier ja' : 'Tilvalg'}>
+              <input
+                type="checkbox"
+                checked={l.valgt}
+                disabled={!kanVelgeTilvalg || jobber}
+                onChange={e => void skriv(() => endreLinje(l.id, { is_selected: e.target.checked }))}
+              />
+              Tilvalg
+            </label>
+          ) : null}
+          {l.prisLaast ? (
+            <span className="laas-merke" title="Låst pris — «oppdater påslag» rører ikke linja">
+              <Lock size={11} strokeWidth={2} />
+            </span>
+          ) : null}
         </td>
 
         {l.art === 'tekst' ? (
-          <td className="dempet" colSpan={6} style={{ textAlign: 'right' }}>Teller ikke i summen</td>
+          <td className="dempet" colSpan={midten} style={{ textAlign: 'right' }}>Teller ikke i summen</td>
         ) : (
           <>
             <td className="h">
-              <Celle bredde={54} laast={!redigerbar} verdi={tallTekst(rad.quantity)}
+              <Celle kol="antall" bredde={54} laast={!redigerbar} verdi={tallTekst(rad.quantity)}
                 onLagre={v => void skriv(() => endreLinje(l.id, { quantity: somTall(v) }))} />
             </td>
             <td className="dempet">
-              <Celle tekst bredde={44} laast={!redigerbar} verdi={rad.unit ?? ''}
+              <Celle tekst kol="enhet" bredde={44} laast={!redigerbar} verdi={rad.unit ?? ''}
                 onLagre={v => void skriv(() => endreLinje(l.id, { unit: v.trim() || null }))} />
             </td>
+            {visKost ? (
+              <>
+                <td className="h">
+                  <Celle kol="kost" bredde={74} laast={!redigerbar} verdi={tallTekst(rad.cost_price)}
+                    onLagre={v => void skriv(() => endreLinje(l.id, { cost_price: somTall(v) }))} />
+                </td>
+                {/* Påslaget er ikke lagret — det er kost og pris som er det.
+                    Skrives det her, settes PRISEN. Slik tastes det i faget.
+                    Låst linje: påslaget vises, men kan ikke tastes. */}
+                <td className="h">
+                  <Celle
+                    kol="paslag"
+                    bredde={54}
+                    laast={!redigerbar || l.prisLaast || rad.cost_price === null || rad.cost_price <= 0}
+                    verdi={paslag === null ? '' : tallTekst(paslag)}
+                    onLagre={v => {
+                      const p = somTall(v)
+                      if (p === null || rad.cost_price === null) return
+                      const pris = prisFraPaslagOre(tilOre(rad.cost_price), p) / 100
+                      void skriv(() => endreLinje(l.id, { unit_price: pris }))
+                    }}
+                  />
+                </td>
+              </>
+            ) : null}
             <td className="h">
-              <Celle bredde={74} laast={!redigerbar} verdi={tallTekst(rad.cost_price)}
-                onLagre={v => void skriv(() => endreLinje(l.id, { cost_price: somTall(v) }))} />
-            </td>
-            {/* Påslaget er ikke lagret — det er kost og pris som er det.
-                Skrives det her, settes PRISEN. Slik tastes det i faget. */}
-            <td className="h">
-              <Celle
-                bredde={54}
-                laast={!redigerbar || rad.cost_price === null || rad.cost_price <= 0}
-                verdi={paslag === null ? '' : tallTekst(paslag)}
-                onLagre={v => {
-                  const p = somTall(v)
-                  if (p === null || rad.cost_price === null) return
-                  const pris = prisFraPaslagOre(tilOre(rad.cost_price), p) / 100
-                  void skriv(() => endreLinje(l.id, { unit_price: pris }))
-                }}
-              />
-            </td>
-            <td className="h">
-              <Celle bredde={80} laast={!redigerbar} verdi={tallTekst(rad.unit_price)}
+              <Celle kol="pris" bredde={80} laast={!redigerbar} verdi={tallTekst(rad.unit_price)}
                 onLagre={v => void skriv(() => endreLinje(l.id, { unit_price: somTall(v) }))} />
             </td>
             <td className="h">
-              <Celle bredde={50} laast={!redigerbar} verdi={tallTekst(rad.discount_percent)}
+              <Celle kol="rabatt" bredde={50} laast={!redigerbar} verdi={tallTekst(rad.discount_percent)}
                 onLagre={v => void skriv(() => endreLinje(l.id, { discount_percent: somTall(v) }))} />
             </td>
           </>
         )}
 
         <td className="h" style={{ fontWeight: 500, color: tapt ? 'var(--rod)' : undefined }}>
-          {l.art === 'tekst' ? '' : formatKr(l.nettoOre)}
+          {l.art === 'tekst' ? '' : fravalgt
+            ? <span className="sum-parentes">({formatKr(l.nettoOre)})</span>
+            : formatKr(l.nettoOre)}
         </td>
 
         <td style={{ width: 150 }}>
@@ -257,17 +617,19 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
     const rad = omrader.find(x => x.id === o.id)
     return (
       <tr key={o.id} className="omraderad">
+        <td className="avkryss" />
         <td style={{ paddingLeft: 10 + o.niva * 18, fontWeight: 600 }}>
           <Celle
             tekst
+            kol="omrade"
             laast={!redigerbar || !rad}
             verdi={o.navn}
             onLagre={v => void skriv(() => endreOmradenavn(o.id, v))}
           />
           <span className="dempet-mer"> · {o.antallLinjer === 1 ? '1 linje' : `${o.antallLinjer} linjer`}</span>
         </td>
-        <td colSpan={6} className="dempet-mer" style={{ textAlign: 'right' }}>
-          {seDb && o.dbOre !== null
+        <td colSpan={midten} className="dempet-mer" style={{ textAlign: 'right' }}>
+          {visKost && o.dbOre !== null
             ? `DB ${formatKr(o.dbOre)}${o.dbProsent !== null ? ` · ${o.dbProsent.toFixed(0)} %` : ''}`
             : ''}
         </td>
@@ -293,14 +655,7 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
     )
   }
 
-  function leggTil(kind: TilbudslinjeArt, sectionId: string | null) {
-    void skriv(() => nyLinje(hode.id, {
-      kind,
-      sectionId,
-      description: '',
-      quantity: kind === 'tekst' ? null : 1,
-    }))
-  }
+  const alleMerket = rekkefolge.length > 0 && rekkefolge.every(id => valgte.has(id))
 
   return (
     <>
@@ -335,6 +690,7 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
         <Beskjed stil="varsel">
           Tilbudet er {tilbudStatusLabel[hode.visning].toLowerCase()} og kan ikke endres. Det er
           dokumentet kunden har fått — skal noe rettes, lag en kopi.
+          {sum.antallTilvalg > 0 && kanVelgeTilvalg ? ' Tilvalgene kan fortsatt krysses av til kunden har svart.' : ''}
         </Beskjed>
       ) : null}
 
@@ -344,7 +700,7 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
           tall={[
             { navn: 'Materiell', verdi: `${formatKr(materiell)} kr` },
             { navn: 'Arbeid', verdi: `${formatKr(arbeid)} kr` },
-            ...(seDb && sum.dbOre !== null
+            ...(visKost && sum.dbOre !== null
               ? [{
                   navn: 'Dekningsbidrag',
                   verdi: `${formatKr(sum.dbOre)} kr`,
@@ -352,18 +708,145 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
                   aksent: true,
                 }]
               : []),
+            ...(sum.antallTilvalg > 0
+              ? [{ navn: 'Tilvalg utenfor', verdi: `${formatKr(sum.tilvalgUtenforOre)} kr`, under: stk(sum.antallTilvalg, 'tilvalg', 'tilvalg') }]
+              : []),
             { navn: 'Salgspris', verdi: `${formatKr(sum.nettoOre)} kr`, under: `${formatKr(sum.bruttoOre)} kr inkl. mva` },
           ]}
         />
 
+        {redigerbar && valgte.size > 0 ? (
+          <div className="utvalg-linje">
+            <span className="utvalg-tall">{stk(valgte.size, 'linje', 'linjer')} merket</span>
+            <select
+              className="celle-inn"
+              value=""
+              disabled={jobber}
+              title="Flytt til område"
+              onChange={e => { if (e.target.value !== '') paaUtvalg({ section_id: e.target.value === '-' ? null : e.target.value }) }}
+            >
+              <option value="">Flytt til …</option>
+              <option value="-">Uten område</option>
+              {omrader.map(o => <option key={o.id} value={o.id}>{o.navn}</option>)}
+            </select>
+            {visKost ? (
+              <>
+                <input
+                  className="celle-inn"
+                  inputMode="decimal"
+                  placeholder="Påslag %"
+                  value={utvalgPaslag}
+                  onChange={e => setUtvalgPaslag(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') oppdaterPaslag(somTall(utvalgPaslag), valgte) }}
+                />
+                <Knapp stil="stille" disabled={jobber || somTall(utvalgPaslag) === null}
+                  onClick={() => oppdaterPaslag(somTall(utvalgPaslag), valgte)}>
+                  Bruk påslag
+                </Knapp>
+              </>
+            ) : null}
+            <Knapp stil="stille" disabled={jobber} onClick={() => paaUtvalg({ price_locked: true })}>
+              <Lock size={13} strokeWidth={2} /> Lås pris
+            </Knapp>
+            <Knapp stil="stille" disabled={jobber} onClick={() => paaUtvalg({ price_locked: false })}>Lås opp</Knapp>
+            <Knapp stil="stille" disabled={jobber} onClick={() => paaUtvalg({ is_optional: true, is_selected: false })}>Gjør til tilvalg</Knapp>
+            <Knapp stil="stille" disabled={jobber} onClick={() => paaUtvalg({ is_optional: false })}>Ikke tilvalg</Knapp>
+            <Knapp stil="stille" disabled={jobber}
+              onClick={() => {
+                const navn = window.prompt('Hva skal pakken hete? F.eks. «Dobbel stikkontakt» eller «Bad, standard»')
+                if (!navn?.trim()) return
+                void skriv(async () => {
+                  await lagrePakke(navn, merkede)
+                  setPakker(await hentPakker())
+                })
+              }}>
+              <Boxes size={13} strokeWidth={2} /> Lagre som pakke
+            </Knapp>
+            <Knapp stil="fare" disabled={jobber}
+              onClick={() => {
+                if (window.confirm(`Slette ${stk(valgte.size, 'linja', 'linjene')}?`)) {
+                  void skriv(() => slettLinjer(ids))
+                }
+              }}>
+              <Trash2 size={13} strokeWidth={2} /> Slett
+            </Knapp>
+            <Knapp stil="naken" onClick={() => setValgte(new Set())}>Avbryt</Knapp>
+          </div>
+        ) : redigerbar ? (
+          <div className="kalkyle-linje">
+            <Varesok
+              disabled={jobber}
+              onVelg={leggTilVare}
+              onFritekst={tekst => leggTil('materiell', maalId, tekst)}
+            />
+            <select className="felt-inn" value={maalId ?? ''} title="Hvor det som legges til havner" onChange={e => setMaal(e.target.value)}>
+              <option value="">Uten område</option>
+              {omrader.map(o => <option key={o.id} value={o.id}>{o.navn}</option>)}
+            </select>
+            <Knapp stil="stille" disabled={jobber} onClick={() => leggTil('arbeid', maalId)}>
+              <Plus size={15} strokeWidth={1.8} /> Arbeid
+            </Knapp>
+            <Knapp stil="stille" disabled={jobber} onClick={() => leggTil('tekst', maalId)}>
+              <Plus size={15} strokeWidth={1.8} /> Tekst
+            </Knapp>
+            <Pakkemeny
+              pakker={pakker}
+              disabled={jobber}
+              onSettInn={(p, antall) => void skriv(() => settInnPakke(hode.id, p, antall, maalId, hode.default_markup_percent))}
+              onSlett={p => void skriv(async () => { await slettPakke(p.id); setPakker(await hentPakker()) })}
+            />
+            <Knapp stil="stille" disabled={jobber}
+              onClick={() => {
+                const navn = window.prompt('Hva heter området? F.eks. «Kjøkken» eller «1. etasje»')
+                if (navn?.trim()) void skriv(async () => { const id = await nyttOmrade(hode.id, navn, null); setMaal(id) })
+              }}>
+              <FolderPlus size={15} strokeWidth={1.8} /> Nytt område
+            </Knapp>
+            {seDb ? (
+              <>
+                <label className="kalkyle-innstilling" title="Påslag i % av kost. Brukes på varer uten egen pris, og av «oppdater alle».">
+                  Påslag
+                  <input
+                    className="celle-inn"
+                    inputMode="decimal"
+                    defaultValue={tallTekst(hode.default_markup_percent)}
+                    key={`paslag-${hode.default_markup_percent ?? ''}`}
+                    onBlur={e => {
+                      const p = somTall(e.target.value)
+                      if (p !== hode.default_markup_percent) void skriv(() => endreTilbud(hode.id, { default_markup_percent: p }))
+                    }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                  />
+                  %
+                </label>
+                <Knapp stil="stille" disabled={jobber || hode.default_markup_percent === null}
+                  title="Setter pris = kost + påslag på alle linjer med kost som ikke er låst"
+                  onClick={() => oppdaterPaslag(hode.default_markup_percent)}>
+                  Oppdater alle
+                </Knapp>
+                <label className="kalkyle-innstilling">
+                  <input type="checkbox" checked={visKost} onChange={e => setVisKost(e.target.checked)} />
+                  Vis kost
+                </label>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
         <table className="linjer kalkyle">
           <thead>
             <tr>
+              <th className="avkryss">
+                {redigerbar && rekkefolge.length > 0 ? (
+                  <input type="checkbox" checked={alleMerket} title="Merk alle"
+                    onChange={e => setValgte(e.target.checked ? new Set(rekkefolge) : new Set())} />
+                ) : null}
+              </th>
               <th>Navn</th>
               <th className="h" style={{ width: 70 }}>Ant.</th>
               <th style={{ width: 60 }}>Enhet</th>
-              <th className="h" style={{ width: 90 }}>Kost</th>
-              <th className="h" style={{ width: 70 }}>Påslag&nbsp;%</th>
+              {visKost ? <th className="h" style={{ width: 90 }}>Kost</th> : null}
+              {visKost ? <th className="h" style={{ width: 70 }}>Påslag&nbsp;%</th> : null}
               <th className="h" style={{ width: 96 }}>Pris</th>
               <th className="h" style={{ width: 66 }}>Rabatt&nbsp;%</th>
               <th className="h" style={{ width: 110 }}>Sum</th>
@@ -378,9 +861,9 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
                 {o.linjer.map((l, i) => linjerad(l, o.linjer, i, o.niva + 1))}
                 {redigerbar ? (
                   <tr key={`${o.id}-legg-til`}>
-                    <td colSpan={9} style={{ paddingLeft: 10 + (o.niva + 1) * 18 }}>
+                    <td colSpan={kolonner} style={{ paddingLeft: 32 + (o.niva + 1) * 18 }}>
                       <button className="knapp knapp-naken" disabled={jobber}
-                        onClick={() => leggTil('materiell', o.id)}>
+                        onClick={() => { setMaal(o.id); leggTil('materiell', o.id) }}>
                         <Plus size={13} strokeWidth={2} /> Legg til i {o.navn || 'området'}
                       </button>
                     </td>
@@ -389,31 +872,12 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
               </Fragment>
             ))}
             {sum.linjer.length === 0 && innhold.omrader.length === 0 ? (
-              <tr><td colSpan={9} className="dempet">Ingen linjer ennå.</td></tr>
+              <tr><td colSpan={kolonner} className="dempet">
+                Ingen linjer ennå. Søk opp en vare øverst, eller legg til arbeid, tekst eller en pakke.
+              </td></tr>
             ) : null}
           </tbody>
         </table>
-
-        {redigerbar ? (
-          <div className="kalkyle-verktoy">
-            <Knapp stil="stille" disabled={jobber} onClick={() => leggTil('materiell', null)}>
-              <Plus size={15} strokeWidth={1.8} /> Materiell
-            </Knapp>
-            <Knapp stil="stille" disabled={jobber} onClick={() => leggTil('arbeid', null)}>
-              <Plus size={15} strokeWidth={1.8} /> Arbeid
-            </Knapp>
-            <Knapp stil="stille" disabled={jobber} onClick={() => leggTil('tekst', null)}>
-              <Plus size={15} strokeWidth={1.8} /> Tekst
-            </Knapp>
-            <Knapp stil="merke" disabled={jobber}
-              onClick={() => {
-                const navn = window.prompt('Hva heter området? F.eks. «Kjøkken» eller «1. etasje»')
-                if (navn?.trim()) void skriv(() => nyttOmrade(hode.id, navn, null))
-              }}>
-              <FolderPlus size={15} strokeWidth={1.8} /> Nytt område
-            </Knapp>
-          </div>
-        ) : null}
 
         <div className="sum">
           <div className="sum-rad">
@@ -436,6 +900,12 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
             <span>Tilbudssum inkl. mva</span>
             <span className="sum-verdi">{formatKr(sum.bruttoOre)}</span>
           </div>
+          {sum.tilvalgUtenforOre > 0 ? (
+            <div className="sum-rad">
+              <span>Tilvalg som kan legges til, eks. mva</span>
+              <span className="sum-verdi">{formatKr(sum.tilvalgUtenforOre)}</span>
+            </div>
+          ) : null}
         </div>
         </>
       ) : null}
@@ -532,9 +1002,10 @@ function Kalkulasjon({ detalj, kanSkrive, seDb, etterSkriving }: {
             <li>
               {sum.linjer.length > 0 ? '✓' : '✗'} {stk(sum.linjer.length, 'linje', 'linjer')}
               {innhold.omrader.length > 0 ? ` i ${stk(innhold.omrader.length, 'område', 'områder')}` : ''}
+              {sum.antallTilvalg > 0 ? `, hvorav ${stk(sum.antallTilvalg, 'tilvalg', 'tilvalg')} kunden velger selv` : ''}
             </li>
             <li>{hode.valid_until ? '✓' : '✗'} Gyldig til {dato(hode.valid_until)}</li>
-            <li>Tilbudssum {formatKr(sum.bruttoOre)} inkl. mva</li>
+            <li>Tilbudssum {formatKr(sum.bruttoOre)} inkl. mva{sum.tilvalgUtenforOre > 0 ? ` · tilvalg for ${formatKr(sum.tilvalgUtenforOre)} eks. mva utenfor` : ''}</li>
           </ul>
 
           <div className="kalkyle-verktoy">

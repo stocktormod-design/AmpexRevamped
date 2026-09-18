@@ -167,6 +167,32 @@ paastand('oppdelingen røper ikke kost', !/dekningsbidrag|kostpris|innkj\u00f8p|
 // tilbud skal ikke få en tom overskriftsrad.
 paastand('udelt tilbud får ingen områderad', !tilbud.includes('omrade-rad'))
 
+/* ── Tilbud med tilvalg ────────────────────────────────────────────────────── */
+// Et fravalgt tilvalg står på sin plass med prisen, men UTENFOR summen. Kunden
+// skal både se hva det koster å si ja, og se at det ikke er regnet med.
+
+const medTilvalg = tilbudInnholdHtml({
+  linjer: [
+    { art: 'materiell', beskrivelse: 'Downlight 8W', antall: 12, enhet: 'stk', enhetsprisOre: 24900, rabattProsent: 0, nettoOre: 298800 },
+    { art: 'materiell', beskrivelse: 'Varmekabel bad', antall: 1, enhet: 'stk', enhetsprisOre: 450000, rabattProsent: 0, nettoOre: 450000, valgfri: true, valgt: false },
+    { art: 'arbeid', beskrivelse: 'Dimmer i stua', antall: 1, enhet: 't', enhetsprisOre: 89000, rabattProsent: 0, nettoOre: 89000, valgfri: true, valgt: true },
+  ],
+  sum: {
+    nettoOre: 387800, rabattOre: 0, bruttoOre: 484750,
+    mvaFordeling: [{ mva: 'hoy', nettoOre: 387800, mvaOre: 96950 }],
+    tilvalgUtenforOre: 450000,
+  },
+  mvaEtikett,
+})
+paastand('fravalgt tilvalg står i lista med prisen sin', medTilvalg.includes('Varmekabel bad') && medTilvalg.includes(`= ${formatKr(450000)}`))
+paastand('fravalgt tilvalg er merket som ikke medregnet', medTilvalg.includes('Tilvalg – ikke medregnet'))
+paastand('fravalgt tilvalg har tom beløpskolonne', /tilvalg-rad[\s\S]*?<td class="tall"><\/td>/.test(medTilvalg))
+paastand('valgt tilvalg er merket som medregnet og har beløp',
+  medTilvalg.includes('Tilvalg – medregnet') && medTilvalg.includes(formatKr(89000)))
+paastand('summen sier hva som kan legges til', medTilvalg.includes('Tilvalg som kan legges til') && medTilvalg.includes(formatKr(450000)))
+paastand('tilbud uten tilvalg får ingen tilvalgslinje i summen', !tilbud.includes('Tilvalg som kan legges til'))
+paastand('tilvalgene røper ikke kost', !/dekningsbidrag|kostpris|innkjøp|påslag/i.test(medTilvalg))
+
 /* ── Fakturagrunnlag ───────────────────────────────────────────────────────── */
 
 const faktura = fakturaInnholdHtml({

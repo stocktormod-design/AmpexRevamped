@@ -20,6 +20,9 @@ export type TilbudslinjeUt = {
   rabattProsent: number
   nettoOre: number
   elnummer?: string | null
+  /** Tilvalg: kunden velger. Fravalgt står på sin plass, med prisen, utenfor summen. */
+  valgfri?: boolean
+  valgt?: boolean
 }
 
 /**
@@ -44,6 +47,8 @@ export type TilbudSumUt = {
   rabattOre: number
   bruttoOre: number
   mvaFordeling: { mva: string; nettoOre: number; mvaOre: number }[]
+  /** Netto for tilvalgene kunden ikke har valgt. Utelatt eller 0 = ingen linje. */
+  tilvalgUtenforOre?: number
 }
 
 function tall(n: number): string {
@@ -75,8 +80,19 @@ export function tilbudInnholdHtml(opts: {
       `${tall(l.antall)} ${esc(l.enhet)} × ${formatKr(l.enhetsprisOre)}`,
       l.rabattProsent ? `− ${tall(l.rabattProsent)} %` : '',
     ].filter(Boolean).join('  ')
+    const hjelp = l.elnummer ? `<div class="punkt-hjelp">El-nr ${esc(l.elnummer)}</div>` : ''
+    if (l.valgfri && !l.valgt) {
+      // Fravalgt tilvalg: på sin plass i lista, med prisen i spesifikasjonen og
+      // TOM beløpskolonne — samme grep som Jobbers «Not included». Kunden skal
+      // se hva det koster å si ja, og se at det ikke er regnet med.
+      return `<tr class="tilvalg-rad">
+        <td>${esc(l.beskrivelse)}<div class="punkt-hjelp">Tilvalg – ikke medregnet</div>${hjelp}</td>
+        <td class="tall">${spesifikasjon}  = ${formatKr(l.nettoOre)}</td>
+        <td class="tall"></td>
+      </tr>`
+    }
     return `<tr>
-      <td>${esc(l.beskrivelse)}${l.elnummer ? `<div class="punkt-hjelp">El-nr ${esc(l.elnummer)}</div>` : ''}</td>
+      <td>${esc(l.beskrivelse)}${l.valgfri ? '<div class="punkt-hjelp">Tilvalg – medregnet</div>' : ''}${hjelp}</td>
       <td class="tall">${spesifikasjon}</td>
       <td class="tall">${formatKr(l.nettoOre)}</td>
     </tr>`
@@ -109,6 +125,7 @@ export function tilbudInnholdHtml(opts: {
         ${sum.rabattOre > 0 ? `<tr class="sum-rad"><td colspan="2" class="tall">Herav rabatt</td><td class="tall">−${formatKr(sum.rabattOre)}</td></tr>` : ''}
         ${mvaRader}
         <tr class="sum-rad sum-total"><td colspan="2" class="tall">Totalt inkl. mva</td><td class="tall">${formatKr(sum.bruttoOre)}</td></tr>
+        ${sum.tilvalgUtenforOre ? `<tr class="sum-rad"><td colspan="2" class="tall">Tilvalg som kan legges til, eks. mva</td><td class="tall">${formatKr(sum.tilvalgUtenforOre)}</td></tr>` : ''}
       </tbody>
     </table>
 
