@@ -173,12 +173,29 @@ sin plass i lista, merket «Tilvalg – ikke medregnet», med prisen i
 spesifikasjonskolonnen og tom beløpskolonne. Summen får en linje «Tilvalg som
 kan legges til». Kost og påslag lekker fortsatt aldri.
 
-**Kontoret** (`desktop/src/ruter/Tilbud.tsx`): kalkulasjonen er et regneark.
-Varesøk øverst (el-nummer eller navn; Enter på fritekst = skaffevare), pakker,
-målområde for alt som legges til, standard påslag med «oppdater alle», «vis
-kost». Piler opp/ned og Enter flytter mellom radene; Enter på siste rad lager
-ny linje. Avkryssing (shift-klikk for område) gir utvalgslinja: flytt til
-område, påslag, lås/lås opp, tilvalg av/på, lagre som pakke, slett.
+**Kontoret** (`desktop/src/ruter/Tilbud.tsx`), andre runde samme kveld etter at
+Tormod så første utgave («dogshit ui») og ba om sjekk mot skjermbilder av de
+andre — de ligger ikke i repoet, men ble hentet fra Jobbers hjelpesenter og
+Fergus', Minubas, Tradifys, Griprs og ServiceTitans egne sider: **flaten er
+dokumentet, ikke et dashbord.** Ingen nøkkeltall-kort over linjene. Hodet er
+kunden og det ene tallet (tilbudssummen, DB under for den som kan se den).
+Linjene står som på arket kunden får: navn får plassen, el-nummer i grått
+etter, tallene i faste kolonner, tilvalg som «Tilvalg · valgt / ikke valgt»
+under beløpet (Jobber «Optional / Not included») — ett klikk bytter. Hvert
+område har sin egen stiplede «legg til»-rad med varesøket i (Jobber «+ Add
+line items»), så det aldri er tvil om hvor linja havner; Enter på fritekst =
+skaffevare, Arbeid/Tekst/Pakke ved siden av. Summen nederst til høyre som på
+arket, med kost og dekningsbidrag under en hårlinje (Jobber «estimated
+margin»). Inni linjene er det fortsatt Cordels regneark: piler og Enter
+mellom radene, Enter på siste rad lager ny linje, avkryssing + shift-klikk gir
+Blokk (flytt, påslag, lås/lås opp, tilvalg av/på, lagre som pakke, slett).
+Standard påslag med «Oppdater alle» og «Vis kost» står i verktøylinja.
+
+To gamle feil rettet underveis: påslaget per linje sammenlignet hele linjas kost
+med enhetsprisen (viste −84 % på en linje med 91 % påslag), og detaljruta rullet
+aldri — et tilbud på hundre linjer ble klippet ved skjermkanten. Verifisert
+headless i Chrome (puppeteer-core i scratchpad, testbrukeren, mot Vite på 5175)
+på 1440 og 390 px, med et seedet tilbud på ti linjer i testfirmaet.
 
 **Appen** (`app/(app)/tilbud/[id].tsx`, `linje.tsx`): tilvalg vises med
 avkryssing som montøren slår av og på sammen med kunden — også etter at

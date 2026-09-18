@@ -1412,15 +1412,100 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
    parentes og teller ikke — grått, ikke gjennomstreket; den er et tilbud, ikke
    en feil. Låst pris er et hengelåsikon, ikke en farge. */
 .kalkyle tr.fravalgt > td, .kalkyle tr.fravalgt .celle-inn { color: var(--blekk-3); }
-.tilvalg-merke {
-  display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; vertical-align: middle;
-  font-size: 11px; font-weight: 500; color: var(--blekk-2);
-  border: 1px solid var(--kant); border-radius: var(--r-pille); padding: 1px 7px 1px 5px; cursor: pointer;
-}
-.tilvalg-merke input { margin: 0; }
-.tilvalg-merke:hover { border-color: var(--kant-sterk); }
-.laas-merke { display: inline-flex; align-items: center; margin-left: 6px; vertical-align: middle; color: var(--blekk-3); }
 .kalkyle .sum-parentes { color: var(--blekk-3); font-weight: 400; }
+
+/* ── Tilbudet som dokument (18.09, andre runde) ─────────────────────────────
+   Etter skjermbilder av Jobber, ServiceTitan, Minuba, Tradify og Gripr
+   (docs/TILBUD_KONKURRENTER.md): hodet er kunden og det ene tallet, linjene
+   står som på arket kunden får, summen nederst til høyre. Ingen nøkkeltall-
+   kort over linjene — de var et dashbord foran dokumentet. */
+
+/* Lista trenger ikke 320 px for «#1 · Kari Nordmann»; kalkulasjonen trenger dem. */
+.arbeidsflate-tilbud .delt { grid-template-columns: 236px 1fr; }
+
+.hero-tilbud { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 32px; align-items: start; }
+.hero-sum { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; text-align: right; }
+.hero-sum-tall {
+  font-family: var(--f-display); font-size: 28px; font-weight: 500; letter-spacing: -0.02em;
+  line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.hero-sum-under { color: var(--blekk-3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.hero-sum-db { color: var(--gronn); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.hero-sum-db.tap { color: var(--rod); }
+.hero-sum .knapp { margin-top: 2px; height: 26px; padding: 0 6px; }
+
+/* Regnearket: én linje per rad, navnet får plassen som er igjen, tallene står
+   i faste kolonner, verktøyene viser seg når du er over raden. */
+/* flex: none — i den rullende kroppen skal tabellen ta sin egen høyde, ikke
+   krympe til en rulleboks inni rulleboksen. */
+.kalkyle-rull { flex: none; overflow-x: auto; }
+/* Automatisk kolonnebredde med vilje: tallkolonnene har celler med fast bredde
+   og brekker ikke, så de blir akkurat så brede som tallene — og beskrivelsen
+   får ALT som er igjen. `table-layout: fixed` delte overskuddet på alle. */
+.kalkyle th, .kalkyle td.h, .kalkyle td.avkryss { white-space: nowrap; }
+.kalkyle .radverktoy { width: 68px; gap: 1px; }
+.kalkyle .radverktoy .ikonknapp { width: 22px; height: 22px; }
+.kalkyle td { padding-top: 6px; padding-bottom: 6px; vertical-align: middle; }
+.kalkyle td + td, .kalkyle th + th { padding-left: 10px; }
+.navn-celle { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* Basis 0: navnet tar plassen som er igjen, ikke inputens egen bredde. */
+.navn-celle .celle-inn { flex: 1 1 0; min-width: 0; width: 0; margin: -4px 0 -4px -6px; text-overflow: ellipsis; }
+.navn-celle .celle-inn:focus { margin: -4px 0 -4px -6px; }
+.navn-celle > span:first-child { flex: 1 1 0; min-width: 0; }
+.pris-celle { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; }
+.navn-meta { flex: none; color: var(--blekk-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kalkyle tr.tekstrad .celle-inn, .kalkyle tr.tekstrad .navn-celle > span { color: var(--blekk-2); font-style: italic; }
+.kalkyle .celle-inn::placeholder { color: var(--blekk-4); font-style: normal; }
+.sum-celle { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.tilvalg-knapp {
+  border: 0; background: none; padding: 0; margin: 0; cursor: pointer; white-space: nowrap;
+  font-family: var(--f-ui); font-size: 11px; font-weight: 500; color: var(--blekk-3);
+}
+.tilvalg-knapp[data-valgt='true'] { color: var(--gronn); }
+.tilvalg-knapp:hover:not(:disabled) { text-decoration: underline; }
+.tilvalg-knapp:disabled { cursor: default; }
+.laas-ikon { display: inline-flex; vertical-align: middle; margin-left: 4px; color: var(--blekk-3); }
+.kalkyle .avkryss input { opacity: 0.3; transition: opacity 100ms ease; }
+.kalkyle tr:hover .avkryss input, .kalkyle tr[aria-selected='true'] .avkryss input, .kalkyle .avkryss input:checked { opacity: 1; }
+.omraderad .navn-celle { font-weight: 600; }
+.omraderad .navn-meta { font-weight: 400; }
+
+/* «Legg til» nederst i hvert område (Jobber «+ Add line items»): stiplet rad
+   med varesøket i, så det aldri er tvil om hvor linja havner. */
+.legg-til-rad > td { padding: 6px 0 14px; border-bottom: 0; }
+.legg-til {
+  display: flex; align-items: center; gap: 2px;
+  border: 1px dashed var(--kant-sterk); border-radius: var(--r-knapp); padding: 3px 6px 3px 4px;
+  transition: border-color 100ms ease;
+}
+.legg-til:hover { border-color: var(--blekk-4); }
+.legg-til:focus-within { border-color: var(--blekk-3); border-style: solid; }
+.legg-til .varesok { flex: 1 1 220px; min-width: 160px; }
+.legg-til .varesok .felt-inn { border: 0; border-radius: 6px; height: 30px; background: transparent; box-shadow: none; }
+.legg-til .varesok .felt-inn:hover, .legg-til .varesok .felt-inn:focus { border: 0; box-shadow: none; }
+.legg-til .knapp-naken { height: 30px; padding: 0 8px; font-size: 13px; color: var(--blekk-2); gap: 5px; }
+.legg-til .knapp-naken:hover:not(:disabled) { background: var(--dis); color: var(--blekk); }
+
+/* Summen nederst til høyre, som på arket. Dekningsbidraget er et grønt bånd
+   nederst (Jobber «estimated margin») — bare for den som kan se DB. */
+.sum-blokk { display: flex; justify-content: flex-end; }
+.sum-blokk .sum { width: min(100%, 420px); margin-top: 0; }
+/* De interne tallene under en hårlinje: kost i grått, DB i grønt. */
+.sum-rad-intern { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--kant); color: var(--blekk-3); }
+.sum-rad-intern .sum-verdi { color: var(--blekk-3); }
+.sum-rad-db { color: var(--gronn); font-weight: 500; }
+.sum-rad-db .sum-verdi { color: var(--gronn); }
+.sum-rad-db.tap { color: var(--rod); }
+.sum-rad-db.tap .sum-verdi { color: var(--rod); }
+
+@media (max-width: 820px) {
+  .hero-tilbud { grid-template-columns: minmax(0, 1fr); }
+  .hero-sum { align-items: flex-start; text-align: left; }
+  .arbeidsflate-tilbud .delt { grid-template-columns: minmax(0, 1fr); }
+  /* Regnearket ruller sidelengs på telefon. Det er en skrivebordsjobb; på
+     telefon skal det kunne LESES, ikke presses. */
+  .kalkyle { min-width: 820px; }
+}
 
 /* Sjekklista før et tilbud sendes. Haken er ikke pynt: den sier hva som
    mangler FØR dokumentet forlater huset, ikke etterpå. */
