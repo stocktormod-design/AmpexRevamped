@@ -39,6 +39,17 @@ Migrasjonen `20260918180000_tilbud_tilvalg_pakker.sql` er **kjørt mot live**
 `verify:pdf` grønne med nye påstander; `typecheck` og kontorbygget grønne.
 Ikke verifisert i nettleser mot ekte data ennå.
 
+**19. september, morgen:** tilbudet redigeres nå PÅ arket kunden får (tredje
+runde, `7df6c95`). Varevelger på arket: «Vare» åpner katalogen til å bla i,
+gruppert på kategori, med «Ny vare i katalogen» nederst — Arntsen Elservice
+har **0 varer** i `products`, så typeahead-søket fant aldri noe; det var derfor
+alt ble fritekst. Katalogen fylles ved prisfilimport eller én vare om gangen
+derfra. **IK v2 har tagger som register** (`ik2_tagger` + `ik2_rutine_tagger`,
+migrasjon kjørt live, «Måling, FSE, HMS» i ett felt ble tre tagger): lages én
+gang, flere per rutine, filteret på kapittellista er registeret (flere valgte
+snevrer inn), eget register-punkt «Tagger» for å døpe om og slette.
+`ik2_rutiner.tag` står, men skrives ikke lenger.
+
 Neste på tilbud, i rekkefølge: akkordtariffen som data (fri PDF), kundeportal
 for tilvalg + aksept, redigerbare pakker. Internkontroll v2 fra samme dag er
 pushet (`bf3693e`) og ute på Vercel.

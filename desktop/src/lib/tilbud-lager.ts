@@ -357,12 +357,18 @@ export type Varetreff = {
   vat_type: string | null
 }
 
+/** PostgREST-filteret skiller på komma og parentes — de kan ikke stå i søkeordet. */
+function rentOrd(o: string): string {
+  return o.replace(/[,()"\\]/g, '')
+}
+
 /**
- * Katalogen, rett i kalkulasjonen. Samme søk som Varer-flata: hvert ord må
- * finnes i `search_text`, så «pfsp 3g2,5» treffer uansett rekkefølge.
+ * Katalogen, rett på arket. Hvert ord må finnes i `search_text`, navnet eller
+ * el-nummeret, så «pfsp 3g2,5» treffer uansett rekkefølge — også for varer
+ * lagt inn for hånd uten `search_text`.
  */
 export async function sokVarer(sok: string, grense = 12): Promise<Varetreff[]> {
-  const ord = sok.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const ord = sok.trim().toLowerCase().split(/\s+/).map(rentOrd).filter(Boolean)
   if (ord.length === 0) return []
   const q = supabase
     .from('products')
@@ -370,8 +376,61 @@ export async function sokVarer(sok: string, grense = 12): Promise<Varetreff[]> {
     .is('deleted_at', null)
     .order('name')
     .limit(grense)
-  for (const o of ord) q.like('search_text', `%${o}%`)
+  for (const o of ord) q.or(`search_text.ilike.%${o}%,name.ilike.%${o}%,elnummer.ilike.%${o}%`)
   return sjekk(await q, 'Kunne ikke søke i varene') as Varetreff[]
+}
+
+export type Katalogvare = Varetreff & { category: string | null; discount_group: string | null }
+
+/**
+ * Katalogen til å BLA i (Cordel «prisbok»): tom søkestreng gir de første
+ * varene, gruppert på kategori av den som viser. Grensa er der for at en
+ * grossistkatalog på 40 000 linjer ikke skal lastes for å velge én stikk.
+ */
+export async function hentKatalog(sok: string, grense = 300): Promise<Katalogvare[]> {
+  const q = supabase
+    .from('products')
+    .select('id,elnummer,name,unit,unit_price,cost_price,vat_type,category,discount_group')
+    .is('deleted_at', null)
+    .order('category', { nullsFirst: false })
+    .order('name')
+    .limit(grense)
+  for (const o of sok.trim().toLowerCase().split(/\s+/).map(rentOrd).filter(Boolean)) {
+    q.or(`search_text.ilike.%${o}%,name.ilike.%${o}%,elnummer.ilike.%${o}%`)
+  }
+  return sjekk(await q, 'Kunne ikke lese katalogen') as Katalogvare[]
+}
+
+export type NyVare = {
+  name: string
+  elnummer: string | null
+  unit: string
+  unit_price: number | null
+  cost_price: number | null
+}
+
+/**
+ * En vare inn i firmaets katalog for hånd. Det er slik katalogen starter for
+ * et firma uten prisfil: én vare om gangen, idet den trengs på et tilbud.
+ */
+export async function nyVare(inn: NyVare): Promise<Varetreff> {
+  const name = inn.name.trim()
+  if (!name) throw new Error('Varen må ha et navn.')
+  const elnummer = inn.elnummer?.trim() || null
+  const rad = {
+    id: nyId(),
+    company_id: await mittFirma(),
+    name,
+    elnummer,
+    unit: inn.unit.trim() || 'stk',
+    unit_price: inn.unit_price,
+    cost_price: inn.cost_price,
+    vat_type: null,
+    search_text: [elnummer, name].filter(Boolean).join(' ').toLowerCase(),
+  }
+  const r = await supabase.from('products').insert(rad)
+  if (r.error) throw new Error(`Kunne ikke legge varen i katalogen: ${r.error.message}`)
+  return { id: rad.id, elnummer, name, unit: rad.unit, unit_price: rad.unit_price, cost_price: rad.cost_price, vat_type: null }
 }
 
 /* ── Pakker ────────────────────────────────────────────────────────────── */

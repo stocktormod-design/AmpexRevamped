@@ -13,8 +13,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/auth'
 import {
   endre as endreIk2, hentPunkterMedRutiner, nyRutine as opprettIk2Rutine,
-  nyttPunkt as opprettIk2Punkt, slett as slettIk2, taggene,
-  type Ik2Punkt, type Ik2Rutine,
+  nyttPunkt as opprettIk2Punkt, slett as slettIk2,
+  hentTagger, nyTag as opprettIk2Tag, endreTagnavn as endreIk2Tag, slettTag as slettIk2Tag, settRutineTagger,
+  type Ik2Punkt, type Ik2Rutine, type Ik2Tag,
 } from '@/lib/ik2-lager'
 import {
   bekreftLest,
@@ -127,6 +128,7 @@ export function InternkontrollV2() {
   const [ansatte, setAnsatte] = useState<Ansatt[]>([])
   const [avvik, setAvvik] = useState<Avvik[]>([])
   const [kompetanse, setKompetanse] = useState<Kompetanse[]>([])
+  const [tagger, setTagger] = useState<Ik2Tag[]>([])
   const [feil, setFeil] = useState<string | null>(null)
   const [laster, setLaster] = useState(true)
   const [jobber, setJobber] = useState(false)
@@ -134,7 +136,7 @@ export function InternkontrollV2() {
   const last = useCallback(async () => {
     setLaster(true)
     try {
-      const [p, r, k, l, m, a, av, ko] = await Promise.all([
+      const [p, r, k, l, m, a, av, ko, tg] = await Promise.all([
         hentPunkter(),
         hentPunkterMedRutiner(),
         hentSkjemakoblinger(),
@@ -143,6 +145,7 @@ export function InternkontrollV2() {
         hentFirma(),
         hentAvvik(),
         hentKompetanse(),
+        hentTagger(),
       ])
       setKapitler(p)
       setPunkter(r)
@@ -152,6 +155,7 @@ export function InternkontrollV2() {
       setAnsatte(a.ansatte)
       setAvvik(av)
       setKompetanse(ko)
+      setTagger(tg)
       setFeil(null)
     } catch (e) {
       setFeil(e instanceof Error ? e.message : String(e))
@@ -163,7 +167,6 @@ export function InternkontrollV2() {
   useEffect(() => { void last() }, [last])
 
   const naa = useMemo(() => new Date(), [])
-  const tagnavn = useMemo(() => taggene(punkter), [punkter])
 
   async function start() {
     if (!profil) return
@@ -220,6 +223,7 @@ export function InternkontrollV2() {
   const nyRutine = punkt !== null && sti[2] === 'ny' && kanSkrive
   const paaAvvik = sti[0] === 'avvik'
   const paaOpplaering = sti[0] === 'opplaering'
+  const paaTagger = sti[0] === 'tagger'
   const valgtAvvik = paaAvvik ? avvik.find(a => a.id === sti[1]) ?? null : null
   const valgtAnsatt = paaOpplaering ? ansatte.find(a => a.id === sti[1]) ?? null : null
 
@@ -231,16 +235,14 @@ export function InternkontrollV2() {
     <>
       <Sidehode tittel="Internkontroll v2" under="Firmaets IK-system" />
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
-      {/* Én forslagsliste for alle tagg-feltene på flata. */}
-      <datalist id="ik2-tagger">
-        {tagnavn.map(t => <option key={t} value={t} />)}
-      </datalist>
 
       <div className="arbeidsflate">
         <div className="ik2-side">
           <div className={(kapittel && !punkt) || (paaOpplaering && !valgtAnsatt) ? 'ik2-innhold ik2-innhold-bred' : 'ik2-innhold'}>
             {laster && kapitler.length === 0 ? (
               <div className="tomt-mykt"><p>Henter …</p></div>
+            ) : paaTagger ? (
+              <TaggerSide tagger={tagger} punkter={punkter} {...felles} />
             ) : valgtAvvik ? (
               <AvvikDetalj key={valgtAvvik.id} avvik={valgtAvvik} ansatte={ansatte} {...felles} />
             ) : paaAvvik ? (
@@ -250,9 +252,9 @@ export function InternkontrollV2() {
             ) : paaOpplaering ? (
               <OpplaeringSide ansatte={ansatte} kompetanse={kompetanse} naa={naa} />
             ) : rutine && punkt && kapittel ? (
-              <RutineSide key={rutine.id} kapittel={kapittel} punkt={punkt} rutine={rutine} {...felles} />
+              <RutineSide key={rutine.id} kapittel={kapittel} punkt={punkt} rutine={rutine} tagger={tagger} {...felles} />
             ) : nyRutine && punkt && kapittel ? (
-              <NyRutineSide key={`ny-${punkt.id}`} kapittel={kapittel} punkt={punkt} etterEndring={last} />
+              <NyRutineSide key={`ny-${punkt.id}`} kapittel={kapittel} punkt={punkt} tagger={tagger} etterEndring={last} />
             ) : punkt && kapittel ? (
               <PunktSide key={punkt.id} kapittel={kapittel} punkt={punkt} {...felles} />
             ) : kapittel ? (
@@ -270,7 +272,7 @@ export function InternkontrollV2() {
                 {...felles}
               />
             ) : (
-              <KapitlerSide kapitler={kapitler} punkter={punkter} avvik={apneAvvik} fse={fse} ansatte={ansatte} kompetanse={kompetanse} naa={naa} />
+              <KapitlerSide kapitler={kapitler} punkter={punkter} avvik={apneAvvik} fse={fse} ansatte={ansatte} kompetanse={kompetanse} naa={naa} tagger={tagger} />
             )}
           </div>
         </div>
@@ -416,7 +418,7 @@ function fseOppsummering(ansatte: Ansatt[], kompetanse: Kompetanse[], naa: Date)
   return ut
 }
 
-function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa }: {
+function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa, tagger }: {
   kapitler: IkPunkt[]
   punkter: Map<string, Ik2Punkt[]>
   avvik: Avvik[]
@@ -424,9 +426,10 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa 
   ansatte: Ansatt[]
   kompetanse: Kompetanse[]
   naa: Date
+  tagger: Ik2Tag[]
 }) {
   const [sok, setSok] = useState('')
-  const [tag, setTag] = useState<string | null>(null)
+  const [valgteTagger, setValgteTagger] = useState<Set<string>>(new Set())
 
   const status = useMemo(() => fullstendighet(kapitler.map(k => ({
     nummer: k.nummer,
@@ -435,24 +438,22 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa 
     maaVaereSkriftlig: k.maaVaereSkriftlig,
   }))), [kapitler, punkter])
 
-  // Taggene med antall rutiner bak seg, mest brukt først.
-  const tagger = useMemo(() => {
+  // Registeret med antall rutiner bak hver tagg, mest brukt først. Alle
+  // taggene vises — også de ingen rutine har fått ennå.
+  const tagvalg = useMemo(() => {
     const telling = new Map<string, number>()
     for (const liste of punkter.values()) {
-      for (const p of liste) for (const r of p.rutiner) {
-        const t = r.tag?.trim()
-        if (t) telling.set(t, (telling.get(t) ?? 0) + 1)
-      }
+      for (const p of liste) for (const r of p.rutiner) for (const t of r.tagger) telling.set(t.id, (telling.get(t.id) ?? 0) + 1)
     }
-    return [...telling.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'nb'))
-      .map(([navn, n]) => ({ navn, n }))
-  }, [punkter])
+    return tagger
+      .map(t => ({ ...t, n: telling.get(t.id) ?? 0 }))
+      .sort((a, b) => b.n - a.n || a.navn.localeCompare(b.navn, 'nb'))
+  }, [punkter, tagger])
 
   // Søket svarer med en FLAT liste over rutiner, hver med stien sin. Alle
   // søkeordene må finnes i tittel, tekst eller tagg; taggen må stemme.
   const ord = sok.trim().toLowerCase().split(/\s+/).filter(Boolean)
-  const soker = ord.length > 0 || tag !== null
+  const soker = ord.length > 0 || valgteTagger.size > 0
   const treff = useMemo(() => {
     if (!soker) return []
     const har = (tekst: string) => {
@@ -463,15 +464,16 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa 
     for (const kapittel of kapitler) {
       for (const punkt of punkter.get(kapittel.id) ?? []) {
         for (const rutine of punkt.rutiner) {
-          if (tag && rutine.tag !== tag) continue
-          if (ord.length > 0 && !har(`${kapittel.tittel} ${punkt.tittel} ${rutine.tittel} ${rutine.innhold ?? ''} ${rutine.tag ?? ''}`)) continue
+          // Flere tagger snevrer inn: rutinen må ha ALLE de valgte.
+          if (valgteTagger.size > 0 && ![...valgteTagger].every(id => rutine.tagger.some(t => t.id === id))) continue
+          if (ord.length > 0 && !har(`${kapittel.tittel} ${punkt.tittel} ${rutine.tittel} ${rutine.innhold ?? ''} ${rutine.tagger.map(t => t.navn).join(' ')}`)) continue
           ut.push({ kapittel, punkt, rutine })
         }
       }
     }
     return ut
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [soker, sok, tag, kapitler, punkter])
+  }, [soker, sok, valgteTagger, kapitler, punkter])
 
   // De lovpålagte først og for seg. Resten følger skjelettets egne grupper.
   const grupper = useMemo(() => {
@@ -561,6 +563,11 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa 
           hoyre={fse.utgatt + fse.mangler > 0 ? <span className="ik2-prikk ik2-prikk-na" aria-hidden /> : fse.utgaar > 0 ? <span className="ik2-prikk ik2-prikk-snart" aria-hidden /> : null}
           onClick={() => gaa('opplaering')}
         />
+        <Rad
+          tittel="Tagger"
+          mer={tagger.length === 0 ? 'Ingen ennå' : stk(tagger.length, 'tagg', 'tagger')}
+          onClick={() => gaa('tagger')}
+        />
       </section>
 
       {/* Håndboka. Hodet sier hvor langt den er kommet; søket står her fordi
@@ -576,19 +583,22 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa 
             <Felt placeholder="Søk i rutiner …" value={sok} onChange={e => setSok(e.target.value)} />
           </div>
         </div>
-        {tagger.length > 0 ? (
+        {tagvalg.length > 0 ? (
           <div className="filter ik2-tagger">
-            {tagger.map(t => (
+            {tagvalg.map(t => (
               <button
-                key={t.navn}
+                key={t.id}
                 className="filter-knapp"
-                aria-pressed={tag === t.navn}
-                onClick={() => setTag(v => (v === t.navn ? null : t.navn))}
+                aria-pressed={valgteTagger.has(t.id)}
+                onClick={() => setValgteTagger(v => { const ny = new Set(v); if (ny.has(t.id)) ny.delete(t.id); else ny.add(t.id); return ny })}
               >
                 {t.navn}
                 <span className="filter-tall">{t.n}</span>
               </button>
             ))}
+            {valgteTagger.size > 0 ? (
+              <button className="filter-knapp" onClick={() => setValgteTagger(new Set())}>Nullstill</button>
+            ) : null}
           </div>
         ) : null}
 
@@ -602,7 +612,7 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa 
                 key={rutine.id}
                 tittel={rutine.tittel}
                 under={`${kapittel.nummer} ${kapittel.tittel} › ${punkt.tittel}`}
-                hoyre={rutine.tag ? <span className="ik2-tag">{rutine.tag}</span> : null}
+                hoyre={<Tagger tagger={rutine.tagger} />}
                 onClick={() => gaa(kapittel.id, punkt.id, rutine.id)}
               />
             ))}
@@ -1063,7 +1073,7 @@ function PunktSide({ kapittel, punkt, kanSkrive, etterEndring }: {
             key={r.id}
             tittel={r.tittel}
             under={r.innhold?.trim() ? utdrag(r.innhold) : 'Ikke skrevet ennå'}
-            hoyre={r.tag ? <span className="ik2-tag">{r.tag}</span> : null}
+            hoyre={<Tagger tagger={r.tagger} />}
             onClick={() => gaa(kapittel.id, punkt.id, r.id)}
           />
         ))}
@@ -1087,13 +1097,15 @@ function PunktSide({ kapittel, punkt, kanSkrive, etterEndring }: {
 
 /* ── Side 4: én rutine ────────────────────────────────────────────────── */
 
-type RutineUtkast = { tittel: string; tag: string; innhold: string }
+type RutineUtkast = { tittel: string; tagIds: string[]; innhold: string }
 
 /** Skjemaet for en rutine: tittel, tagg og teksten. Brukes både ny og endret. */
-function RutineSkjema({ utkast, setUtkast, jobber, kanLagre, lagreTekst, lagrerTekst, onLagre, onAvbryt }: {
+function RutineSkjema({ utkast, setUtkast, jobber, kanLagre, lagreTekst, lagrerTekst, onLagre, onAvbryt, tagger, onNyTag }: {
   utkast: RutineUtkast
   setUtkast: (f: (u: RutineUtkast) => RutineUtkast) => void
   jobber: boolean
+  tagger: Ik2Tag[]
+  onNyTag: (navn: string) => Promise<string>
   kanLagre: boolean
   lagreTekst: string
   lagrerTekst: string
@@ -1112,10 +1124,12 @@ function RutineSkjema({ utkast, setUtkast, jobber, kanLagre, lagreTekst, lagrerT
               placeholder="Kontroll før spenningssetting"
               onChange={e => setUtkast(u => ({ ...u, tittel: e.target.value }))} />
           </div>
-          <div style={{ width: 170 }}>
-            <Felt firkant etikett="Tagg" list="ik2-tagger" value={utkast.tag} placeholder="HMS, AUS, tavle …"
-              onChange={e => setUtkast(u => ({ ...u, tag: e.target.value }))} />
-          </div>
+        </div>
+        <div className="felt felt-firkant">
+          <span className="felt-etikett">Tagger</span>
+          <Tagvelger tagger={tagger} valgt={utkast.tagIds} jobber={jobber} onNyTag={onNyTag}
+            onEndre={ids => setUtkast(u => ({ ...u, tagIds: ids }))} />
+          <span className="felt-hjelp">Taggen lages én gang og brukes på alle rutinene den gjelder. Filteret på kapittellista er de samme taggene.</span>
         </div>
         <label className="felt felt-firkant">
           <span className="felt-etikett">Slik gjøres det</span>
@@ -1140,13 +1154,14 @@ function RutineSkjema({ utkast, setUtkast, jobber, kanLagre, lagreTekst, lagrerT
  * seg underveis satt igjen med en rutine som het «Ikke skrevet». Nå står tittel,
  * tagg og tekst på samme side, og ingenting lagres før du trykker Lagre.
  */
-function NyRutineSide({ kapittel, punkt, etterEndring }: {
+function NyRutineSide({ kapittel, punkt, tagger, etterEndring }: {
   kapittel: IkPunkt
   punkt: Ik2Punkt
+  tagger: Ik2Tag[]
   etterEndring: () => Promise<void>
 }) {
   const { jobber, feil, kjor } = useKjor(etterEndring)
-  const [utkast, setUtkast] = useState<RutineUtkast>({ tittel: '', tag: '', innhold: '' })
+  const [utkast, setUtkast] = useState<RutineUtkast>({ tittel: '', tagIds: [], innhold: '' })
 
   return (
     <>
@@ -1170,10 +1185,12 @@ function NyRutineSide({ kapittel, punkt, etterEndring }: {
         kanLagre={!!utkast.tittel.trim()}
         lagreTekst="Lagre rutinen"
         lagrerTekst="Lagrer …"
+        tagger={tagger}
+        onNyTag={async navn => { const id = await opprettIk2Tag(navn); await etterEndring(); return id }}
         onLagre={() => void (async () => {
           let id: string | null = null
           const ok = await kjor(async () => {
-            id = await opprettIk2Rutine(punkt.id, utkast.tittel, utkast.tag.trim() || null, utkast.innhold.trim() || null)
+            id = await opprettIk2Rutine(punkt.id, utkast.tittel, utkast.tagIds, utkast.innhold.trim() || null)
           })
           if (ok && id) gaa(kapittel.id, punkt.id, id)
         })()}
@@ -1183,25 +1200,26 @@ function NyRutineSide({ kapittel, punkt, etterEndring }: {
   )
 }
 
-function RutineSide({ kapittel, punkt, rutine, kanSkrive, etterEndring }: {
+function RutineSide({ kapittel, punkt, rutine, tagger, kanSkrive, etterEndring }: {
   kapittel: IkPunkt
   punkt: Ik2Punkt
   rutine: Ik2Rutine
+  tagger: Ik2Tag[]
   kanSkrive: boolean
   etterEndring: () => Promise<void>
 }) {
   const { jobber, feil, kjor } = useKjor(etterEndring)
   const [redigerer, setRedigerer] = useState(false)
-  const [utkast, setUtkast] = useState<RutineUtkast>({ tittel: rutine.tittel, tag: rutine.tag ?? '', innhold: rutine.innhold ?? '' })
+  const [utkast, setUtkast] = useState<RutineUtkast>({ tittel: rutine.tittel, tagIds: rutine.tagger.map(t => t.id), innhold: rutine.innhold ?? '' })
 
   function start() {
-    setUtkast({ tittel: rutine.tittel, tag: rutine.tag ?? '', innhold: rutine.innhold ?? '' })
+    setUtkast({ tittel: rutine.tittel, tagIds: rutine.tagger.map(t => t.id), innhold: rutine.innhold ?? '' })
     setRedigerer(true)
   }
 
   const endret =
     utkast.tittel.trim() !== rutine.tittel ||
-    (utkast.tag.trim() || null) !== rutine.tag ||
+    !sammeSett(utkast.tagIds, rutine.tagger.map(t => t.id)) ||
     (utkast.innhold.trim() || null) !== rutine.innhold
 
   // Forrige og neste rutine under samme punkt, så man kan lese seg gjennom
@@ -1232,12 +1250,14 @@ function RutineSide({ kapittel, punkt, rutine, kanSkrive, etterEndring }: {
             kanLagre={endret && !!utkast.tittel.trim()}
             lagreTekst="Lagre"
             lagrerTekst="Lagrer …"
+            tagger={tagger}
+            onNyTag={async navn => { const id = await opprettIk2Tag(navn); await etterEndring(); return id }}
             onLagre={() => void kjor(async () => {
               await endreIk2('ik2_rutiner', rutine.id, {
                 tittel: utkast.tittel.trim(),
-                tag: utkast.tag.trim() || null,
                 innhold: utkast.innhold.trim() || null,
               })
+              await settRutineTagger(rutine.id, utkast.tagIds)
               setRedigerer(false)
             })}
             onAvbryt={() => setRedigerer(false)}
@@ -1248,7 +1268,7 @@ function RutineSide({ kapittel, punkt, rutine, kanSkrive, etterEndring }: {
           <header className="ik2-hode">
             <h2 className="ik2-tittel valgbar">{rutine.tittel}</h2>
             <p className="ik2-underlinje">
-              {rutine.tag ? <span className="ik2-tag">{rutine.tag}</span> : null}
+              <Tagger tagger={rutine.tagger} />
               <span>{i >= 0 ? `Rutine ${i + 1} av ${punkt.rutiner.length}` : ''}</span>
             </p>
           </header>
@@ -1710,6 +1730,178 @@ function AnsattSide({ ansatt, kompetanse, naa, kanSkrive, etterEndring }: {
             </div>
           )
         })}
+      </section>
+    </>
+  )
+}
+
+/* ── Tagger ───────────────────────────────────────────────────────────── */
+
+function sammeSett(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  const sb = new Set(b)
+  return a.every(x => sb.has(x))
+}
+
+/** Taggene på en rutine, som små piller. Ingenting når det ikke er noen. */
+function Tagger({ tagger }: { tagger: Ik2Tag[] }) {
+  if (tagger.length === 0) return null
+  return (
+    <span className="ik2-tagliste">
+      {tagger.map(t => <span key={t.id} className="ik2-tag">{t.navn}</span>)}
+    </span>
+  )
+}
+
+/**
+ * Velg tagger fra registeret — trykk for å slå av og på — og lag en ny rett
+ * her om den mangler. Den nye blir valgt med én gang.
+ */
+function Tagvelger({ tagger, valgt, onEndre, onNyTag, jobber }: {
+  tagger: Ik2Tag[]
+  valgt: string[]
+  onEndre: (ids: string[]) => void
+  onNyTag: (navn: string) => Promise<string>
+  jobber: boolean
+}) {
+  const [ny, setNy] = useState('')
+  const [lager, setLager] = useState(false)
+  const [feil, setFeil] = useState<string | null>(null)
+
+  async function leggTil() {
+    const navn = ny.trim()
+    if (!navn || lager) return
+    // Finnes den alt, velges den — ingen «finnes alt»-feil for en tagg man bare glemte å trykke på.
+    const eksisterende = tagger.find(t => t.navn.toLowerCase() === navn.toLowerCase())
+    if (eksisterende) {
+      if (!valgt.includes(eksisterende.id)) onEndre([...valgt, eksisterende.id])
+      setNy('')
+      return
+    }
+    setLager(true)
+    setFeil(null)
+    try {
+      const id = await onNyTag(navn)
+      onEndre([...valgt, id])
+      setNy('')
+    } catch (e) {
+      setFeil(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLager(false)
+    }
+  }
+
+  return (
+    <div className="ik2-tagvelger">
+      <div className="filter">
+        {tagger.map(t => (
+          <button
+            key={t.id}
+            type="button"
+            className="filter-knapp"
+            aria-pressed={valgt.includes(t.id)}
+            disabled={jobber}
+            onClick={() => onEndre(valgt.includes(t.id) ? valgt.filter(x => x !== t.id) : [...valgt, t.id])}
+          >
+            {t.navn}
+          </button>
+        ))}
+        <input
+          className="celle-inn ik2-nytag"
+          placeholder={tagger.length === 0 ? 'Ny tagg — f.eks. HMS' : 'Ny tagg …'}
+          value={ny}
+          disabled={jobber || lager}
+          onChange={e => setNy(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void leggTil() } }}
+        />
+        {ny.trim() ? (
+          <button type="button" className="knapp knapp-stille" style={{ height: 28, padding: '0 10px' }} disabled={lager} onClick={() => void leggTil()}>
+            {lager ? 'Lager …' : 'Legg til'}
+          </button>
+        ) : null}
+      </div>
+      {feil ? <span className="felt-hjelp" style={{ color: 'var(--rod)' }}>{feil}</span> : null}
+    </div>
+  )
+}
+
+/** Registeret: lag, døp om, slett. Tallet sier hvor mange rutiner som mister taggen om du sletter den. */
+function TaggerSide({ tagger, punkter, kanSkrive, etterEndring }: {
+  tagger: Ik2Tag[]
+  punkter: Map<string, Ik2Punkt[]>
+  kanSkrive: boolean
+  etterEndring: () => Promise<void>
+}) {
+  const { jobber, feil, kjor } = useKjor(etterEndring)
+  const [ny, setNy] = useState('')
+
+  const telling = useMemo(() => {
+    const t = new Map<string, number>()
+    for (const liste of punkter.values()) {
+      for (const p of liste) for (const r of p.rutiner) for (const tag of r.tagger) t.set(tag.id, (t.get(tag.id) ?? 0) + 1)
+    }
+    return t
+  }, [punkter])
+
+  return (
+    <>
+      <Sti ledd={[{ navn: 'Kapitler', til: [] }]} />
+      <header className="ik2-hode">
+        <h2 className="ik2-tittel">Tagger</h2>
+        <p className="ik2-underlinje">Lag taggen én gang, sett den på rutinene, filtrer på den. Døper du den om, følger alle rutinene med.</p>
+      </header>
+
+      {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+
+      {kanSkrive ? (
+        <form
+          className="rad"
+          style={{ gap: 8, marginBottom: 16 }}
+          onSubmit={ev => {
+            ev.preventDefault()
+            const navn = ny.trim()
+            if (!navn) return
+            void kjor(async () => { await opprettIk2Tag(navn); setNy('') })
+          }}
+        >
+          <div style={{ flex: 1, maxWidth: 320 }}>
+            <Felt firkant placeholder="Ny tagg — f.eks. HMS, FSE, Måling" value={ny} onChange={e => setNy(e.target.value)} />
+          </div>
+          <Knapp stil="merke" type="submit" disabled={!ny.trim() || jobber}>{jobber ? 'Lagrer …' : 'Legg til'}</Knapp>
+        </form>
+      ) : null}
+
+      <section className="ik2-avsnitt">
+        {tagger.length === 0 ? (
+          <div className="ik2-tom"><p>Ingen tagger ennå.</p></div>
+        ) : tagger.map(t => (
+          <div key={t.id} className="ik2-tagrad">
+            <input
+              className="celle-inn"
+              key={`${t.id}-${t.navn}`}
+              defaultValue={t.navn}
+              disabled={!kanSkrive || jobber}
+              onBlur={e => { const v = e.target.value.trim(); if (v && v !== t.navn) void kjor(() => endreIk2Tag(t.id, v)) }}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+            />
+            <span className="ik2-rad-mer">{stk(telling.get(t.id) ?? 0, 'rutine', 'rutiner')}</span>
+            {kanSkrive ? (
+              <button
+                className="ikonknapp"
+                title="Slett taggen"
+                disabled={jobber}
+                onClick={() => {
+                  const n = telling.get(t.id) ?? 0
+                  if (window.confirm(n > 0 ? `Slette «${t.navn}»? Den tas av ${stk(n, 'rutine', 'rutiner')}.` : `Slette «${t.navn}»?`)) {
+                    void kjor(() => slettIk2Tag(t.id))
+                  }
+                }}
+              >
+                <Trash2 size={13} strokeWidth={2} />
+              </button>
+            ) : null}
+          </div>
+        ))}
       </section>
     </>
   )
