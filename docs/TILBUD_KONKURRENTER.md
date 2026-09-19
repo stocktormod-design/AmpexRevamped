@@ -191,6 +191,21 @@ mellom radene, Enter på siste rad lager ny linje, avkryssing + shift-klikk gir
 Blokk (flytt, påslag, lås/lås opp, tilvalg av/på, lagre som pakke, slett).
 Standard påslag med «Oppdater alle» og «Vis kost» står i verktøylinja.
 
+**Tredje runde samme natt** — Tormod: «burde være mer likt sluttproduktet du
+sender ut». Så redigeringsflaten ER nå dokumentet fra `lib/pdf/tilbud.ts`:
+brevhode med firma og org.nr, TILBUD #nr og dato til høyre, tittelen, KUNDE og
+GYLDIG TIL, brevet, tabellen «Tilbudet omfatter» med Beskrivelse /
+Spesifikasjon / Beløp, summen, «Tilbudet er gyldig til og med …», bunnlinja.
+Alt tastes rett på arket — tittel, kunde (velger inline), adresse, dato,
+brevet, hver linje som «12 stk × 249 − 10 %». Et nytt tilbud er et blankt ark
+som åpner med én gang, ikke et skjema foran arket. Det kunden ikke får (kost,
+påslag, dekningsbidrag, «oppdater alle») står i «Innsiden» ved siden av arket
+for den som kan se DB, og kan slås på som grå tall under linjene; over arket
+når det er trangt (container query på 1040 px). Fanene Kunde / Tilbudsbrev /
+Send er borte — de var seksjoner på arket. Klassen heter `tilbudsark`, ikke
+`ark`: `.ark` var alt tatt av en telefonskuff med 80 vh og egen rulling, og
+det var derfor arket ikke fylte bredden.
+
 To gamle feil rettet underveis: påslaget per linje sammenlignet hele linjas kost
 med enhetsprisen (viste −84 % på en linje med 91 % påslag), og detaljruta rullet
 aldri — et tilbud på hundre linjer ble klippet ved skjermkanten. Verifisert

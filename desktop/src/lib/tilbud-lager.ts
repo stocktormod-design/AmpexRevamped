@@ -489,9 +489,13 @@ export type NyttTilbud = {
   gyldigDager: number
 }
 
+/**
+ * Tittelen kan være tom: tilbudet opprettes som et blankt ark og fylles ut
+ * PÅ arket (Jobber «New Quote»), ikke i et skjema foran. Sjekklista før
+ * sending sier fra om den fortsatt er tom.
+ */
 export async function opprettTilbud(inn: NyttTilbud): Promise<string> {
   const tittel = inn.tittel.trim()
-  if (!tittel) throw new Error('Tilbudet må ha en tittel.')
 
   const dager = Number.isFinite(inn.gyldigDager) && inn.gyldigDager > 0 ? inn.gyldigDager : GYLDIGHET_DAGER
   const id = nyId()

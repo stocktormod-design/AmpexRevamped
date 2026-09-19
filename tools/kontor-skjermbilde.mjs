@@ -42,12 +42,12 @@ try {
   if (flagg.includes('--tilbud')) {
     await page.waitForSelector('.ordrerad', { timeout: 15000 })
     await page.click('.ordrerad')
-    await page.waitForSelector('.kalkyle', { timeout: 15000 })
+    await page.waitForSelector('.tilbudsark', { timeout: 15000 })
     await new Promise(r => setTimeout(r, 800))
   }
   if (flagg.includes('--bunn')) {
     // Summen står nederst; rull den indre flaten dit.
-    await page.evaluate(() => document.querySelector('.sum-blokk')?.scrollIntoView({ block: 'end' }))
+    await page.evaluate(() => document.querySelector('.ark-bunn')?.scrollIntoView({ block: 'end' }))
     await new Promise(r => setTimeout(r, 300))
   }
   if (flagg.includes('--linje')) {
