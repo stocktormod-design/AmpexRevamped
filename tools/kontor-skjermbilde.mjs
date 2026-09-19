@@ -7,6 +7,7 @@
 // Bruker Chrome som alt står på maskinen. Testbrukeren er den samme som
 // verify:e2e. Slik ble tilbudsflaten verifisert 18.09 (docs/TILBUD_KONKURRENTER.md).
 //   node shot.mjs <ut.png> [bredde] [høyde] [--tilbud] [--linje]
+//   node shot.mjs <ut.png> [bredde] [høyde] [--tilbud] [--linje]
 import puppeteer from 'puppeteer-core'
 
 const [ut = 'ut.png', bredde = '1440', hoyde = '960', ...flagg] = process.argv.slice(2)
@@ -36,6 +37,32 @@ try {
     await new Promise(r => setTimeout(r, 1500))
   }
 
+  const klikkTekst = async (tekst) => page.evaluate(t => {
+    const el = [...document.querySelectorAll('button, a')].find(b => b.textContent?.trim().startsWith(t))
+    if (el) el.click()
+    return !!el
+  }, tekst)
+
+  if (flagg.includes('--ik2') || flagg.includes('--ik2rutine') || flagg.includes('--ik2tagger')) {
+    await page.goto(`${URL}#/ik2${flagg.includes('--ik2tagger') ? '/tagger' : ''}`, { waitUntil: 'networkidle0' })
+    await new Promise(r => setTimeout(r, 1200))
+    if (flagg.includes('--ik2rutine')) {
+      // Kapittel → punkt → rutine → Rediger, ved å klikke seg nedover.
+      await page.evaluate(() => document.querySelector('.ik2-rad .ik2-rad-nr')?.closest('button')?.click())
+      await new Promise(r => setTimeout(r, 600))
+      await page.evaluate(() => [...document.querySelectorAll('.ik2-rad')].at(0)?.click())
+      await new Promise(r => setTimeout(r, 600))
+      await page.evaluate(() => [...document.querySelectorAll('.ik2-rad')].at(0)?.click())
+      await new Promise(r => setTimeout(r, 600))
+      if (!(await klikkTekst('Rediger'))) await klikkTekst('Skriv rutinen')
+      await new Promise(r => setTimeout(r, 600))
+    }
+    await page.screenshot({ path: ut, fullPage: flagg.includes('--full') })
+    console.log('skrev', ut)
+    await browser.close()
+    process.exit(0)
+  }
+
   await page.goto(`${URL}#/tilbud`, { waitUntil: 'networkidle0' })
   await new Promise(r => setTimeout(r, 800))
 
@@ -49,6 +76,11 @@ try {
     // Summen står nederst; rull den indre flaten dit.
     await page.evaluate(() => document.querySelector('.ark-bunn')?.scrollIntoView({ block: 'end' }))
     await new Promise(r => setTimeout(r, 300))
+  }
+  if (flagg.includes('--vare')) {
+    // Åpne varevelgeren i første «legg til»-rad.
+    await page.evaluate(() => document.querySelector('.legg-til .pakkemeny button')?.click())
+    await new Promise(r => setTimeout(r, 900))
   }
   if (flagg.includes('--linje')) {
     // Fokus i første pris-celle, så regnearket vises i redigering.

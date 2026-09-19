@@ -1386,9 +1386,11 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
   background: none; border: 0; color: inherit; font: inherit; cursor: pointer;
 }
 .nedtrekk-rad:hover, .nedtrekk-rad[aria-selected='true'] { background: var(--dis); }
-.nedtrekk-navn { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nedtrekk-meta { grid-column: 1; color: var(--blekk-3); font-size: 12px; }
-.nedtrekk-tall { grid-row: 1 / span 2; font-variant-numeric: tabular-nums; text-align: right; color: var(--blekk-2); font-size: 13px; }
+/* Plassene sies eksplisitt: et element med fast rad men løs kolonne legges
+   FØRST av autoplasseringen, og da havnet prisen til venstre for navnet. */
+.nedtrekk-navn { grid-column: 1; grid-row: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nedtrekk-meta { grid-column: 1; grid-row: 2; color: var(--blekk-3); font-size: 12px; }
+.nedtrekk-tall { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-variant-numeric: tabular-nums; text-align: right; color: var(--blekk-2); font-size: 13px; }
 .nedtrekk-hjelp { padding: 8px 10px; color: var(--blekk-3); font-size: 12px; }
 .nedtrekk-verktoy { display: flex; align-items: center; gap: 6px; }
 .nedtrekk-verktoy .celle-inn { width: 44px; border-color: var(--kant); margin: 0; padding: 3px 6px; }
@@ -1607,6 +1609,17 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
 }
 .tilbudsark tr.fravalgt > td, .tilbudsark tr.fravalgt .celle-inn { color: var(--blekk-3); }
 
+/* Varevelgeren: katalogen til å bla i. Søk øverst, grupper, ny vare nederst. */
+.nedtrekk.oppover { top: auto; bottom: calc(100% + 4px); }
+.nedtrekk.varevelger { width: 560px; max-width: 90vw; right: 0; left: auto; max-height: 440px; display: flex; flex-direction: column; padding: 0; }
+.varevelger-hode { padding: 8px; border-bottom: 1px solid var(--kant); }
+.varevelger-hode .felt-inn { height: 32px; border-radius: 8px; }
+.varevelger-liste { flex: 1; min-height: 0; overflow: auto; padding: 4px; }
+.varevelger-gruppe { padding: 8px 10px 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blekk-3); }
+.varevelger-bunn { border-top: 1px solid var(--kant); padding: 6px 8px; display: grid; gap: 6px; }
+.varevelger-felt { display: grid; grid-template-columns: 2fr 1fr 0.7fr 1fr 1fr; gap: 6px; }
+.varevelger-felt .felt-inn { height: 30px; font-size: 12.5px; border-radius: 6px; padding: 0 8px; }
+
 /* Innsiden ved siden av arket. Grå plate, som all gruppering. */
 .ark-rail { position: sticky; top: 0; display: grid; gap: 12px; }
 .ark-rail-boks { background: var(--dis); border: 1px solid var(--kant); border-radius: var(--r-kort); padding: 14px 16px; display: grid; gap: 6px; }
@@ -1731,6 +1744,17 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
   border: 1px solid var(--kant); border-radius: var(--r-pille);
   padding: 1px 8px; line-height: 17px;
 }
+/* Taggene er et register (19.09): flere per rutine, valgt fra samme knapper
+   som filteret bruker, og ny tagg lages der man står. */
+.ik2-tagliste { display: inline-flex; gap: 4px; flex-wrap: wrap; flex: none; justify-content: flex-end; }
+.ik2-tagvelger .filter { gap: 6px; }
+.ik2-nytag { width: 160px; border: 1px solid var(--kant); border-radius: var(--r-pille); margin: 0; padding: 4px 10px; font-size: 12px; }
+.ik2-nytag:focus { border-color: var(--kant-sterk); }
+.ik2-tagrad { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--kant); }
+.ik2-tagrad .celle-inn { flex: 1; max-width: 360px; margin: 0; padding: 5px 8px; border-color: transparent; }
+.ik2-tagrad .celle-inn:hover, .ik2-tagrad .celle-inn:focus { border-color: var(--kant); }
+.ik2-tagrad .ikonknapp { opacity: 0.4; }
+.ik2-tagrad:hover .ikonknapp { opacity: 1; }
 
 /* Vedtaket: én linje, én knapp. */
 .ik2-vedtak { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }

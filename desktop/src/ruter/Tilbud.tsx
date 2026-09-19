@@ -4,15 +4,15 @@ import {
   anvendPaslag, foreslaaPris, paslagProsent, prisFraPaslagOre, tilbudStatusLabel,
   type OmradeSum, type Tilbudslinje, type TilbudslinjeArt, type TilbudStatus,
 } from '@delt/quoting'
-import { Boxes, ChevronDown, ChevronUp, FolderPlus, Lock, Plus, Printer, Send, Trash2 } from 'lucide-react'
+import { Boxes, ChevronDown, ChevronUp, FolderPlus, Lock, Package, Plus, Printer, Send, Trash2 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useAuth } from '@/auth'
 import { hentFirma, hentKunder, hentTilbud, type Kunde, type Tilbud as Rad } from '@/lib/kontor-lager'
 import {
   angreSendt, byttPlass, endreLinje, endreLinjer, endreOmradenavn, endreTilbud, GYLDIGHET_DAGER,
-  hentPakker, hentTilbudsdetalj, lagrePakke, linjeSomInn, markerSendt, nyLinje, nyttOmrade,
-  opprettTilbud, settInnPakke, skrivPriser, skrivUtTilbud, slettLinje, slettLinjer, slettOmrade,
-  slettPakke, sokVarer, type Linjerad, type Pakke, type Tilbudsdetalj, type Varetreff,
+  hentKatalog, hentPakker, hentTilbudsdetalj, lagrePakke, linjeSomInn, markerSendt, nyLinje, nyttOmrade,
+  nyVare, opprettTilbud, settInnPakke, skrivPriser, skrivUtTilbud, slettLinje, slettLinjer, slettOmrade,
+  slettPakke, sokVarer, type Katalogvare, type Linjerad, type Pakke, type Tilbudsdetalj, type Varetreff,
 } from '@/lib/tilbud-lager'
 import { Beskjed, Felt, Knapp, Merke, Sidehode, stk } from '@/ui/kit'
 import { Delt } from '@/ui/Delt'
@@ -159,6 +159,20 @@ function useKlikkUtenfor(ref: React.RefObject<HTMLElement | null>, lukk: () => v
   }, [ref, lukk])
 }
 
+/**
+ * Åpner lista OPPOVER når knappen står i nedre halvdel av vinduet. En
+ * nedtrekksliste man må rulle for å se er ikke en nedtrekksliste.
+ */
+function useOppover(ref: React.RefObject<HTMLElement | null>, apen: boolean): boolean {
+  const [oppover, setOppover] = useState(false)
+  useEffect(() => {
+    if (!apen || !ref.current) return
+    const r = ref.current.getBoundingClientRect()
+    setOppover(r.top > window.innerHeight * 0.55)
+  }, [apen, ref])
+  return apen && oppover
+}
+
 /* ── Varesøket ──────────────────────────────────────────────────────────── */
 
 /**
@@ -248,6 +262,153 @@ function Varesok({ disabled, placeholder, onVelg, onFritekst }: {
   )
 }
 
+/* ── Varevelgeren ───────────────────────────────────────────────────────── */
+
+/**
+ * Katalogen til å BLA i (Cordel «prisbok»), for den som ikke vet navnet:
+ * gruppert på kategori, søk øverst, ett klikk legger varen på arket. Er
+ * katalogen tom — et firma uten prisfil — legges varen inn her, i katalogen,
+ * så den finnes neste gang. Det er slik katalogen starter.
+ */
+function Varevelger({ disabled, onVelg }: { disabled: boolean; onVelg: (v: Varetreff) => void }) {
+  const [apen, setApen] = useState(false)
+  const [sok, setSok] = useState('')
+  const [varer, setVarer] = useState<Katalogvare[] | null>(null)
+  const [feil, setFeil] = useState<string | null>(null)
+  const [nyModus, setNyModus] = useState(false)
+  const [ny, setNy] = useState({ name: '', elnummer: '', unit: 'stk', kost: '', pris: '' })
+  const [lagrer, setLagrer] = useState(false)
+  const teller = useRef(0)
+  const boks = useRef<HTMLDivElement>(null)
+  useKlikkUtenfor(boks, useCallback(() => setApen(false), []))
+  const oppover = useOppover(boks, apen)
+
+  useEffect(() => {
+    if (!apen) return
+    const id = window.setTimeout(async () => {
+      const mitt = ++teller.current
+      try {
+        const r = await hentKatalog(sok)
+        if (mitt === teller.current) { setVarer(r); setFeil(null) }
+      } catch (e) {
+        if (mitt === teller.current) setFeil(e instanceof Error ? e.message : String(e))
+      }
+    }, 150)
+    return () => window.clearTimeout(id)
+  }, [apen, sok])
+
+  const grupper = useMemo(() => {
+    const ut = new Map<string, Katalogvare[]>()
+    for (const v of varer ?? []) {
+      const g = v.category || v.discount_group || 'Uten kategori'
+      ut.set(g, [...(ut.get(g) ?? []), v])
+    }
+    return [...ut.entries()]
+  }, [varer])
+
+  function velg(v: Varetreff) {
+    onVelg(v)
+    setApen(false)
+    setSok('')
+  }
+
+  async function lagreNy() {
+    if (lagrer) return
+    setLagrer(true)
+    setFeil(null)
+    try {
+      const v = await nyVare({
+        name: ny.name,
+        elnummer: ny.elnummer || null,
+        unit: ny.unit,
+        unit_price: somTall(ny.pris),
+        cost_price: somTall(ny.kost),
+      })
+      setNy({ name: '', elnummer: '', unit: 'stk', kost: '', pris: '' })
+      setNyModus(false)
+      velg(v)
+    } catch (e) {
+      setFeil(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLagrer(false)
+    }
+  }
+
+  return (
+    <div className="pakkemeny" ref={boks} style={{ position: 'relative' }}>
+      <button type="button" className="knapp knapp-naken" disabled={disabled} onClick={() => setApen(a => !a)}>
+        <Package size={14} strokeWidth={1.8} /> Vare
+      </button>
+      {apen ? (
+        <div className={oppover ? 'nedtrekk varevelger oppover' : 'nedtrekk varevelger'}>
+          <div className="varevelger-hode">
+            <input
+              className="felt-inn"
+              autoFocus
+              placeholder="Søk i katalogen — navn eller el-nummer"
+              value={sok}
+              onChange={e => setSok(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') setApen(false)
+                if (e.key === 'Enter' && varer && varer.length > 0) { e.preventDefault(); velg(varer[0]) }
+              }}
+            />
+          </div>
+          <div className="varevelger-liste">
+            {feil ? <div className="nedtrekk-hjelp" style={{ color: 'var(--rod)' }}>{feil}</div> : null}
+            {varer === null ? (
+              <div className="nedtrekk-hjelp">Henter katalogen …</div>
+            ) : varer.length === 0 && !sok.trim() ? (
+              <div className="nedtrekk-hjelp">
+                Katalogen er tom. Importer en prisfil fra grossisten, eller legg inn varene én og én
+                her etter hvert som de trengs — de blir liggende i katalogen.
+              </div>
+            ) : varer.length === 0 ? (
+              <div className="nedtrekk-hjelp">Ingen treff på «{sok.trim()}».</div>
+            ) : grupper.map(([gruppe, liste]) => (
+              <Fragment key={gruppe}>
+                <div className="varevelger-gruppe">{gruppe}</div>
+                {liste.map(v => (
+                  <button key={v.id} type="button" className="nedtrekk-rad" onMouseDown={e => e.preventDefault()} onClick={() => velg(v)}>
+                    <span className="nedtrekk-navn">{v.name}</span>
+                    <span className="nedtrekk-tall">{v.unit_price !== null ? `${formatKr(tilOre(v.unit_price))} kr` : v.cost_price !== null ? `kost ${formatKr(tilOre(v.cost_price))}` : ''}</span>
+                    <span className="nedtrekk-meta">{[v.elnummer, v.unit].filter(Boolean).join(' · ')}</span>
+                  </button>
+                ))}
+              </Fragment>
+            ))}
+          </div>
+          <div className="varevelger-bunn">
+            {nyModus ? (
+              <>
+                <div className="varevelger-felt">
+                  <input className="felt-inn" autoFocus placeholder="Navn" value={ny.name} onChange={e => setNy(v => ({ ...v, name: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void lagreNy() } }} />
+                  <input className="felt-inn" placeholder="El-nr" value={ny.elnummer} onChange={e => setNy(v => ({ ...v, elnummer: e.target.value }))} />
+                  <input className="felt-inn" placeholder="Enhet" value={ny.unit} onChange={e => setNy(v => ({ ...v, unit: e.target.value }))} />
+                  <input className="felt-inn" placeholder="Kost" inputMode="decimal" value={ny.kost} onChange={e => setNy(v => ({ ...v, kost: e.target.value }))} />
+                  <input className="felt-inn" placeholder="Pris" inputMode="decimal" value={ny.pris} onChange={e => setNy(v => ({ ...v, pris: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void lagreNy() } }} />
+                </div>
+                <div className="rad" style={{ gap: 8 }}>
+                  <button type="button" className="knapp knapp-primar" style={{ height: 30 }} disabled={!ny.name.trim() || lagrer} onClick={() => void lagreNy()}>
+                    {lagrer ? 'Lagrer …' : 'Legg i katalogen og på arket'}
+                  </button>
+                  <button type="button" className="knapp knapp-naken" style={{ height: 30 }} onClick={() => setNyModus(false)}>Avbryt</button>
+                </div>
+              </>
+            ) : (
+              <button type="button" className="knapp knapp-naken" style={{ height: 30, justifyContent: 'flex-start' }} onClick={() => setNyModus(true)}>
+                <Plus size={14} strokeWidth={1.8} /> Ny vare i katalogen
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 /* ── Pakkene ────────────────────────────────────────────────────────────── */
 
 function Pakkemeny({ pakker, disabled, onSettInn, onSlett }: {
@@ -260,6 +421,7 @@ function Pakkemeny({ pakker, disabled, onSettInn, onSlett }: {
   const [antall, setAntall] = useState<Record<string, string>>({})
   const boks = useRef<HTMLDivElement>(null)
   useKlikkUtenfor(boks, useCallback(() => setApen(false), []))
+  const oppover = useOppover(boks, apen)
 
   return (
     <div className="pakkemeny" ref={boks} style={{ position: 'relative' }}>
@@ -267,7 +429,7 @@ function Pakkemeny({ pakker, disabled, onSettInn, onSlett }: {
         <Boxes size={14} strokeWidth={1.8} /> Pakke
       </button>
       {apen ? (
-        <div className="nedtrekk" style={{ minWidth: 340, right: 0, left: 'auto' }}>
+        <div className={oppover ? 'nedtrekk oppover' : 'nedtrekk'} style={{ minWidth: 340, right: 0, left: 'auto' }}>
           {pakker.length === 0 ? (
             <div className="nedtrekk-hjelp">
               Ingen pakker ennå. Merk linjene som hører sammen — f.eks. en dobbel stikkontakt med
@@ -594,10 +756,11 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
           <div className="legg-til">
             <Varesok
               disabled={jobber}
-              placeholder={sectionId ? `Legg til i ${navn} — vare eller tekst, Enter` : 'Legg til — vare eller tekst, Enter'}
+              placeholder={sectionId ? `Legg til i ${navn} — søk vare, eller skriv og trykk Enter` : 'Legg til — søk vare, eller skriv og trykk Enter'}
               onVelg={v => leggTilVare(v, sectionId)}
               onFritekst={tekst => leggTil('materiell', sectionId, tekst)}
             />
+            <Varevelger disabled={jobber} onVelg={v => leggTilVare(v, sectionId)} />
             <button type="button" className="knapp knapp-naken" disabled={jobber} onClick={() => leggTil('arbeid', sectionId)}>
               <Plus size={14} strokeWidth={1.8} /> Arbeid
             </button>
