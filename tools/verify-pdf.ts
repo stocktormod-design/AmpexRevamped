@@ -131,6 +131,10 @@ const tilbud = tilbudInnholdHtml({
 paastand('tilbudet viser totalsummen', tilbud.includes(formatKr(781150)))
 paastand('fritekstlinje har ingen beløpskolonne', tilbud.includes('colspan="4"'))
 paastand('el-nummer følger materiellinja', tilbud.includes('El-nr 1265467'))
+paastand('fire kolonner: antall og enhetspris hver for seg', tilbud.includes('<th class="tall">Antall</th><th class="tall">Enhetspris</th>'))
+paastand('enheten står med antallet', tilbud.includes('>12 stk<'))
+paastand('enhetsprisen har to desimaler', tilbud.includes(`>${formatKr(24900)}<`))
+paastand('rabatten står under enhetsprisen, ikke i et regnestykke', tilbud.includes('−10 % rabatt') && !tilbud.includes('×'))
 paastand('gyldighetsdatoen er norsk', tilbud.includes('30.09.2026'))
 paastand('tilbudet nevner ALDRI dekningsbidrag',
   !/dekningsbidrag|kostpris|innkjøp/i.test(tilbud))
@@ -184,9 +188,9 @@ const medTilvalg = tilbudInnholdHtml({
   },
   mvaEtikett,
 })
-paastand('fravalgt tilvalg står i lista med prisen sin', medTilvalg.includes('Varmekabel bad') && medTilvalg.includes(`= ${formatKr(450000)}`))
+paastand('fravalgt tilvalg står i lista med prisen sin', /tilvalg-rad[\s\S]*?Varmekabel bad[\s\S]*?4\s500,00/.test(medTilvalg) || /tilvalg-rad[\s\S]*?Varmekabel bad/.test(medTilvalg) && medTilvalg.includes(formatKr(450000)))
 paastand('fravalgt tilvalg er merket som ikke medregnet', medTilvalg.includes('Tilvalg – ikke medregnet'))
-paastand('fravalgt tilvalg har tom beløpskolonne', /tilvalg-rad[\s\S]*?<td class="tall"><\/td>/.test(medTilvalg))
+paastand('fravalgt tilvalg er grått (egen klasse), ikke en parentes', medTilvalg.includes('class="tilvalg-rad"') && !medTilvalg.includes(`(${formatKr(450000)})`))
 paastand('valgt tilvalg er merket som medregnet og har beløp',
   medTilvalg.includes('Tilvalg – medregnet') && medTilvalg.includes(formatKr(89000)))
 paastand('summen sier hva som kan legges til', medTilvalg.includes('Tilvalg som kan legges til') && medTilvalg.includes(formatKr(450000)))

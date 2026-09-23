@@ -224,3 +224,76 @@ planlagt materiell på ordren (`registrerSvar`).
 2. Kundeflate: en lenke kunden åpner, krysser av tilvalg, og aksepterer.
    Krever en offentlig rute med token — samme mønster som Boligmappa-lenker.
 3. Pakker som kan redigeres etter at de er lagret (i dag: slett og lagre på nytt).
+
+---
+
+# Oppdatering 23. september: oppsettet, linja og kundesida
+
+Tormod: tilbud skal være «veldig enkelt men wow faktor av pro følelse» — «hele
+oppsettet, hver linje materiell pris spacing pro clean». Studien over er
+funksjoner; denne er form og flyt, med skjermbilder i `docs/tilbud-konkurrenter/`.
+Lest uten innlogging (hjelpesentre, produktsider).
+
+## Vårt ark slik det sto (ampex.no 23.09)
+
+- Enhetspris uten desimaler («249»), sum med to («2 988,00»), ingen «kr»;
+  spesifikasjonskolonnen er ikke justert («24,9» / «249» / «1490»).
+- Rabatt som «24,9 – 10 %»; tom rabatt viser «199 – %» i redigering.
+- Ikke valgt tilvalg som «(2 980,00)» — leses som negativt beløp.
+- To stiplede «Legg til»-rader per område med fire knapper hver; avkryssing i
+  tabellhodet overlapper «BESKRIVELSE»; piler og søppelkasse på raden.
+- Områdehodet («Kjøkken · 5 linjer · 12 686,60») skiller seg ikke fra en linje.
+- «Marker som sendt» er alt som skjer etter arket. Ingen kundeside.
+
+## Norske
+
+- **Drifti (ny 2026)** — nærmest vår modell: redigerer rett på tilbudsbrevet.
+  Kundens ark: små grå versalhoder BESKRIVELSE / VARENR / ANTALL / ENHETSPRIS /
+  BELØP, enhet sammen med antall («0,45 timer»), to desimaler overalt, arbeid som
+  linje i samme tabell, «Sum ekskl. MVA» i grått bånd, trekolonne bunntekst.
+  Redigering: øye per linje/kolonne, kost/påslag i grå kursiv, DG per linje,
+  «sammenslått linje» (16 linjer vist som én). Kunden svarer aksepter / be om
+  endringer / avvis, via e-post og SMS. Fargede nøkkeltallfliser over arket (ikke
+  for oss). `drifti-2026-*.png`.
+- **Byggbase** — beste wow: «Send tilbud» er ÉN skjerm, kunde og melding til
+  venstre, «Forhåndsvisning — slik ser kunden det» til høyre, og en velger for
+  detaljnivå (Totalpris / Element / El + post / + ressurs). Kundens rad er to
+  linjer: navn og beløp halvfett, mengde og «533,58 kr/enh» grått under. ~3 klikk.
+  `byggbase-send-tilbud-live-forhandsvisning.png`.
+- **Cordel** — >10 steg, tett blått/gult/rødt gitter, PDF på e-post («last ned
+  Adobe Acrobat»), Scrive-signering som tillegg (149 kr/mnd + 12 kr/dok). Verdt
+  å ta: risikomatrisen (dekning per time når timer/materiell sprekker ±10–40 %).
+- **Bygglet** — editor venstre, PDF høyre; versjoner som faner med hake på den
+  aksepterte; egen blokk «Tilvalg som kan bestilles utover tilbudet». Kunden:
+  Ja/Nei på en enkel side, prosjekt opprettes ved ja.
+- **Fiken** — kundens nettside med «Last ned PDF» og grønn «Aksepter tilbud».
+  Ryddig, generisk. ~4 klikk.
+- **Tripletex / PowerOffice** — skjemaer; ingen digital aksept uten tillegg.
+- **SendTilbud / Tilbudsrom** — oppfølging som produkt: «åpnet», «Følg opp!»,
+  «Utløper snart», automatisk purring i fire steg over 14 dager.
+- Ingen bruker BankID i selve tilbudet. Elinn/SpeedyCraft/Mestergrep: ingenting å se.
+
+## Internasjonale — mønstrene, rangert etter «enkelt OG pro»
+
+1. **Svaret først: tall, dato, én knapp** (Stripe, Jobber). Totalen og «gyldig
+   til» øverst til høyre; kundesida har dokumentet til venstre og en boks til
+   høyre med «Approve» og «Request Changes». Kunden: åpne, godkjenn, signer.
+2. **Tilvalg med avkryssing og sum som følger** (Jobber, Qwilr): «Optional» /
+   «Not included» under beløpet, pille «2 OF 3 ITEMS» ved delsummen.
+   `jobber-optional-4.png`, `qwilr-optional-3.png`.
+3. **Styr hva kunden ser** (Jobber «Client view», Qwilr øye per kolonne):
+   antall, enhetspris, linjesum, delsum av/på. Gir fastprisarket.
+4. **Seksjoner med delsum og alternativ inne i seksjonen** (PandaDoc radioknapper,
+   Tradify intern «Cost · Gross Profit · Total» under hver seksjon).
+5. **Etter sending: status som tidslinje, påminnelse som setning** (Proposify,
+   Better Proposals «John opened your proposal», Jobber «2 dager etter sendt →
+   hvis ubesvart → minn kunden på»).
+6. **Autofyll med merking** (Buildertrend «Autofilled 7 fields»).
+7. **Bilde per linje** (Jobber, PandaDoc, ServiceTitan).
+
+**Linja hos alle som ser pro ut:** fire kolonner (Beskrivelse · Antall ·
+Enhetspris · Beløp), navn halvfett med beskrivelse under i samme celle, tall
+høyrejustert med samme desimaler, INGEN varenummer til kunden, rabatt som egen
+linje i summen, hårlinjer mellom rader og tyngre strek over Total, MVA med sats
+(«MVA 25 %»). Rotete = innrammede inputfelt, 7+ kolonner, fargede seksjonsbånd.
+`naerbilde-stripe-quote-linjer.png` er typografireferansen.

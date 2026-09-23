@@ -2022,3 +2022,104 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
 .ik2-rad-under-gjore { color: var(--blekk-2); font-style: normal; }
 .ik2-rutinerad:hover .ik2-rad-under-gjore { color: var(--blekk); text-decoration: underline; text-underline-offset: 2px; }
 .ik2-merknad { margin: -8px 0 14px; padding: 10px 12px; border-radius: var(--r-input); background: var(--dis); font-size: 13px; color: var(--blekk-2); }
+
+/* ── Tilbudsarket, runde fire (23.09): Drifti-arket, alt skjer PÅ arket ──
+   Fire kolonner (Beskrivelse · Antall · Enhetspris · Beløp), tall med to
+   desimaler rett under hverandre, luft mellom radene, hårlinjer. Verktøyet er
+   nesten usynlig: én «Legg til»-linje per område og «⋯» på raden. */
+.tilbudsark { padding: 48px 56px 36px; font-size: 13.5px; }
+.ark-brevhode { border-bottom: 1px solid var(--blekk); padding-bottom: 14px; margin-bottom: 26px; }
+.ark-doktype { font-size: 11px; letter-spacing: 0.1em; color: var(--blekk-2); }
+.ark-tittel .celle-inn, .ark-tittel > span { font-size: 24px; }
+.ark-partier { gap: 40px; margin: 16px 0 20px; align-items: flex-start; }
+.ark-parti-total { text-align: right; margin-left: auto; }
+.ark-total { font-family: var(--f-display); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ark-brev { margin-bottom: 14px; }
+
+.ark-tabell { margin-top: 6px; }
+.ark-tabell th { font-size: 10px; letter-spacing: 0.09em; color: var(--blekk-3); padding: 0 12px 8px 0; border-bottom: 1px solid var(--kant-sterk); }
+.ark-tabell th.tall { text-align: right; }
+.ark-tabell td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--kant); }
+.ark-tabell .verktoy { width: 30px; padding-right: 0; text-align: right; }
+.ark-navn { font-weight: 500; }
+.ark-hjelp { font-size: 11.5px; color: var(--blekk-3); margin-top: 2px; }
+.ark-antall { white-space: nowrap; }
+.ark-antall .celle-inn { text-align: right; }
+.ark-enhet { color: var(--blekk-2); text-align: left !important; }
+.ark-antall > span.ark-enhet { margin-left: 4px; }
+.ark-belop { font-weight: 500; min-width: 96px; }
+.tilbudsark tr.fravalgt .ark-belop { color: var(--blekk-4); font-weight: 400; }
+.tilbudsark tr.fravalgt .ark-navn { color: var(--blekk-2); }
+.tilvalg-knapp { font-size: 11.5px; padding: 0; color: var(--blekk-3); }
+.tilvalg-knapp[data-valgt='true'] { color: var(--gronn); }
+
+/* Rabatten under prisen: «−10 % rabatt». Tom rabatt dukker bare opp på raden du er på. */
+.ark-rabatt { display: flex; align-items: center; justify-content: flex-end; gap: 2px; margin-top: 2px; font-size: 11.5px; color: var(--blekk-3); opacity: 0; transition: opacity 120ms ease; }
+.ark-rabatt .celle-inn { font-size: 11.5px; color: var(--blekk-2); text-align: right; }
+.ark-rabatt[data-har='true'], .ark-tabell tr:hover .ark-rabatt, .ark-tabell tr:focus-within .ark-rabatt { opacity: 1; }
+.innsiden { display: flex; justify-content: flex-end; }
+
+/* Område: navnet og summen i halvfet, strek under. */
+.ark-omrade td { padding-top: 22px; padding-bottom: 8px; border-bottom: 1px solid var(--kant-sterk); }
+.ark-omradenavn { font-weight: 600; font-size: 14.5px; }
+.ark-omradesum { font-weight: 600; font-size: 14px; }
+
+/* «⋯» på raden: usynlig til du er på raden. */
+.radmeny { position: relative; display: inline-flex; }
+.radmeny .ikonknapp { width: 26px; height: 26px; border-color: transparent; background: transparent; }
+.ark-tabell tr:not(:hover):not(:focus-within) .radmeny[data-apen='false'] .ikonknapp { opacity: 0; }
+.radmeny-liste { right: 0; left: auto; min-width: 220px; padding: 4px; }
+.radmeny-liste .nedtrekk-rad { display: flex; }
+.radmeny-liste .nedtrekk-rad:disabled { opacity: 0.4; cursor: default; }
+.radmeny-fare .nedtrekk-navn { color: var(--rod); }
+
+/* «Legg til»: den tomme raden. Ser ut som neste linje på arket til du skriver. */
+.ark-legg-til td { border-bottom: 0; padding: 4px 0 6px; }
+.leggtil { position: relative; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px; margin-left: -8px; border-radius: 8px; color: var(--blekk-3); }
+.leggtil:hover { background: var(--dis); }
+.leggtil:focus-within { background: var(--dis); color: var(--blekk); }
+.leggtil-pluss { flex: none; }
+.leggtil-inn { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: var(--blekk); padding: 0; outline: none; }
+.leggtil-inn::placeholder { color: var(--blekk-3); }
+.leggtil-liste { left: 0; right: auto; width: min(520px, 90vw); padding: 4px; }
+.leggtil-slett { display: inline-flex; margin-left: 8px; color: var(--blekk-4); padding: 2px; border-radius: 4px; }
+.leggtil-slett:hover { color: var(--rod); background: var(--fyll); }
+.varevelger-anker { position: absolute; left: 0; right: 0; top: 100%; height: 0; }
+.varevelger-anker .nedtrekk.varevelger { left: 0; right: auto; }
+
+/* Nytt område: en rad på arket. */
+.ark-nytt-omrade td { border-bottom: 0; padding: 14px 0 4px; }
+.ark-nytt-omrade-knapp { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; margin-left: -10px; border-radius: 8px; color: var(--blekk-3); font-size: 13px; }
+.ark-nytt-omrade-knapp:hover:not(:disabled) { background: var(--dis); color: var(--blekk); }
+.ark-nytt-omrade-inn { height: 32px; font-weight: 600; font-size: 14.5px; border-bottom: 1px solid var(--kant-sterk) !important; width: 100%; }
+.ark-tom td { border-bottom: 0; padding: 18px 0 6px; color: var(--blekk-3); }
+
+/* Summen: høyre halvdel, hårlinjer, tyngre strek over totalen (Stripe). */
+.ark-summer { margin: 18px 30px 0 auto; width: min(360px, 100%); display: grid; }
+.ark-sumrad { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-bottom: 1px solid var(--kant); font-variant-numeric: tabular-nums; }
+.ark-sumrad > span:last-child { text-align: right; white-space: nowrap; }
+.ark-sumrad-total { border-top: 1.5px solid var(--blekk); border-bottom: 0; margin-top: 4px; padding-top: 10px; font-size: 15.5px; font-weight: 700; }
+.ark-sumrad-tilvalg { border-bottom: 0; color: var(--blekk-3); font-size: 12.5px; }
+
+/* Innsiden: én grå linje over arket, bare for den som kan se DB. */
+.ark-innsiden { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 8px 14px; border-radius: var(--r-input); background: var(--dis); font-size: 12.5px; color: var(--blekk-2); }
+.ark-innsiden b { font-weight: 600; color: var(--blekk); font-variant-numeric: tabular-nums; }
+.ark-innsiden.tap b:last-of-type { color: var(--rod); }
+.ark-innsiden-merke { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blekk-3); }
+
+/* Kalkylemenyen over arket. */
+.kalkylemeny { right: 0; left: auto; width: 300px; padding: 12px; display: grid; gap: 10px; top: calc(100% + 6px); }
+.kalkylemeny-rad { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--blekk-2); }
+.kalkylemeny-tall { width: 56px; margin-left: auto; text-align: right; border: 1px solid var(--kant) !important; }
+.kalkylemeny .knapp { justify-content: center; }
+
+@media (max-width: 820px) {
+  .tilbudsark { padding: 24px 18px; }
+  .ark-partier { flex-wrap: wrap; gap: 16px; }
+  .ark-summer { margin-right: 0; }
+}
+.ark-total { font-variant-numeric: normal; }
+.ark-skille { margin: 0 5px; }
+.ark-tabell .avkryss { width: 26px; }
+.ark-rabatt { gap: 1px; }
+.ark-rabatt .celle-inn { width: 22px !important; }
