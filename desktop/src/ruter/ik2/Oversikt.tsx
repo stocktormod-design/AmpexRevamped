@@ -43,7 +43,7 @@ export function SvarKort({ svar, tall }: { svar: Svar; tall: Registertall }) {
       <p className="ik2-svar-under">
         {alt
           ? `Alt er i orden.${svar.nesteFrist ? ` Neste gjennomgang ${dato(svar.nesteFrist)}.` : ''}`
-          : `${svar.lovpalagtIOrden} av ${svar.lovpalagtTotalt} lovpålagte (internkontrollforskriften § 5 nr. 4–8). I orden betyr skrevet, vedtatt, gjennomgått i tide og lest av alle.`}
+          : `${svar.lovpalagtIOrden} av ${svar.lovpalagtTotalt} lovpålagte kapitler er i orden. Et kapittel er i orden når det er skrevet, vedtatt, gjennomgått innen fristen og lest av alle ansatte.`}
       </p>
 
       {/* Det DLE ber om å se først på tilsyn. Tallene er knapper. */}
@@ -71,7 +71,11 @@ export function SvarKort({ svar, tall }: { svar: Svar; tall: Registertall }) {
 const KURS = { fse: 'FSE', forstehjelp: 'førstehjelp' } as const
 
 function kapNavn(t: KapittelTilstand) {
-  return `${t.kapittel.nummer} ${t.kapittel.tittel}`
+  return `«${t.kapittel.tittel}»`
+}
+
+function stor(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 /** Én oppgave som en setning med verbet først: det man skal GJØRE. */
@@ -79,27 +83,29 @@ function tekst(o: Oppgave): { tittel: string; mer: string; til: string[] } {
   if (o.type === 'kapittel') {
     const t = o.tilstand
     const k = t.kapittel
+    const kap = `Kapittel ${k.nummer}`
     switch (o.mangel) {
-      case 'ikke_skrevet': return { tittel: `Skriv ${kapNavn(t)}`, mer: k.maaVaereSkriftlig ? 'Lovpålagt skriftlig' : 'Ingen rutiner ennå', til: [k.id] }
-      case 'ikke_vedtatt': return { tittel: `Vedta ${kapNavn(t)}`, mer: 'Skrevet, venter på vedtak', til: [k.id] }
-      case 'endret_etter_vedtak': return { tittel: `Vedta endringene i ${kapNavn(t)}`, mer: 'Rutinene er endret etter vedtaket', til: [k.id] }
-      case 'gjennomgang_forfalt': return { tittel: `Gjennomgå ${kapNavn(t)}`, mer: `Fristen gikk ut ${dato(t.frist)}`, til: [k.id] }
-      case 'gjennomgang_snart': return { tittel: `Gjennomgå ${kapNavn(t)}`, mer: `Innen ${dato(t.frist)}`, til: [k.id] }
-      case 'ikke_lest': return { tittel: `Få ${kapNavn(t)} lest`, mer: `${k.lestAv} av ${k.skalLese} har lest versjon ${k.versjon}`, til: [k.id] }
+      case 'ikke_skrevet': return { tittel: `Skriv ${kapNavn(t)}`, mer: k.maaVaereSkriftlig ? `${kap} · lovpålagt skriftlig` : kap, til: [k.id] }
+      case 'ikke_vedtatt': return { tittel: `Vedta ${kapNavn(t)}`, mer: `${kap} · skrevet, ikke vedtatt`, til: [k.id] }
+      case 'endret_etter_vedtak': return { tittel: `Vedta endringene i ${kapNavn(t)}`, mer: `${kap} · endret etter vedtaket`, til: [k.id] }
+      case 'gjennomgang_forfalt': return { tittel: `Gjennomgå ${kapNavn(t)}`, mer: `${kap} · fristen gikk ut ${dato(t.frist)}`, til: [k.id] }
+      case 'gjennomgang_snart': return { tittel: `Gjennomgå ${kapNavn(t)}`, mer: `${kap} · frist ${dato(t.frist)}`, til: [k.id] }
+      case 'ikke_lest': return { tittel: `Få alle til å lese ${kapNavn(t)}`, mer: `${kap} · ${k.lestAv} av ${k.skalLese} har lest versjon ${k.versjon}`, til: [k.id] }
     }
   }
   if (o.type === 'avvik') {
     return {
       tittel: `Lukk avvik: ${o.avvik.tittel}`,
-      mer: o.overFrist ? `Over frist ${dato(o.avvik.frist)}` : `${ALVORLIGHET_NAVN[o.avvik.alvorlighet as Alvorlighet] ?? ''} avvik`,
+      mer: o.overFrist ? `Fristen gikk ut ${dato(o.avvik.frist)}` : `Alvorlighet: ${(ALVORLIGHET_NAVN[o.avvik.alvorlighet as Alvorlighet] ?? '').toLowerCase()}`,
       til: ['avvik', o.avvik.id],
     }
   }
   const hvem = o.hvem.length === 1 ? o.hvem[0] : `${o.hvem.length} ansatte`
   const kurs = KURS[o.kurs]
-  const hva = o.status === 'mangler' ? `mangler ${kurs}` : o.status === 'utgatt' ? `${kurs} er utgått` : `${kurs} går ut snart`
   return {
-    tittel: o.status === 'mangler' ? `${hvem} ${hva}` : `${hvem}: ${hva}`,
+    tittel: o.status === 'mangler' ? `${hvem} mangler ${kurs}`
+      : o.status === 'utgatt' ? `${stor(kurs)} har gått ut for ${hvem}`
+      : `${stor(kurs)} går snart ut for ${hvem}`,
     mer: o.hvem.length > 1 ? o.hvem.join(', ') : 'Registrer kurs',
     til: ['opplaering'],
   }
@@ -115,7 +121,7 @@ export function NesteKo({ ko }: { ko: Oppgave[] }) {
     <section className="ik2-avsnitt ik2-neste">
       <div className="ik2-avsnitt-hode">
         <span className="ik2-etikett">Neste</span>
-        <span className="ik2-rad-mer">{stk(ko.length, 'ting', 'ting')} å gjøre</span>
+        <span className="ik2-rad-mer">{stk(ko.length, 'oppgave', 'oppgaver')}</span>
       </div>
       {synlige.map((o, i) => {
         const t = tekst(o)
