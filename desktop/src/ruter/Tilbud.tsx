@@ -178,7 +178,7 @@ function useOppover(ref: React.RefObject<HTMLElement | null>, apen: boolean): bo
 
 /* ── «Legg til» ─────────────────────────────────────────────────────────── */
 
-type Valg = { nokkel: string; tittel: string; meta?: string; hoyre?: string; gjor: () => void; slett?: () => void }
+type Valg = { nokkel: string; tittel: string; meta?: string; hoyre?: string; gruppe?: string; gjor: () => void; slett?: () => void }
 
 /**
  * Én linje nederst i hvert område, som ser ut som den neste raden på arket.
@@ -238,7 +238,14 @@ function LeggTil({ disabled, placeholder, pakker, onVare, onNy, onPakke, onSlett
   })
 
   const valg: Valg[] = q.length >= 2 ? [
-    ...treff.map(v => ({ nokkel: v.id, tittel: v.name, meta: [v.elnummer, v.unit].filter(Boolean).join(' · '), hoyre: pris(v), gjor: () => { onVare(v); ferdig() } })),
+    ...treff.map(v => ({
+      nokkel: v.id,
+      tittel: v.name,
+      meta: [v.fabrikat, v.elnummer ? `El-nr ${v.elnummer}` : null, v.unit].filter(Boolean).join(' · '),
+      hoyre: pris(v) || (v.kilde === 'katalog' ? 'ingen pris ennå' : ''),
+      gruppe: v.kilde === 'katalog' ? 'Varekatalogen' : 'Firmaets varer',
+      gjor: () => { onVare(v); ferdig() },
+    })),
     ...pakker.filter(p => p.name.toLowerCase().includes(q.toLowerCase())).map(pakkeValg),
     { nokkel: 'vare', tittel: `«${q}» som vare`, meta: treff.length === 0 ? 'Ikke i katalogen — legges til som egen linje' : 'Uten katalog', gjor: () => { onNy('materiell', q); ferdig() } },
     { nokkel: 'arbeid', tittel: `«${q}» som arbeid`, meta: 'Timer × timepris', gjor: () => { onNy('arbeid', q); ferdig() } },
@@ -270,9 +277,9 @@ function LeggTil({ disabled, placeholder, pakker, onVare, onNy, onPakke, onSlett
       />
       {apen && !disabled ? (
         <div className={oppover ? 'nedtrekk leggtil-liste oppover' : 'nedtrekk leggtil-liste'}>
-          {q.length >= 2 && treff.length > 0 ? <div className="varevelger-gruppe">Fra katalogen</div> : null}
           {valg.map((v, i) => (
             <Fragment key={v.nokkel}>
+              {v.gruppe && v.gruppe !== valg[i - 1]?.gruppe ? <div className="varevelger-gruppe">{v.gruppe}</div> : null}
               {q.length >= 2 && v.nokkel === 'vare' ? <div className="varevelger-gruppe">Eller legg til som</div> : null}
               <button
                 type="button"
@@ -538,7 +545,9 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
       unitPrice: foreslaaPris(v.cost_price, v.unit_price, hode.default_markup_percent),
       costPrice: v.cost_price,
       vatType: v.vat_type,
-      productId: v.id,
+      // En vare fra den felles katalogen har ingen rad i firmaets kartotek;
+      // linja bærer el-nummeret, og det er nok (samme grep som order_materials).
+      productId: v.kilde === 'katalog' ? null : v.id,
       elnummer: v.elnummer,
     }))
   }

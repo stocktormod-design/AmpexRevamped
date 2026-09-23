@@ -516,3 +516,31 @@ når firmaets egen prisfil leses inn — `product_prices` er fortsatt per firma.
 
 **Ikke gjort ennå:** `products` er fortsatt firmascopet og i synken (planen
 over står); kategorigrupperingen på ekte data; en «Etterspør prisfil»-knapp.
+
+## Felles katalog på kontoret — 2026-09-23
+
+Tormod: «vi gjør prisfila VARENE global i ampex, ikke prisene, de er per firma».
+Telefonen hadde alt fellesfila (R2 → expo-sqlite); kontoret søkte bare i firmaets
+egne `products`, så Arntsen Elservice (0 varer) fant ingenting i tilbudet.
+
+- **`katalog_varer`** (migrasjon `20260923200000`, kjørt live): én rad per
+  el-nummer, uten `company_id` og uten priskolonner. Alle innloggede leser;
+  bare `ampex_admins` skriver (insert/update, aldri delete — `utgaar` er den
+  myke slettingen). Trigramindeks på `search_text` (pg_trgm).
+- **Fylles med** `npm run katalog:til-supabase` fra den samme `solar.sqlite`
+  som telefonene får (126 589 varer). Krever `AMPEX_ADMIN_EPOST`/`_PASSORD` i
+  `.env.local`. 30 prøvevarer ligger inne til den er kjørt.
+- **Tilbudets varesøk** (`sokVarer`): firmaets egne varer først, så katalogen
+  for el-numre firmaet ikke har. Kosten til en katalogvare slås opp i firmaets
+  egne `product_prices` på el-nummeret med `kostprisFra` (billigste, nettopris
+  slår listepris). Uten prisfil: «ingen pris ennå». Linja får el-nummeret og
+  `product_id = null`.
+
+**Ikke gjort ennå:** prisfilimporten skriver fortsatt varer til firmaets
+`products` i tillegg til prisrader. Å la den skrive BARE prisrader krever at
+telefonens ordre/lager også slår opp i katalogen i stedet for `products`
+(de lever på `product_id` gjennom synken) — egen jobb.
+
+**Nexans-bilder:** ja fra May Britt Jacklin 23.09 (hotlink fra nexans.no, ingen
+lagring, bare Nexans-produkter). Mangler: hvordan bilde-URL-en slås opp per
+el-nummer/EAN. Spør henne, ikke gjett.
