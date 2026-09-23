@@ -71,29 +71,30 @@ export function tilbudInnholdHtml(opts: {
 }): string {
   const { linjer, omrader = [], sum, mvaEtikett, gyldigTil, beskrivelse, vilkaar } = opts
 
+  // Fire kolonner, som hos alle som ser proffe ut (docs/TILBUD_KONKURRENTER.md,
+  // 23.09): Beskrivelse · Antall · Enhetspris · Beløp. Enheten står med
+  // antallet («12 stk»), alle beløp har to desimaler og står rett under
+  // hverandre, og rabatten står under enhetsprisen i stedet for inne i et
+  // regnestykke.
   const linjeHtml = (l: TilbudslinjeUt) => {
     if (l.art === 'tekst') {
       // Fritekstlinjer har ingen beløp — de er forklaring, ikke pris.
-      return `<tr><td colspan="4">${esc(l.beskrivelse).replace(/\n/g, '<br>')}</td></tr>`
+      return `<tr><td colspan="4" class="tekst-rad">${esc(l.beskrivelse).replace(/\n/g, '<br>')}</td></tr>`
     }
-    const spesifikasjon = [
-      `${tall(l.antall)} ${esc(l.enhet)} × ${formatKr(l.enhetsprisOre)}`,
-      l.rabattProsent ? `− ${tall(l.rabattProsent)} %` : '',
-    ].filter(Boolean).join('  ')
+    const antall = `${tall(l.antall)}${l.enhet ? ` ${esc(l.enhet)}` : ''}`
+    const rabatt = l.rabattProsent ? `<div class="punkt-hjelp">−${tall(l.rabattProsent)} % rabatt</div>` : ''
     const hjelp = l.elnummer ? `<div class="punkt-hjelp">El-nr ${esc(l.elnummer)}</div>` : ''
-    if (l.valgfri && !l.valgt) {
-      // Fravalgt tilvalg: på sin plass i lista, med prisen i spesifikasjonen og
-      // TOM beløpskolonne — samme grep som Jobbers «Not included». Kunden skal
-      // se hva det koster å si ja, og se at det ikke er regnet med.
-      return `<tr class="tilvalg-rad">
-        <td>${esc(l.beskrivelse)}<div class="punkt-hjelp">Tilvalg – ikke medregnet</div>${hjelp}</td>
-        <td class="tall">${spesifikasjon}  = ${formatKr(l.nettoOre)}</td>
-        <td class="tall"></td>
-      </tr>`
-    }
-    return `<tr>
-      <td>${esc(l.beskrivelse)}${l.valgfri ? '<div class="punkt-hjelp">Tilvalg – medregnet</div>' : ''}${hjelp}</td>
-      <td class="tall">${spesifikasjon}</td>
+    const fravalgt = l.valgfri && !l.valgt
+    // Fravalgt tilvalg: på sin plass, med prisen i grått og «ikke medregnet»
+    // — samme grep som Jobbers «Not included». Kunden ser hva det koster å si
+    // ja, og at det ikke er regnet med.
+    const merke = l.valgfri
+      ? `<div class="punkt-hjelp">${fravalgt ? 'Tilvalg – ikke medregnet' : 'Tilvalg – medregnet'}</div>`
+      : ''
+    return `<tr${fravalgt ? ' class="tilvalg-rad"' : ''}>
+      <td>${esc(l.beskrivelse)}${hjelp}${merke}</td>
+      <td class="tall">${antall}</td>
+      <td class="tall">${formatKr(l.enhetsprisOre)}${rabatt}</td>
       <td class="tall">${formatKr(l.nettoOre)}</td>
     </tr>`
   }
@@ -103,14 +104,13 @@ export function tilbudInnholdHtml(opts: {
   const linjerHtml = linjer.map(linjeHtml).join('')
     + omrader.map(o => `
       <tr class="omrade-rad">
-        <td${o.niva > 0 ? ` style="padding-left:${o.niva * 12}pt"` : ''}><strong>${esc(o.navn)}</strong></td>
-        <td></td>
+        <td colspan="3"${o.niva > 0 ? ` style="padding-left:${o.niva * 12}pt"` : ''}><strong>${esc(o.navn)}</strong></td>
         <td class="tall"><strong>${formatKr(o.nettoOre)}</strong></td>
       </tr>
       ${o.linjer.map(linjeHtml).join('')}`).join('')
 
   const mvaRader = sum.mvaFordeling
-    .map(m => `<tr class="sum-rad"><td colspan="2" class="tall">Mva ${esc(mvaEtikett(m.mva))} av ${formatKr(m.nettoOre)}</td><td class="tall">${formatKr(m.mvaOre)}</td></tr>`)
+    .map(m => `<tr class="sum-rad"><td colspan="3" class="tall">Mva ${esc(mvaEtikett(m.mva))} av ${formatKr(m.nettoOre)}</td><td class="tall">${formatKr(m.mvaOre)}</td></tr>`)
     .join('')
 
   return `
@@ -118,14 +118,14 @@ export function tilbudInnholdHtml(opts: {
 
     <h2>Tilbudet omfatter</h2>
     <table>
-      <thead><tr><th>Beskrivelse</th><th class="tall">Spesifikasjon</th><th class="tall">Beløp</th></tr></thead>
+      <thead><tr><th>Beskrivelse</th><th class="tall">Antall</th><th class="tall">Enhetspris</th><th class="tall">Beløp</th></tr></thead>
       <tbody>
         ${linjerHtml}
-        <tr class="sum-rad"><td colspan="2" class="tall">Sum eks. mva</td><td class="tall">${formatKr(sum.nettoOre)}</td></tr>
-        ${sum.rabattOre > 0 ? `<tr class="sum-rad"><td colspan="2" class="tall">Herav rabatt</td><td class="tall">−${formatKr(sum.rabattOre)}</td></tr>` : ''}
+        <tr class="sum-rad"><td colspan="3" class="tall">Sum eks. mva</td><td class="tall">${formatKr(sum.nettoOre)}</td></tr>
+        ${sum.rabattOre > 0 ? `<tr class="sum-rad"><td colspan="3" class="tall">Herav rabatt</td><td class="tall">−${formatKr(sum.rabattOre)}</td></tr>` : ''}
         ${mvaRader}
-        <tr class="sum-rad sum-total"><td colspan="2" class="tall">Totalt inkl. mva</td><td class="tall">${formatKr(sum.bruttoOre)}</td></tr>
-        ${sum.tilvalgUtenforOre ? `<tr class="sum-rad"><td colspan="2" class="tall">Tilvalg som kan legges til, eks. mva</td><td class="tall">${formatKr(sum.tilvalgUtenforOre)}</td></tr>` : ''}
+        <tr class="sum-rad sum-total"><td colspan="3" class="tall">Totalt inkl. mva</td><td class="tall">${formatKr(sum.bruttoOre)}</td></tr>
+        ${sum.tilvalgUtenforOre ? `<tr class="sum-rad"><td colspan="3" class="tall">Tilvalg som kan legges til, eks. mva</td><td class="tall">${formatKr(sum.tilvalgUtenforOre)}</td></tr>` : ''}
       </tbody>
     </table>
 

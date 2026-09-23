@@ -114,6 +114,10 @@ const STIL = `
   .punkt-sporsmal { font-weight: 600; }
   .punkt-svar { margin-top: 1pt; }
   .punkt-hjelp { font-size: 8.5pt; color: #6F675D; margin-top: 1pt; }
+  /* Tilbudet: fravalgt tilvalg i grått, fritekst i kursiv, område med strek under. */
+  .tilvalg-rad td { color: #8A8175; }
+  .tekst-rad { font-style: italic; color: #4A4238; }
+  .omrade-rad td { padding-top: 10pt; border-bottom: 0.75pt solid #C9C0B2; }
   .avvik { color: #A8460A; font-weight: 700; }
   .tomt { color: #9A9186; font-style: italic; }
   .signaturer { display: flex; gap: 24pt; margin-top: 20pt; page-break-inside: avoid; }
