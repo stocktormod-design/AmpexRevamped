@@ -24,7 +24,7 @@ create table if not exists public.katalog_varer (
   ean           text,
   nrf           text,
   enhet         text not null default 'stk',
-  salgspakning  integer,
+  salgspakning  numeric,       -- kan være desimal (f.eks. 2,1 m)
   lagerfort     boolean,
   -- Soft delete for en katalogvare: grossisten merker den utgått, vi sletter den aldri.
   utgaar        boolean not null default false,
