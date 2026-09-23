@@ -114,7 +114,8 @@
     "verify:service": "tsc tools/verify-service.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/service --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/service/tools/verify-service.js",
     "verify:boligmappa": "tsc tools/verify-boligmappa.ts lib/boligmappa/klient.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/boligmappa --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/boligmappa/tools/verify-boligmappa.js",
     "katalog:bygg": "tsc tools/bygg-katalog.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-bygg --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-bygg/tools/bygg-katalog.js",
-    "katalog:publiser": "tsc tools/publiser-katalog.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-publiser --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-publiser/tools/publiser-katalog.js"
+    "katalog:publiser": "tsc tools/publiser-katalog.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-publiser --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-publiser/tools/publiser-katalog.js",
+    "katalog:til-supabase": "tsc tools/katalog-til-supabase.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-til-supabase --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-til-supabase/katalog-til-supabase.js"
   },
   "private": true
 }

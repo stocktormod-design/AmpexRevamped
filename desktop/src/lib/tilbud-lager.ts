@@ -6,6 +6,7 @@ import {
 import { dokumentHtml } from '@delt/pdf/dokument'
 import { tilbudInnholdHtml, type TilbudslinjeUt } from '@delt/pdf/tilbud'
 import { mvaLabel } from '@delt/invoicing'
+import { kostprisFra, type Prisrad } from '@delt/pricing'
 import { hentFirma, mittFirma, nyId } from '@/lib/kontor-lager'
 import { supabase } from '@/supabase'
 
@@ -355,6 +356,13 @@ export type Varetreff = {
   unit_price: number | null
   cost_price: number | null
   vat_type: string | null
+  /**
+   * `firma`: firmaets eget varekartotek (`products`, med firmaets pris).
+   * `katalog`: den felles Ampex-katalogen (`katalog_varer`), uten pris — kosten
+   * hentes fra firmaets egen prisfil (`product_prices`) på el-nummeret.
+   */
+  kilde?: 'firma' | 'katalog'
+  fabrikat?: string | null
 }
 
 /** PostgREST-filteret skiller på komma og parentes — de kan ikke stå i søkeordet. */
@@ -377,7 +385,68 @@ export async function sokVarer(sok: string, grense = 12): Promise<Varetreff[]> {
     .order('name')
     .limit(grense)
   for (const o of ord) q.or(`search_text.ilike.%${o}%,name.ilike.%${o}%,elnummer.ilike.%${o}%`)
-  return sjekk(await q, 'Kunne ikke søke i varene') as Varetreff[]
+  const [egne, felles] = await Promise.all([
+    q.then(r => sjekk(r, 'Kunne ikke søke i varene') as Varetreff[]),
+    sokKatalog(ord, grense),
+  ])
+  // Firmaets egne varer først — de har firmaets pris. Katalogen fyller på med
+  // det firmaet ikke har lagt inn selv, så en ny kunde uten prisfil også finner
+  // varene (Tormod 23.09: «prisfila VARENE global i ampex, ikke prisene»).
+  const har = new Set(egne.map(v => v.elnummer).filter(Boolean))
+  return [...egne.map(v => ({ ...v, kilde: 'firma' as const })), ...felles.filter(v => !har.has(v.elnummer))].slice(0, grense)
+}
+
+/**
+ * Søk i den felles katalogen. Alle søkeordene må finnes (trigramindeks på
+ * `search_text`). Prisen er IKKE i katalogen: kosten slås opp i firmaets egne
+ * prisrader på el-nummeret, med samme regel som prisfilimporten — billigste
+ * kjente, og en ekte nettopris slår alltid en listepris (`kostprisFra`).
+ */
+async function sokKatalog(ord: string[], grense: number): Promise<Varetreff[]> {
+  const q = supabase
+    .from('katalog_varer')
+    .select('elnummer,navn,fabrikat,enhet')
+    .eq('utgaar', false)
+    .order('navn')
+    .limit(grense)
+  for (const o of ord) q.ilike('search_text', `%${o}%`)
+  const { data, error } = await q
+  // Katalogen er en hjelp, ikke en forutsetning: feiler den, står firmaets egne treff.
+  if (error || !data || data.length === 0) return []
+  const rader = data as { elnummer: string; navn: string; fabrikat: string | null; enhet: string }[]
+  const kost = await firmaetsKost(rader.map(r => r.elnummer))
+  return rader.map(r => ({
+    id: `katalog:${r.elnummer}`,
+    elnummer: r.elnummer,
+    name: r.navn,
+    unit: r.enhet || 'stk',
+    unit_price: null,
+    cost_price: kost.get(r.elnummer) ?? null,
+    vat_type: 'hoy',
+    kilde: 'katalog' as const,
+    fabrikat: r.fabrikat,
+  }))
+}
+
+/** Firmaets billigste kjente innkjøpspris per el-nummer, fra egne prisfiler. */
+async function firmaetsKost(elnumre: string[]): Promise<Map<string, number>> {
+  const ut = new Map<string, number>()
+  if (elnumre.length === 0) return ut
+  const { data } = await supabase
+    .from('product_prices')
+    .select('elnummer,supplier,net_price,price_type,discount_percent')
+    .in('elnummer', elnumre)
+    .is('deleted_at', null)
+  const perEl = new Map<string, Prisrad[]>()
+  for (const p of (data ?? []) as { elnummer: string; supplier: string; net_price: number | null; price_type: string | null; discount_percent: number | null }[]) {
+    if (p.net_price === null) continue
+    perEl.set(p.elnummer, [...(perEl.get(p.elnummer) ?? []), { grossist: p.supplier, nettoPris: Number(p.net_price), priceType: p.price_type, rabattProsent: p.discount_percent }])
+  }
+  for (const [el, rader] of perEl) {
+    const k = kostprisFra(rader)
+    if (k) ut.set(el, k.pris)
+  }
+  return ut
 }
 
 export type Katalogvare = Varetreff & { category: string | null; discount_group: string | null }
