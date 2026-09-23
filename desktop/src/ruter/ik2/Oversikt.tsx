@@ -82,6 +82,7 @@ function tekst(o: Oppgave): { tittel: string; mer: string; til: string[] } {
     switch (o.mangel) {
       case 'ikke_skrevet': return { tittel: `Skriv ${kapNavn(t)}`, mer: k.maaVaereSkriftlig ? 'Lovpålagt skriftlig' : 'Ingen rutiner ennå', til: [k.id] }
       case 'ikke_vedtatt': return { tittel: `Vedta ${kapNavn(t)}`, mer: 'Skrevet, venter på vedtak', til: [k.id] }
+      case 'endret_etter_vedtak': return { tittel: `Vedta endringene i ${kapNavn(t)}`, mer: 'Rutinene er endret etter vedtaket', til: [k.id] }
       case 'gjennomgang_forfalt': return { tittel: `Gjennomgå ${kapNavn(t)}`, mer: `Fristen gikk ut ${dato(t.frist)}`, til: [k.id] }
       case 'gjennomgang_snart': return { tittel: `Gjennomgå ${kapNavn(t)}`, mer: `Innen ${dato(t.frist)}`, til: [k.id] }
       case 'ikke_lest': return { tittel: `Få ${kapNavn(t)} lest`, mer: `${k.lestAv} av ${k.skalLese} har lest versjon ${k.versjon}`, til: [k.id] }
@@ -146,6 +147,7 @@ const GRUPPE_FOR: Record<string, string> = Object.fromEntries(
 const MANGEL_TEKST: Record<Mangel, string> = {
   ikke_skrevet: 'Ikke skrevet',
   ikke_vedtatt: 'Ikke vedtatt',
+  endret_etter_vedtak: 'Endret etter vedtak',
   gjennomgang_forfalt: 'Gjennomgang forfalt',
   ikke_lest: 'Ikke lest av alle',
 }
@@ -156,7 +158,7 @@ export function KapittelStatus({ t }: { t: KapittelTilstand }) {
     return <span className="ik2-tilstand ik2-tilstand-ok"><CircleCheck size={14} strokeWidth={2} />I orden</span>
   }
   const m = t.mangler[0]
-  const stil = m === 'gjennomgang_forfalt' ? 'varsel' : m === 'ikke_skrevet' ? 'dempet' : 'stille'
+  const stil = m === 'gjennomgang_forfalt' || m === 'endret_etter_vedtak' ? 'varsel' : m === 'ikke_skrevet' ? 'dempet' : 'stille'
   return <span className={`ik2-tilstand ik2-tilstand-${stil}`}>{MANGEL_TEKST[m]}</span>
 }
 

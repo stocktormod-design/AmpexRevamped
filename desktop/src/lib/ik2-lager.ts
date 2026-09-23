@@ -43,6 +43,8 @@ export type Ik2Rutine = {
   /** Taggene fra registeret, i navnerekkefølge. */
   tagger: Ik2Tag[]
   sort_order: number
+  /** Stemples av `touch_updated_at`. Nyere enn vedtaket = endret etter vedtak. */
+  updated_at: string
 }
 
 export type Ik2Punkt = {
@@ -75,7 +77,7 @@ export async function hentPunkterMedRutiner(): Promise<Map<string, Ik2Punkt[]>> 
   if (punkter.length === 0) return new Map()
 
   const [rutiner, koblinger, tagger] = await Promise.all([
-    supabase.from('ik2_rutiner').select('id,punkt_id,tittel,innhold,sort_order')
+    supabase.from('ik2_rutiner').select('id,punkt_id,tittel,innhold,sort_order,updated_at')
       .is('deleted_at', null).order('sort_order'),
     supabase.from('ik2_rutine_tagger').select('rutine_id,tag_id'),
     hentTagger(),
@@ -218,4 +220,25 @@ export async function slett(nivaa: 'punkt' | 'rutine', id: string): Promise<void
 
   const r = await supabase.from('ik2_rutiner').update({ deleted_at: naa }).eq('id', id)
   if (r.error) throw new Error(`Kunne ikke slette rutinen: ${r.error.message}`)
+}
+
+/**
+ * Siste endring under hvert kapittel — punkter og rutiner, OGSÅ de slettede.
+ * En rutine som er slettet etter vedtaket har endret det de ansatte bekreftet
+ * å ha lest, like mye som en som er skrevet om. Sletting er soft delete og
+ * stempler `updated_at` via `touch_updated_at`.
+ */
+export async function hentSistEndret(): Promise<Map<string, string>> {
+  const [p, r] = await Promise.all([
+    supabase.from('ik2_punkter').select('id,kapittel_id,updated_at'),
+    supabase.from('ik2_rutiner').select('punkt_id,updated_at'),
+  ])
+  const punkter = sjekk(p, 'Kunne ikke lese endringstidene') as { id: string; kapittel_id: string; updated_at: string }[]
+  const rutiner = sjekk(r, 'Kunne ikke lese endringstidene') as { punkt_id: string; updated_at: string }[]
+  const kapittelFor = new Map(punkter.map(x => [x.id, x.kapittel_id]))
+  const ut = new Map<string, string>()
+  const sett = (k: string | undefined, t: string) => { if (k && (!ut.has(k) || t > ut.get(k)!)) ut.set(k, t) }
+  for (const x of punkter) sett(x.kapittel_id, x.updated_at)
+  for (const x of rutiner) sett(kapittelFor.get(x.punkt_id), x.updated_at)
+  return ut
 }
