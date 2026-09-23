@@ -90,6 +90,7 @@
     "verify:kontor-tilgang": "tsc tools/verify-kontor-tilgang.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/kontor-tilgang --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/kontor-tilgang/tools/verify-kontor-tilgang.js",
     "verify:ik-skjelett": "tsc tools/verify-ik-skjelett.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/ik-skjelett --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/ik-skjelett/tools/verify-ik-skjelett.js",
     "verify:ik-tilstand": "tsc tools/verify-ik-tilstand.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/ik-tilstand --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/ik-tilstand/tools/verify-ik-tilstand.js",
+    "verify:egenskaper": "tsc tools/verify-egenskaper.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/egenskaper --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/egenskaper/tools/verify-egenskaper.js",
     "verify:ik-hendelser": "tsc tools/verify-ik-hendelser.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/ik-hendelser --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/ik-hendelser/tools/verify-ik-hendelser.js",
     "verify:ordrebolk": "tsc tools/verify-ordrebolk.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/ordrebolk --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/ordrebolk/tools/verify-ordrebolk.js",
     "verify:ai-kontekst": "tsc tools/verify-ai-kontekst.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/ai-kontekst --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/ai-kontekst/tools/verify-ai-kontekst.js",
@@ -115,7 +116,7 @@
     "verify:boligmappa": "tsc tools/verify-boligmappa.ts lib/boligmappa/klient.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/boligmappa --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node --lib es2020,dom && node .tmp/boligmappa/tools/verify-boligmappa.js",
     "katalog:bygg": "tsc tools/bygg-katalog.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-bygg --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-bygg/tools/bygg-katalog.js",
     "katalog:publiser": "tsc tools/publiser-katalog.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-publiser --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-publiser/tools/publiser-katalog.js",
-    "katalog:til-supabase": "tsc tools/katalog-til-supabase.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-til-supabase --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-til-supabase/katalog-til-supabase.js"
+    "katalog:til-supabase": "tsc tools/katalog-til-supabase.ts --ignoreConfig --ignoreDeprecations 6.0 --outDir .tmp/katalog-til-supabase --module commonjs --target es2020 --moduleResolution node --skipLibCheck --types node && node .tmp/katalog-til-supabase/tools/katalog-til-supabase.js"
   },
   "private": true
 }

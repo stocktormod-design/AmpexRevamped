@@ -1,4 +1,5 @@
 import { formatKr, mvaLabel, tilOre } from '@delt/invoicing'
+import { egenskaperFraNavn, egenskapTekster } from '@delt/katalog/egenskaper'
 import { kan } from '@delt/kontor-tilgang'
 import {
   anvendPaslag, foreslaaPris, paslagProsent, prisFraPaslagOre, tilbudStatusLabel,
@@ -241,7 +242,8 @@ function LeggTil({ disabled, placeholder, pakker, onVare, onNy, onPakke, onSlett
     ...treff.map(v => ({
       nokkel: v.id,
       tittel: v.name,
-      meta: [v.fabrikat, v.elnummer ? `El-nr ${v.elnummer}` : null, v.unit].filter(Boolean).join(' · '),
+      // Merke, el-nummer, så egenskapene som står i navnet (farge, IP, leder …).
+      meta: [v.fabrikat, v.elnummer ? `El-nr ${v.elnummer}` : null, ...egenskapTekster(egenskaperFraNavn(v.name))].filter(Boolean).join(' · '),
       hoyre: pris(v) || (v.kilde === 'katalog' ? 'ingen pris ennå' : ''),
       gruppe: v.kilde === 'katalog' ? 'Varekatalogen' : 'Firmaets varer',
       gjor: () => { onVare(v); ferdig() },

@@ -60,6 +60,7 @@ npm run verify:kontor-tilgang selvtest av kontorets rollematrise (hvem ser hva)
 npm run verify:ik-skjelett  selvtest av internkontroll-skjelettet (hva som må være skriftlig, frister)
 npm run verify:ik-hendelser selvtest av historikken (revisjon + audit slått sammen uten dobbelttelling)
 npm run verify:ik-tilstand  selvtest av «i orden»-svaret og neste-køen på IK-forsida (ingen delpoeng, FSE, avviksfrist)
+npm run verify:egenskaper  selvtest av egenskaper ut av varenavn (farge, IP, leder, kurve — og det den skal la være)
 
 cd desktop && npm run dev     Ampex Kontor i nettleseren (port 5174)
 cd desktop && npm run build   typecheck + produksjonsbygg av kontorappen
