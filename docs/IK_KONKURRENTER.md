@@ -105,3 +105,97 @@ og at montørens tre handlinger (les rutine, fyll sjekkliste, meld avvik) er ett
   [Internkontroll i virksomheter](https://elsikkerhetsportalen.no/internkontroll/internkontroll/)
 - Svenn: [HMS-håndbok, 8 ting](https://svenn.com/blogg/guide-til-hms-handbok)
 - Avonova: [HMS elektro](https://www.avonova.no/bransjesok/hms-elektro)
+
+---
+
+# Oppdatering 23. september: UI-studien — vis svaret før håndboka
+
+**Skrevet 2026-09-23.** Bakgrunn: IK v2 (`desktop/src/ruter/InternkontrollV2.tsx`)
+er ryddig, men Tormod: «roper ikke wow … gir ikke veldig ekstrem mening». Flata
+er en kapittelliste man klikker seg nedover i. Den viser innholdet og lar
+brukeren regne ut tilstanden selv.
+
+Kilder er produktsider, hjelpesentre og App Store. Ingen innlogging. Utvalgte
+skjermbilder ligger i `docs/ik-konkurrenter/`.
+
+### Hovedfunnet
+
+**Ingen i elektrobransjen viser et samlet svar på «er IK-en i orden?».** Alle
+stopper ved en kapittelliste med et antall, eller en tabell. De beste
+compliance-verktøyene internasjonalt (Vanta, Drata) viser aldri dokumentet
+først. De viser svaret og neste handling, og håndboka ligger under det svaret.
+Der ligger wow-faktoren, og det er ledig i vår bransje.
+
+### Norske systemer for elektro
+
+- **NHO Elektro/Nelfo NIK (Integrator, levert av Aceve).** Den bransjespesifikke
+  referansen. Håndboka er en nummerert mappeliste («02 HMS i Bedrift ›
+  10.000 HMS-målsetting») med antall per mappe og filterbrikkene «Arbeidsrelatert
+  / Må bekreftes / Alle». Oransje ikon markerer trolig det som ikke er
+  bekreftet. Avvik har TG2/TG3-brikke, ansvarlig og frist. Appen har 1,3 av 5
+  i App Store, og montørene skriver at den krasjer på «Nytt avvik». Det er
+  åpningen. `nik-app-appstore-3.jpg`, `-4.jpg`.
+  https://apps.apple.com/no/app/integrator/id1276656741
+- **Kvalitetskontroll (SmartCraft, integrert med ELinn og Cordel).** Forsida er
+  et flisrutenett med rød tellebadge på Prosedyrer, som teller uleste. På nett er
+  det en tett tabell med revisjonstidslinje («0: 09.11.18 · 1: 04.06.19») og en
+  teller for lesebekreftelser. Purring skjer på SMS med direkte lenke.
+  `kvalitetskontroll-*.{png,jpg}`. https://www.kvalitetskontroll.no/funksjoner/prosedyrer
+- **Mentor HMS.** Mest dashbord. Håndbokflisa sier «lest 0 av 62» i stor skrift.
+  Årshjul med tolv måneder og gjentakende oppgaver per tema.
+  `mentor-arshjul-*.jpg`. https://support.mentorpluss.no/en/hjelp-hms/arshjul
+- **Svenn.** Wow-en er tjenesten: eksperter skriver håndboka, chat med navngitt
+  ekspert, årlig revisjon inkludert. Sjekklister har fremdriftsringer
+  (OK / IR / FEIL). `svenn-sjekkliste-ok-ir-feil-fremdrift.png`.
+- **SmartDok.** Håndboka er et rent, søkbart lesedokument med versjon og dato.
+  AI oppsummerer ukens avvik. `smartdok-hms-handbok-ny.png`.
+- **Simployer.** Mappemeny, «Handbooks AI» øverst, lesetid per artikkel og
+  «verified»-blokker for lovpålagt tekst. `simployer-handbok-artikkel.png`.
+- **Kuba (via Ahlsell), Devinco, Landax, Cordel KS|HMS, Gripr.** Tabeller,
+  nummererte kapittellister og mockups. Devinco er i praksis det vi har i dag.
+  Cordel viser bare illustrasjoner (fra 699 kr/mnd).
+
+### Internasjonalt: mønstrene som gir «dette gir mening»
+
+1. **Ett tall brutt ned i tellbare enheter** (Vanta Home, Drata Readiness):
+   «14 controls complete / 78 total», «100 % Ready – You're good to go!». En
+   enhet teller bare når ALT er oppfylt, og det gir ingen delpoeng.
+   `vanta-help-home-2.png`, `drata-help-dashboard-6.png`, `drata-help-readiness-3.png`.
+2. **Policylista har statusspalter** (Vanta Policies): samlet status, versjon
+   (Approved/Draft/Not started), «Renew by», «Personnel acceptance 0/23» med
+   ring. Standardsortering er «Recommended order», ikke nummer.
+   `vanta-help-renew-policy-4.png`. Den beste enkeltreferansen.
+3. **Årlig fornyelse er en frist med to knapper** (Vanta): «Update policy and
+   renew» / «Renew without updates». Ved endring spør den om alle skal lese på
+   nytt. `vanta-help-renew-policy-5.png`.
+4. **Den ansattes egen lesekø** (Drata «My Drata», Vanta Onboarding): «0/20
+   policies acknowledged», én om gangen med Previous/Next og «Acknowledge».
+   `drata-help-ack-policies-3.png`, `-4.png`, `vanta-help-onboarding-tasks-2.png`.
+5. **Ferskhetsmerke** (Notion Verified): hake, «Until 5. april» og eierens
+   avatar. Når fristen går ut, forsvinner haken. `notion-help-verified-pages-1.webp`.
+6. **Tellekort som filtre** (SafetyCulture Credentials, Secureframe): «5
+   Expired · 1 Expiring soon · 24 Total», og hvert tall er et filter.
+   `safetyculture-help-my-credentials-1.png`, `secureframe-cyber-dashboards-3.webp`.
+7. **«Hva er neste»-kø** sortert etter frist (Vanta Tasks, Drata Task list,
+   Linear My issues).
+
+Ikke verifisert: Intelex, Cority, EcoOnline, Sitemate og Procore har bare
+markedsføringssider.
+
+### Hva vi tar
+
+- Forsida svarer først: **«X av 14 kapitler i orden»**. Et kapittel er i orden
+  når det er vedtatt, innenfor årsfristen og lest av alle. Ingen delpoeng.
+- Under tallet står **neste-køen**: det som er forfalt eller forfaller, avvik
+  over frist og FSE som går ut.
+- Kapittellista får **faste statusspalter** i stedet for ett ord: vedtatt,
+  gjennomgås innen, lest X/Y.
+- Årlig gjennomgang blir **to knapper**: «Uendret — gjennomgått» og «Endre og
+  vedta på nytt».
+- Avvik og opplæring får **tellere som filtre**.
+- Montørens **lesekø** hører hjemme i appen (egen jobb).
+
+Vi lar ligge: flisrutenett (Mentor, Kvalitetskontroll), fargede dashbord med
+kakediagram (Drata, Landax, Mentor). Det bryter med regel 9, hvit flate og
+farge bare som semantikk, og Tormod har sagt «for mye å se på» om mer på
+skjermen (IK v2, 17.09).
