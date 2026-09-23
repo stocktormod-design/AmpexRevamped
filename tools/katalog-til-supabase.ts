@@ -20,6 +20,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { egenskaperFraNavn } from '../lib/katalog/egenskaper'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (p: string, o?: { readOnly?: boolean }) => any }
 
@@ -78,7 +79,7 @@ async function main() {
 
   const t0 = Date.now()
   for (let i = 0; i < rader.length; i += BOLK) {
-    const bolk = rader.slice(i, i + BOLK).map(r => ({
+    const bolk = rader.slice(i, i + BOLK).map(r => { const e = egenskaperFraNavn(r.navn); return {
       elnummer: r.elnummer,
       navn: r.navn,
       fabrikat: r.fabrikat,
@@ -98,8 +99,20 @@ async function main() {
       kategori: r.kategori,
       grossist,
       kilde_sha: meta.sha256 ?? meta.kilde_sha256 ?? null,
+      // Tolket ut av navnet (lib/katalog/egenskaper.ts). null = står ikke i navnet.
+      farge: e.farge ?? null,
+      ip: e.ip ?? null,
+      leder: e.leder ?? null,
+      spenning: e.spenning ?? null,
+      strom_a: e.stromA ?? null,
+      kurve: e.kurve ?? null,
+      jordfeil_ma: e.jordfeilMa ?? null,
+      poler: e.poler ?? null,
+      effekt_w: e.effektW ?? null,
+      lumen: e.lumen ?? null,
+      kelvin: e.kelvin ?? null,
       updated_at: new Date().toISOString(),
-    }))
+    } })
     const { error } = await sb.from('katalog_varer').upsert(bolk, { onConflict: 'elnummer' })
     if (error) throw new Error(`Bolk ${i / BOLK + 1} feilet: ${error.message}`)
     if ((i / BOLK) % 10 === 0) process.stdout.write(`  ${Math.min(i + BOLK, rader.length)} / ${rader.length}\n`)
