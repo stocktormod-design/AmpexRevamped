@@ -544,3 +544,30 @@ telefonens ordre/lager også slår opp i katalogen i stedet for `products`
 **Nexans-bilder:** ja fra May Britt Jacklin 23.09 (hotlink fra nexans.no, ingen
 lagring, bare Nexans-produkter). Mangler: hvordan bilde-URL-en slås opp per
 el-nummer/EAN. Spør henne, ikke gjett.
+
+### Ti produsenter til spurt — 2026-09-23 kveld
+
+Merkene med flest varer i katalogen (Schneider 16 829 er spurt fra før, Nexans
+har sagt ja). Samme vilkår som Nexans: vis bildet hentet fra produsentens egen
+side, ikke lagret, bare ved deres produkter. Sendt fra tormod@ampex.no med et
+ekte el-nummer/EAN hver:
+
+| Merke | Til | Merknad |
+|---|---|---|
+| Eaton (12 536) | salesnorway@eaton.com | Har Download Center med bilder og BMEcat, vilkår uklare |
+| Siemens (8 761) | post.no@siemens.com | Industry Image Database er bare for internt bruk |
+| Solar egne merker | therese.mathisen@solarnorge.no, kopi Jørn Normand | V4 har ingen VX-poster |
+| Wibe (2 440) | thea.berg-olstad@wibe-group.com | Markedssjef Norge |
+| Øglænd (2 293) | oglaend@oglaend-system.com | Bare generell adresse |
+| Hager (779) | kundeservice@utunorge.no | UTU er eneleverandør i Norge |
+| Prysmian (986) | camilla.olsen@prysmiangroup.com | Marked- og kommunikasjonssjef |
+| Elis Elektro (2 725) | post@eliselektro.no | |
+| Phoenix Contact (1 723) | abrumoen@phoenixcontact.com | «Terms of Use for Works» 3.3.2 dekker oss ikke |
+| LAPP (1 882) | ordrekontor.no.mno@lapp.com | Tilbyr BMEcat med bilde-URL via skjema |
+
+**Ikke sendt:** ABB (8 247) — adressen kunne ikke bekreftes, bruk skjemaet på
+new.abb.com/contact/no/form. Elko (950) — eid av Schneider, samme markedssjef;
+be Schneider ta Elko med når de svarer.
+
+**EFObasen er ingen snarvei:** API-avtalen sier innholdet ikke kan «formidles
+til tredjepart overhodet» uten særskilt avtale. Produsentens ja trengs uansett.
