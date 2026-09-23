@@ -8,7 +8,9 @@
  * med neste handling. Reglene er våre egne og norske:
  *
  *   - Et kapittel er **i orden** når det har skrevne rutiner, er vedtatt, ikke
- *     har passert gjennomgangsfristen og er lest av alle som skal lese det.
+ *     er endret etter vedtaket, ikke har passert gjennomgangsfristen og er lest
+ *     av alle som skal lese det. En rutine som er skrevet om etter vedtaket gjør
+ *     at det de ansatte har bekreftet ikke lenger er det som står.
  *     Ingen delpoeng: tre av fire er «ikke i orden», og manglene sier hvorfor.
  *   - Internkontrollforskriften § 5 tredje ledd: nr. 4–8 SKAL være skriftlige.
  *     De teller for seg, og står først i køen når de mangler.
@@ -31,6 +33,8 @@ export type KapittelInn = {
   sistGjennomgatt: string | null
   intervallMnd: number
   versjon: number
+  /** En rutine eller et punkt er endret (eller slettet) etter vedtaket. */
+  endretEtterVedtak: boolean
   /** Hvor mange som har bekreftet GJELDENDE versjon. */
   lestAv: number
   /** Hvor mange som skal lese. 0 = ingen å spørre, og da mangler ingen lesing. */
@@ -38,7 +42,7 @@ export type KapittelInn = {
 }
 
 /** Det som står mellom kapittelet og «i orden», i den rekkefølgen det må gjøres. */
-export type Mangel = 'ikke_skrevet' | 'ikke_vedtatt' | 'gjennomgang_forfalt' | 'ikke_lest'
+export type Mangel = 'ikke_skrevet' | 'ikke_vedtatt' | 'endret_etter_vedtak' | 'gjennomgang_forfalt' | 'ikke_lest'
 
 export type KapittelTilstand = {
   kapittel: KapittelInn
@@ -56,6 +60,7 @@ export function kapittelTilstand(k: KapittelInn, naa: Date): KapittelTilstand {
   const mangler: Mangel[] = []
   if (!k.harRutine) mangler.push('ikke_skrevet')
   if (k.status !== 'vedtatt') mangler.push('ikke_vedtatt')
+  if (k.status === 'vedtatt' && k.endretEtterVedtak) mangler.push('endret_etter_vedtak')
   if (k.status === 'vedtatt' && erForfalt(k.sistGjennomgatt, k.intervallMnd, naa)) mangler.push('gjennomgang_forfalt')
   // Lesing teller først når det finnes noe vedtatt å lese.
   if (k.status === 'vedtatt' && k.skalLese > 0 && k.lestAv < k.skalLese) mangler.push('ikke_lest')

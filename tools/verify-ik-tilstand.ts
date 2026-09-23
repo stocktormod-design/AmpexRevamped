@@ -23,7 +23,7 @@ function sjekk(navn: string, faktisk: unknown, forventet: unknown) {
 const naa = new Date('2026-09-23T10:00:00')
 const k = (over: Partial<KapittelInn>): KapittelInn => ({
   id: 'x', nummer: '4', tittel: 'Avvik', status: 'vedtatt', maaVaereSkriftlig: true,
-  harRutine: true, sistGjennomgatt: '2026-03-01', intervallMnd: 12, versjon: 2,
+  harRutine: true, sistGjennomgatt: '2026-03-01', intervallMnd: 12, versjon: 2, endretEtterVedtak: false,
   lestAv: 3, skalLese: 3, ...over,
 })
 
@@ -39,6 +39,10 @@ sjekk('ingen ansatte å spørre = ingen lesing mangler',
   kapittelTilstand(k({ lestAv: 0, skalLese: 0 }), naa).iOrden, true)
 sjekk('utkast krever ikke lesing (ingenting vedtatt å lese)',
   kapittelTilstand(k({ status: 'utkast', lestAv: 0 }), naa).mangler, ['ikke_vedtatt'])
+sjekk('rutine endret etter vedtak: ikke i orden før det er vedtatt på nytt',
+  kapittelTilstand(k({ endretEtterVedtak: true }), naa).mangler, ['endret_etter_vedtak'])
+sjekk('endringer i et utkast teller ikke som «etter vedtak»',
+  kapittelTilstand(k({ status: 'utkast', endretEtterVedtak: true }), naa).mangler, ['ikke_vedtatt'])
 sjekk('utgått kapittel er ikke vedtatt',
   kapittelTilstand(k({ status: 'utgatt' }), naa).mangler, ['ikke_vedtatt'])
 sjekk('fristen er sist gjennomgått + intervall',
