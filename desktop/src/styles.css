@@ -1924,3 +1924,68 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
   .chat-panel { right: 12px; left: 12px; width: auto; bottom: 140px; }
   .chat-boble { right: 14px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* «+ Nytt punkt» / «+ Ny rutine»: siste rad i lista, i blekk, så den leses
+   som en del av lista og ikke som et verktøy i hjørnet. */
+.ik2-leggtil { color: var(--blekk-2); gap: 10px; border-bottom: none; }
+.ik2-leggtil:hover { color: var(--blekk); }
+.ik2-leggtil .ik2-rad-tittel { font-weight: 500; }
+.ik2-tagger { align-items: center; }
+.ik2-tagger-etikett { color: var(--blekk-3); font-size: 12px; margin-right: 2px; }
+.ik2-tagger > .ik2-lenke { margin-left: auto; }
+
+/* ── IK v2: svaret først (docs/IK_KONKURRENTER.md) ─────────────────────
+   Ett tall, en tynn sort stolpe, to tellere. Hvitt og sort; farge bare når
+   noe er galt (oransje) eller i orden (grønn hake). */
+.ik2-svar { padding: 22px 24px 20px; margin-bottom: 8px; border: 1px solid var(--kant); border-radius: var(--r-kort); background: var(--bg, #fff); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+.ik2-svar-hode { display: flex; align-items: baseline; gap: 10px; }
+.ik2-svar-tall { font-family: var(--f-display); font-size: 44px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.ik2-svar-av { font-family: var(--f-display); font-size: 19px; font-weight: 500; color: var(--blekk-2); letter-spacing: -0.01em; }
+.ik2-svar-ok { color: var(--gronn); align-self: center; }
+.ik2-svar-stolpe { height: 6px; margin: 16px 0 10px; border-radius: 3px; background: var(--fyll); overflow: hidden; }
+.ik2-svar-stolpe > span { display: block; height: 100%; background: var(--blekk); border-radius: 3px; transition: width 400ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.ik2-svar-under { margin: 0; font-size: 13px; line-height: 1.5; color: var(--blekk-3); max-width: 72ch; }
+.ik2-tellere { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--kant); }
+.ik2-teller { display: flex; align-items: baseline; gap: 8px; padding: 8px 14px 8px 12px; border: 1px solid var(--kant); border-radius: var(--r-input); text-align: left; }
+.ik2-teller:hover { background: var(--dis); border-color: var(--kant-sterk); }
+.ik2-teller-tall { font-family: var(--f-display); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ik2-teller-av { color: var(--blekk-4); font-weight: 500; }
+.ik2-teller-navn { font-size: 13px; color: var(--blekk-2); }
+.ik2-varsel { color: var(--gul); }
+.ik2-neste .ik2-rad-tittel { font-weight: 500; }
+.ik2-neste-alle { margin-top: 6px; }
+
+/* Håndboka som tabell: fire faste spalter, som Vantas policyliste. */
+.ik2-ring { flex: none; }
+.ik2-ring-bak { fill: none; stroke: var(--fyll); stroke-width: 2.5; }
+.ik2-ring-fyll { fill: none; stroke: var(--blekk); stroke-width: 2.5; stroke-linecap: round; }
+.ik2-ktabell-hode, .ik2-ktabell-rad {
+  display: grid; grid-template-columns: 28px minmax(0, 1fr) 72px 128px 72px 150px;
+  gap: 12px; align-items: center; padding: 0 4px;
+}
+.ik2-ktabell-hode { height: 32px; color: var(--blekk-3); font-size: 11px; font-weight: 500; border-bottom: 1px solid var(--kant); }
+.ik2-ktabell-rad { min-height: 52px; padding-top: 7px; padding-bottom: 7px; text-align: left; border-bottom: 1px solid var(--kant); }
+.ik2-ktabell-rad:hover { background: var(--dis); }
+.ik2-ktabell-navn { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ik2-ktabell-celle { font-size: 13px; color: var(--blekk-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ik2-ktabell-lest { display: inline-flex; align-items: center; gap: 6px; }
+.ik2-ktabell-status { display: flex; justify-content: flex-start; }
+@media (max-width: 900px) {
+  .ik2-ktabell-hode { display: none; }
+  .ik2-ktabell-hode, .ik2-ktabell-rad { grid-template-columns: 24px minmax(0, 1fr) auto; }
+  .ik2-ktabell-celle { display: none; }
+}
+
+/* Kapittelets status: hva som mangler, som liste med ord. */
+.ik2-status-ok { background: var(--bg, #fff); }
+.ik2-status-hode .ik2-tilstand { font-size: 15px; font-weight: 600; color: var(--blekk); }
+.ik2-status-hode .ik2-tilstand-ok { color: var(--gronn); }
+.ik2-status-hode .ik2-tilstand-varsel { color: var(--gul); }
+.ik2-mangler { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--blekk-2); }
+.ik2-mangler li { padding-left: 2px; }
+.ik2-mangler .ik2-ring { vertical-align: -3px; }
+.ik2-status-hjelp { font-size: 12px !important; color: var(--blekk-3) !important; margin-top: 2px !important; }
+.ik2-status .knapp + .knapp { margin-top: 6px; }
+.ik2-innhold-forside { max-width: 940px; }
+.ik2-ktabell-rad { width: 100%; }
+.ik2-ring-bak { stroke: var(--kant-sterk); }

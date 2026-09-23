@@ -1,6 +1,7 @@
-import { erForfalt, fullstendighet, IK_GRUPPENAVN, IK_SKJELETT, nesteGjennomgang } from '@delt/ik/skjelett'
+import { erForfalt, IK_SKJELETT, nesteGjennomgang } from '@delt/ik/skjelett'
+import { nesteKo, svar as lagSvar, type KapittelInn, type KapittelTilstand } from '@delt/ik/tilstand'
 import { kan } from '@delt/kontor-tilgang'
-import { ChevronLeft, ChevronRight, CircleCheck, FileText, Pencil, Plus, Trash2, TriangleAlert, Unlink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CircleCheck, FileText, Pencil, Plus, Trash2, Unlink } from 'lucide-react'
 import {
   ALVORLIGHET, ALVORLIGHET_NAVN, endreAvvik, gjenapneAvvik, hentAvvik, lukkAvvik, meldAvvik, slettAvvik,
   type Alvorlighet, type Avvik,
@@ -39,6 +40,8 @@ import {
 } from '@/lib/ik-lager'
 import { hentFirma } from '@/lib/kontor-lager'
 import { Historikk } from '@/ui/Historikk'
+import { dato, feltfolk, gaa, lesSti, Rad, Ring, type Ansatt } from './ik2/felles'
+import { KapittelStatus, KapittelTabell, NesteKo, SvarKort } from './ik2/Oversikt'
 import { antall, Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 
 /**
@@ -81,29 +84,8 @@ import { antall, Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/k
  * internkontrollen i drift merker det — se `src/lib/ik2-lager.ts`.
  */
 
-const DATO = new Intl.DateTimeFormat('nb-NO', { day: '2-digit', month: 'short', year: 'numeric' })
-
-function dato(v: string | Date | null | undefined): string {
-  if (!v) return '–'
-  return DATO.format(typeof v === 'string' ? new Date(v) : v)
-}
-
-const GRUPPE_FOR: Record<string, string> = Object.fromEntries(
-  IK_SKJELETT.map(p => [p.nummer, IK_GRUPPENAVN[p.gruppe]]),
-)
 const HINT_FOR: Record<string, string> = Object.fromEntries(IK_SKJELETT.map(p => [p.nummer, p.hint]))
 const FORSLAG_FOR: Record<string, string[]> = Object.fromEntries(IK_SKJELETT.map(p => [p.nummer, p.forslag]))
-
-type Ansatt = { id: string; full_name: string; role: string }
-
-/** Stien i hash-en: `#/ik2/<kapittel>/<punkt>/<rutine>`. */
-function lesSti(): string[] {
-  return window.location.hash.replace(/^#\//, '').split('/').filter(Boolean).slice(1)
-}
-
-function gaa(...sti: (string | null | undefined)[]) {
-  window.location.hash = ['#/ik2', ...sti.filter(Boolean)].join('/')
-}
 
 function useSti(): string[] {
   const [sti, setSti] = useState(lesSti)
@@ -168,6 +150,32 @@ export function InternkontrollV2() {
 
   const naa = useMemo(() => new Date(), [])
 
+  // «Er vi i orden?» — reglene står i lib/ik/tilstand.ts. Lest teller bare
+  // gjeldende versjon, og bare folk som skal lese (se `feltfolk`).
+  const { svar, ko, tilstandFor } = useMemo(() => {
+    const folk = feltfolk(ansatte)
+    const ider = new Set(folk.map(a => a.id))
+    const inn: KapittelInn[] = kapitler.map(k => ({
+      id: k.id,
+      nummer: k.nummer,
+      tittel: k.tittel,
+      status: k.status,
+      maaVaereSkriftlig: k.maaVaereSkriftlig,
+      harRutine: (punkter.get(k.id) ?? []).some(p => p.rutiner.some(r => r.innhold?.trim())),
+      sistGjennomgatt: k.sist_gjennomgatt,
+      intervallMnd: k.gjennomgang_intervall_mnd,
+      versjon: k.gjeldende_versjon,
+      lestAv: new Set((lesinger.get(k.id) ?? []).filter(l => l.versjon === k.gjeldende_versjon && ider.has(l.user_id)).map(l => l.user_id)).size,
+      skalLese: folk.length,
+    }))
+    const svar = lagSvar(inn, naa)
+    const kurs = folk.flatMap(a => (['fse', 'forstehjelp'] as const).map(type => ({
+      userId: a.id, navn: a.full_name, type, status: gyldighet(kompetanse, a.id, type, naa).status,
+    })))
+    const ko = nesteKo(svar, avvik.map(a => ({ id: a.id, tittel: a.tittel, alvorlighet: a.alvorlighet, status: a.status, frist: a.frist_at })), kurs, naa)
+    return { svar, ko, tilstandFor: new Map(svar.kapitler.map(t => [t.kapittel.id, t])) }
+  }, [kapitler, punkter, lesinger, ansatte, kompetanse, avvik, naa])
+
   async function start() {
     if (!profil) return
     setJobber(true)
@@ -230,6 +238,12 @@ export function InternkontrollV2() {
   const felles = { kanSkrive, etterEndring: last }
   const fse = fseOppsummering(ansatte, kompetanse, naa)
   const apneAvvik = avvik.filter(a => a.status === 'apent')
+  const tall = {
+    apneAvvik: apneAvvik.length,
+    avvikOverFrist: apneAvvik.filter(a => a.frist_at && dagerTil(a.frist_at.slice(0, 10), naa) < 0).length,
+    fseGyldige: fse.gyldige,
+    fseTotalt: fse.totalt,
+  }
 
   return (
     <>
@@ -238,7 +252,7 @@ export function InternkontrollV2() {
 
       <div className="arbeidsflate">
         <div className="ik2-side">
-          <div className={(kapittel && !punkt) || (paaOpplaering && !valgtAnsatt) ? 'ik2-innhold ik2-innhold-bred' : 'ik2-innhold'}>
+          <div className={sti.length === 0 ? 'ik2-innhold ik2-innhold-forside' : (kapittel && !punkt) || (paaOpplaering && !valgtAnsatt) ? 'ik2-innhold ik2-innhold-bred' : 'ik2-innhold'}>
             {laster && kapitler.length === 0 ? (
               <div className="tomt-mykt"><p>Henter …</p></div>
             ) : paaTagger ? (
@@ -261,6 +275,7 @@ export function InternkontrollV2() {
               <KapittelSide
                 key={kapittel.id}
                 kapittel={kapittel}
+                tilstand={tilstandFor.get(kapittel.id)!}
                 punkter={punkter.get(kapittel.id) ?? []}
                 skjemaer={koblinger.get(kapittel.id) ?? []}
                 lesinger={lesinger.get(kapittel.id) ?? []}
@@ -272,7 +287,7 @@ export function InternkontrollV2() {
                 {...felles}
               />
             ) : (
-              <KapitlerSide kapitler={kapitler} punkter={punkter} avvik={apneAvvik} fse={fse} ansatte={ansatte} kompetanse={kompetanse} naa={naa} tagger={tagger} />
+              <KapitlerSide kapitler={kapitler} punkter={punkter} svar={svar} ko={ko} tall={tall} tagger={tagger} />
             )}
           </div>
         </div>
@@ -309,19 +324,6 @@ function Sti({ ledd }: { ledd: { navn: string; til: string[] }[] }) {
   )
 }
 
-/**
- * Tilstanden til høyre i en rad, i ORD: «Vedtatt», «Utkast», «Til
- * gjennomgang». En hake og en stiplet ring betyr noe for den som laget dem,
- * ikke for den som åpner flata første gang.
- */
-function Tilstand({ stil = 'stille', ikon, children }: {
-  stil?: 'ok' | 'varsel' | 'stille' | 'dempet'
-  ikon?: React.ReactNode
-  children: React.ReactNode
-}) {
-  return <span className={`ik2-tilstand ik2-tilstand-${stil}`}>{ikon}{children}</span>
-}
-
 /** Første linja av en tekst, kuttet — nok til å se hva rutinen handler om. */
 function utdrag(tekst: string, maks = 120): string {
   const linje = tekst.split('\n').map(l => l.trim()).find(Boolean) ?? ''
@@ -329,25 +331,16 @@ function utdrag(tekst: string, maks = 120): string {
   return rein.length > maks ? `${rein.slice(0, maks - 1).trimEnd()}…` : rein
 }
 
-/** En rad i en liste: tittel, litt til høyre, hele raden trykkbar. */
-function Rad({ nr, tittel, mer, hoyre, under, onClick }: {
-  nr?: string
-  tittel: string
-  mer?: string
-  hoyre?: React.ReactNode
-  under?: string
-  onClick: () => void
-}) {
+/**
+ * «+ Nytt punkt» / «+ Ny rutine» som siste rad i lista den legger til i.
+ * Før var det en liten grå lenke helt til høyre i hodet, og den ble oversett:
+ * handlingen hører hjemme der den nye raden kommer.
+ */
+function LeggTilRad({ tekst, onClick }: { tekst: string; onClick: () => void }) {
   return (
-    <button className="ik2-rad" onClick={onClick}>
-      {nr ? <span className="ik2-rad-nr">{nr}</span> : null}
-      <span className="ik2-rad-tekst">
-        <span className="ik2-rad-tittel">{tittel}</span>
-        {under ? <span className="ik2-rad-under">{under}</span> : null}
-      </span>
-      {mer ? <span className="ik2-rad-mer">{mer}</span> : null}
-      {hoyre}
-      <ChevronRight size={16} strokeWidth={2} className="ik2-rad-pil" />
+    <button className="ik2-rad ik2-leggtil" onClick={onClick}>
+      <Plus size={16} strokeWidth={2} />
+      <span className="ik2-rad-tittel">{tekst}</span>
     </button>
   )
 }
@@ -407,8 +400,9 @@ function useKjor(etterEndring: () => Promise<void>) {
 type FseOppsummering = { gyldige: number; totalt: number; utgaar: number; utgatt: number; mangler: number }
 
 function fseOppsummering(ansatte: Ansatt[], kompetanse: Kompetanse[], naa: Date): FseOppsummering {
-  const ut: FseOppsummering = { gyldige: 0, totalt: ansatte.length, utgaar: 0, utgatt: 0, mangler: 0 }
-  for (const a of ansatte) {
+  const folk = feltfolk(ansatte)
+  const ut: FseOppsummering = { gyldige: 0, totalt: folk.length, utgaar: 0, utgatt: 0, mangler: 0 }
+  for (const a of folk) {
     const g = gyldighet(kompetanse, a.id, 'fse', naa).status
     if (g === 'gyldig') ut.gyldige++
     else if (g === 'utgaar') { ut.gyldige++; ut.utgaar++ }
@@ -418,25 +412,16 @@ function fseOppsummering(ansatte: Ansatt[], kompetanse: Kompetanse[], naa: Date)
   return ut
 }
 
-function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa, tagger }: {
+function KapitlerSide({ kapitler, punkter, svar, ko, tall, tagger }: {
   kapitler: IkPunkt[]
   punkter: Map<string, Ik2Punkt[]>
-  avvik: Avvik[]
-  fse: FseOppsummering
-  ansatte: Ansatt[]
-  kompetanse: Kompetanse[]
-  naa: Date
+  svar: ReturnType<typeof lagSvar>
+  ko: ReturnType<typeof nesteKo>
+  tall: React.ComponentProps<typeof SvarKort>['tall']
   tagger: Ik2Tag[]
 }) {
   const [sok, setSok] = useState('')
   const [valgteTagger, setValgteTagger] = useState<Set<string>>(new Set())
-
-  const status = useMemo(() => fullstendighet(kapitler.map(k => ({
-    nummer: k.nummer,
-    harRutine: (punkter.get(k.id) ?? []).some(p => p.rutiner.some(r => r.innhold?.trim())),
-    status: k.status,
-    maaVaereSkriftlig: k.maaVaereSkriftlig,
-  }))), [kapitler, punkter])
 
   // Registeret med antall rutiner bak hver tagg, mest brukt først. Alle
   // taggene vises — også de ingen rutine har fått ennå.
@@ -449,6 +434,11 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa,
       .map(t => ({ ...t, n: telling.get(t.id) ?? 0 }))
       .sort((a, b) => b.n - a.n || a.navn.localeCompare(b.navn, 'nb'))
   }, [punkter, tagger])
+
+  const telling = useMemo(() => new Map(kapitler.map(k => {
+    const egne = punkter.get(k.id) ?? []
+    return [k.id, { punkter: egne.length, rutiner: egne.reduce((n, p) => n + p.rutiner.length, 0) }]
+  })), [kapitler, punkter])
 
   // Søket svarer med en FLAT liste over rutiner, hver med stien sin. Alle
   // søkeordene må finnes i tittel, tekst eller tagg; taggen må stemme.
@@ -475,116 +465,24 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [soker, sok, valgteTagger, kapitler, punkter])
 
-  // De lovpålagte først og for seg. Resten følger skjelettets egne grupper.
-  const grupper = useMemo(() => {
-    const ut: { navn: string; kapitler: IkPunkt[] }[] = []
-    for (const k of kapitler) {
-      const navn = k.maaVaereSkriftlig ? 'Lovpålagt skriftlig' : (GRUPPE_FOR[k.nummer] ?? 'Egne kapitler')
-      const siste = ut[ut.length - 1]
-      if (siste && siste.navn === navn) siste.kapitler.push(k)
-      else ut.push({ navn, kapitler: [k] })
-    }
-    return ut
-  }, [kapitler])
-
-  const forfalte = kapitler.filter(k => erForfalt(k.sist_gjennomgatt, k.gjennomgang_intervall_mnd, naa)).length
-
-  // «Å gjøre» er HMS-kalenderen i den formen som er til å bruke: bare det som
-  // er forfalt eller forfaller snart, som rader man kan trykke på. Er lista
-  // tom, finnes den ikke — en tom kalender er ikke informasjon.
-  const gjore = useMemo(() => {
-    const ut: { id: string; tekst: string; mer: string; grad: 'na' | 'snart'; til: string[] }[] = []
-    for (const k of kapitler) {
-      const neste = nesteGjennomgang(k.sist_gjennomgatt, k.gjennomgang_intervall_mnd)
-      if (!neste) continue
-      const dager = Math.round((neste.getTime() - naa.getTime()) / 86_400_000)
-      if (dager < 0) ut.push({ id: k.id, tekst: `${k.nummer} ${k.tittel}`, mer: `Skulle vært gjennomgått ${dato(neste)}`, grad: 'na', til: [k.id] })
-      else if (dager <= 30) ut.push({ id: k.id, tekst: `${k.nummer} ${k.tittel}`, mer: `Gjennomgås innen ${dato(neste)}`, grad: 'snart', til: [k.id] })
-    }
-    for (const a of ansatte) {
-      for (const type of ['fse', 'forstehjelp'] as const) {
-        const g = gyldighet(kompetanse, a.id, type, naa)
-        if (g.status === 'utgatt') ut.push({ id: `${a.id}-${type}`, tekst: `${a.full_name}: ${KOMPETANSE_NAVN[type]} er utgått`, mer: g.rad?.gyldig_til ? `Gikk ut ${dato(g.rad.gyldig_til)}` : '', grad: 'na', til: ['opplaering', a.id] })
-        else if (g.status === 'utgaar') ut.push({ id: `${a.id}-${type}`, tekst: `${a.full_name}: ${KOMPETANSE_NAVN[type]} går ut`, mer: g.rad?.gyldig_til ? `Innen ${dato(g.rad.gyldig_til)}` : '', grad: 'snart', til: ['opplaering', a.id] })
-      }
-    }
-    const kritiske = avvik.filter(a => a.alvorlighet === 'kritisk' || a.alvorlighet === 'hoy')
-    for (const a of kritiske) {
-      ut.push({ id: a.id, tekst: a.tittel, mer: `${ALVORLIGHET_NAVN[a.alvorlighet]} avvik${a.frist_at ? ` · frist ${dato(a.frist_at)}` : ''}`, grad: a.alvorlighet === 'kritisk' ? 'na' : 'snart', til: ['avvik', a.id] })
-    }
-    return ut.sort((a, b) => (a.grad === b.grad ? 0 : a.grad === 'na' ? -1 : 1))
-  }, [kapitler, ansatte, kompetanse, avvik, naa])
-
-  /** Ett ord om hvor kapittelet står. Ordet, ikke bare et ikon. */
-  function tilstand(k: IkPunkt, egne: Ik2Punkt[]) {
-    if (erForfalt(k.sist_gjennomgatt, k.gjennomgang_intervall_mnd, naa)) {
-      return <Tilstand stil="varsel" ikon={<TriangleAlert size={14} strokeWidth={2} />}>Til gjennomgang</Tilstand>
-    }
-    if (k.status === 'vedtatt') return <Tilstand stil="ok" ikon={<CircleCheck size={14} strokeWidth={2} />}>Vedtatt</Tilstand>
-    if (k.status === 'utgatt') return <Tilstand stil="varsel">Utgått</Tilstand>
-    const skrevet = egne.some(p => p.rutiner.some(r => r.innhold?.trim()))
-    if (skrevet) return <Tilstand>Utkast</Tilstand>
-    return <Tilstand stil="dempet">Ikke startet</Tilstand>
-  }
-
   return (
     <>
-      {gjore.length > 0 ? (
-        <section className="ik2-avsnitt ik2-gjore">
-          <div className="ik2-avsnitt-hode">
-            <span className="ik2-etikett">Å gjøre</span>
-            <span className="ik2-rad-mer">{stk(gjore.length, 'ting', 'ting')}</span>
-          </div>
-          {gjore.map(g => (
-            <Rad
-              key={g.id}
-              tittel={g.tekst}
-              mer={g.mer}
-              hoyre={<span className={`ik2-prikk ik2-prikk-${g.grad}`} aria-hidden />}
-              onClick={() => gaa(...g.til)}
-            />
-          ))}
-        </section>
-      ) : null}
+      {/* Svaret først, så det som må gjøres, så håndboka. Samme rekkefølge
+          som Vanta og Drata: ingen skal måtte åpne fjorten kapitler for å
+          vite om internkontrollen står. */}
+      <SvarKort svar={svar} tall={tall} />
+      <NesteKo ko={ko} />
 
-      {/* De to registrene som ikke er kapitler, men som DLE ber om å se
-          først. Egen inngang, som hos alle andre systemer. */}
-      <section className="ik2-avsnitt">
-        <div className="ik2-avsnitt-hode"><span className="ik2-etikett">Registre</span></div>
-        <Rad
-          tittel="Avvik"
-          mer={avvik.length === 0 ? 'Ingen åpne' : `${stk(avvik.length, 'åpent', 'åpne')}`}
-          hoyre={avvik.some(a => a.alvorlighet === 'kritisk') ? <span className="ik2-prikk ik2-prikk-na" aria-hidden /> : null}
-          onClick={() => gaa('avvik')}
-        />
-        <Rad
-          tittel="Opplæring"
-          mer={fse.totalt === 0 ? 'Ingen ansatte' : `${fse.gyldige} av ${fse.totalt} har gyldig FSE`}
-          hoyre={fse.utgatt + fse.mangler > 0 ? <span className="ik2-prikk ik2-prikk-na" aria-hidden /> : fse.utgaar > 0 ? <span className="ik2-prikk ik2-prikk-snart" aria-hidden /> : null}
-          onClick={() => gaa('opplaering')}
-        />
-        <Rad
-          tittel="Tagger"
-          mer={tagger.length === 0 ? 'Ingen ennå' : stk(tagger.length, 'tagg', 'tagger')}
-          onClick={() => gaa('tagger')}
-        />
-      </section>
-
-      {/* Håndboka. Hodet sier hvor langt den er kommet; søket står her fordi
-          det søker i den, ikke øverst på sida som om det var det viktigste. */}
       <section className="ik2-avsnitt">
         <div className="ik2-avsnitt-hode ik2-avsnitt-hode-sok">
-          <span className="ik2-etikett">Kapitler</span>
-          <span className="ik2-rad-mer">
-            {status.pa_plass} av {status.kreves} lovpålagte vedtatt
-            {forfalte > 0 ? ` · ${stk(forfalte, 'kapittel', 'kapitler')} til gjennomgang` : ''}
-          </span>
+          <span className="ik2-etikett">Håndboka</span>
           <div className="ik2-sokfelt">
             <Felt placeholder="Søk i rutiner …" value={sok} onChange={e => setSok(e.target.value)} />
           </div>
         </div>
         {tagvalg.length > 0 ? (
           <div className="filter ik2-tagger">
+            <span className="ik2-tagger-etikett">Vis bare</span>
             {tagvalg.map(t => (
               <button
                 key={t.id}
@@ -599,6 +497,7 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa,
             {valgteTagger.size > 0 ? (
               <button className="filter-knapp" onClick={() => setValgteTagger(new Set())}>Nullstill</button>
             ) : null}
+            <button className="ik2-lenke" onClick={() => gaa('tagger')}>Endre tagger</button>
           </div>
         ) : null}
 
@@ -617,33 +516,9 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa,
               />
             ))}
           </>
-        ) : grupper.map(g => (
-          <div key={g.navn}>
-            <div className="ik2-liste-hode">{g.navn}</div>
-            {g.kapitler.map(k => {
-              const egne = punkter.get(k.id) ?? []
-              const rutiner = egne.reduce((n, p) => n + p.rutiner.length, 0)
-              return (
-                <Rad
-                  key={k.id}
-                  nr={k.nummer}
-                  tittel={k.tittel}
-                  hoyre={(
-                    <>
-                      {egne.length > 0 ? (
-                        <span className="ik2-rad-mer ik2-rad-telling">
-                          {stk(egne.length, 'punkt', 'punkter')}{rutiner > 0 ? ` · ${stk(rutiner, 'rutine', 'rutiner')}` : ''}
-                        </span>
-                      ) : null}
-                      {tilstand(k, egne)}
-                    </>
-                  )}
-                  onClick={() => gaa(k.id)}
-                />
-              )
-            })}
-          </div>
-        ))}
+        ) : (
+          <KapittelTabell kapitler={svar.kapitler} telling={telling} />
+        )}
       </section>
     </>
   )
@@ -651,8 +526,9 @@ function KapitlerSide({ kapitler, punkter, avvik, fse, ansatte, kompetanse, naa,
 
 /* ── Side 2: ett kapittel ─────────────────────────────────────────────── */
 
-function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, apneAvvik, fse, naa, kanSkrive, etterEndring }: {
+function KapittelSide({ kapittel, tilstand, punkter, skjemaer, lesinger, maler, ansatte, apneAvvik, fse, naa, kanSkrive, etterEndring }: {
   kapittel: IkPunkt
+  tilstand: KapittelTilstand
   punkter: Ik2Punkt[]
   skjemaer: Skjemakobling[]
   lesinger: Lesing[]
@@ -791,10 +667,26 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, a
         <div className="ik2-avsnitt-hode">
           <span className="ik2-etikett">Punkter</span>
           {punkter.length > 0 ? <span className="ik2-rad-mer">{stk(punkter.length, 'punkt', 'punkter')}</span> : null}
-          {kanSkrive && nyttPunkt === null ? (
-            <button className="ik2-lenke" onClick={() => setNyttPunkt('')}><Plus size={14} strokeWidth={2} />Nytt punkt</button>
-          ) : null}
         </div>
+
+        {punkter.length === 0 && nyttPunkt === null ? (
+          <div className="ik2-tom">
+            <p>Ingen punkter ennå. Del kapittelet opp i det dere faktisk gjør.</p>
+            {HINT_FOR[kapittel.nummer] ? <p className="felt-hjelp">{HINT_FOR[kapittel.nummer]}</p> : null}
+          </div>
+        ) : punkter.map(p => {
+          const uskrevne = p.rutiner.filter(r => !r.innhold?.trim()).length
+          return (
+            <Rad
+              key={p.id}
+              tittel={p.tittel}
+              mer={p.rutiner.length === 0 ? 'Ingen rutiner' : `${stk(p.rutiner.length, 'rutine', 'rutiner')}${uskrevne > 0 ? ` · ${uskrevne} ikke skrevet` : ''}`}
+              onClick={() => gaa(kapittel.id, p.id)}
+            />
+          )
+        })}
+
+        {kanSkrive && nyttPunkt === null ? <LeggTilRad tekst="Nytt punkt" onClick={() => setNyttPunkt('')} /> : null}
 
         {nyttPunkt !== null ? (
           <form
@@ -822,29 +714,12 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, a
           </form>
         ) : null}
 
-        {punkter.length === 0 && nyttPunkt === null ? (
-          <div className="ik2-tom">
-            <p>Ingen punkter ennå. Del kapittelet opp i det dere faktisk gjør.</p>
-            {HINT_FOR[kapittel.nummer] ? <p className="felt-hjelp">{HINT_FOR[kapittel.nummer]}</p> : null}
-          </div>
-        ) : punkter.map(p => {
-          const uskrevne = p.rutiner.filter(r => !r.innhold?.trim()).length
-          return (
-            <Rad
-              key={p.id}
-              tittel={p.tittel}
-              mer={p.rutiner.length === 0 ? 'Ingen rutiner' : `${stk(p.rutiner.length, 'rutine', 'rutiner')}${uskrevne > 0 ? ` · ${uskrevne} ikke skrevet` : ''}`}
-              onClick={() => gaa(kapittel.id, p.id)}
-            />
-          )
-        })}
-
         {/* Forslag: ett trykk lager punktet, uten tekst. Det er ikke NIKs
             ferdige perm — det er overskriftene, så firmaet slipper å stirre
             på et tomt kapittel. Rutinene under skriver de selv. */}
         {kanSkrive && forslag.length > 0 ? (
           <div className="ik2-forslag">
-            <span className="ik2-forslag-etikett">{punkter.length === 0 ? 'Vanlige punkter her — trykk for å legge til' : 'Flere vanlige punkter'}</span>
+            <span className="ik2-forslag-etikett">{punkter.length === 0 ? 'Eller velg et vanlig punkt — ett trykk legger det til' : 'Vanlige punkter — ett trykk legger det til'}</span>
             <div className="filter">
               {forslag.map(t => (
                 <button
@@ -880,37 +755,51 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, a
       </div>
 
       <aside className="ik2-kapittel-status">
-        {/* Hvor kapittelet står, i tre linjer og én knapp. */}
-        <div className="ik2-status">
+        {/* Hvor kapittelet står: ett ord, hva som mangler, og ÉN handling.
+            Som Vantas policy-side: «Renew before …» med knappen rett under. */}
+        <div className={`ik2-status${tilstand.iOrden ? ' ik2-status-ok' : ''}`}>
+          <div className="ik2-status-hode"><KapittelStatus t={tilstand} /></div>
           {kapittel.status === 'vedtatt' ? (
-            <>
-              <div className="ik2-status-hode">
-                <CircleCheck size={16} strokeWidth={2} style={{ color: 'var(--gronn)' }} />
-                Vedtatt
-              </div>
-              <p>{dato(kapittel.vedtatt_at)} · versjon {kapittel.gjeldende_versjon}</p>
-              <p style={forfalt ? { color: 'var(--gul)' } : undefined}>
-                {forfalt ? 'Skulle vært gjennomgått' : 'Gjennomgås'} innen {neste ? dato(neste) : '–'}.
-              </p>
-              {kanSkrive ? (
-                <Knapp stil={forfalt ? 'primar' : 'stille'} disabled={jobber}
-                  onClick={() => void kjor(() => kvitterGjennomgang(kapittel.id))}>
-                  {jobber ? 'Registrerer …' : 'Gjennomgått i dag'}
-                </Knapp>
-              ) : null}
-            </>
+            <p>Versjon {kapittel.gjeldende_versjon}, vedtatt {dato(kapittel.vedtatt_at)}.</p>
+          ) : null}
+          {tilstand.mangler.length > 0 ? (
+            <ul className="ik2-mangler">
+              {tilstand.mangler.map(m => (
+                <li key={m}>
+                  {m === 'ikke_skrevet' ? 'Ingen rutine har tekst ennå. Skriv minst én under et punkt.'
+                    : m === 'ikke_vedtatt' ? (harTekst ? 'Skrevet, men ikke vedtatt.' : 'Må vedtas når det er skrevet.')
+                    : m === 'gjennomgang_forfalt' ? `Gjennomgangen skulle vært gjort innen ${dato(neste)}.`
+                    : <><Ring av={tilstand.kapittel.lestAv} totalt={tilstand.kapittel.skalLese} /> {tilstand.kapittel.lestAv} av {tilstand.kapittel.skalLese} har lest versjon {kapittel.gjeldende_versjon}.</>}
+                </li>
+              ))}
+            </ul>
           ) : (
-            <>
-              <div className="ik2-status-hode">Utkast</div>
-              <p>{harTekst ? 'Kan vedtas.' : 'Skriv minst én rutine før kapittelet kan vedtas.'}</p>
-              {kanSkrive ? (
-                <Knapp stil="primar" disabled={!harTekst || redigerer || jobber}
-                  onClick={() => void kjor(() => vedta(kapittel.id, profil?.id ?? ''))}>
-                  {jobber ? 'Vedtar …' : 'Vedta kapittelet'}
-                </Knapp>
-              ) : null}
-            </>
+            <p>Gjelder til {neste ? dato(neste) : '–'}. Lest av alle.</p>
           )}
+          {kanSkrive && kapittel.status !== 'vedtatt' ? (
+            <Knapp stil="primar" disabled={!harTekst || redigerer || jobber}
+              onClick={() => void kjor(() => vedta(kapittel.id, profil?.id ?? ''))}>
+              {jobber ? 'Vedtar …' : 'Vedta kapittelet'}
+            </Knapp>
+          ) : null}
+          {kanSkrive && kapittel.status === 'vedtatt' ? (
+            <>
+              {/* Årsgjennomgangen er én knapp. Endringer gjøres i punktene til
+                  venstre først; knappen kvitterer for at det er sett på. */}
+              <Knapp stil={forfalt || (tilstand.dagerTilFrist ?? 999) <= 30 ? 'primar' : 'stille'} disabled={jobber}
+                onClick={() => void kjor(() => kvitterGjennomgang(kapittel.id))}>
+                {jobber ? 'Registrerer …' : 'Gjennomgått i dag'}
+              </Knapp>
+              <p className="ik2-status-hjelp">Må noe endres? Rett rutinene i punktene først, og trykk her når du er ferdig.</p>
+            </>
+          ) : null}
+          {kapittel.status === 'vedtatt' && !jegHarLest ? (
+            <Knapp stil="stille" disabled={jobber}
+              onClick={() => void kjor(() => bekreftLest(kapittel.id, kapittel.gjeldende_versjon, profil?.full_name ?? ''))}>
+              <CircleCheck size={15} strokeWidth={1.9} />
+              {jobber ? 'Bekrefter …' : 'Jeg har lest dette'}
+            </Knapp>
+          ) : null}
         </div>
 
         {/* Resten er viktig, men ikke det man kom for. Hver for seg, lukket
@@ -975,15 +864,7 @@ function KapittelSide({ kapittel, punkter, skjemaer, lesinger, maler, ansatte, a
                   <p className="felt-hjelp" style={{ marginTop: 12 }}>
                     Du bekreftet versjon {kapittel.gjeldende_versjon} den {dato(jegHarLest.lest_at)}.
                   </p>
-                ) : (
-                  <div style={{ marginTop: 12 }}>
-                    <Knapp stil="stille" disabled={jobber}
-                      onClick={() => void kjor(() => bekreftLest(kapittel.id, kapittel.gjeldende_versjon, profil?.full_name ?? ''))}>
-                      <CircleCheck size={15} strokeWidth={1.9} />
-                      {jobber ? 'Bekrefter …' : 'Jeg har lest dette'}
-                    </Knapp>
-                  </div>
-                )}
+                ) : null}
               </>
             )}
           </div>
@@ -1035,14 +916,7 @@ function PunktSide({ kapittel, punkt, kanSkrive, etterEndring }: {
             <Knapp stil="naken" type="button" onClick={() => setNyttNavn(null)}>Avbryt</Knapp>
           </form>
         ) : (
-          <h2 className="ik2-tittel valgbar">
-            {punkt.tittel}
-            {kanSkrive ? (
-              <button className="ik2-lenke" style={{ marginLeft: 12 }} title="Endre navnet" onClick={() => setNyttNavn(punkt.tittel)}>
-                <Pencil size={13} strokeWidth={2} />
-              </button>
-            ) : null}
-          </h2>
+          <h2 className="ik2-tittel valgbar">{punkt.tittel}</h2>
         )}
         <p className="ik2-underlinje">
           {punkt.rutiner.length === 0
@@ -1056,15 +930,21 @@ function PunktSide({ kapittel, punkt, kanSkrive, etterEndring }: {
       <section className="ik2-avsnitt">
         <div className="ik2-avsnitt-hode">
           <span className="ik2-etikett">Rutiner</span>
-          {kanSkrive ? (
-            <button className="ik2-lenke" onClick={() => gaa(kapittel.id, punkt.id, 'ny')}><Plus size={14} strokeWidth={2} />Ny rutine</button>
-          ) : null}
         </div>
 
         {punkt.rutiner.length === 0 ? (
           <div className="ik2-tom">
             <p>Ingen rutiner ennå.</p>
-            {kanSkrive ? <p className="felt-hjelp">En rutine er én ting dere gjør, skrevet slik at en ny montør kan gjøre det likt.</p> : null}
+            {kanSkrive ? (
+              <>
+                <p className="felt-hjelp">En rutine er én ting dere gjør, skrevet slik at en ny montør kan gjøre det likt.</p>
+                <div style={{ marginTop: 8 }}>
+                  <Knapp stil="merke" onClick={() => gaa(kapittel.id, punkt.id, 'ny')}>
+                    <Plus size={15} strokeWidth={2} />Skriv første rutine
+                  </Knapp>
+                </div>
+              </>
+            ) : null}
           </div>
         ) : punkt.rutiner.map(r => (
           // Første linja av teksten under tittelen, så man ser hva rutinen
@@ -1077,10 +957,19 @@ function PunktSide({ kapittel, punkt, kanSkrive, etterEndring }: {
             onClick={() => gaa(kapittel.id, punkt.id, r.id)}
           />
         ))}
+
+        {kanSkrive && punkt.rutiner.length > 0 ? (
+          <LeggTilRad tekst="Ny rutine" onClick={() => gaa(kapittel.id, punkt.id, 'ny')} />
+        ) : null}
       </section>
 
       {kanSkrive ? (
         <div className="ik2-bunn">
+          {nyttNavn === null ? (
+            <Knapp stil="stille" onClick={() => setNyttNavn(punkt.tittel)}>
+              <Pencil size={14} strokeWidth={2} />Endre navn
+            </Knapp>
+          ) : null}
           <Slett
             hva="Slett punktet"
             sporsmal={punkt.rutiner.length > 0
@@ -1366,9 +1255,9 @@ function AvvikSide({ avvik, ansatte, naa, kanSkrive, etterEndring }: {
         <div className="ik2-avsnitt-hode">
           <span className="ik2-etikett">Åpne</span>
           {kanSkrive && !ny ? (
-            <button className="ik2-lenke" onClick={() => setNy({ tittel: '', alvorlighet: 'middels', sted: '', frist: '', beskrivelse: '' })}>
-              <Plus size={14} strokeWidth={2} />Meld avvik
-            </button>
+            <Knapp stil="merke" style={{ marginLeft: 'auto' }} onClick={() => setNy({ tittel: '', alvorlighet: 'middels', sted: '', frist: '', beskrivelse: '' })}>
+              <Plus size={15} strokeWidth={2} />Meld avvik
+            </Knapp>
           ) : null}
         </div>
 
