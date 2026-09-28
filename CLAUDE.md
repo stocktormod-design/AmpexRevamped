@@ -61,6 +61,13 @@ npm run verify:ik-skjelett  selvtest av internkontroll-skjelettet (hva som må v
 npm run verify:ik-hendelser selvtest av historikken (revisjon + audit slått sammen uten dobbelttelling)
 npm run verify:ik-tilstand  selvtest av «i orden»-svaret og neste-køen på IK-forsida (ingen delpoeng, FSE, avviksfrist)
 npm run verify:egenskaper  selvtest av egenskaper ut av varenavn (farge, IP, leder, kurve — og det den skal la være)
+npm run verify:laeretid   selvtest av læretid (læreplan ordrett, avkryssingsregelen)
+npm run verify:tegning-tre selvtest av tegningsmappene (telling, sti, syklusvern ved flytt, sletteplan)
+npm run verify:symbol-detekt selvtest av symbolsøket (forklaring → maler → komponenter på planen; skala, rotasjon, kabler)
+npm run verify:rom-detekt  selvtest av romdelingen (åpen stripe over skillevegg deles på vegglinja, påskriftene fordeler)
+npm run verify:fiken-offline selvtest av Fiken-adapteren mot falsk fetch (ingen token, ingen nett)
+npm run verify:fiken       ende-til-ende mot et Fiken TESTFORETAK (krever FIKEN_TOKEN + slug)
+npm run verify:boligmappa  mot Boligmappa-SANDKASSEN (`-- --opprett --fil` tar hele filveien)
 
 cd desktop && npm run dev     Ampex Kontor i nettleseren (port 5174)
 cd desktop && npm run build   typecheck + produksjonsbygg av kontorappen
@@ -106,6 +113,8 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=
 - `docs/GROSSIST_INTEGRASJON.md` — prisfiler, prissammenligning, autobestilling
 - `docs/DESKTOP_OG_IMPORT.md` — Ampex Kontor (`desktop/`), SpeedyCraft-import og merge
 - `docs/REGNSKAPSINTEGRASJON.md` — Fiken, Tripletex, PowerOffice Go
+- `docs/LAERLING.md` — læretid: dokumentasjon, verifisering, kontorflate (planlagt, ikke kodet)
+- `docs/TILBUD_KONKURRENTER.md` — tilbud/kalkyle mot Cordel, Jobber, simPRO m.fl.: hva vi tok, hva vi lot ligge (akkord, kundeportal)
 - `docs/SKANN_BESLUTNINGER.md` — skann-pipelinen: forkastede veier, målinger, Mac-harnessen
 - `AGENTS.md` — inngangsdokument for andre AI-verktøy (kart over docs, arbeidsregler)
 - `docs/PERSONVERN.md`, `VILKAR.md`, `DATABEHANDLERAVTALE.md` — personvern og avtaleverk (utkast)

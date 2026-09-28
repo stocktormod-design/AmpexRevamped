@@ -24,6 +24,8 @@ export class Drawing extends Model {
   @field('page_count') pageCount: number | null
   @text('source') source: string | null // null/'lokal' | 'ekstern' (skrivebeskyttet grunnlag)
   @text('folder_id') folderId: string | null // mappe (bygg/fag); null = prosjektets rot
+  /** Når første-opplastings-analysen (komponenter + rom) ble kjørt. null = aldri; kjøres da én gang på en telefon som har fila. */
+  @date('analyzed_at') analyzedAt: Date | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 }

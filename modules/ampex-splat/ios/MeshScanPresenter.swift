@@ -280,6 +280,14 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     // å pinne CPU. Kontinuerlig pinning ga termisk struping som gjorde ALT tregere jo lenger
     // man skannet (ARKit, UI, koding).
     private var coverageStride = 1
+    // AVSTAND MESH ↔ DYBDE (2026-09-13): dekningsfeltet males der dybdekartet traff, mens
+    // overlegget slår det opp der ARKit-MESHEN ligger. Glir verdensrammen (målt 73 mm på
+    // skannet 13.09, §97) leser overlegget i tom luft og stripene slutter å reagere. Tallet
+    // her er den eneste måten å se det på uten å hente bundlen — okklusjonstesten regner
+    // det allerede ut, vi bare summerer det. Røres kun på dekningstråden.
+    static var meshDybdeSum: Double = 0
+    static var meshDybdeN: Int = 0
+    static var meshDybdeOver4cm: Int = 0
     private var coverageCostN = 0
     private var coverageCostSum = 0.0
     private var coverageTickCount = 0
@@ -330,6 +338,11 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
 
     func start(from presenter: UIViewController, completion: @escaping (Result<MeshScanResult, Error>) -> Void) {
         onFinish = completion
+        // Statiske (dekningsfeltet deles mellom økter) — nullstill per skann.
+        MeshScanPresenter.coverageField?.nullstill()
+        MeshScanPresenter.meshDybdeSum = 0
+        MeshScanPresenter.meshDybdeN = 0
+        MeshScanPresenter.meshDybdeOver4cm = 0
         guard MeshScanPresenter.isSupported else {
             completion(.failure(MeshScanError.notSupported))
             return
@@ -733,7 +746,15 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         // kvalitet (0 når den er sløret — samme dom som keyframe-porten), så feltet
         // og baken snakker om de samme bildene.
         feltTikk &+= 1
-        if feltTikk % 2 == 0, let felt = MeshScanPresenter.coverageField, case .normal = frame.camera.trackingState,
+        // HVER RAMME (2026-09-13, §101). Var hver andre. Målt på skannet 13.09 (2244
+        // beslutningshendelser, dt = 0,0333 s med p10 = p90): økten kjører på **30,0 Hz**,
+        // ikke 60 — 4K-videoformatet (`recommendedVideoFormatFor4KResolution`) er 30 fps.
+        // Annenhver ramme var derfor 15 Hz inn i feltet, og teksturen overlegget leser ble
+        // skrevet hver andre splat = 7,5 Hz. Det er 133 ms før stripene i det hele tatt KAN
+        // reagere, før noen terskel er nådd. Splatten er 37k tråder; det er ikke der kostnaden
+        // ligger. meshscan.feltrate = n gir hver n-te ramme tilbake.
+        let feltRate = max(1, Int(MeshBakeV2.flaggTall("meshscan.feltrate", 1)))
+        if feltTikk % feltRate == 0, let felt = MeshScanPresenter.coverageField, case .normal = frame.camera.trackingState,
            let sd = frame.smoothedSceneDepth ?? frame.sceneDepth,
            let d = MeshScanPresenter.tightDepth(sd.depthMap, confidence: sd.confidenceMap) {
             let m = frame.camera.transform
@@ -1910,6 +1931,12 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                     MeshLog.log(String(format: "dekningspass — snitt %.0f ms over %d pass, stride %d (termikk %d)",
                                        avg * 1000, self.coverageCostN, self.coverageStride,
                                        ProcessInfo.processInfo.thermalState.rawValue))
+                    let n = MeshScanPresenter.meshDybdeN
+                    if n > 0 {
+                        MeshLog.log(String(format: "mesh mot dybde — snitt %.0f mm over %d treff, %.0f %% over 4 cm (én voxel i dekningsfeltet)",
+                                           MeshScanPresenter.meshDybdeSum / Double(n) * 1000, n,
+                                           100 * Double(MeshScanPresenter.meshDybdeOver4cm) / Double(n)))
+                    }
                 }
                 self.coverageBusy = false
             }
@@ -2250,6 +2277,12 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                         let du = min(c.dw - 1, Int(u / c.w * Float(c.dw)))
                         let dv = min(c.dh - 1, Int(vv / c.h * Float(c.dh)))
                         let d = c.depth[dv * c.dw + du]
+                        if d > 0.05 && abs(z - d) < 0.30 {
+                            // Innenfor slakken: da ER dette flaten, og avviket er drift — mål den.
+                            MeshScanPresenter.meshDybdeSum += Double(abs(z - d))
+                            MeshScanPresenter.meshDybdeN += 1
+                            if abs(z - d) > 0.04 { MeshScanPresenter.meshDybdeOver4cm += 1 }
+                        }
                         if d > 0.05 && abs(z - d) > 0.30 { continue }
                     }
                     var distinct = true

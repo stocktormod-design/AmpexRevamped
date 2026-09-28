@@ -4148,3 +4148,390 @@ Tormod: «burde vi ikke bare offloade mens vi scanner? SSD-er er jo raske.» Ja:
 Det som IKKE er gjort: rektifisere cellene under selve skanningen. Det krever ARKits
 planankere som celleunderlag og at re-ankringen av posene ved eksport føres inn i
 cellene. Med luma på disk er gevinsten av det lite (0,5 s), så det er parkert.
+
+## 97. Posedrift — «hakket der jeg møter noe jeg alt har skannet», 2026-09-13
+
+Tormod om skannet 13.09 kl. 17:07 (100 s, 133 nøkkelbilder, 411 rå dybdekart): «dette er
+IKKE godt nok … jeg tror den drifter mens jeg går rundt og møter en plass jeg har alt
+scannet, + den baker og kutter fliser sånn 4 ganger. Scaniverse blir bedre OG går fortere.»
+Begge deler stemte, og begge lot seg måle i bundlen uten nytt skann.
+
+### Målingen (tools/audit-scan-drift.py)
+
+Dominant plan per rå dybdekart, klynget over hele skannet, offset langs normalen per
+20-sekunders vindu (rå ARKit-poser):
+
+| flate | 0 s | 20 s | 40 s | 60 s | 80 s | p10–p90-spenn |
+|---|---|---|---|---|---|---|
+| tak (n = −y) | 963 | 976 | 1000 | 1030 | 1041 | 115 mm |
+| gulv (n = +y) | 1410 | — | 1356 | 1299 | — | 123 mm |
+| vegg z | 2515 | 2527 | 2532 | — | 2539 | 31 mm |
+| vegg −x | 2095 | 2099 | — | — | — | 12 mm |
+
+Gulv OG tak flytter seg ~11 cm samme vei mens romhøyden står stille (2,37 → 2,38 m): det er
+kameraet som glir loddrett, ~1,4 mm/s, og ARKit stepper det tilbake −64 mm rundt 90 s.
+Veggavstandene holder seg innen 1–3 cm. I den ferdige modellen lå bare 63 % av gulvhjørnene
+innen ±2 cm av toppen (p10–p90 38 mm) — et tykt gulv, og et foto fra siste runde projisert
+inntil 10 cm feil på veggen bygd av alle rundene.
+
+**Hvorfor det aldri ble funnet:** «drift re-anchoring (B)» i MeshScanPresenter måler
+nøkkelbildets pose relativt til nærmeste ARMeshAnchor og flytter det med ankerets
+sluttransform. ARKit legger driftskorreksjonen i ankerets VERTEKSER, ikke i transformen, så
+re-ankringen flyttet 0,0 mm (målt: maks 0,3 mm på 133 bilder) — og det ble lest som «drift
+er ikke årsaken». De 411 rå dybdekartene (dense.jsonl) hadde dessuten aldri noen retting.
+
+### Grepet: driftretting i MeshTsdfBuild, FØR fusjonen
+
+`driftrett` (meshscan.driftrett = "off" for A/B): RANSAC-plan per kart (inntil tre, normal
+mot kameraet), klynget til modellplan over hele skannet; hvert kart løses rigid mot
+modellplanene (punkt-til-plan, kun translasjon, dempet så retninger uten plan står urørt,
+parforkasting > 4 cm etter første steg); to runder. Så **glatting langs tida**: gaussisk
+snitt σ 2,5 s over de løste kartene, robust, med brudd der medianen 2 s før/etter spriker
+> 4 cm (ARKit-hopp). Kart uten plan får kurvens verdi. Kostnad 0,2 s for 537 kart. De
+rettede nøkkelbildeposene går tilbake til teksturbaken (`poseSink` →
+`driftrettedeKeyframes`), fixturen på disk beholder råposene.
+
+Fire varianter målt før den holdt (samme bundle, harness):
+
+| variant | tak-spenn | gulv-spenn | vegg z | gulv i modell innen ±2 cm |
+|---|---|---|---|---|
+| rå | 115 | 123 | 31 | 63 % |
+| 6-DoF dempet, løs paring | 38 | 22 | **50** | 97 % |
+| kun translasjon, løs paring | **105** | 21 | 47 | 97 % |
+| sekvensiell kart-mot-modell (KinectFusion-tanken) | 172 | 24 | 162 | 69 % — LØP LØPSK, 885 mm |
+| to runder + parforkasting, per kart | 47 | 20 | 54 | 99 % |
+| **+ glatting langs tida (standard nå)** | **46** | **20** | **31** | **100 %** |
+
+Lærdommen: per-kart-planet på én og samme vegg spriker ±3–7 cm fra kart til kart (dumpet
+med meshscan.driftdump: 2528, 2507, 2593, 2514 …). Uten glatting kopieres den støyen rett
+inn i posene, og veggene blir dårligere selv om gulvet blir bedre. Driften er glatt; da
+skal korreksjonen være det. Rotasjon fri (meshscan.driftrot = "on") lot løseren vippe om x
+i stedet for å løfte, og vippen flyttet veggene 3 cm (θ·y). Den sekvensielle varianten
+fulgte kartene i stedet for omvendt. Taket i 60-sekundersvinduet står igjen ~3 cm (966 mot
+995); 27 brudd ble funnet i rekka, sannsynligvis for mange (terskelen 4 cm ligger nær
+støyen) — ikke justert blindt.
+
+### To ting til, funnet på veien
+
+- **Bortkastet maling:** kvalitetsveien malte hele standardatlaset (22 s) FØR flisene og
+  kastet det, og hver flis dekodet alle 133 4K-foto selv om fotoet ikke hadde én flate i
+  flisen. Nå: standardatlaset males bare når det eksporteres, og trekanter utenfor flisen
+  kuttes ut av vinner-, fjærings- og snittgruppene før dekoding («V2 flis — 21402/249341
+  trekanter i flisen»). Harness: 226 → 149 s (maling 186 → 107 s). Telefonen målte 172 s
+  før; forventet rundt 110.
+- **Romgrensene** kom fra min/maks av dybdepunktene: noen flyvende piksler ga 11,8 × 13,5 m
+  rundt et kamera som gikk innenfor 2 × 3,6 m, volumet sprengte taket og HELE rommet ble
+  bakt med 24 mm voxel. Nå 0,2/99,8-persentil pluss ARKit-nettets utstrekning + 0,6 m som
+  tak → 6,6 × 2,7 × 8,7 m, 20 mm voxel.
+
+Måleverktøy: `tools/audit-scan-drift.py <bundle>` (poser, rå mot rettet) og
+`tools/audit-scan-shell.py <glb>` (gulv/tak-tykkelse i ferdig modell). Harness-flagg:
+`-meshscan.driftdump on` skriver `drift-poser.jsonl` + `drift-diag.txt` i bundlen.
+
+## 98. Overlegget leste feltet på feil sted — «stripene reagerer ikke», 2026-09-13
+
+Tormod, etter skannet 18:37 (bundle `ampex-9ef06228…-1789317431480`): «wireframe/stripene
+reagerer ikke på noen vegger». Ikke tregt — dødt: man maler veggen og ingenting skjer.
+
+Dekningsfeltet males der **dybdekartet** traff (`CoverageField.splat`, ett voxel på 4 cm per
+dybdepiksel). Overlegget slår det opp der **ARKit-meshen** ligger (`coverageFrag`, ett
+oppslag i verteksens verdensposisjon). Det er ikke samme sted. Målt på bundlen (17 av 96
+nøkkelbilder replikert i Python med samme vekting som shaderen):
+
+| | |
+|---|---|
+| mesh-hjørner med dekning i SIN EGEN voxel | 35,6 % |
+| … med dekning innen ±2 voxler (±8 cm) langs normalen | 59,0 % |
+| av de dekkede: egen voxel tom, nabo-voxel malt | **39,7 %** |
+| veggflate over terskelen 0,40 — eget oppslag → maks av fem tapper | **21,6 % → 39,9 %** |
+
+Årsaken er den samme som §97: verdensrammen glir mens man går. Appens egen logg fra samme
+skann sier det rett ut — `driftretting — gulvhøyde p10–p90 over 68 kart: 1512…1585 mm`, altså
+**73 mm** spenn, nesten to voxler. ARKit retter meshen etterpå (og noden følger anker-
+transformen hver ramme, §2026-08-12); feltet står igjen der det ble malt. Jo lenger man
+skanner, jo større blir avviket — og en vegg man maler sent i skannet slår opp i tom luft.
+
+Tre grep, alle i dekningsveien:
+
+1. **Fem tapper langs normalen** (0, ±1, ±2 voxler), sterkeste vinner, nedvektet 0,95/0,85
+   utenfor egen voxel. Normalen kommer fra skjermderivatene av verdensposisjonen —
+   live-geometrien har ingen normaler. Prisen: en flate inntil 8 cm foran en dekket flate
+   kan arve dekningen (karmer, radiatorer). Riktig vei å ta feil når alternativet er at
+   veggen aldri blir ferdig.
+2. **Feltet tømmes mellom skann.** `coverageField` er en `static let` — én instans for hele
+   appens levetid — mens ARKit gir hvert skann nytt verdensorigo. Skann nr. 2 arvet både
+   malingen og forankringen fra skann nr. 1: deler av det nye rommet lå utenfor det gamle
+   volumet (stripene KUNNE ikke forsvinne der), andre deler leste dekning malt i et annet
+   rom. `CoverageField.nullstill()` kalles nå i `start()`.
+3. **Loddrett forankring er ikke lenger sentrert.** Volumet er 3,6 m høyt og ble sentrert om
+   kameraet: 1,8 m ned. Gulvet lå på −1,64 m i dette skannet — 13 cm margin. Holder man
+   telefonen høyere faller gulvet UT av feltet og kan aldri males. Nå 2,2 m ned / 1,4 m opp.
+
+Og et måltall å dømme neste skann på, siden ingenting av dette var synlig i loggen:
+`mesh mot dybde — snitt N mm over M treff, P % over 4 cm`. Okklusjonstesten i dekningspasset
+regnet allerede ut avviket for å kaste frustum-treff bak møbler; nå summeres det.
+
+**Ikke rørt:** volumet er fortsatt 9,6 × 3,6 × 9,6 m forankret ved første kameraposisjon.
+1,1 % av meshen i dette rommet (det man ser gjennom en døråpning, 5,4 m ut) ligger utenfor
+og kan ikke males. Det er riktig pris for 83 MB teller.
+
+## 99. «Et bilde blir inserted» — vinnervalget så knapt skarphet, 2026-09-13
+
+Tormod om panelveggen han gikk over flere ganger: «det er overlappen der et bilde blir
+inserted sånn at det ikke ser ut som et kontinuerlig bilde av veggen». Det er ikke et
+lyssprang — det er et SKARPHETS-sprang, og det har en rett linje rundt seg.
+
+Veggen rullet ut flatt fra GLB-en (`vegg0`, 3,8 × 2,2 m) og målt i 10 cm-ruter som
+høypass-std: et rektangel på ~0,7 × 1,5 m med detaljenergi **9–23** står midt inne i en vegg
+som ellers ligger på **30–87**. Lysheten glir jevnt (0,39–0,51) gjennom hele feltet, så
+gain-utjevningen og søm-nivelleringen har gjort jobben sin. Feltet er ikke feil belyst, det
+er ute av fokus.
+
+Rekonstruerer man vinnerscoren (`scoreAt`) over samme rutenett, faller kartet nøyaktig
+sammen med skarphetskartet: **kf24, skarphet 24 — det mykeste bildet i hele skannet — vant
+hele rektangelet**, mens naboruter fikk kf12 med skarphet 320.
+
+Hvorfor: scoren er `facing·|facing|/d² · (gulv + (1−gulv)·kvalitet)` med gulv **0,30** og
+`kvalitet ∝ skarphet/maks`, lineært. Maks i dette skannet var 443, så kf24 fikk faktor 0,30
+og kf12 fikk 0,80 — **2,7× straff for 13× mindre detalj**. kf24 sto 1,23 m fra veggen og
+rett på, kf12 1,51 m og litt skrått: geometrien ga kf24 1,8× fordel, og det holdt. ICM-
+regulariseringen, som skal spare sømmer, gjorde resten — den spredte den dårlige vinneren
+utover til et rent rektangel.
+
+Snittveien i samme fil hadde løst det samme før (`V2 snitt-vekt`): `skarphet/p90`, klemt,
+opphøyd i 2. Nå brukes den mappingen også i vinnervalget, og gulvet er 0,30 → **0,08**.
+Gulvet gjør aldri en flate umalt — scoren er relativ mellom kandidatene for den ene flaten —
+det avgjør bare om «nærmere» eller «skarpere» vinner.
+
+Målt på samme bundle med `tools/audit-scan-vinnerskarphet.py` (40 000 flater):
+
+| | vinnerens skarphet (median / p10) | under halve tilgjengelige | under en firedel |
+|---|---|---|---|
+| gammel (skarphet/maks, gulv 0,30) | 128 / 43 | 32 % | 14 % |
+| **ny ((skarphet/p90)², gulv 0,08)** | **185 / 55** | **18 %** | **6 %** |
+
+På panelveggen alene: 27 % → 9 % under halve, p10-vinner 24 → 59, og — mot forventning —
+**færre** sømmer, ikke flere: 21 → 16 ulike vinnere og 273 → 248 nabo-bytter. Oppløsningen
+på veggen faller 1512 → 1434 px/m, fortsatt godt over de 1000 px/m et 2 mm panelspor krever.
+
+Flagg: `meshscan.vinnerskarphet = "off"` gir den gamle vektingen, `meshscan.vinnerskarpeksp`
+eksponenten, `meshscan.qualityfloor` gulvet (harness, nå 0,01–0,50). Skal dømmes med øyet på
+en rebake av samme bundle før tallene får siste ord — jf. §88.
+
+### Det som IKKE var feilen, men som ble målt på veien
+
+Den samme veggen ble tatt i to runder: kf 0–29 fra 1,2–1,7 m og kf 72–78 fra 2,4–2,7 m.
+Målt på de SAMME punktene på veggen er runde 2 **25–32 % mørkere** (parvise medianforhold
+0,68–0,80), mens spredningen innen runde 1 er ±10 %. Per-foto-gainen er hardklemt til ±5 %
+(`gainLo/gainHi` = 0,95/1,05, og loggen viser at den treffer klemma), så den kan ikke lukke
+et slikt sprang — det er søm-nivelleringen og HYBRID-tonen som gjør det, og på denne veggen
+gjorde de det. Verdt å vite hvis et lyssprang dukker opp senere: klemmen er på LUMINANS like
+mye som på farge, selv om den ble innført for fargestikk. Og søm-nivelleringen brukte bare
+**581 av 2172** grensepar — porten er «≥3 delte kanter», og med 10 758 regioner deler de
+fleste naboregioner 1–2. Begge er åpne tråder, ingen av dem er rørt.
+
+## 100. Veggen ser ulik ut fra to ståsteder — og nivelleringen sto uten grunnlag, 2026-09-13
+
+Tormod, om runde to: «når jeg kommer tilbake for å ta spots jeg missa, kan man se at
+det virker som mørke delen blir lys i previewen mens jeg beveger meg, det er nesten som at
+den dynamically endrer seg».
+
+Det er ikke en illusjon i previewen. Målt på panelveggen, samme fysiske punkter, i LINEÆRT
+lys med samme avvignettering som baken bruker (`devigK` 0,15):
+
+| fra | til | forhold |
+|---|---|---|
+| kf16 (1,8 m) | kf74 / kf75 / kf77 (2,9 m) | **0,44 / 0,51 / 0,46** |
+| kf16 | kf22 (0,6 m til siden) | 0,90 |
+| kf16 | kf24 (0,9 m til siden) | 0,81 |
+
+Altså **2,2× mørkere** fra det andre ståstedet. Eksponeringen kan ikke forklare det:
+`setExposureModeCustom(duration:iso:)` låser BÅDE tid og ISO for hele økten, ingen frames er
+merket `preLock`, og to bilder fra nesten samme punkt 0,3 s fra hverandre (kf9/kf11) skiller
+bare 8 %. Forskjellen følger HVOR DU STÅR, ikke når. Veggen er halvblank panel — den har
+glans, og glansen følger deg. Det er akkurat det som «endrer seg dynamisk» i previewen.
+
+Konsekvensen for baken: en mosaikk som tar hver flekk fra ett foto vil ALLTID vise dette der
+ståstedet skifter. Og en per-foto-gain kan ikke rette det — samme foto ser andre flater
+riktig, så å dra hele fotoet ned ødelegger dem. Det er derfor klemmen på ±5 % (`gainLo/Hi`)
+ikke er knappen her, og hvorfor jeg ikke rørte den: riktig lag er den ROMLIG LOKALE additive
+region-offseten i søm-nivelleringen.
+
+Den sto uten grunnlag. Porten var «≥3 delte kanter mellom to naboregioner» (2 på forenklet
+mesh). På TSDF-nettet ga baken 10 758 regioner over 291 051 flater, og da deler de fleste
+naboregioner 1–2 kanter: **581 av 2172 grensepar ble brukt**. En region uten et eneste par
+beholder sitt eget fotos nivå — det er «et bilde satt inn». Løseren vekter alt med antall
+samples fra før, så få samples er allerede uttrykt; gaten sa det bare én gang til, binært.
+Nå teller alle par, de under gaten med halv vekt. `meshscan.somgate = "hard"` gir døren
+tilbake.
+
+**Videre tråd, ikke gjort — og dette er det Scaniverse faktisk gjør.** For en vegg med glans
+er ett vinnerfoto feil modell. §94 sa det rett ut: «de velger ikke, de blander», og derfor
+blir flere synsvinkler en FORDEL hos dem i stedet for et problem. Snittarmen finnes
+(`meshscan.blend = raw`, topK 6, skarphetsvekt 2) og ble forkastet 12.09 fordi den ble mos
+på nært hold: «kuttede skarpe spor slår utvaskede hele spor».
+
+Prisen §94 målte var **~1,5 mm uenighet mellom syn ≈ 2 texler** ved 1400 texler/m. Siden da
+er både §96 (plan-justering bilde mot bilde — på dette skannet endte runde 3 på 0,69 px snitt,
+maks 6,0 px, null bilder over 4 px) og §97 (posedriften) rettet, og §99 hindrer at et mykt
+bilde i det hele tatt kommer inn i snittet med full vekt. Selve grunnen til at snittet tapte
+er altså delvis borte. Det er én flaggkjøring på samme bundle å finne ut av, og den bør
+kjøres før vi tuner mosaikken mer.
+
+## 101. «Scaniverse er responsiv» — vi kjørte overlegget på 7,5 Hz, 2026-09-13
+
+Tormod: «det går sykt fort å scanne, stripene forsvinner veldig fort og er responsiv. og på
+processing mode er lidar på 5 mm.»
+
+Målt, ikke gjettet. `capture-decisions.json` fra skannet 13.09 har 2244 beslutnings-
+hendelser over 68,7 s med **dt = 0,0333 s, p10 = p90 = 0,0333**. Økten kjører altså på
+**30,0 Hz**, ikke 60 — `recommendedVideoFormatFor4KResolution` er 3840×2160 **@ 30 fps**.
+4K-en er riktig valgt (kildeoppløsningen var det harde taket for teksturbaken), men den
+koster halve bildefrekvensen, og det traff dekningsfeltet to ganger:
+
+| | før | nå |
+|---|---|---|
+| rammer inn i feltet | hver 2. → **15 Hz** | hver ramme → **30 Hz** |
+| teksturen overlegget leser | hver 2. splat → **7,5 Hz** | hver 2. splat → **15 Hz** |
+
+7,5 Hz er 133 ms før stripene i det hele tatt KAN reagere, før noen terskel er nådd.
+Splatten er 37 000 tråder over et 256×144-dybdekart; kostnaden ligger ikke der. Konverteringen
+(5,2 M voxler, ~21 MB, ~1 ms) er nå 15 Hz = ~1,5 % GPU. `meshscan.feltrate` og
+`meshscan.feltvis` styrer begge.
+
+Tid til stripene slipper, med S₀ = 12 og terskel 0,40 (Σw ≥ 6,13), q ≈ 0,8, ved 30 Hz:
+
+| | rett på | 45° |
+|---|---|---|
+| 1,5 m | **0,26 s** | 0,7 s |
+| 2,5 m | 0,5 s | 2,3 s |
+| 4,0 m | 1,7 s | — |
+
+Altså: rett på en vegg fra vanlig ståavstand skal nå slippe på et kvart sekund. Det som blir
+stående er skrå og fjerne syn — det er MENINGEN (§2026-09-10, oppløsningskravet gjør
+overlegget til en «gå nærmere»-instruks), og det er den ekte forskjellen mot Scaniverse:
+deres striper forsvinner når LiDAR-en har SETT flaten, våre når kameraet har oppløst den.
+`meshscan.dekningmin` / `meshscan.dekningmaal` er knappen om vi vil ha deres oppførsel.
+
+### 5 mm er ikke en knott, det er en datastruktur
+
+Vår TSDF er et TETT rutenett. Rommet 13.09 var 5,2 × 2,7 × 5,8 m = 81 m³ → 10,4 M voxler
+(79 MB) ved 20 mm, med tak på 40 M. Samme rom ved 5 mm er **652 M voxler ≈ 5,2 GB**, så
+`meshscan.voxel 0.005` gir ingenting: løkken i `MeshTsdfBuild` vokser voxelen 1,25× til den
+er under taket, og lander på ~15,6 mm uansett.
+
+Scaniverse kan ikke ha et tett volum heller. Regnestykket som gjør 5 mm mulig er å allokere
+KUN rundt flaten: rommet har ~45 m² flate, trunkeringssonen er 6,4 voxler tykk, altså
+45 / 0,005² × 6,4 ≈ 11,5 M voxler ≈ **92 MB**. Det er blokk-hashet TSDF (Nießner 2013):
+8³-blokker allokert langs hver dybdestråles trunkeringsbånd, hash i stedet for indeks,
+fusjon og surface nets kun over allokerte blokker. Det er en ekte ombygging av
+`MeshTsdfBuild`, ikke en flaggendring — men den er velkjent, og tallene sier at den er
+innenfor rekkevidde på telefonen.
+
+## 102. Sparsomt voxellager — 5 mm blir mulig, 2026-09-13
+
+§101 slo fast at 5 mm ikke er en knott men en datastruktur. Dette er datastrukturen.
+
+Voxlene ligger nå i 8³-blokker som bare allokeres der dybdestrømmen faktisk har vært.
+Blokkindeksen er tett (én Int32 per blokk, 8 MB ved 5 mm), så et oppslag er to lesninger og
+litt skifting — ingen hash. Målt på bundelen fra 13.09, med den ekte allokeringsregelen kjørt
+på ekte dybdekart:
+
+| voxel | blokker | sparsomt | tett | forhold |
+|---|---|---|---|---|
+| 20 mm | 3 032 | 12 MB | 104 MB | 9× |
+| 10 mm | 12 437 | 49 MB | 799 MB | 16× |
+| **5 mm** | **44 659** | **174 MB** | **6 279 MB** | **36×** |
+
+(Tallene er et gulv: de er regnet fra 17 av 96 nøkkelbilder. Regner man i stedet fra hele
+modellens flate, 48,4 m², lander 5 mm på 62 013 blokker ≈ 242 MB. Begge er godt innenfor de
+2266 MB telefonen hadde ledig i det skannet.)
+
+Fusjonen er den samme målingen som før, bokstavelig talt: både den tette og den sparsomme
+Metal-kjernen kaller `ampex_fuse`. §102 er en LAGRINGSendring, og det måtte være synlig i
+koden at den er det. Blokkbredden er 8 voxler av en grunn: den må være minst så stor som
+avstanden mellom to nabostråler på lengste hold, ellers faller voxler mellom strålene utenfor
+allokeringen. Ved 5 mm er blokken 40 mm; to nabopiksler står 27 mm fra hverandre på 5 m i et
+256-bredt kart, 9 mm etter JBU ×3.
+
+Surface nets, volum-bluren, ARKit-innskrivingen og frirom-utskjæringen går alle gjennom én
+felles adresseregning (`vi(x,y,z)`, −1 = finnes ikke), så den tette veien er bokstavelig talt
+den samme koden med en annen indeksfunksjon.
+
+**Status: kompilerer, ikke kjørt.** Swift typechecker og Metal-kjernen kompilerer; tallene
+over er målt på ekte data. Men ingenting av dette er kjørt på telefon.
+
+Riktig rekkefølge å verifisere i, uten å skanne på nytt:
+
+1. Rebake samme bundle med `meshscan.sparse on` og STANDARD 20 mm. Samme måling, samme
+   voxelstørrelse, bare annet lager — meshet skal komme ut praktisk talt likt.
+   `tools/audit-scan-shell.py` på de to GLB-ene er dommen.
+2. Så `meshscan.voxel 0.005`. `meshscan.sparsemax` (M plasser, standard 64) er taket;
+   over det vokser voxelen som før.
+
+**Og en kostnad som må regnes med:** surface nets gir like mange trekanter på en flat vegg
+som på en list, så trekanttallet går som 1/voxel². Dagens 20 mm ga 291 051 trekanter; 5 mm
+gir rundt 4,7 millioner. Auto-forenklingen slår inn over 300k og sikter på 250k — altså 19:1,
+og da er det et åpent spørsmål hvor mye av detaljen som overlever. xatlas skalerer dessuten
+verre enn lineært (13,9 s på 291k). 5 mm er derfor sannsynligvis en REBAKE-oppløsning, ikke
+en live-oppløsning — som er nøyaktig det Scaniverse gjør med sin «processing mode».
+
+## 103. Hullet i veggen — og to grep som ble RULLET TILBAKE, 2026-09-13
+
+Skannet 20:19, første med §98–§102 på telefonen. Tormod: «dette ble faktisk utrolig bra, bare
+den ene veggen fikk noe rart med seg» — og «du ser det helt tydelig at det blir fucked når jeg
+kommer tilbake på en plass som allerede er blitt skannet».
+
+**Det står som den gode tilstanden.** Alt i dette avsnittet er forsøk på å fikse resten, og
+begge ble rullet tilbake samme kveld. Koden er tilbake til 20:19-tilstanden.
+
+### Hva feilen var
+
+Panelveggen rullet flatt ut: det uskarpe innsatte feltet fra §99 er borte. Det som står igjen
+er store, kantete flak i høyre tredjedel. Farger man veggen etter trekantstørrelse, ligger
+flakene nøyaktig oppå en vifte av kjempetrekanter: største fylltrekant **366 cm²** (27 cm på
+kanten) mot **1,5 cm²** på veggen rundt, og 22 % av veggens areal i trekanter over 100 cm².
+Hullfyllingen legger én sentroid og en vifte ut til grensekanten; på et stort hull blir hver
+trekant enorm, og baken velger ett foto per flate.
+
+Hullet skyldes ikke manglende dybde. Det er en 44 cm bred stripe fra gulv til tak, og
+ARKit-ankernettet har flate innen 5 cm i **100 %** av punktene. Veggen ble besøkt i tre
+omganger (t≈33–35 s, 49–51 s og en lang runde 62–75 s inne på 0,4–1,6 m), og det nye måltallet
+fra §98 viser hva som skjer mellom dem:
+
+```
+20:18:22  mesh mot dybde  snitt 36 mm,  26 % over 4 cm
+20:18:52                  snitt 48 mm,  36 %
+20:19:22                  snitt 56 mm,  45 %
+```
+
+Kommer du tilbake etter et halvt minutt, lander den nye dybden fem centimeter fra den gamle
+flaten. **Det er den ekte feilen, og den er ikke løst.**
+
+### Grep 1: ARKit-tillegget på som standard — FORKASTET
+
+`meshscan.tsdftillegg = "volum"` skriver ARKit-nettet inn i tomme voxler før utrekkingen.
+Vakten «skriv der `W ≤ 0`» er ikke en vakt mot noe — nesten hele volumet har `W ≤ 0`. Målt på
+neste skann: **129 788 voxler** fikk ARKit-flate, de skapte nye grenseløkker, hullfyllingen
+gikk fra 2 699 til 90 006 trekanter. Tormod: «mye triangler overalt ser aids ut». Hullet den
+skulle fikse var ETT hull; prisen var geometri over hele rommet. Flagget består for den som
+vil måle det igjen, men da trengs en vakt som avgrenser til hull, ikke til tomrom.
+
+### Grep 2: ringfylling i stedet for vifte — FORKASTET
+
+Konsentriske ringer fra grensen inn mot sentroiden, i veggens egen trekantstørrelse. Riktig
+tanke for de få store hullene, men den ble skrudd på for alle 305 løkkene og eksploderte
+sammen med grep 1. Et forsøk på å begrense den til store hull ble heller ikke godtatt — og
+med grep 1 borte er de fleste av de store hullene uansett borte.
+
+### Lærdommen, som alt sto i §94 og i august-desimeringen
+
+Et grep som er riktig der det ble målt kan være feil overalt ellers. Begge grepene ble
+begrunnet med ÉN vegg og sluppet løs på hele rommet. Neste forsøk på hull-problemet må
+avgrenses til hullet det gjelder og måles på minst to rom.
+
+### Noe annet som må ses på
+
+Baken kjørte med `termikk 2`, og da faller atlaset fra 8192 til **4096** og bildebudsjettet
+fra 160 til 120 — halv teksturoppløsning — selv om det var 2219 MB ledig. Terskelen er satt
+for varme, ikke for minne, og slo inn etter 80 sekunders skanning.

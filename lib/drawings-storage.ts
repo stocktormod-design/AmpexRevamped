@@ -40,8 +40,26 @@ export async function getLocalPdf(filePath: string): Promise<string> {
   await ensureDir()
   const local = cacheDir + filePath.replace(/\//g, '_')
   const info = await FileSystem.getInfoAsync(local)
-  if (info.exists && info.size > 0) return local
+  // En fil er bare gyldig cache hvis den faktisk ER en PDF. Før 2026-09-13 ble
+  // et 403-svar (XML fra R2) lagret som «tegningen» og aldri prøvd på nytt —
+  // «Kunne ikke vise tegningen» for alltid, også etter at fila kom på plass.
+  if (info.exists && info.size > 0 && (await erPdf(local))) return local
+  if (info.exists) await FileSystem.deleteAsync(local, { idempotent: true })
   const url = await signedR2Url(filePath, 'get')
   const dl = await FileSystem.downloadAsync(url, local)
+  if (dl.status >= 300 || !(await erPdf(dl.uri))) {
+    await FileSystem.deleteAsync(dl.uri, { idempotent: true })
+    throw new Error(`Kunne ikke hente tegningen (${dl.status})`)
+  }
   return dl.uri
+}
+
+/** «%PDF» i de første fire bytene. */
+async function erPdf(uri: string): Promise<boolean> {
+  try {
+    const hode = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64, position: 0, length: 4 })
+    return hode === 'JVBERg==' // base64('%PDF')
+  } catch {
+    return false
+  }
 }

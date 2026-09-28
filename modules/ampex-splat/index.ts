@@ -95,7 +95,19 @@ export type PdfPageRaster = { uri: string; width: number; height: number; pageCo
   /** Sidens VISTE størrelse i punkt (rotasjon medregnet) — grunnlaget for måling. */
   widthPt?: number; heightPt?: number }
 
-type PdfModule = { renderPage(pdfPath: string, page: number, maxPx: number): Promise<PdfPageRaster> }
+/** Strekene og teksten på en side, fra den native innholdsstrøm-skanneren (se AmpexPdfModule.swift). */
+export type PdfVektorer = {
+  /** Flat: [x0, y0, x1, y1, bredde, fyll(0/1), gråtone 0–1, metning 0–1] per strek. Punkt, origo øverst til venstre. */
+  seg: number[]
+  tekster: { tekst: string; x: number; y: number; hoyde: number }[]
+  widthPt: number; heightPt: number; antall: number
+}
+
+type PdfModule = {
+  renderPage(pdfPath: string, page: number, maxPx: number): Promise<PdfPageRaster>
+  vectors(pdfPath: string, page: number): Promise<PdfVektorer>
+  thermalState?(): number
+}
 
 let pdf: PdfModule | null = null
 try {
@@ -111,6 +123,22 @@ export const isPdfRasterAvailable = pdf !== null
 export async function renderPdfPage(pdfPath: string, page = 0, maxPx = 2048): Promise<PdfPageRaster> {
   if (!pdf) throw new Error('AmpexPdf native module not available')
   return pdf.renderPage(pdfPath.replace('file://', ''), page, maxPx)
+}
+
+/** Termisk tilstand 0–3 (iOS: ProcessInfo.thermalState). Uten modul (Android i dag): 0. */
+export function termiskTilstand(): number {
+  try { return pdf?.thermalState?.() ?? 0 } catch { return 0 }
+}
+
+/**
+ * Strekene på én side, rett fra innholdsstrømmen — native, under et sekund på
+ * en A0-plan. pdf.js på Hermes hang på samme fil (2026-09-13), så symbolsøket
+ * går her når modulen finnes. Kaster hvis bygget er uten modulen (Expo Go).
+ */
+export async function pdfVectors(pdfPath: string, page = 0): Promise<PdfVektorer> {
+  if (!pdf) throw new Error('AmpexPdf native module not available')
+  if (typeof pdf.vectors !== 'function') throw new Error('AmpexPdf mangler vectors — bygg appen på nytt')
+  return pdf.vectors(pdfPath.replace('file://', ''), page)
 }
 
 // ── Nærhetssensor («løft til øret»-aktivering, se lib/ai/raise-listener.ts) ──

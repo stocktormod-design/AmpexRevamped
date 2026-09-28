@@ -7,6 +7,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy'
 import { supabase, supabaseUrl } from './supabase'
+import { database } from './db'
 
 const KATALOG = `${FileSystem.cacheDirectory}bilmodeller/`
 const BASE = `${supabaseUrl}/storage/v1/object/public/bilmodeller`
@@ -91,6 +92,44 @@ export async function hentBilmodell(
   } catch {
     return null
   }
+}
+
+/**
+ * Samme bil skal ikke slås opp på nytt hver gang Meg åpnes (Tormod 13.09).
+ * Svaret per regnr huskes lokalt: hvilken slug som traff, eller at ingen
+ * gjorde det. Treff er evige (fila ligger på disk); bom prøves på nytt etter
+ * et døgn, for da kan modellen være kurert inn i mellomtiden.
+ */
+const REGNR_NOKKEL = (regNr: string) => `bilmodell:${regNr.replace(/\s+/g, '').toUpperCase()}`
+const BOM_TTL = 24 * 60 * 60 * 1000
+type RegnrSvar = { slug: string | null; tid: number }
+
+export async function hentBilmodellForRegnr(
+  regNr: string,
+  kandidat: string,
+  info?: { merke?: string | null; modell?: string | null },
+): Promise<string | null> {
+  const nokkel = REGNR_NOKKEL(regNr)
+  let husket: RegnrSvar | null = null
+  try {
+    const raw = await database.localStorage.get<string>(nokkel)
+    if (raw) husket = JSON.parse(raw) as RegnrSvar
+  } catch { husket = null }
+
+  if (husket?.slug) {
+    const lokal = `${KATALOG}${husket.slug}.glb`
+    try {
+      if ((await FileSystem.getInfoAsync(lokal)).exists) return lokal
+    } catch { /* fila er borte — hent på nytt under */ }
+  } else if (husket && Date.now() - husket.tid < BOM_TTL) {
+    return null
+  }
+
+  const uri = await hentBilmodell(kandidat, info)
+  const slug = uri ? uri.slice(KATALOG.length, -'.glb'.length) : null
+  const svar: RegnrSvar = { slug, tid: Date.now() }
+  await database.localStorage.set(nokkel, JSON.stringify(svar)).catch(() => {})
+  return uri
 }
 
 /** Melder fra at en bil manglet modell. Feiler stille — dette er statistikk. */

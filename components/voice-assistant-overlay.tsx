@@ -12,7 +12,6 @@ import Animated, {
   interpolateColor,
   Easing,
 } from 'react-native-reanimated'
-import { Zap } from 'lucide-react-native'
 import { Pressable } from './pressable'
 import { useVoiceSession } from '../lib/ai/voice-session'
 import { subscribeVoiceLevel } from '../lib/ai/voice-level'
@@ -148,7 +147,7 @@ export function VoiceAssistantOverlay() {
               coreStyle,
             ]}
           >
-            <Zap size={28} color="#fff" strokeWidth={2.2} fill="#fff" />
+            {/* Kjernen er tom (Tormod 13.09: lynet bort). Merket i docken er logoen. */}
           </Animated.View>
         </View>
       </Pressable>

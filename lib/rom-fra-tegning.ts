@@ -16,7 +16,7 @@ import { Skia } from '@shopify/react-native-skia'
 import { renderPdfPage, isPdfRasterAvailable } from '../modules/ampex-splat'
 import { finnRom, STANDARD } from './rom-detekt'
 import { morkMaske, linjerFraMaske } from './rom-linjer'
-import { strekerFraPdf } from './rom-pdf-vektor'
+import { strekerFraPdf, type PdfStreker } from './rom-pdf-vektor'
 
 export type Romforslag = {
   /** Hjørnene i normaliserte sidekoordinater (0..1) — samme form som Room.shape. */
@@ -28,6 +28,8 @@ export type Romforslag = {
 }
 
 export type Romdelingsvalg = {
+  /** Ferdig leste streker og tekst (fra lesTegningsvektorer) — da leses ikke PDF-en på nytt. */
+  streker?: PdfStreker
   /** Sidebredde i punkter. Utelates den, leses den av PDF-en selv. */
   sidebreddePt?: number
   /** Målestokkens nevner: 50 for 1:50. */
@@ -89,17 +91,24 @@ export async function finnRomPaaTegning(pdfSti: string, valg: Romdelingsvalg): P
   // 1) Ekte streker hvis PDF-en har dem. Målt 9/9 rom mot 6/9 for rasteret,
   //    fordi pennfargen skiller vegg fra ventilasjonskanal.
   try {
-    const b64 = await FileSystem.readAsStringAsync(pdfSti.replace('file://', ''), { encoding: 'base64' })
-    const bytes = fraBase64(b64)
-    const { segmenter, tekster, breddePt, hoydePt } = await strekerFraPdf(bytes)
+    const lest = valg.streker ?? await (async () => {
+      const b64 = await FileSystem.readAsStringAsync(pdfSti.replace('file://', ''), { encoding: 'base64' })
+      return strekerFraPdf(fraBase64(b64))
+    })()
+    const { segmenter, tekster, breddePt, hoydePt } = lest
     sidebreddePt = breddePt // gjelder også rasterveien under
     if (segmenter.length >= 200) {
       // Arealpåskriftene («20,3 m²») står inne i hvert rom og er de sikreste
       // frøene vi kan få: ett per rom, alltid på gulvet.
       // NB: ingen \b etter «²» — den er ikke et ordtegn, så grensen treffer aldri.
       const merker = tekster.filter(t => /\d\s*m(²|2)/i.test(t.tekst))
-      const rom = finnRom(segmenter, { ...STANDARD, ptPerM }, merker.map(m => ({ x: m.x, y: m.y })))
-      return rom.map(r => ({
+      // Påskriften sier også HVOR STORT rommet er — det avgjør hvem som får en navnløs
+      // stripe når to rom deler den (se bruktEtiketter i rom-detekt).
+      const arealAv = (t: string): number | undefined => { const m = /(\d+(?:[.,]\d+)?)\s*m(²|2)/i.exec(t); return m ? parseFloat(m[1].replace(',', '.')) : undefined }
+      const rom = finnRom(segmenter, { ...STANDARD, ptPerM }, merker.map(m => ({ x: m.x, y: m.y, areal: arealAv(m.tekst) })))
+      // Null rom av vektorene betyr som regel at strekene bare er ramma og tittelfeltet
+      // (bilde-PDF med vektorramme, Torvhaugan 2026-09-13) — da må rasteret ta over.
+      if (rom.length > 0) return rom.map(r => ({
         punkter: r.polygon.map(p => [p.x / breddePt, p.y / hoydePt] as [number, number]),
         areal: r.areal / (ptPerM * ptPerM),
         navn: r.etiketter.length ? romnavn(merker[r.etiketter[0]], tekster) : undefined,

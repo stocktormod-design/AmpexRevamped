@@ -9,7 +9,6 @@ import { ChevronLeft, Trash2, Plus, Check, X, Lock } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { ListCard, SectionHeader, Chip } from '../../../components/ui'
 import { ChoiceSheet, PromptSheet } from '../../../components/sheet'
-import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import {
@@ -248,7 +247,6 @@ export default function TilleggScreen() {
           </Pressable>
           <Text style={t.headline}>Tilleggsarbeid</Text>
         </View>
-        <AmpexMarkButton />
       </View>
 
       <ScrollView

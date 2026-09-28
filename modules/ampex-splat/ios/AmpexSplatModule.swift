@@ -102,6 +102,7 @@ public final class AmpexSplatModule: Module {
         // for å bruke ARKit-nettet i fixturen. ARKits nett er glattet for okklusjonsbruk,
         // og det er den egentlige grunnen til at bordkanter blir amorfe — se MeshTsdfBuild.
         var mesh = fixture.mesh
+        var keyframes = fixture.keyframes
         // Samme regel som det live skannet (MeshBakeV2.exportTextured): LiDAR-geometri er
         // STANDARD når rådybden finnes; meshscan.geometry = "anchor" velger ARKit-nettet.
         // Her er det MENINGEN at det skal ta tid: brukeren har bedt om en bedre modell,
@@ -109,11 +110,13 @@ public final class AmpexSplatModule: Module {
         if UserDefaults.standard.string(forKey: "meshscan.geometry") != "anchor",
            FileManager.default.fileExists(atPath: dir.appendingPathComponent("dense.jsonl").path) {
           ARMeshGlbExporter.progress?("Bygger geometri fra LiDAR…")
-          if #available(iOS 14.0, *), let t = MeshTsdfBuild.build(framesDir: dir, tillegg: mesh) {
+          var rettede = [Int: [Float]]()
+          if #available(iOS 14.0, *), let t = MeshTsdfBuild.build(framesDir: dir, tillegg: mesh, poseSink: { rettede = $0 }) {
             mesh = t
           } else {
             MeshLog.log("TSDF: bygg feilet — faller tilbake på ARKit-nettet")
           }
+          keyframes = MeshBakeV2.driftrettedeKeyframes(keyframes, rettede)
         }
 
         let ts = Int(Date().timeIntervalSince1970 * 1000)
@@ -127,7 +130,7 @@ public final class AmpexSplatModule: Module {
           .joined()
         let glbURL = dir.appendingPathComponent("rebake\(tag)-\(ts).glb")
         let t0 = CFAbsoluteTimeGetCurrent()
-        let result = MeshBakeV2.bake(mesh: mesh, keyframes: fixture.keyframes, framesDir: dir, to: glbURL)
+        let result = MeshBakeV2.bake(mesh: mesh, keyframes: keyframes, framesDir: dir, to: glbURL)
         let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         if result.success {
           // Forhåndsvisning (<glb>.jpg) som skann-kortet viser — live-skannet lager den i
@@ -203,20 +206,23 @@ enum MeshRebakeHarness {
         ARMeshGlbExporter.isRebake = true
         defer { ARMeshGlbExporter.progress = nil; ARMeshGlbExporter.isRebake = false }
         var mesh = fixture.mesh
+        var keyframes = fixture.keyframes
         // Harness-only ablation: identical anchor geometry, but allow local image
         // selection on planes. Default and live capture retain their current policy.
         if UserDefaults.standard.string(forKey: "meshscan.anchorplanelock") == "off" {
             mesh.planeLock = false
         }
-        MeshBakeV2.debugQualityFloor = 0.3
-        defer { MeshBakeV2.debugQualityFloor = 0.3 }
+        MeshBakeV2.debugQualityFloor = MeshBakeV2.kvalitetsgulvStandard
+        defer { MeshBakeV2.debugQualityFloor = MeshBakeV2.kvalitetsgulvStandard }
         if let s = UserDefaults.standard.string(forKey: "meshscan.qualityfloor"),
-           let v = Float(s), v.isFinite, v >= 0.01, v <= 0.3 {
+           let v = Float(s), v.isFinite, v >= 0.01, v <= 0.5 {
             MeshBakeV2.debugQualityFloor = v
         }
         if UserDefaults.standard.string(forKey: "meshscan.geometry") != "anchor",
            FileManager.default.fileExists(atPath: dir.appendingPathComponent("dense.jsonl").path) {
-            if let t = MeshTsdfBuild.build(framesDir: dir, tillegg: mesh) { mesh = t } else { MeshLog.log("TSDF: bygg feilet — ARKit-nettet") }
+            var rettede = [Int: [Float]]()
+            if let t = MeshTsdfBuild.build(framesDir: dir, tillegg: mesh, poseSink: { rettede = $0 }) { mesh = t } else { MeshLog.log("TSDF: bygg feilet — ARKit-nettet") }
+            keyframes = MeshBakeV2.driftrettedeKeyframes(keyframes, rettede)
         }
         // Headless A/B only. Preserve original camera metadata and winner selection;
         // feed measured offsets directly to the sampler. No live-scan setting is changed.
@@ -288,7 +294,7 @@ enum MeshRebakeHarness {
             }
             MeshLog.log("harness — trace directory \(traceDir.path)")
         }
-        let result = MeshBakeV2.bake(mesh: mesh, keyframes: fixture.keyframes, framesDir: dir, to: glbURL)
+        let result = MeshBakeV2.bake(mesh: mesh, keyframes: keyframes, framesDir: dir, to: glbURL)
         let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         finish(result.success ? "OK \(glbURL.lastPathComponent) \(ms)ms" : "FEIL: bake feilet")
     }

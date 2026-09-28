@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, ScrollView, ActivityIndicator, Alert, Platform, useWindowDimensions } from 'react-native'
+import { View, ActivityIndicator, Alert, Platform, useWindowDimensions } from 'react-native'
 import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as DocumentPicker from 'expo-document-picker'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { Check, ChevronDown, ChevronLeft, Columns2, Grid2x2, ScanLine, FileText, Flame, LayoutGrid, Link, Link2Off, MousePointer2, Pencil, Plus, Undo2, Upload, Waypoints } from 'lucide-react-native'
+import { Check, ChevronDown, ChevronLeft, Columns2, Grid2x2, LayoutGrid, ScanLine, ScanSearch, FileText, Flame, Link, Link2Off, MousePointer2, Pencil, Plus, Undo2, Upload, Waypoints } from 'lucide-react-native'
 import { useSharedValue } from 'react-native-reanimated'
 import { Pressable } from '../../../components/pressable'
 import { DrawingPane, type EditTool, type PaneDelta } from '../../../components/drawing-pane'
@@ -15,7 +15,9 @@ import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Drawing, disciplineLabel } from '../../../lib/db/models/drawing'
 import { Room, tilPunkter } from '../../../lib/db/models/room'
-import { finnRomPaaTegning, kanDeleIRom } from '../../../lib/rom-fra-tegning'
+import { finnRomPaaTegning } from '../../../lib/rom-fra-tegning'
+import { finnKomponenterPaaTegning } from '../../../lib/brann-fra-tegning'
+import { analyserTegning, type AnalyseSteg } from '../../../lib/tegning-analyse'
 import { requestLidarScan } from '../../../lib/tasks'
 import { DrawingMarkup, type Stroke } from '../../../lib/db/models/drawing-markup'
 import { DrawingLoop } from '../../../lib/db/models/drawing-loop'
@@ -27,6 +29,7 @@ import { loadDraft, saveDraft, clearDraft } from '../../../lib/markup-drafts'
 import { useUserId } from '../../../lib/auth-user'
 import { colors, spacing, radius, sizes, shadows, paperType as t } from '../../../lib/theme'
 import { usePapirStatuslinje } from '../../../components/tool-surface'
+import { lagreSisteTegning } from '../../../lib/siste-tegning'
 
 // Forma-lys arbeidsflate — matcher editoren
 const WORKSPACE = '#E7E7EC'
@@ -148,7 +151,8 @@ export default function TegningViewer() {
   const [romPanel, setRomPanel] = useState<Room | null>(null)
   const [skannBer, setSkannBer] = useState(false)
   const [deler, setDeler] = useState(false)
-  const [maalestokk, setMaalestokk] = useState(50)
+  const [finner, setFinner] = useState(false)
+  const [maalestokk] = useState(50)
 
   // ── Sløyfene på tegningen: kjeden bygges i lerretet, men KONTROLLENE hører
   // hjemme i verktøylinja (ny sløyfe, angre siste node). Uten «ny sløyfe» kunne
@@ -158,7 +162,7 @@ export default function TegningViewer() {
     if (!drawingId) { setLoops([]); return }
     const sub = database.get<DrawingLoop>('drawing_loops')
       .query(Q.where('drawing_id', drawingId), Q.sortBy('created_at', Q.asc))
-      .observe().subscribe(setLoops)
+      .observeWithColumns(['nodes', 'color', 'name']).subscribe(setLoops)
     return () => sub.unsubscribe()
   }, [drawingId])
   const aktivSloyfe = loops.length ? loops[loops.length - 1] : null
@@ -194,6 +198,8 @@ export default function TegningViewer() {
   type Visning = 'en' | 'to' | 'fire'
   const erPad = Platform.OS === 'ios' && (Platform as { isPad?: boolean }).isPad === true
   const [visning, setVisning] = useState<Visning>(splitParam === '1' ? 'to' : 'en')
+  // Toppbaren viser ÉN tegning; trykk åpner lista over prosjektets tegninger (Tormod 2026-09-13).
+  const [velger, setVelger] = useState(false)
   useEffect(() => { if (splitParam !== undefined) setVisning(splitParam === '1' ? 'to' : 'en') }, [splitParam])
   const split = visning !== 'en'
   /** Tegningene i rute 2–4 (rute 1 er `drawing`). */
@@ -237,7 +243,7 @@ export default function TegningViewer() {
     if (!drawingId) { setRooms([]); return }
     const sub = database.get<Room>('rooms')
       .query(Q.where('drawing_id', drawingId))
-      .observe().subscribe(setRooms)
+      .observeWithColumns(['shape', 'name', 'scan_path']).subscribe(setRooms)
     return () => sub.unsubscribe()
   }, [drawingId])
 
@@ -280,6 +286,71 @@ export default function TegningViewer() {
     }
   }
 
+  /**
+   * Komponentene fra tegningens egen symbolforklaring → fire_devices, én per
+   * symbol, så montøren kan trykke på dem (Tormod 2026-09-13). Se
+   * lib/symbol-detekt.ts. Kjører lokalt; ingenting lastes opp.
+   */
+  async function finnKomponenter() {
+    if (!drawing || !localUri || finner) return
+    setFinner(true)
+    try {
+      const svar = await finnKomponenterPaaTegning(localUri)
+      if (svar.utenForklaring) {
+        Alert.alert('Fant ingen symbolforklaring', 'Søket leser symbolene fra tegningens egen forklaring (SYMBOLFORKLARING). Denne tegningen har ingen.')
+        return
+      }
+      const iProsjektet = await database.get<FireDevice>('fire_devices').query(Q.where('project_id', drawing.projectId)).fetch()
+      const paaTegningen = iProsjektet.filter(d => d.drawingId === drawing.id)
+      // Alt som alt står der (innen 0,4 % av sidebredden) hoppes over — søket kan kjøres igjen.
+      const nye = svar.forslag.filter(f => !paaTegningen.some(d => Math.hypot(d.x - f.x, d.y - f.y) < 0.004))
+      if (!nye.length) { Alert.alert('Ingenting nytt', `Fant ${svar.forslag.length} komponenter, alle er alt registrert.`); return }
+      // Auto-tag fortsetter der stempel-verktøyet slapp (neste ledige adresse på sløyfe 01).
+      let max = 0
+      for (const d of iProsjektet) { const m = /^01\.(\d+)$/.exec(d.tag); if (m) max = Math.max(max, parseInt(m[1], 10)) }
+      await database.write(async () => {
+        await database.batch(...nye.map((f, i) => database.get<FireDevice>('fire_devices').prepareCreate(d => {
+          d.projectId = drawing.projectId
+          d.drawingId = drawing.id
+          d.x = f.x; d.y = f.y
+          d.kind = f.kind
+          d.tag = `01.${String(max + 1 + i).padStart(3, '0')}`
+          d.note = [f.etikett, f.tillegg].filter(Boolean).join(' · ')
+          d.source = 'tegning' // symbolet står alt på tegningen — bare trykkbar, ingen glyf oppå
+          d.createdBy = userId
+        })))
+      })
+      syncQuietly()
+      Alert.alert('Komponenter fra tegningen', `${nye.length} lagt til. Forklaringen har ${svar.symboltyper.length} symboltyper. Trykk på en komponent for å fylle ut.`)
+    } catch (e) {
+      console.error('[symbol] stoppet', e instanceof Error ? e.stack : e)
+      Alert.alert('Søket stoppet', e instanceof Error ? e.message : String(e))
+    } finally {
+      setFinner(false)
+    }
+  }
+
+  /**
+   * Analysen ved første opplasting (lib/tegning-analyse.ts): komponenter fra
+   * forklaringen og rom fra strekene, én gang per tegning, på telefonen som har
+   * fila. Stempelet `analyzedAt` gjør at ingen andre regner på nytt.
+   */
+  const [analyse, setAnalyse] = useState<{ steg: AnalyseSteg; andel: number } | null>(null)
+  const analyseStartet = useRef<string | null>(null)
+  async function kjørAnalyse(d: Drawing, uri: string) {
+    if (analyseStartet.current === d.id) return
+    analyseStartet.current = d.id
+    setAnalyse({ steg: 'leser', andel: 0 })
+    const r = await analyserTegning(d, uri, userId, (steg, andel) => setAnalyse({ steg, andel }))
+    setAnalyse(null)
+    if (r.kind === 'utsatt') analyseStartet.current = null // prøv igjen neste gang
+  }
+  // Tegning med fil, aldri analysert, og fila er her: kjør én gang.
+  useEffect(() => {
+    if (drawing && localUri && drawing.filePath && !drawing.analyzedAt) void kjørAnalyse(drawing, localUri)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawing?.id, drawing?.analyzedAt, localUri])
+
   // Aktiv tegning
   useEffect(() => {
     if (!drawingId) return
@@ -288,6 +359,8 @@ export default function TegningViewer() {
     })
     return () => sub.unsubscribe()
   }, [drawingId])
+  // «Sist åpnet» øverst i prosjektet.
+  useEffect(() => { if (drawing) void lagreSisteTegning(drawing.projectId, drawing.id) }, [drawing?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Alle tegningene i prosjektet — grunnlaget for bytte-linja nederst. Uten
   // denne var det umulig å komme til tegning nummer to i det hele tatt.
@@ -300,16 +373,8 @@ export default function TegningViewer() {
     return () => sub.unsubscribe()
   }, [projectId])
 
-  // Søsken i samme plan (for swap-navbaren) — planen er inngangen fra prosjektet
-  const planKey = drawing?.plan
-  useEffect(() => {
-    const projectId = drawing?.projectId
-    if (!projectId || planKey == null) return
-    const sub = database.get<Drawing>('drawings')
-      .query(Q.where('project_id', projectId), Q.where('plan', planKey), Q.sortBy('created_at', Q.asc))
-      .observe().subscribe(setSiblings)
-    return () => sub.unsubscribe()
-  }, [drawing?.projectId, planKey])
+  // (Den gamle «samme plan»-lista overskrev prosjektlista over, så velgeren
+  // viste bare tegninger i samme plan. Fjernet 2026-09-13.)
 
   // Hent PDF lokalt (cache) når tegningen har en fil
   const filePath = drawing?.filePath
@@ -467,36 +532,40 @@ export default function TegningViewer() {
         </View>
       )}
 
-      {/* TOPPBAR (Tormod 2026-09-06: «ikke pillen top left, det burde være en bar»):
-          tilbake · tegningene i prosjektet som chips (trykk = bytt) · visning. */}
+      {/* TOPPBAR (Tormod 2026-09-06: «ikke pillen top left, det burde være en bar»;
+          2026-09-13: «øverst bar burde bare være 1 tegning, men hvis du trykker kan
+          du velge i listen»): tilbake · tegningen du ser på (trykk = velg) · visning. */}
       <View style={{ position: 'absolute', top: insets.top + spacing.xs, left: spacing.sm, right: spacing.sm }} pointerEvents="box-none">
         <View style={[panel, { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: 5, height: 48, borderRadius: radius.xl }]}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
             style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
             <ChevronLeft size={sizes.icon} color={colors.paperLabel} strokeWidth={2.2} />
           </Pressable>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}
-            contentContainerStyle={{ alignItems: 'center', gap: 4, paddingHorizontal: 2 }}>
-            {siblings.map(d => {
-              const aktiv = d.id === drawing.id
-              return (
-                <Pressable key={d.id} haptic="light" pressScale={0.95}
-                  onPress={() => { if (!aktiv) router.setParams({ drawingId: d.id }) }}
-                  style={{ height: 34, paddingHorizontal: spacing.md, borderRadius: radius.pill, justifyContent: 'center', backgroundColor: aktiv ? colors.paperLabel : 'transparent', maxWidth: 180 }}>
-                  <Text style={[t.subhead, { fontWeight: '600', color: aktiv ? '#fff' : colors.paperLabel }]} numberOfLines={1}>{d.name}</Text>
-                  {flerePlaner && !!d.plan && (
-                    <Text style={[t.caption, { color: aktiv ? 'rgba(255,255,255,0.7)' : colors.paperSecondary, marginTop: -1 }]} numberOfLines={1}>{d.plan}</Text>
-                  )}
-                </Pressable>
-              )
-            })}
-          </ScrollView>
+          <Pressable haptic="light" pressScale={0.97} disabled={siblings.length < 2}
+            onPress={() => setVelger(true)}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 36, paddingHorizontal: spacing.sm }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[t.subhead, { fontWeight: '600', color: colors.paperLabel }]} numberOfLines={1}>{drawing.name}</Text>
+              {!!drawing.plan && (
+                <Text style={[t.caption, { color: colors.paperSecondary, marginTop: -1 }]} numberOfLines={1}>{drawing.plan}</Text>
+              )}
+            </View>
+            {siblings.length > 1 && <ChevronDown size={16} color={colors.paperSecondary} strokeWidth={2.2} />}
+          </Pressable>
           {localUri && (
             <Pressable haptic="light" pressScale={0.92} onPress={nesteVisning}
               style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: split ? colors.paperLabel : colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
               {visning === 'fire'
                 ? <Grid2x2 size={18} color="#fff" strokeWidth={2.1} />
                 : <Columns2 size={18} color={split ? '#fff' : colors.paperLabel} strokeWidth={2.1} />}
+            </Pressable>
+          )}
+          {/* Rom av/på — så en kan se om romdelingen traff (Tormod 2026-09-13). Rommene
+              tegnes av lerretet bare i rom-modus; ellers er de usynlige trykkflater. */}
+          {localUri && !split && (
+            <Pressable haptic="light" pressScale={0.92} onPress={() => { setRomEdit(v => !v); setTool('ingen') }}
+              style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: romEdit ? colors.paperLabel : colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
+              <LayoutGrid size={18} color={romEdit ? '#fff' : colors.paperLabel} strokeWidth={2.1} />
             </Pressable>
           )}
           {localUri && draft.length > 0 && (
@@ -509,6 +578,20 @@ export default function TegningViewer() {
         </View>
       </View>
 
+      {/* Analysen ved første opplasting — én tynn stripe, forsvinner når den er ferdig. */}
+      {analyse && (
+        <View style={{ position: 'absolute', top: insets.top + spacing.xs + 48 + spacing.sm, left: spacing.sm, right: spacing.sm, alignItems: 'center' }} pointerEvents="none">
+          <View style={[panel, { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, height: 30, borderRadius: radius.pill }]}>
+            <ActivityIndicator size="small" color={colors.paperSecondary} />
+            <Text style={[t.caption, { color: colors.paperSecondary, fontWeight: '600' }]}>
+              {analyse.steg === 'leser' ? 'Leser tegningen …'
+                : analyse.steg === 'komponenter' ? `Finner komponenter … ${Math.round(analyse.andel * 100)} %`
+                : analyse.steg === 'rom' ? 'Deler inn i rom …' : 'Lagrer …'}
+            </Text>
+          </View>
+        </View>
+      )}
+
       {/* ÉN flate for alt: moduser til venstre, verktøy i midten, og en
           kontekstrad under som bytter innhold etter hva som er i hånda.
           Ingen «rediger-modus» — verktøyet i hånda ER modusen. */}
@@ -517,9 +600,9 @@ export default function TegningViewer() {
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + spacing.lg, alignItems: 'center' }} pointerEvents="box-none">
           <View style={[panel, { borderRadius: radius.xl, paddingHorizontal: 6, paddingVertical: 6, gap: 4, maxWidth: win.width - spacing.md * 2 }]}>
             {/* Rad 1: moduser · verktøy */}
+            {/* Rom-modusen (firkantikonet) er tatt bort (Tormod 2026-09-13). Rommene
+                nås fortsatt med hold på tegningen; `rom=1`/`delInn` i ruta virker som før. */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-              <Knapp Icon={LayoutGrid} aktiv={romEdit} onPress={() => { setRomEdit(v => !v); setTool('ingen') }} />
-              <View style={{ width: 0.5, height: 26, backgroundColor: 'rgba(0,0,0,0.12)', marginHorizontal: 4 }} />
               {([
                 ['velg', MousePointer2],
                 ['penn', Pencil],
@@ -532,24 +615,7 @@ export default function TegningViewer() {
             </View>
 
             {/* Rad 2: kontekst — bytter med verktøyet, ingen ny skjerm */}
-            {romEdit ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: 2 }}>
-                {[50, 100, 200].map(m => (
-                  <Pressable key={m} haptic="light" pressScale={0.95} onPress={() => setMaalestokk(m)}
-                    style={{ paddingHorizontal: spacing.sm, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: m === maalestokk ? colors.paperLabel : colors.paperFill }}>
-                    <Text style={[t.caption, { fontWeight: '700', color: m === maalestokk ? '#fff' : colors.paperSecondary }]}>1:{m}</Text>
-                  </Pressable>
-                ))}
-                <View style={{ flex: 1 }} />
-                {kanDeleIRom && (
-                  <Pressable haptic="medium" pressScale={0.95} onPress={delIRom} disabled={deler}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, height: 32, borderRadius: radius.pill, backgroundColor: colors.brand, opacity: deler ? 0.4 : 1 }}>
-                    {deler ? <ActivityIndicator size="small" color={colors.brandLabel} /> : <LayoutGrid size={14} color={colors.brandLabel} strokeWidth={2.4} />}
-                    <Text style={[t.caption, { color: colors.brandLabel, fontWeight: '700' }]}>{deler ? 'Deler inn …' : 'Del inn i rom'}</Text>
-                  </Pressable>
-                )}
-              </View>
-            ) : tool === 'sloyfe' ? (
+            {tool === 'sloyfe' ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs }}>
                 {['#FF3B30', '#0A84FF', '#34C759', '#FFD60A', '#000000'].map(c => (
                   <Pressable key={c} haptic="light" onPress={() => setColor(c)}
@@ -589,17 +655,38 @@ export default function TegningViewer() {
                   <Undo2 size={16} color={colors.paperLabel} strokeWidth={2.2} />
                 </Pressable>
               </View>
+            ) : tool === 'brann' ? (
+              /* Panelet er så bredt som verktøyraden; knappen får hele bredden og hintet står under. */
+              <View style={{ alignItems: 'stretch', gap: spacing.xs, paddingHorizontal: 2 }}>
+                {/* Søket leser tegningens egen symbolforklaring — finnes den ikke, sier knappen fra. */}
+                <Pressable haptic="medium" pressScale={0.95} onPress={finnKomponenter} disabled={finner}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, height: 32, borderRadius: radius.pill, backgroundColor: colors.brand, opacity: finner ? 0.5 : 1 }}>
+                  {finner ? <ActivityIndicator size="small" color={colors.brandLabel} /> : <ScanSearch size={14} color={colors.brandLabel} strokeWidth={2.4} />}
+                  <Text style={[t.caption, { color: colors.brandLabel, fontWeight: '700' }]}>{finner ? 'Leser tegningen …' : 'Finn fra tegningen'}</Text>
+                </Pressable>
+                <Text style={[t.caption, { color: colors.paperTertiary, textAlign: 'center' }]}>Eller trykk der detektoren skal stå</Text>
+              </View>
             ) : (
               <Text style={[t.caption, { color: colors.paperTertiary, textAlign: 'center', paddingBottom: 2 }]}>
                 {tool === 'ingen'
                   ? 'Én finger flytter · to fingre zoomer · hold på et rom i ett sekund'
-                  : tool === 'brann' ? 'Trykk der detektoren skal stå'
                   : 'Trykk på noe for å velge det'}
               </Text>
             )}
           </View>
         </View>
       )}
+
+      {/* Tegningsvelgeren — alle tegningene i prosjektet, plan som underlinje. */}
+      <ChoiceSheet
+        synlig={velger}
+        tittel="Tegninger"
+        forklaring={`${siblings.length} i prosjektet`}
+        valg={siblings.map(d => ({ verdi: d.id, etikett: d.name, underetikett: d.plan || undefined }))}
+        valgt={drawing.id}
+        onVelg={id => { setVelger(false); if (id !== drawing.id) router.setParams({ drawingId: id }) }}
+        onAvbryt={() => setVelger(false)}
+      />
 
       {/* Rompanel — 1 s hold på et rom. Rommet er en usynlig knapp på tegningen. */}
       <Ark synlig={!!romPanel} onLukk={() => setRomPanel(null)}>

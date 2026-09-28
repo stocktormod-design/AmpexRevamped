@@ -4,7 +4,7 @@ import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { Plus, Inbox, CalendarDays, ChevronRight, List } from 'lucide-react-native'
+import { Plus, Inbox, CalendarDays, List } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { PapirScreen } from '../../../components/papir-surface'
 import { MegAvatar } from '../../../components/meg-avatar'
@@ -130,7 +130,8 @@ function OrderRow({ order, first, last }: { order: Order; first: boolean; last: 
 
 export default function OrdreScreen() {
   const insets = useSafeAreaInsets()
-  const [kalender, setKalender] = useState(false)
+  // Kalenderen er det første du ser (Tormod 13.09). Lista er den andre visningen.
+  const [kalender, setKalender] = useState(true)
   const orders = useOrders()
   const nedfryst = useNedfryst()
   const rader = useMemo(() => grupper(orders, nedfryst), [orders, nedfryst])
@@ -154,7 +155,8 @@ export default function OrdreScreen() {
         </View>
       </View>
 
-      {/* Visning og tilbud. Ingen filter: bunkene ER filteret, i fast rekkefølge. */}
+      {/* Visning. Ingen filter: bunkene ER filteret, i fast rekkefølge.
+          Tilbud-lenken er tatt bort inntil videre (13.09); ruta finnes. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.screen, marginBottom: spacing.lg, gap: spacing.sm }}>
         <Pressable haptic="light" pressScale={0.94} onPress={() => setKalender(k => !k)}
           accessibilityLabel={kalender ? 'Vis liste' : 'Vis kalender'}
@@ -162,12 +164,6 @@ export default function OrdreScreen() {
           {kalender
             ? <List size={18} color="#FFFFFF" strokeWidth={2.1} />
             : <CalendarDays size={18} color={colors.label} strokeWidth={2.1} />}
-        </Pressable>
-        <View style={{ flex: 1 }} />
-        <Pressable haptic="light" onPress={() => router.push('/(app)/tilbud')} hitSlop={8}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-          <Text style={[t.subhead, { fontWeight: '600', color: colors.label }]}>Tilbud</Text>
-          <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={2.2} />
         </Pressable>
       </View>
     </>

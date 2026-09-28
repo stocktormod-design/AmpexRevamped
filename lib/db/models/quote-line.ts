@@ -14,6 +14,8 @@ export class QuoteLine extends Model {
   static table = 'quote_lines'
 
   @text('quote_id') quoteId: string
+  /** Området linja hører til (quote_sections). null = rett i tilbudet. */
+  @text('section_id') sectionId: string | null
   /** Brukerens rekkefølge. Den er en del av dokumentet, ikke en visningsdetalj. */
   @field('sort_order') sortOrder: number
   @text('kind') kind: TilbudslinjeArt
@@ -27,6 +29,12 @@ export class QuoteLine extends Model {
   @field('cost_price') costPrice: number | null
   @field('discount_percent') discountPercent: number | null
   @text('vat_type') vatType: string | null
+  /** Tilvalg: kunden velger om linja skal med. Fravalgt = utenfor summen, prisen står. */
+  @field('is_optional') isOptional: boolean
+  /** Bare for tilvalg: er det valgt? Forhåndsvalgt = anbefalt. */
+  @field('is_selected') isSelected: boolean
+  /** Låst pris — kontorets «oppdater påslag» rører ikke linja. */
+  @field('price_locked') priceLocked: boolean
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date
 
@@ -43,6 +51,10 @@ export class QuoteLine extends Model {
       rabattProsent: this.discountPercent,
       mvaType: this.vatType,
       elnummer: this.elnummer,
+      omradeId: this.sectionId,
+      valgfri: this.isOptional,
+      valgt: this.isSelected,
+      prisLaast: this.priceLocked,
     }
   }
 }

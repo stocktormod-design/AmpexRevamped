@@ -52,9 +52,16 @@ async function doSync() {
   try {
     await synchronize({
       database,
-      pullChanges: async ({ lastPulledAt }) => {
+      // Skjemaversjonen synken sist så. Får det lokale skjemaet en NY tabell
+      // (v40: ik_punkter/ik_rutiner), sender WatermelonDB navnene som
+      // `migration.tables`, og serveren gir hele tabellen i stedet for bare
+      // det som er nyere enn forrige synk. Uten dette ville en tabell lagt til
+      // etter første synk stått tom på telefonen for alltid.
+      migrationsEnabledAtVersion: 39,
+      pullChanges: async ({ lastPulledAt, migration }) => {
         const { data, error } = await supabase.rpc('watermelon_pull', {
           last_pulled_at: lastPulledAt ?? 0,
+          full_tables: migration?.tables ?? [],
         })
         if (error) throw error
         return { changes: data.changes, timestamp: data.timestamp }

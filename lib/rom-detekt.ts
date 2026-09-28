@@ -26,7 +26,9 @@
  */
 
 export type Punkt = { x: number; y: number }
-export type Segment = { x0: number; y0: number; x1: number; y1: number; bredde?: number; lys?: number; farge?: number }
+/** Arealpåskrift på tegningen: hvor den står, og hva den sier (m²) når det kan leses. */
+export type Etikett = Punkt & { areal?: number }
+export type Segment = { x0: number; y0: number; x1: number; y1: number; bredde?: number; lys?: number; farge?: number; fyll?: boolean }
 // lys = metning (0 = grå/svart), farge = gråtone 0–1 (0 = svart)
 export type Rom = { polygon: Punkt[]; areal: number; senter: Punkt; etiketter: number[] }
 
@@ -61,6 +63,12 @@ function finnVegger(segs: Segment[], inn: Innstillinger): Vegg[] {
   const p = inn.ptPerM
   const kand = segs
     .filter(s => !(s.lys != null && s.lys > 0.2))
+    // Tykke streker (> 2 pt) er kabler, kanaler og markeringer, ikke veggflater — to
+    // parallelle sløyfekabler 20 cm fra hverandre ble ellers til en vegg midt i rommet.
+    .filter(s => (s.bredde ?? 0) <= 2)
+    // Fyll er ikke vegg (pdf.js-veien hoppet alltid over fyll; den native leseren sender
+    // dem med for symbolsøket). Annotasjonenes utseende tegner kabler som fylte polygoner.
+    .filter(s => !s.fyll)
     .map(s => {
       const dx = s.x1 - s.x0, dy = s.y1 - s.y0, len = Math.hypot(dx, dy)
       const ux = dx / len, uy = dy / len
@@ -73,8 +81,32 @@ function finnVegger(segs: Segment[], inn: Innstillinger): Vegg[] {
   const B = 2 * Math.PI / 180
   for (const k of kand) { const i = Math.floor(k.v / B); (bøtte.get(i) ?? bøtte.set(i, []).get(i)!).push(k) }
   const nB = Math.ceil(Math.PI / B)
+  // Sortert på tverr-offset per bøtte, så «ligger det streker MELLOM de to flatene?» er et binærsøk.
+  const sortert = new Map<number, typeof kand>()
+  for (const [i, l] of bøtte) sortert.set(i, [...l].sort((x, y) => x.c - y.c))
   const vegger: Vegg[] = []
   const dMin = inn.veggMin * p, dMaks = inn.veggMaks * p, ovMin = inn.veggOverlapp * p
+  /**
+   * En vegg er tom innvendig. Et hevet gulv (rutenett med 5 cm deling) har parallelle
+   * streker 15, 20, 25 … cm fra hverandre og ble til en veggBLOKK som delte trafo-
+   * rommene feil (Torvhaugan/Moskenes 2026-09-13). To eller flere parallelle streker
+   * mellom flatene, med overlapp, betyr skravur — ikke vegg. Én tåles (senterlinje).
+   */
+  /** Finnes en parallell strek med offset i [cLo, cHi] som overlapper [lo, hi]? */
+  const finnesVed = (i: number, a: (typeof kand)[number], cLo: number, cHi: number, lo: number, hi: number): boolean =>
+    strekerMellom(i, a, cLo, cHi, lo, hi) > 0
+  const strekerMellom = (i: number, a: (typeof kand)[number], cLo: number, cHi: number, lo: number, hi: number): number => {
+    const l = sortert.get(i); if (!l) return 0
+    let s0 = 0, s1 = l.length
+    while (s0 < s1) { const m = (s0 + s1) >> 1; if (l[m].c < cLo) s0 = m + 1; else s1 = m }
+    let n = 0
+    for (let j = s0; j < l.length && l[j].c < cHi; j++) {
+      const k = l[j]
+      const t0 = a.ux * k.s.x0 + a.uy * k.s.y0, t1 = a.ux * k.s.x1 + a.uy * k.s.y1
+      if (Math.min(hi, Math.max(t0, t1)) - Math.max(lo, Math.min(t0, t1)) >= ovMin) { n++; if (n >= 2) break }
+    }
+    return n
+  }
 
   for (const [i, liste] of bøtte) {
     for (const di of [0, 1]) {
@@ -90,6 +122,16 @@ function finnVegger(segs: Segment[], inn: Innstillinger): Vegg[] {
         const bt0 = a.ux * b.s.x0 + a.uy * b.s.y0, bt1 = a.ux * b.s.x1 + a.uy * b.s.y1
         const lo = Math.max(Math.min(a.t0, a.t1), Math.min(bt0, bt1)), hi = Math.min(Math.max(a.t0, a.t1), Math.max(bt0, bt1))
         if (hi - lo < ovMin) continue
+        // Tomt mellom flatene? (målt i a sin bøtte og nabobøtta, med 2 pt slakk fra hver flate)
+        const cb = -a.uy * b.s.x0 + a.ux * b.s.y0
+        const cLo = Math.min(a.c, cb) + 2, cHi = Math.max(a.c, cb) - 2
+        if (cHi > cLo && (strekerMellom(i, a, cLo, cHi, lo, hi) + strekerMellom((i + 1) % nB, a, cLo, cHi, lo, hi) + strekerMellom((i + nB - 1) % nB, a, cLo, cHi, lo, hi)) >= 2) continue
+        // Regelmessig serie? Et rutenett med 15 cm deling gir «vegger» av naboer med
+        // NØYAKTIG samme avstand videre på begge sider. En vegg har ikke en tredje flate
+        // like langt utenfor. Én slik nabo på hver side → skravur, ikke vegg.
+        const cA = Math.min(a.c, cb), cB = Math.max(a.c, cb)
+        const utenfor = (mid: number) => [i, (i + 1) % nB, (i + nB - 1) % nB].some(bk => finnesVed(bk, a, mid - 1.5, mid + 1.5, lo, hi))
+        if (utenfor(cA - d) && utenfor(cB + d)) continue
         // firkanten mellom dem over overlappet
         const fortegn = Math.sign((b.s.x0 - a.s.x0) * a.nx + (b.s.y0 - a.s.y0) * a.ny)
         const px = a.s.x0 - a.ux * a.t0, py = a.s.y0 - a.uy * a.t0 // punkt på a-linja ved t=0
@@ -103,8 +145,12 @@ function finnVegger(segs: Segment[], inn: Innstillinger): Vegg[] {
   const perFarge = new Map<number, number>()
   for (const v of vegger) if (v.farge != null) { const k = Math.round(v.farge * 10); perFarge.set(k, (perFarge.get(k) ?? 0) + v.lengde) }
   if (perFarge.size > 1) {
-    let best = -1, bestL = -1; for (const [k, L] of perFarge) if (L > bestL) { bestL = L; best = k }
-    return vegger.filter(v => v.farge == null || Math.round(v.farge * 10) === best)
+    let bestL = -1; for (const L of perFarge.values()) if (L > bestL) bestL = L
+    // Ikke bare vinneren: brannveggene (skyet, svart penn) på Norconsult-planen var 227 m mot
+    // 5 155 m grå innervegger, og ble kastet — så rommene sto åpne mot utsiden i bunnen og
+    // regionene lekket (2026-09-13). Klasser med under 3 % av vinneren er utstyr og kanaler.
+    const behold = new Set([...perFarge].filter(([, L]) => L >= bestL * 0.03).map(([k]) => k))
+    return vegger.filter(v => v.farge == null || behold.has(Math.round(v.farge * 10)))
   }
   return vegger
 }
@@ -308,7 +354,7 @@ function naboskap(r: Raster, lab: Int32Array, maksPx: number): Map<number, Map<n
  * med dobbeltstrek deler rom i biter). Havner to etiketter i samme region,
  * eroderes den videre til de skiller lag (brede åpninger/porter).
  */
-function bruktEtiketter(r: Raster, lab: Int32Array, dist: Float32Array, etiketter: Punkt[], inn: Innstillinger): Map<number, number[]> {
+function bruktEtiketter(r: Raster, lab: Int32Array, dist: Float32Array, etiketter: Etikett[], inn: Innstillinger, spor: Spor[] = []): Map<number, number[]> {
   const { W, H } = r
   const merker = new Map<number, number[]>() // region → etikett-indekser
   const finnRegion = (e: number) => { const i = nærmeste(r, etiketter[e], k => lab[k] > 0, Math.round(1.0 / inn.oppløsning)); return i < 0 ? 0 : lab[i] }
@@ -336,6 +382,106 @@ function bruktEtiketter(r: Raster, lab: Int32Array, dist: Float32Array, etikette
     }
   }
 
+  // Umerkede regioner som grenser til FLERE merkede rom deles først langs veggendenes
+  // spor (vegglinja forlenget gjennom åpningen), og hver del går til rommet den grenser
+  // mest til. Kabelkjeller-stripa over veggen mellom trafo 106 og 107 (Moskenes
+  // 2026-09-13) var én umerket region og ble slått inn i 106 i sin helhet; nå deles den
+  // der veggen ville stått. Uten spor i regionen skjer ingenting her.
+  // Arealregnskap: tegningens egne påskrifter («60,8 m²») avgjør hvem som får en
+  // navnløs bit når flere rom grenser til den. Rommet som mangler mest av sitt
+  // oppgitte areal vinner; et rom som alt er over, får ikke mer så lenge noen
+  // andre kan ta biten. Uten påskrift: flest kontaktpiksler som før.
+  const pxM2 = inn.oppløsning * inn.oppløsning
+  const oppgitt = (id: number): number | null => {
+    const es = merker.get(id); if (!es) return null
+    const a = es.map(e => etiketter[e].areal).filter((x): x is number => typeof x === 'number' && x > 0)
+    return a.length ? a.reduce((p, q) => p + q, 0) : null
+  }
+  const regionAreal = (id: number): number => { let n = 0; for (let i = 0; i < W * H; i++) if (lab[i] === id) n++; return n * pxM2 }
+  const velgRom = (kandidater: number[], bitPx: number, kontakt: Map<number, number>): number => {
+    void bitPx
+    let best = 0, bestScore = -Infinity
+    for (const id of kandidater) {
+      const ø = oppgitt(id)
+      // Rommet som mangler MEST av sitt oppgitte areal får biten (to rom som mangler like
+      // mye i absolutt forstand ga uavgjort og «første vinner»). Rom uten påskrift og rom
+      // som alt er over, taper mot alle som er under; innbyrdes avgjør kontakten.
+      const score = ø == null ? -1e6 + (kontakt.get(id) ?? 0) / 1e6 : (ø - regionAreal(id)) + (kontakt.get(id) ?? 0) / 1e6
+      if (score > bestScore) { bestScore = score; best = id }
+    }
+    return best
+  }
+  if (spor.length) {
+    const merket = (i: number) => lab[i] > 0 && merker.has(lab[i])
+    // Bare vegger som har ULIKE merkede rom på hver side er romskiller. En 6,6 m lang
+    // fundamentkant inne i trafo-rommet er like lang som veggen, men har samme rom på
+    // begge sider — den skal ikke få dele stripa.
+    const skiller = (v: Vegg): boolean => {
+      const mx = (v.a.x + v.b.x + v.c.x + v.d.x) / 4, my = (v.a.y + v.b.y + v.c.y + v.d.y) / 4
+      const dx = v.b.x - v.a.x, dy = v.b.y - v.a.y, L = Math.hypot(dx, dy); if (L < 1e-6) return false
+      const nx = -dy / L, ny = dx / L
+      // Første merkede rom på hver side, gjennom umerkede regioner og vegger, innen dørbredde.
+      const romPaaSiden = (f: number): number => {
+        for (let d = v.tykk * inn.ptPerM / 2 + 2 / r.skala; d <= inn.doerMaks * inn.ptPerM; d += 1 / r.skala) {
+          const l = labVed(mx + f * nx * d, my + f * ny * d); if (l > 0 && merker.has(l)) return l
+        }
+        return 0
+      }
+      const lab1 = romPaaSiden(1), lab2 = romPaaSiden(-1)
+      return lab1 > 0 && lab2 > 0 && lab1 !== lab2
+    }
+    const labVed = (px: number, py: number): number => {
+      const x = Math.round((px - r.x0) * r.skala), y = Math.round((py - r.y0) * r.skala)
+      if (x < 0 || y < 0 || x >= W || y >= H) return 0
+      return lab[y * W + x]
+    }
+    const sporSett = new Set<number>(); for (const sp of spor) if (skiller(sp.vegg)) for (const i of sp.piksler) sporSett.add(i)
+    const naboLabler = (fra: number): Set<number> => {
+      const ut = new Set<number>()
+      for (let i = 0; i < W * H; i++) { if (lab[i] !== fra) continue; const x = i % W
+        for (const m of [i - W, i + W, x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1]) if (m >= 0 && m < W * H && merket(m)) ut.add(lab[m]) }
+      return ut
+    }
+    const umerkede = new Set<number>(); for (let i = 0; i < W * H; i++) if (lab[i] > 0 && !merker.has(lab[i])) umerkede.add(lab[i])
+    for (const fra of umerkede) {
+      if (naboLabler(fra).size < 2) continue
+      let harSpor = false; for (const i of sporSett) if (lab[i] === fra) { harSpor = true; break }
+      if (!harSpor) continue
+      const { lab: k, n } = komponenter(W, H, i => lab[i] === fra && !sporSett.has(i))
+      if (n < 2) continue
+      // Hver bit → rommet påskriftene peker på (velgRom), i runder: en bit som alt
+      // er gitt bort teller som sitt rom for naboene, og kontakt telles også
+      // GJENNOM sporpikslene, som ellers skiller bitene fra hverandre.
+      const bitAreal = new Map<number, number>(); for (let i = 0; i < W * H; i++) if (k[i]) bitAreal.set(k[i], (bitAreal.get(k[i]) ?? 0) + 1)
+      const tilRom = new Map<number, number>()
+      const romFor = (m: number): number => merket(m) ? lab[m] : (k[m] && tilRom.has(k[m]) ? tilRom.get(k[m])! : 0)
+      const nb4 = (i: number): number[] => { const x = i % W; return [i - W, i + W, x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1].filter(m => m >= 0 && m < W * H) }
+      // En bit som også grenser til en ANNEN umerket region (gjennom sporet eller direkte)
+      // lar vi ligge: den avgjøres i den generelle innslåingen etterpå, når naboen har
+      // fått sitt rom og arealregnskapet kan si sitt. (Stripe-fliken over korridoren
+      // gikk ellers til 106 fordi 107s korridor ennå var navnløs.)
+      const umerketNabo = new Set<number>()
+      for (let i = 0; i < W * H; i++) { if (!k[i]) continue
+        const sjekk = (m: number) => { if (lab[m] > 0 && lab[m] !== fra && !merker.has(lab[m])) umerketNabo.add(k[i]) }
+        for (const m of nb4(i)) { if (lab[m] === fra && sporSett.has(m)) { for (const m2 of nb4(m)) if (k[m2] !== k[i]) sjekk(m2) } else sjekk(m) } }
+      for (let runde = 0; runde < 20; runde++) {
+        const kontakt = new Map<number, Map<number, number>>()
+        for (let i = 0; i < W * H; i++) { if (!k[i] || tilRom.has(k[i]) || umerketNabo.has(k[i])) continue
+          const legg = (rom: number) => { if (!rom) return; const c = kontakt.get(k[i]) ?? kontakt.set(k[i], new Map()).get(k[i])!; c.set(rom, (c.get(rom) ?? 0) + 1) }
+          for (const m of nb4(i)) { if (lab[m] === fra && sporSett.has(m)) { for (const m2 of nb4(m)) if (k[m2] !== k[i]) legg(romFor(m2)) } else legg(romFor(m)) } }
+        let endret = false
+        for (const [c, m] of kontakt) { const valg = velgRom([...m.keys()], bitAreal.get(c) ?? 0, m); if (valg) { tilRom.set(c, valg); endret = true } }
+        if (!endret) break
+      }
+      if (tilRom.size < 1) continue
+      for (let i = 0; i < W * H; i++) if (lab[i] === fra && k[i] && tilRom.has(k[i])) lab[i] = tilRom.get(k[i])!
+      // Sporpiksler inntil en tildelt bit følger biten; resten forblir umerket og
+      // avgjøres i den generelle innslåingen.
+      for (let i = 0; i < W * H; i++) { if (lab[i] !== fra || !sporSett.has(i)) continue
+        for (const m of nb4(i)) if (k[m] && tilRom.has(k[m])) { lab[i] = tilRom.get(k[m])!; break } }
+    }
+  }
+
   // slå umerkede inn i merkede naboer
   const nabo = naboskap(r, lab, Math.round(inn.veggMaks / inn.oppløsning) + 1)
   for (;;) {
@@ -343,6 +489,15 @@ function bruktEtiketter(r: Raster, lab: Int32Array, dist: Float32Array, etikette
     const bedre = (a: Nabo, b: Nabo) => a.tynn !== b.tynn ? a.tynn < b.tynn : a.n > b.n
     for (const [fra, m] of nabo) {
       if (fra <= 0 || merker.has(fra)) continue
+      const merkede = [...m].filter(([til]) => til > 0 && merker.has(til))
+      if (merkede.length >= 2 && merkede.some(([til]) => oppgitt(til) != null)) {
+        // Flere rom vil ha biten: la påskriftene avgjøre.
+        let n = 0; for (let i = 0; i < W * H; i++) if (lab[i] === fra) n++
+        const valg = velgRom(merkede.map(([til]) => til), n, new Map(merkede.map(([til, o]) => [til, o.n])))
+        const o = m.get(valg)!
+        if (!best || bedre(o, best.o)) best = { fra, til: valg, o }
+        continue
+      }
       for (const [til, o] of m) if (til > 0 && merker.has(til) && (!best || bedre(o, best.o))) best = { fra, til, o }
     }
     if (!best) break
@@ -583,11 +738,11 @@ function forenkle(p: Punkt[], eps: number): Punkt[] {
 
 function signertAreal(p: Punkt[]) { let a = 0; for (let i = 0, j = p.length - 1; i < p.length; j = i++) a += (p[j].x + p[i].x) * (p[j].y - p[i].y); return a / 2 }
 
-export let sisteKjøring: { r: Raster; lab: Int32Array; dist: Float32Array } | null = null
+export let sisteKjøring: { r: Raster; lab: Int32Array; dist: Float32Array; lab0?: Int32Array; spor?: Spor[] } | null = null
 
 // ── hoved ───────────────────────────────────────────────────────────────────
 
-export function finnRom(segmenter: Segment[], inn: Innstillinger = STANDARD, etiketter: Punkt[] = []): Rom[] {
+export function finnRom(segmenter: Segment[], inn: Innstillinger = STANDARD, etiketter: Etikett[] = []): Rom[] {
   const vegger = finnVegger(segmenter, inn)
   if (!vegger.length) return []
   const marg = 1.0 * inn.ptPerM
@@ -598,33 +753,79 @@ export function finnRom(segmenter: Segment[], inn: Innstillinger = STANDARD, eti
   const W = Math.ceil((x1 - x0) * skala), H = Math.ceil((y1 - y0) * skala)
   const r: Raster = { W, H, x0, y0, skala, vegg: new Uint8Array(W * H) }
   for (const v of vegger) tegnFirkant(r, [v.a, v.b, v.c, v.d])
-  return finnRomIRaster(r, inn, etiketter)
+  return finnRomIRaster(r, inn, etiketter, vegger)
+}
+
+/**
+ * Sporet etter veggendene: pikslene i forlengelsen av hver FRIE veggende fram til
+ * neste vegg innen `doerMaks`. Brukes som mykt skille i regionsveksten — ikke
+ * som sperre. Der en vegg slutter mot en åpen stripe (kabelkjelleren over
+ * veggen mellom trafo 106 og 107, Moskenes 2026-09-13) er avstanden til vegg lik
+ * langs hele stripa, så to fronter møttes der de tilfeldigvis traff hverandre,
+ * og «Trafo 1» gikk langt inn i Trafo 2. Med sporet møtes de på vegglinja, slik
+ * et menneske deler rommene. Ett rom alene flyter uhindret gjennom sporet, så
+ * ingenting deles som ikke skal deles. (En ekte sperre ble prøvd og forkastet —
+ * den slo sammen og delte rom feil, fordi den også endret frøene.)
+ */
+export type Spor = { piksler: number[]; vegg: Vegg }
+function veggenderSpor(r: Raster, vegger: Vegg[], inn: Innstillinger): Spor[] {
+  const { W, H } = r
+  const maksPx = Math.round(inn.doerMaks / inn.oppløsning)
+  const til = (p: Punkt) => ({ x: (p.x - r.x0) * r.skala, y: (p.y - r.y0) * r.skala })
+  const spor: Spor[] = []
+  for (const v of vegger) {
+    // Bare ekte vegger: skravurpar er korte (1,3 m i et 5 cm-rutenett) og fylte stripa med gjerder.
+    if (v.lengde < 1.5) continue
+    const s0 = til({ x: (v.a.x + v.d.x) / 2, y: (v.a.y + v.d.y) / 2 }), s1 = til({ x: (v.b.x + v.c.x) / 2, y: (v.b.y + v.c.y) / 2 })
+    const dx = s1.x - s0.x, dy = s1.y - s0.y, len = Math.hypot(dx, dy); if (len < 1) continue
+    const ux = dx / len, uy = dy / len
+    for (const [start, sx, sy] of [[s1, ux, uy], [s0, -ux, -uy]] as [Punkt, number, number][]) {
+      let k = 1
+      while (k < maksPx) { const x = Math.round(start.x + sx * k), y = Math.round(start.y + sy * k); if (x < 0 || y < 0 || x >= W || y >= H) { k = maksPx; break } if (!r.vegg[y * W + x]) break; k++ }
+      const fra = k
+      let truffet = -1
+      for (; k < maksPx; k++) {
+        const x = Math.round(start.x + sx * k), y = Math.round(start.y + sy * k)
+        if (x < 0 || y < 0 || x >= W || y >= H) break
+        if (r.vegg[y * W + x]) { truffet = k; break }
+      }
+      if (truffet < 0 || truffet - fra < 2) continue
+      const piksler: number[] = []
+      for (let j = fra; j < truffet; j++) piksler.push(Math.round(start.y + sy * j) * W + Math.round(start.x + sx * j))
+      spor.push({ piksler, vegg: v })
+    }
+  }
+  return spor
 }
 
 /** Samme som finnRom, men fra et ferdig veggraster (skannede/flate PDF-er). */
-export function finnRomIRaster(r: Raster, inn: Innstillinger = STANDARD, etiketter: Punkt[] = []): Rom[] {
+export function finnRomIRaster(r: Raster, inn: Innstillinger = STANDARD, etiketter: Etikett[] = [], vegger: Vegg[] = []): Rom[] {
   const { W, H } = r
   kastSmåVegger(r, inn.minVeggKomp / inn.oppløsning)
+  // Sporet regnes ETTER rensingen: før stoppet det mot småvegger som så forsvant, og fronten gikk rundt.
+  const spor: Spor[] = vegger.length ? veggenderSpor(r, vegger, inn) : []
   const dist = avstand(r)
   const noder = erosjonstre(r, dist, inn)
   const frø = noder.filter(n => n.aktiv).map((n, i) => ({ piksler: n.piksler, id: n.ute ? -1 : i + 1 }))
   // alle ute-frø deler id -1 så de ikke konkurrerer innbyrdes
   const lab = tilordne(r, dist, frø)
-  const merker = etiketter.length ? bruktEtiketter(r, lab, dist, etiketter, inn) : new Map<number, number[]>()
+  const merker = etiketter.length ? bruktEtiketter(r, lab, dist, etiketter, inn, spor) : new Map<number, number[]>()
   const lab2 = fyllIndre(r, lab, Math.round(inn.veggMaks / inn.oppløsning) + 1)
-  sisteKjøring = { r, lab: lab2, dist }
-  sisteKjøring = { r, lab: lab2, dist }
+  sisteKjøring = { r, lab: lab2, dist, lab0: lab, spor }
   if (inn.buktMaks > 0) { slåInnSmåbiter(r, lab2, inn); rettUtKanter(r, lab2, inn); fyllBukter(r, lab2, inn) }
   const antall = new Map<number, number>()
   for (let i = 0; i < W * H; i++) if (lab2[i] > 0) antall.set(lab2[i], (antall.get(lab2[i]) ?? 0) + 1)
-  // Polygonet skal dekke helt ut til veggmidten; arealet er gulvet.
-  const labP = fyllTilVegg(r, lab2)
+  // Polygonet stopper ved innsiden av veggen (Tormod 2026-09-13: «rommene er
+  // riktig, men for store»). Før ble det fylt ut til veggmidten så rommene møttes
+  // uten hvite belter, men da lå kanten 15–20 pt inne i veggen på 1:50.
+  // `fyllTilVegg` beholdes for den som vil ha veggmidt-varianten.
+  void fyllTilVegg
   const pxM2 = inn.oppløsning * inn.oppløsning
   const rom: Rom[] = []
   for (const [id, n] of antall) {
     const m2 = n * pxM2
     if (m2 < inn.minAreal || m2 > inn.maksAreal) continue
-    const polygon = omriss(r, labP, id)
+    const polygon = omriss(r, lab2, id)
     if (polygon.length < 3) continue
     const areal = m2 * inn.ptPerM * inn.ptPerM // gulvareal, ikke polygonets
     let sx = 0, sy = 0; for (const p of polygon) { sx += p.x; sy += p.y }
@@ -634,4 +835,4 @@ export function finnRomIRaster(r: Raster, inn: Innstillinger = STANDARD, etikett
 }
 
 /** Kun for testkjøring utenfor appen. */
-export const __intern = { finnVegger, avstand, komponenter, naboskap }
+export const __intern = { finnVegger, avstand, komponenter, naboskap, veggenderSpor, tegnFirkant }

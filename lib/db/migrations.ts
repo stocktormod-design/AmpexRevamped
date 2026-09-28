@@ -5,6 +5,269 @@ import { byggReparasjonsSql, TABELLER_V30 } from './id-repair'
 export const migrations = schemaMigrations({
   migrations: [
     {
+      toVersion: 48,
+      steps: [
+        // Teorispørsmål (2026-09-27): tema i stedet for logg. logg_id er gjort
+        // valgfri i schema.ts — SQLite-kolonnen har ingen NOT NULL å fjerne.
+        addColumns({
+          table: 'laeretid_sporsmaal',
+          columns: [{ name: 'tema', type: 'string', isOptional: true, isIndexed: true }],
+        }),
+      ],
+    },
+    {
+      toVersion: 47,
+      steps: [
+        // Loggmalen (2026-09-27): hvilken mal loggen følger, og utfyllingen. Se lib/laeretid/mal.ts.
+        addColumns({
+          table: 'laeretid_logg',
+          columns: [
+            { name: 'mal_id', type: 'string', isOptional: true },
+            { name: 'utfylling', type: 'string', isOptional: true },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 46,
+      steps: [
+        // Samtalen som skriver læretidsloggen (2026-09-27). Se docs/LAERLING.md.
+        createTable({
+          name: 'laeretid_melding',
+          columns: [
+            { name: 'laerling_id', type: 'string', isIndexed: true },
+            { name: 'logg_id', type: 'string', isIndexed: true },
+            { name: 'rolle', type: 'string' },
+            { name: 'tekst', type: 'string' },
+            { name: 'dekker', type: 'string', isOptional: true },
+            { name: 'nek', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 45,
+      steps: [
+        // Tilvalg og låst pris på tilbudslinja (2026-09-18). Se docs/TILBUD_KONKURRENTER.md.
+        addColumns({
+          table: 'quote_lines',
+          columns: [
+            { name: 'is_optional', type: 'boolean' },
+            { name: 'is_selected', type: 'boolean' },
+            { name: 'price_locked', type: 'boolean' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 44,
+      steps: [
+        // Områder i tilbudet (2026-09-17). Sum per rom i stedet for én flat liste.
+        createTable({
+          name: 'quote_sections',
+          columns: [
+            { name: 'quote_id', type: 'string', isIndexed: true },
+            { name: 'parent_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'name', type: 'string' },
+            { name: 'sort_order', type: 'number' },
+            { name: 'source', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        addColumns({
+          table: 'quote_lines',
+          columns: [{ name: 'section_id', type: 'string', isOptional: true, isIndexed: true }],
+        }),
+      ],
+    },
+    {
+      toVersion: 43,
+      steps: [
+        // Utspørringen (2026-09-16). Sporet som gjør et kryss verdt noe.
+        // Ingen andre enn lærlingen ser denne — se RLS på serveren.
+        createTable({
+          name: 'laeretid_sporsmaal',
+          columns: [
+            { name: 'laerling_id', type: 'string', isIndexed: true },
+            { name: 'logg_id', type: 'string', isIndexed: true },
+            { name: 'maal_nr', type: 'number' },
+            { name: 'del_id', type: 'string' },
+            { name: 'runde', type: 'number' },
+            { name: 'tekst', type: 'string' },
+            { name: 'svar', type: 'string', isOptional: true },
+            { name: 'vurdering', type: 'string', isOptional: true },
+            { name: 'laget_at', type: 'number' },
+            { name: 'besvart_at', type: 'number', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 42,
+      steps: [
+        // Lærlingens egen stemme og hans instruks per logg (2026-09-16), pluss
+        // telleren for hvor mange ganger modellen har skrevet om teksten.
+        addColumns({
+          table: 'laeretid_laerling',
+          columns: [{ name: 'tone', type: 'string', isOptional: true }],
+        }),
+        addColumns({
+          table: 'laeretid_logg',
+          columns: [
+            { name: 'instruks', type: 'string', isOptional: true },
+            { name: 'ai_endringer_brukt', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 41,
+      steps: [
+        // Læretid (2026-09-16). Disse tabellene eies av LÆRLINGEN, ikke av et
+        // firma: de bærer `laerling_id`, og `sync_tables.eier` er 'bruker' så
+        // `watermelon_push` vokter på `auth.uid()` i stedet for på company_id.
+        // Kolonnene MÅ speile serveren, se 20260916190000_laeretid.sql.
+        createTable({
+          name: 'laeretid_laerling',
+          columns: [
+            { name: 'laereplan_kode', type: 'string' },
+            { name: 'opplaeringskontor', type: 'string', isOptional: true },
+            { name: 'laerebedrift', type: 'string', isOptional: true },
+            { name: 'kontrakt_fra', type: 'string', isOptional: true },
+            { name: 'kontrakt_til', type: 'string', isOptional: true },
+            { name: 'oppmelding_planlagt', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'laeretid_tilknytning',
+          columns: [
+            { name: 'laerling_id', type: 'string', isIndexed: true },
+            { name: 'person_id', type: 'string', isIndexed: true },
+            { name: 'rolle', type: 'string' },
+            { name: 'gyldig_fra', type: 'string' },
+            { name: 'gyldig_til', type: 'string', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'laeretid_logg',
+          columns: [
+            { name: 'laerling_id', type: 'string', isIndexed: true },
+            { name: 'tittel', type: 'string', isOptional: true },
+            { name: 'arbeidsdato', type: 'string', isOptional: true },
+            { name: 'status', type: 'string', isIndexed: true },
+            { name: 'innhold', type: 'string', isOptional: true },
+            { name: 'sendt_at', type: 'number', isOptional: true },
+            { name: 'vurdert_at', type: 'number', isOptional: true },
+            { name: 'vurdert_av', type: 'string', isOptional: true },
+            { name: 'tilbakemelding', type: 'string', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'laeretid_bilde',
+          columns: [
+            { name: 'laerling_id', type: 'string', isIndexed: true },
+            { name: 'logg_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'tatt_at', type: 'number', isOptional: true },
+            { name: 'rekkefolge', type: 'number' },
+            { name: 'notat', type: 'string', isOptional: true },
+            { name: 'modellbeskrivelse', type: 'string', isOptional: true },
+            { name: 'r2_nokkel', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'laeretid_belegg',
+          columns: [
+            { name: 'laerling_id', type: 'string', isIndexed: true },
+            { name: 'logg_id', type: 'string', isIndexed: true },
+            { name: 'maal_nr', type: 'number', isIndexed: true },
+            { name: 'del_id', type: 'string' },
+            { name: 'kilde', type: 'string' },
+            { name: 'generert', type: 'boolean' },
+            { name: 'utfort_selv', type: 'boolean' },
+            { name: 'utspurt', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'laeretid_invitasjon',
+          columns: [
+            { name: 'laerling_id', type: 'string', isIndexed: true },
+            { name: 'epost', type: 'string' },
+            { name: 'rolle', type: 'string' },
+            { name: 'fra_person_id', type: 'string' },
+            { name: 'sendt_at', type: 'number' },
+            { name: 'utloper_at', type: 'number' },
+            { name: 'status', type: 'string' },
+            { name: 'avgjort_at', type: 'number', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 40,
+      steps: [
+        // Internkontrollen leses i appen (2026-09-13). Kontoret skriver, telefonen
+        // leser — men leser LOKALT, så rutinen står der også i kjelleren.
+        // Kolonnene MÅ speile serveren (se merknaden på v39).
+        createTable({
+          name: 'ik_punkter',
+          columns: [
+            { name: 'nummer', type: 'string' },
+            { name: 'tittel', type: 'string' },
+            { name: 'hjemmel', type: 'string', isOptional: true },
+            { name: 'formal', type: 'string', isOptional: true },
+            { name: 'innhold', type: 'string', isOptional: true },
+            { name: 'ansvarlig', type: 'string', isOptional: true },
+            { name: 'status', type: 'string' },
+            { name: 'gjennomgang_intervall_mnd', type: 'number' },
+            { name: 'sist_gjennomgatt', type: 'string', isOptional: true },
+            { name: 'vedtatt_at', type: 'number', isOptional: true },
+            { name: 'vedtatt_av', type: 'string', isOptional: true },
+            { name: 'gjeldende_versjon', type: 'number' },
+            { name: 'sort_order', type: 'number' },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'ik_rutiner',
+          columns: [
+            { name: 'punkt_id', type: 'string', isIndexed: true },
+            { name: 'tittel', type: 'string' },
+            { name: 'innhold', type: 'string', isOptional: true },
+            { name: 'ansvarlig', type: 'string', isOptional: true },
+            { name: 'status', type: 'string' },
+            { name: 'gjeldende_versjon', type: 'number' },
+            { name: 'sort_order', type: 'number' },
+            { name: 'vedtatt_at', type: 'number', isOptional: true },
+            { name: 'vedtatt_av', type: 'string', isOptional: true },
+            { name: 'created_by', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
       // Oppgave-mottakere og backfill av synlighet (fra grossist-og-pool, flettet
       // 2026-09-11). Serverside 20260824100000. Lå der som v32, men v32-v36 var
       // alt tatt av tegnings- og skann-arbeidet på denne linja, og telefoner som
@@ -13,6 +276,29 @@ export const migrations = schemaMigrations({
       // MÅ følge serveren: `sync_pull_columns` leser kolonnene fra
       // information_schema, så nye serverkolonner sendes til appen enten vi vil
       // eller ei — og en kolonne WatermelonDB ikke kjenner avviser HELE raden.
+      toVersion: 39,
+      steps: [
+        // Analysen ved første opplasting (2026-09-13): komponenter fra forklaringen og
+        // rom fra strekene kjøres ÉN gang, på telefonen som laster opp. Stempelet sier
+        // at det er gjort, så ingen andre telefoner regner på nytt.
+        addColumns({
+          table: 'drawings',
+          columns: [{ name: 'analyzed_at', type: 'number', isOptional: true }],
+        }),
+      ],
+    },
+    {
+      toVersion: 38,
+      steps: [
+        // Komponenter funnet i tegningens symbolforklaring (2026-09-13): symbolet
+        // står alt på tegningen, så disse tegnes ikke oppå — de er bare trykkbare.
+        addColumns({
+          table: 'fire_devices',
+          columns: [{ name: 'source', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
+    {
       toVersion: 37,
       steps: [
         createTable({

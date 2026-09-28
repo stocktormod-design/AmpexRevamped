@@ -1,6 +1,6 @@
 # Hvor vi står nå
 
-**Sist oppdatert: 2026-09-18, kveld.**
+**Sist oppdatert: 2026-09-28, natt (læretid).**
 
 Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 `docs/GJENNOMGANG_2026-09-08.md`), så les denne først.
@@ -9,13 +9,91 @@ Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 
 ## Tilstand i repoet
 
-- **Gren:** `main` (ikke `grossist-og-pool` — det arbeidet er landet).
-- **68 ukommitterte filer**, 21 av dem nye. Siste commit er `d486a0e` fra 2026-09-14.
-  Fortsatt det første som bør ryddes.
-- `main` og `origin/main` står likt — alt som er committet, er pushet. Det er de
-  ukommitterte filene som er usikret.
-- `npm run typecheck` er grønn.
-- `verify:tripletex` og `verify:boligmappa` grønne mot sine sandkasser.
+- **Gren:** `main`.
+- **~100 ukommitterte filer**, 42 av dem nye. Siste commit er `dfdd074` fra 2026-09-23.
+  Alt læretid-arbeidet 27.–28. september er ukommittert. Fortsatt det første som
+  bør ryddes.
+- `npm run typecheck` er grønn. `npm run verify:laeretid` er grønn (~200 sjekker).
+- Supabase-endringene 27.–28. september er KJØRT mot live-basen og edge-funksjonene
+  er deployet (se læretid under). Repo-migrasjonene er skrevet i tillegg.
+
+## 27.–28. september — læretid: logg, quiz, teori og læringsprofil
+
+Hele læretid-flata er bygget ut fra plan (docs/LAERLING.md) til noe som kjører i
+appen. Testet ende til ende i simulatoren (iPhone 17 Pro) som `test@ampex.no`.
+Detaljene står i `docs/LAERLING.md` («Samtalen og quizen», «Omlegging», «Gjennomgang»).
+
+**Hva Tormod har bestemt (og som styrer alt videre):**
+- **Quiz er hovedsaken, ikke loggen.** «Ingen lærlinger vil bruke tid på en logg.»
+- **Kun tekst, aldri tale.** Chatbot med gode rekkverk.
+- **Lærlingen skriver ikke loggen.** AI fyller ut hele malen — også alle punktene i
+  risikovurderingen — av bildene, notatene og ett–to svar.
+- **Malen er TENK Lofotens «Loggmal for elektrofagene»** fra fagbrev.io (Min side →
+  Felles dokumenter) og SKAL følges. Loggen blir en PDF i den malen, som lastes opp i
+  fagbrev.io. «Skriftlig refleksjon» er mal nr. to (teoretiske logger).
+- **NEK: hvor, aldri hva.** AI peker på punkt og side («NEK 400:2026, punkt 522,
+  side 193»); henvisningen holder, egen forklaring er valgfri.
+- **Teori ved siden av jobbene:** Ohms lov, vern, karakteristikk, jording, måling …
+  med en læringsprofil per bruker som tilpasser nivået.
+- **Duolingo-aktig UI, «hjernedødt lett».** Læretid er det ene stedet som bryter
+  regel 9 (hvitt/sort) med vilje. Montørflatene er urørt.
+- **Ny logg starter i fotomodus** — ta bilde eller hent fra kamerarullen; tiden
+  følger med fra EXIF.
+- **Alt som skrives teller** for kryss i fagbrev.io (se «Kryss i fagbrev.io» under).
+  Appens egen avkryssingsregel er fortsatt streng (brødtekst + quiz) — åpent spørsmål.
+
+**Flyten i appen nå:** Meg → Læretid → *Ny logg* → bilder (malknapp) → ett spørsmål i
+chatten («hva gjorde du selv, hva gjorde andre?» + bilder uten notat) → *Loggen er
+klar* → *Send inn og start quizen* (3 spørsmål om jobben) → PDF til fagbrev.io.
+Forsida: én øv-knapp (jobbquiz først, ellers neste teoritema), teoristi med 27 temaer
+i 6 enheter, *Neste tema* etter hver økt. Målsiden viser hver del i farge og «Øv på dette».
+
+**Kode (alt nytt eller omskrevet):**
+- `lib/laeretid/`: `mal.ts` (malene ordrett, `vaskUtfylling`, `fyllResten`, NEK-felt),
+  `samtale.ts` (avhøret, `rensNek`), `samtale-klient.ts`, `quiz-klient.ts`
+  (runde 1/2, repetisjon, `lagTeori`, lås mot doble kall), `profil.ts`
+  (nivå 0–3, regnes ut — lagres aldri), `teori.ts` (stien), `bildetid.ts` (EXIF-tid),
+  `bilder.ts` (lagre lokalt først, R2 etterpå), `utsporing.ts` (to faste spørsmål).
+- `lib/pdf/logg.ts` — loggen som PDF i malen, med bilder.
+- `components/laeretid-ui.tsx` — Knapp som synker, Kort, Fremdrift, Boble, Merke.
+- `app/(app)/laeretid/`: `index`, `teori`, `quiz`, `logger`, `maal/[nr]`,
+  `logg/ny|bilder|samtale|[id]`, `_layout` (egen stack — hindret sju ekstra faner i docken).
+- `Meg` har raden «Læretid» (bare for lærlinger). Docken skjules i chat/quiz/bilder.
+
+**Server (kjørt mot live, prosjekt vymgogzcicbaizjlaurr):**
+- Tabell `laeretid_melding` (samtalen, RLS kun lærling); `laeretid_logg.mal_id` og
+  `.utfylling`; `laeretid_sporsmaal.tema` og `logg_id` valgfri. WatermelonDB v46–48.
+- Edge function **`laeretid-ai`** (modus: samtale, skriv, lag, vurder, teori). Velger
+  modell selv fra Google-lista: nyeste flash til chat (3–4 s), nyeste pro til skriving
+  og retting, faller til flash ved tidsavbrudd. Lås med `LAERETID_MODELL` /
+  `LAERETID_RASK_MODELL`. (`gemini-2.5-*` svarer 404 for nye brukere.)
+- **`r2-sign`:** nytt `laeretid/`-prefiks lagt under `laerling/<uid>/` (krever
+  lærlingrad). **Sikkerhetshull lukket:** `%2e%2e` i nøkkelen kunne signere et annet
+  firmas filer — gjaldt ALLE prefikser, også før læretid. Nå kun `[A-Za-z0-9._/-]` +
+  sjekk av ferdig sti. Verifisert mot live.
+- Lærlingrader lagt inn for `stocktormod@gmail.com` (ELE03-03, TENK Lofoten) og
+  `test@ampex.no`. Testbrukeren har noen testlogger og quizsvar.
+- iOS: `NSPhotoLibraryUsageDescription` lagt i `app.json` og `ios/Ampex/Info.plist`
+  — telefonen trenger nytt bygg for å hente bilder fra kamerarullen.
+
+**Kryss i fagbrev.io (Tormods 28 godkjente dokumentasjoner):**
+Alle 28 + vedlegg er lastet ned og vurdert. Regelen Tormod satte: *alt som skrives
+teller, uansett hvor lite* (tabell, egenvurdering, bisetning). Da er ingen kryss for
+mange, men **122 mangler** — mest 1.4 (22), 1.3 (20), 1.16 (19), 1.19 (14), 1.2 (13),
+1.20 (10). **Ingenting er endret i fagbrev.io.** Venter på: om én logg skal prøves
+først, for å se om godkjenningen til Joakim forsvinner når krysset endres. Listene
+(med sitater) lå i scratchpad og er ikke lagt i repoet — loggene er Tormods arbeid;
+de kan lages på nytt fra ZIP-en i fagbrev.io (Dokumentasjon → Last ned alle → ZIP).
+
+**Ikke gjort / kjent:**
+- Kameraet er ikke testet (simulatoren har ikke kamera).
+- Grensen på to AI-omskrivinger sjekkes bare i appen, ikke på serveren (kostnad, ikke
+  datalekkasje).
+- Skal appens egen avkryssingsregel også bli «alt som skrives teller»? Ikke avgjort.
+- «Redigerbart pdf» — utfyllbar PDF, rette i appen, eller Word-fil? Ikke avklart.
+- Autokorrektur er slått av i alle skrivefelt i læretid (den laget «Kleopatra» av
+  «Kleppstad»).
+- Lærlingdocken, betaling, kontorflaten og eksport utover PDF er ikke bygget.
 
 ## Det som ble gjort 18. september — tilbudet er en kalkyle
 
@@ -544,6 +622,10 @@ Verifisert headless i Chrome (puppeteer-core i scratchpad, testbrukeren) på 144
 (testrutinen er slettet igjen). `cd desktop && npm run build` grønn. Ikke committet.
 
 ## Åpne tråder
+
+- **Læretid:** fire åpne spørsmål til Tormod står i seksjonen 27.–28. september
+  (kryss i fagbrev.io, avkryssingsregel i appen, «redigerbart pdf», omskrivingsgrense
+  på server). Nytt telefonbygg trengs for bildetilgang.
 
 - **Skann:** bad og stue må skannes på nytt med dagens app. Bare ett komplett LiDAR-skann
   (soverommet) finnes å måle på, så standardverdiene er ikke bekreftet på andre rom.

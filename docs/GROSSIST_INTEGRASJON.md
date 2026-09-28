@@ -517,6 +517,97 @@ når firmaets egen prisfil leses inn — `product_prices` er fortsatt per firma.
 **Ikke gjort ennå:** `products` er fortsatt firmascopet og i synken (planen
 over står); kategorigrupperingen på ekte data; en «Etterspør prisfil»-knapp.
 
+## Bilder — produsentene direkte, spurt 2026-09-15
+
+Solars ekte fil har **null VX-poster i det hele tatt** — ikke bare `BILDE`,
+men `FDV`, `HMS` og `EFOBASE` (efobase_id, nøkkelen «Se i EFObasen»-planen fra
+09-11 skulle bruke) er også tomme på alle 126 589 varer. Nivå 1-planen over har
+derfor ingenting å henge seg på for Solar akkurat nå — verken bildet eller
+lenken til EFObasen.
+
+**Vurdert og forkastet:** å skrape EFObasen, grossistens nettbutikk, eller
+produsentenes egne sider uten tillatelse. Robots.txt alene sier ingenting om
+lov — det styrer bare hva en robot TEKNISK kan hente, ikke retten til å
+gjenbruke det. Både Nexans og Schneider Electric har et eksplisitt forbud i
+sine brukervilkår mot å kopiere/reprodusere «data, elementer eller dokumenter»
+uten skriftlig samtykke. EFObasens brukeravtale har samme forbud (se over).
+
+**Hvorfor produsentene likevel er den rette veien:** EFObasen betaler ikke
+produsentene for dataene — det er omvendt, produsentene betaler EFO en
+el-nummer-registreringsavgift (halv pris for EFO-medlemmer, fakturert årlig).
+Det finnes altså ingen finansiell binding som skulle gjøre en produsent
+skeptisk til at Ampex også viser det samme bildet et annet sted; EFObasen er
+ikke noe vi konkurrerer med i produsentens øyne, bare gratis markedsføring til.
+
+**Sjekket, ikke funnet:** ingen åpen bilde-/produktdata-API for Nexans (deres
+`portal.api.nexans.com` er kabeltrommel-/forsyningssporing, ikke katalog) eller
+for den norske Elko (elko.no — **ikke** samme selskap som tsjekkiske ELKO EP
+eller baltiske ELKO Group, som begge dukker opp i søk og har egne API-er/feeds
+urelatert til oss). Nexans sin robots.txt har derimot bevisst
+`Allow: /.rest/catalog/v1/family/image/` mens resten av `/.rest/`-et er
+stengt — et signal om at bildeendepunktet skal kunne finnes, men jeg fikk ikke
+et treff på gjettede spørreparametre (gtin/ean/reference, alt 404) og lot være
+å fortsette å gjette blindt mot et produksjonssystem.
+
+**Funnet, ikke prøvd:** Schneider Electric har en selvbetjent utviklerportal
+(`portal.api.schneider.com`, Azure API Management) med en «Product Catalog
+API» som eksplisitt inkluderer bilder/dokumenter — men selve portalen svarer
+`Blocked by Schneider Policy` fra dette nettverket, en hard edge-blokkering,
+ikke en innloggingsside. Ikke noe å omgå.
+
+**Spurt 2026-09-15** — lavterskel-ask til begge: vis produktbildet fra deres
+egen side ved siden av varen i appen, hentet direkte fra dem hver gang (ikke
+lagret/kopiert hos oss), koblet til el-nummeret/EAN-en vi allerede har fra
+V4-fila. Ingen ny integrasjon kreves av dem, bare et skriftlig ja.
+- **Nexans:** e-post til `firmapost@nexans.com` (eneste verifiserte adresse —
+  kundeservice/produktsjefer er navngitt på nettsiden deres, men uten kontekst
+  for hvem som eier bilderettigheter, så generell firmapost ble brukt).
+- **Schneider Electric:** kontaktskjemaet på se.com (kategori
+  «Dokumentasjonsforespørsel», rolle «Programvare- eller tjenesteleverandør»),
+  samme tekst pluss et bonus-spørsmål om Product Catalog API-en. Sendt inn
+  manuelt av Tormod — skjemaet er en Salesforce-komponent i en shadow-DOM som
+  ikke lot seg fylle ut og sende programmatisk.
+
+**Status:** Nexans har svart JA (se under). Schneider: fortsatt intet svar.
+Beslektet: [[katalog-felles-pris-privat]].
+
+### Nexans sa ja — 2026-09-23
+
+May Britt Jacklin, Product Marketing Manager, Power Connect & Grid, BU Nordics
+(`maybritt.jacklin@nexans.com`), svarte på vegne av Nexans. Ordrett:
+
+> Det er greit at dere viser produktbilder fra nettsiden vår i appen deres,
+> forutsatt at bildene hentes direkte fra Nexans' nettsider og ikke lagres,
+> kopieres eller distribueres videre av Ampex. Bildene skal kun brukes i
+> tilknytning til visning av Nexans-produkter i appen.
+>
+> Vi har per i dag ingen strukturert bildefeed tilgjengelig for ekstern bruk.
+
+Tre betingelser, og de er bindende:
+1. **Hentes direkte fra nexans.no** — hver visning går til deres server.
+2. **Ikke lagres, kopieres eller distribueres videre** — ingen R2-kopi, ingen
+   cache vi eier, ingen bilde-URL som går videre til tredjepart.
+3. **Kun i tilknytning til visning av Nexans-produkter i appen** — ikke i
+   markedsføring, tilbuds-PDF-er eller arkivpakker.
+
+**Dette kolliderer med offline-først.** Regel 2 i CLAUDE.md sier at montørappen
+leser fra lokal SQLite; et hotlinket bilde krever nett i det øyeblikket
+varekortet åpnes, og montøren i en kjeller får ingenting. Vi kan ikke løse det
+med vår egen cache uten å bryte betingelse 2. Praktisk konsekvens: Nexans-bilder
+er en **online-bonus på varekortet**, ikke en del av varedataene som synkes.
+Varekortet må se ferdig ut uten bildet (el-nummer, navn, tverrsnitt bærer
+gjenkjenningen), og bildet legger seg oppå når det er dekning. Rammebufferet
+nettleseren/RN-image selv holder er alminnelig visningsteknikk, ikke vår
+lagring — men vi skal ikke bygge en egen bildekatalog av det.
+
+**Fortsatt uløst: URL-en.** De har ingen strukturert bildefeed, så veien fra
+el-nummer/GTIN til en stabil bilde-URL på nexans.no finnes ikke ennå.
+`Allow: /.rest/catalog/v1/family/image/` i robots.txt står fremdeles åpen, men
+gjettede spørreparametre ga 404 (se over — ikke gjenta det blindt). Nå som vi
+har et skriftlig ja er det rimelig å spørre May Britt direkte om hvordan man
+slår opp bildet for et el-nummer; det er et konkret teknisk spørsmål til en
+kontakt som allerede har sagt ja, ikke en ny tillatelsesrunde.
+
 ## Felles katalog på kontoret — 2026-09-23
 
 Tormod: «vi gjør prisfila VARENE global i ampex, ikke prisene, de er per firma».
@@ -543,7 +634,7 @@ telefonens ordre/lager også slår opp i katalogen i stedet for `products`
 
 **Nexans-bilder:** ja fra May Britt Jacklin 23.09 (hotlink fra nexans.no, ingen
 lagring, bare Nexans-produkter). Mangler: hvordan bilde-URL-en slås opp per
-el-nummer/EAN. Spør henne, ikke gjett.
+el-nummer/EAN. Spør henne, ikke gjett (se over).
 
 ### Ti produsenter til spurt — 2026-09-23 kveld
 

@@ -13,7 +13,13 @@ import CoreVideo
 /// uten geometri. Overlegget leser feltet direkte i shaderen — ingen CPU-pass, ingen
 /// keyframe-bøtter, ingen klumper: stripene toner der du peker, mens du peker.
 final class CoverageField {
-    struct Uniforms { var origin: SIMD3<Float>; var invExtent: SIMD3<Float> }
+    // MSL-ekvivalenten er { float3; float3; float; } — størrelse 36 rundet opp til
+    // 16-justering = 48 byte. Putene holder Swift-siden like stor, slik at
+    // `handleBinding` skriver hele strukturen shaderen leser.
+    struct Uniforms {
+        var origin: SIMD3<Float>; var invExtent: SIMD3<Float>; var voxel: Float
+        var pute: (Float, Float, Float) = (0, 0, 0)
+    }
     let device: MTLDevice
     let queue: MTLCommandQueue
     let texture: MTLTexture
@@ -31,7 +37,8 @@ final class CoverageField {
 
     var uniforms: Uniforms {
         Uniforms(origin: origin,
-                 invExtent: SIMD3<Float>(1 / (Float(dims.x) * voxel), 1 / (Float(dims.y) * voxel), 1 / (Float(dims.z) * voxel)))
+                 invExtent: SIMD3<Float>(1 / (Float(dims.x) * voxel), 1 / (Float(dims.y) * voxel), 1 / (Float(dims.z) * voxel)),
+                 voxel: voxel)
     }
 
     private static let msl = """
@@ -148,10 +155,44 @@ final class CoverageField {
         }
     }
 
+    /// TØMMER feltet mellom skann (2026-09-13). `coverageField` er en `static let` — én
+    /// instans for hele appens levetid — mens ARKit gir HVERT skann et nytt verdensorigo.
+    /// Uten dette arvet skann nr. 2 både malingen og forankringen fra skann nr. 1: deler av
+    /// det nye rommet lå utenfor det gamle volumet (stripene kunne ikke forsvinne der
+    /// uansett hvor lenge man pekte), og andre deler leste dekning malt i et ANNET rom.
+    func nullstill() {
+        guard let cb = queue.makeCommandBuffer() else { return }
+        if let blit = cb.makeBlitCommandEncoder() {
+            blit.fill(buffer: accum, range: 0..<accum.length, value: 0)
+            blit.endEncoding()
+        }
+        // Teksturen overlegget leser skrives fra telleren — kjør én konvertering med det
+        // samme, ellers står forrige skanns bilde der til neste ramme har rukket det.
+        if let enc = cb.makeComputeCommandEncoder() {
+            var s = s0
+            enc.setComputePipelineState(convertPipe)
+            enc.setBuffer(accum, offset: 0, index: 0)
+            enc.setBytes(&s, length: 4, index: 1)
+            enc.setTexture(texture, index: 0)
+            enc.dispatchThreads(MTLSize(width: Int(dims.x), height: Int(dims.y), depth: Int(dims.z)),
+                                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 4))
+            enc.endEncoding()
+        }
+        cb.commit()
+        tikk = 0
+        ready = false
+    }
+
     /// Forankrer volumet rundt første kameraposisjon.
+    /// LODDRETT ER IKKE SENTRERT (2026-09-13): volumet er 3,6 m høyt, og kameraet starter
+    /// 1,5–1,7 m over gulvet — sentrert ga bare 1,8 m ned og dermed 13 cm margin til gulvet
+    /// på skannet 13.09 (gulvet lå på −1,64 m). Holder man telefonen høyere, faller gulvet
+    /// UT av feltet og blir aldri malt — stripene der kan da ikke forsvinne uansett.
+    /// 2,2 m ned / 1,4 m opp: taket ligger typisk 0,7–1,0 m over kameraet.
     func forankre(_ camPos: SIMD3<Float>) {
         guard !ready else { return }
-        origin = camPos - SIMD3<Float>(Float(dims.x) * voxel / 2, Float(dims.y) * voxel / 2, Float(dims.z) * voxel / 2)
+        let ned: Float = 2.2
+        origin = camPos - SIMD3<Float>(Float(dims.x) * voxel / 2, ned, Float(dims.z) * voxel / 2)
         ready = true
     }
 
@@ -200,8 +241,11 @@ final class CoverageField {
         enc.dispatchThreads(MTLSize(width: w, height: h, depth: 1), threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
         enc.endEncoding()
         tikk += 1
-        // Teksturen som overlegget leser oppdateres hver 2. ramme (~21 MB skriv, ~1 ms).
-        if tikk % 2 == 0, let enc2 = cb.makeComputeCommandEncoder() {
+        // Teksturen som overlegget leser oppdateres hver 2. splat (~21 MB skriv, ~1 ms).
+        // Med splatting på hver ramme (§101) er det 15 Hz på en 30 Hz-økt, mot 7,5 Hz før.
+        // meshscan.feltvis = n: skriv teksturen hver n-te splat.
+        let visRate = max(1, Int(MeshBakeV2.flaggTall("meshscan.feltvis", 2)))
+        if tikk % visRate == 0, let enc2 = cb.makeComputeCommandEncoder() {
             var s = s0
             enc2.setComputePipelineState(convertPipe)
             enc2.setBuffer(accum, offset: 0, index: 0)

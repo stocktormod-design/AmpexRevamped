@@ -2123,3 +2123,162 @@ select.celle-inn { font-size: 12px; color: var(--blekk-3); }
 .ark-tabell .avkryss { width: 26px; }
 .ark-rabatt { gap: 1px; }
 .ark-rabatt .celle-inn { width: 22px !important; }
+
+/* ── Prosjektet på planen (ruter/ProsjektPlan.tsx, ui/Planvisning.tsx) ─────── */
+tr.klikkbar { cursor: pointer; }
+tr.klikkbar:hover td { background: var(--dis); }
+
+.prosjekt-side {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px;
+}
+.tre { min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+.tre-status {
+  display: flex; align-items: center; gap: 12px; padding: 0; border: none; background: none;
+  text-align: left; cursor: pointer; font: inherit; color: inherit;
+}
+.tre-status > span { display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
+.tre-faner { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--fyll); }
+.tre-faner button {
+  flex: 1; height: 30px; border: none; border-radius: 8px; background: transparent; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 500; color: var(--blekk-2);
+}
+.tre-faner button[aria-selected='true'] { background: var(--papir); color: var(--blekk); box-shadow: var(--skygge-knapp); }
+.tre-faner span { color: var(--blekk-3); font-variant-numeric: tabular-nums; margin-left: 2px; }
+.tre-sok {
+  display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px;
+  border-radius: 10px; background: var(--fyll); color: var(--blekk-3);
+}
+.tre-sok:focus-within { background: var(--papir); box-shadow: 0 0 0 1px var(--kant-sterk), var(--skygge-ring); }
+.tre-sok input { flex: 1; min-width: 0; border: none; background: none; outline: none; font: inherit; font-size: 14px; color: var(--blekk); }
+.tre-sok button { border: none; background: none; color: var(--blekk-3); cursor: pointer; display: grid; place-items: center; padding: 2px; }
+.tre-sok kbd { font-family: var(--f-mono); font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--kant); color: var(--blekk-3); }
+.tre-fag { display: flex; flex-wrap: wrap; gap: 6px; }
+.tre-fag button {
+  height: 28px; padding: 0 10px; border-radius: var(--r-pille); cursor: pointer; font: inherit; font-size: 13px; font-weight: 500;
+  border: 1px solid var(--kant); background: var(--papir); color: var(--blekk);
+}
+.tre-fag button span { color: var(--blekk-3); font-variant-numeric: tabular-nums; margin-left: 3px; }
+.tre-fag button[aria-pressed='true'] { background: var(--blekk); border-color: var(--blekk); color: #fff; }
+.tre-fag button[aria-pressed='true'] span { color: rgba(255, 255, 255, 0.7); }
+.tre-liste { flex: 1; min-height: 0; overflow: auto; margin: 0 -6px; padding: 0 6px 12px; display: flex; flex-direction: column; gap: 1px; }
+.tre-liste section { display: flex; flex-direction: column; gap: 1px; margin-bottom: 18px; }
+.tre-tom { padding: 8px 4px; }
+.tre-rad {
+  width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; min-height: 34px;
+  padding: 6px 10px; border: none; border-radius: var(--r-knapp);
+  background: transparent; color: var(--blekk); cursor: pointer; font: inherit; font-size: 14px;
+}
+.tre-rad:hover { background: var(--dis); }
+.tre-rad[aria-current='true'] { background: var(--blekk); color: #fff; }
+.tre-rad[aria-current='true'] .tre-ikon, .tre-rad[aria-current='true'] small, .tre-rad[aria-current='true'] .tre-tall { color: rgba(255, 255, 255, 0.72); }
+.tre-rad.ferdig { color: var(--blekk-4); text-decoration: line-through; }
+.tre-mappe { font-weight: 600; }
+.tre-ikon { flex: none; color: var(--blekk-3); }
+.tre-pil { flex: none; color: var(--blekk-3); transition: transform 160ms ease; }
+.tre-pil.apen { transform: rotate(90deg); }
+.tre-tekst { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.tre-tekst small { color: var(--blekk-3); font-size: 12px; font-weight: 400; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tre-tall { flex: none; font-size: 12px; color: var(--blekk-3); font-variant-numeric: tabular-nums; font-weight: 400; }
+.tre-tall.ferdig { color: var(--gronn); }
+
+.dok { position: relative; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.dok-hode { display: flex; align-items: flex-end; gap: 16px; flex: none; }
+.dok-tittel { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dok-tittel strong { font-family: var(--f-display); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.dok-sti { font-size: 12px; color: var(--blekk-3); }
+.dok-forklaring { display: flex; gap: 14px; font-size: 12px; color: var(--blekk-3); }
+.dok-forklaring span { display: inline-flex; align-items: center; gap: 6px; }
+.dok-forklaring i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; }
+.fk-montert { border: 2px solid var(--gronn); background: radial-gradient(var(--gronn) 30%, transparent 34%); }
+.fk-ikke { border: 2px solid #8E8E93; }
+.fk-pin { background: var(--blekk); box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(0, 0, 0, 0.3); width: 9px !important; height: 9px !important; }
+.dok .plan { flex: 1; }
+.dok-kort { position: absolute; left: 16px; bottom: 16px; width: 300px; z-index: 5; }
+
+.plan {
+  position: relative; overflow: hidden; min-height: 420px;
+  background: #E7E7EC; border-radius: var(--r-stor);
+  cursor: grab; touch-action: none; user-select: none;
+}
+.plan:active { cursor: grabbing; }
+.plan-lerret {
+  position: absolute; left: 0; top: 0; transform-origin: 0 0;
+  background: #fff; box-shadow: rgba(0, 0, 0, 0.10) 0 8px 30px -8px;
+  transition: opacity 200ms ease;
+}
+.plan-lag { position: absolute; inset: 0; pointer-events: none; }
+.plan-tom { position: absolute; inset: 0; display: grid; place-items: center; color: var(--blekk-3); padding: 24px; text-align: center; }
+
+.plan-markor {
+  position: absolute; pointer-events: auto; padding: 0; cursor: pointer;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  animation: plan-inn 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.plan-markor.glir { transition: left 420ms cubic-bezier(0.22, 1, 0.36, 1), top 420ms cubic-bezier(0.22, 1, 0.36, 1); }
+.plan-enhet {
+  width: 22px; height: 22px; background: rgba(255, 255, 255, 0.35);
+  border: 2.5px solid var(--farge);
+}
+.plan-enhet.fylt::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px;
+  transform: translate(-50%, -50%); border-radius: 50%; background: var(--farge);
+}
+.plan-pin {
+  width: 16px; height: 16px; background: var(--farge);
+  border: 3px solid #fff; box-shadow: rgba(0, 0, 0, 0.28) 0 2px 6px;
+}
+.plan-markor:hover { z-index: 2; }
+.plan-markor.valgt { z-index: 3; box-shadow: 0 0 0 5px rgba(29, 29, 31, 0.18); }
+@keyframes plan-inn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.2); } }
+
+.plan-tips {
+  position: absolute; z-index: 4; pointer-events: none;
+  transform: translate(-50%, calc(-100% - 18px));
+  display: flex; flex-direction: column; gap: 1px; white-space: nowrap;
+  padding: 6px 10px; border-radius: 8px; font-size: 12px;
+  background: rgba(29, 29, 31, 0.92); color: #fff;
+}
+.plan-tips span { color: rgba(255, 255, 255, 0.7); }
+.plan-tips.glir { display: none; }
+
+.plan-verktoy {
+  position: absolute; right: 12px; top: 12px; display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px 4px 4px; border-radius: var(--r-pille);
+  background: rgba(252, 252, 253, 0.92); backdrop-filter: blur(12px);
+  border: 0.5px solid rgba(0, 0, 0, 0.08); box-shadow: var(--skygge-kort);
+}
+.plan-knapp {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  border: none; background: var(--fyll); color: var(--blekk); cursor: pointer;
+}
+.plan-zoom { font-size: 12px; color: var(--blekk-3); font-variant-numeric: tabular-nums; min-width: 42px; }
+
+.plan-tilbake { display: inline-flex; align-items: center; gap: 6px; color: var(--blekk-3); font-size: 13px; text-decoration: none; }
+.plan-tilbake:hover { color: var(--blekk); }
+.plan-navn { font-family: var(--f-display); font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+.plan-hoved { font-family: var(--f-display); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ring-bue { transition: stroke-dashoffset 900ms cubic-bezier(0.22, 1, 0.36, 1); }
+.ring-tall { font-family: var(--f-ui); font-size: 17px; font-weight: 700; fill: var(--blekk); font-variant-numeric: tabular-nums; }
+.plan-forfalt { color: var(--rod); }
+.plan-ok { color: var(--gronn); }
+
+.plan-kort {
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 16px;
+  border: 0.5px solid var(--kant); border-radius: var(--r-kort); box-shadow: var(--skygge-kort); background: var(--papir);
+}
+.plan-kort-hode { display: flex; flex-direction: column; gap: 2px; }
+.plan-dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+.plan-dl dt { color: var(--blekk-3); }
+.plan-dl dd { margin: 0; }
+
+.plan-seksjon { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--blekk-3); margin: 0 0 8px; }
+.plan-type { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; margin-bottom: 10px; }
+.plan-type-tall { font-variant-numeric: tabular-nums; color: var(--blekk-2); }
+.plan-stolpe { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--fyll); overflow: hidden; }
+.plan-stolpe > div { height: 100%; background: var(--gronn); border-radius: 2px; transition: width 600ms ease; }
+
+
+@media (max-width: 900px) {
+  .prosjekt-side { grid-template-columns: 1fr; grid-template-rows: auto 60vh; }
+}

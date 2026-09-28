@@ -94,7 +94,7 @@ export async function hentProsjekter(): Promise<Prosjekt[]> {
   for (const t of sjekk(oppgaver, 'Kunne ikke lese oppgaver') as { project_id: string; status: string | null }[]) {
     const rad = oppgPer.get(t.project_id) ?? { alle: 0, apne: 0 }
     rad.alle++
-    if (t.status !== 'ferdig') rad.apne++
+    if (t.status === 'open') rad.apne++ // appen skriver 'open'/'done' — 'ferdig' fantes aldri
     oppgPer.set(t.project_id, rad)
   }
 
