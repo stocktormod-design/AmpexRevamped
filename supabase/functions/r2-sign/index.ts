@@ -40,16 +40,28 @@ const FIRMA_PREFIKS = /^(drawings|room-scans|foto|arkiv)\//
 // SKRIVE, for det som ligger der vises for alle firmaer.
 const DELT_PREFIKS = /^(tale|katalog)\//
 const KUN_AMPEX_SKRIVER = /^katalog\//
+// laeretid/ er det tredje unntaket (2026-09-27): lærlingens bilder. Læretid
+// eies av LÆRLINGEN, ikke av et firma — en lærling som kjøper produktet alene
+// har ikke noe firma i det hele tatt. Objektet ligger under
+// `laerling/<auth.uid()>/…`, og brukeren kommer fra økten, aldri fra klienten.
+const LAERLING_PREFIKS = /^laeretid\//
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
 function gyldigNokkel(key: string): boolean {
-  // Ingen tomme segmenter, ingen «..», ingen kontrolltegn. Prefikset er sjekket før.
+  // Bare tegn appen faktisk bruker. «%» og «\\» er utelukket med vilje: URL-en
+  // under løser opp «%2e%2e» og «\\» som katalogsteg, og da kunne
+  // «tale/%2e%2e/firma/<annet>/…» signere et annet firmas filer (funnet 27.09.2026).
   if (key.length > 512) return false
-  if (/[\x00-\x1f\x7f]/.test(key)) return false
+  if (!/^[A-Za-z0-9._\-\/]+$/.test(key)) return false
   return key.split('/').every(seg => seg.length > 0 && seg !== '.' && seg !== '..')
+}
+
+/** Belte og bukseseler: stien R2 faktisk får, må ligge under det vi mente. */
+function innenfor(url: URL, objektNokkel: string): boolean {
+  return url.pathname === `/${BUCKET}/${objektNokkel}`
 }
 
 export default {
@@ -63,8 +75,28 @@ export default {
     const key = (payload.key ?? '').replace(/^\/+/, '')
     const method = (payload.method ?? 'get').toLowerCase()
     if (method !== 'put' && method !== 'get') return json({ error: 'method må være put eller get' }, 400)
-    if (!key || !gyldigNokkel(key) || !(FIRMA_PREFIKS.test(key) || DELT_PREFIKS.test(key))) {
-      return json({ error: 'ugyldig key (må starte med drawings/, room-scans/, foto/, arkiv/, tale/ eller katalog/)' }, 400)
+    if (!key || !gyldigNokkel(key) || !(FIRMA_PREFIKS.test(key) || DELT_PREFIKS.test(key) || LAERLING_PREFIKS.test(key))) {
+      return json({ error: 'ugyldig key (må starte med drawings/, room-scans/, foto/, arkiv/, tale/, katalog/ eller laeretid/)' }, 400)
+    }
+    const expiresInL = Math.min(Math.max(payload.expiresIn ?? 3600, 60), 86400)
+    const signer = async (objektNokkel: string, utloper: number) => {
+      const aws = new AwsClient({ accessKeyId: ACCESS_KEY_ID, secretAccessKey: SECRET_ACCESS_KEY, service: 's3', region: 'auto' })
+      const url = new URL(`https://${ACCOUNT_ID}.r2.cloudflarestorage.com/${BUCKET}/${objektNokkel}`)
+      if (!innenfor(url, objektNokkel)) throw new Error('ugyldig key')
+      url.searchParams.set('X-Amz-Expires', String(utloper))
+      return (await aws.sign(url.toString(), { method: method === 'put' ? 'PUT' : 'GET', aws: { signQuery: true } })).url
+    }
+
+    // Lærlingens egne bilder: prefiks fra økten, uavhengig av firma.
+    if (LAERLING_PREFIKS.test(key)) {
+      const { data: { user } } = await ctx.supabase.auth.getUser()
+      if (!user) return json({ error: 'ikke innlogget' }, 401)
+      const { data: laerling } = await ctx.supabase
+        .from('laeretid_laerling').select('id').eq('id', user.id).is('deleted_at', null).maybeSingle()
+      if (!laerling) return json({ error: 'ikke lærling' }, 403)
+      try {
+        return json({ url: await signer(`laerling/${user.id}/${key}`, expiresInL), key, expiresIn: expiresInL })
+      } catch { return json({ error: 'ugyldig key' }, 400) }
     }
 
     // Skriving til den felles katalogen: kun Ampex-administratorer. Sjekken
@@ -89,6 +121,7 @@ export default {
     const expiresIn = Math.min(Math.max(payload.expiresIn ?? 3600, 60), 86400)
     const aws = new AwsClient({ accessKeyId: ACCESS_KEY_ID, secretAccessKey: SECRET_ACCESS_KEY, service: 's3', region: 'auto' })
     const url = new URL(`https://${ACCOUNT_ID}.r2.cloudflarestorage.com/${BUCKET}/${objektNokkel}`)
+    if (!innenfor(url, objektNokkel)) return json({ error: 'ugyldig key' }, 400)
     url.searchParams.set('X-Amz-Expires', String(expiresIn))
     const signed = await aws.sign(url.toString(), { method: method === 'put' ? 'PUT' : 'GET', aws: { signQuery: true } })
     // `key` er klientens nøkkel, uten prefiks — det er den som lagres i radene.
