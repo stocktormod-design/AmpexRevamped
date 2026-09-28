@@ -170,7 +170,7 @@ export default function TegningEdit() {
     if (!drawingId) return
     const sub = database.get<Room>('rooms')
       .query(Q.where('drawing_id', drawingId))
-      .observe().subscribe(setRooms)
+      .observeWithColumns(['shape', 'name', 'scan_path']).subscribe(setRooms)
     return () => sub.unsubscribe()
   }, [drawingId])
 
@@ -179,7 +179,7 @@ export default function TegningEdit() {
     if (!drawingId) return
     const sub = database.get<DrawingLoop>('drawing_loops')
       .query(Q.where('drawing_id', drawingId), Q.sortBy('number', Q.asc))
-      .observe().subscribe(setLoops)
+      .observeWithColumns(['nodes', 'color', 'name']).subscribe(setLoops)
     return () => sub.unsubscribe()
   }, [drawingId])
 

@@ -6,7 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import * as Haptics from 'expo-haptics'
 import {
   ChevronLeft, Plus, Package, Clock, AlignLeft, Copy, Send,
-  ChevronUp, ChevronDown, ArrowRight,
+  ChevronUp, ChevronDown, ArrowRight, CheckCircle2, Circle,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { SectionHeader, AmbientBackdrop } from '../../../components/ui'
@@ -14,10 +14,10 @@ import { PromptSheet, ChoiceSheet, type Valg } from '../../../components/sheet'
 import { QuoteLine } from '../../../lib/db/models/quote-line'
 import { beslutningLabel, type BeslutningsMate } from '../../../lib/db/models/quote'
 import {
-  useEttTilbud, useTilbudslinjer, useTilbudssum,
-  markerSendt, angreSendt, registrerSvar, dupliserTilbud, flyttLinje, slettTilbud,
+  useEttTilbud, useTilbudslinjer, useTilbudssum, useTilbudsinnhold,
+  markerSendt, angreSendt, registrerSvar, dupliserTilbud, byttPlassIGruppe, slettTilbud, velgTilvalg,
 } from '../../../lib/quotes'
-import { kanRedigeres, tilbudStatusLabel, type TilbudStatus } from '../../../lib/quoting'
+import { kanRedigeres, tilbudStatusLabel, type OmradeSum, type Tilbudslinje, type TilbudStatus } from '../../../lib/quoting'
 import { formatKr } from '../../../lib/invoicing'
 import { formatDate, formatFrist } from '../../../lib/format'
 import { colors, spacing, radius, sizes, shadows, paperType as t } from '../../../lib/theme'
@@ -43,6 +43,7 @@ export default function TilbudDetail() {
   const tilbud = useEttTilbud(id)
   const linjer = useTilbudslinjer(id)
   const sum = useTilbudssum(id)
+  const innhold = useTilbudsinnhold(id)
 
   const [ark, setArk] = useState<Ark>(null)
   // Svaret bygges opp over flere ark: aksepterer/avslår → hvordan → hvem → notat.
@@ -73,9 +74,113 @@ export default function TilbudDetail() {
     }
   }
 
-  async function flytt(linje: QuoteLine, retning: -1 | 1) {
-    const fra = linjer.findIndex(l => l.id === linje.id)
-    await flyttLinje(linjer, fra, fra + retning)
+  /** Pilene flytter innenfor gruppa linja står i — aldri ut av et område. */
+  async function flytt(gruppe: Tilbudslinje[], indeks: number, retning: -1 | 1) {
+    const rader = gruppe.map(l => linjeById.get(l.id)).filter((l): l is QuoteLine => !!l)
+    if (rader.length !== gruppe.length) return
+    await byttPlassIGruppe(rader, indeks, indeks + retning)
+  }
+
+  /**
+   * Én linje. Samme rad enten den ligger løst eller i et område.
+   *
+   * Et TILVALG har en avkryssing i stedet for ikonet (Jobber-mønsteret): montøren
+   * krysser av sammen med kunden, og summen følger. Lov også etter at tilbudet
+   * er sendt, fram til det er besvart. Fravalgt står med prisen i parentes —
+   * kunden skal se hva det koster å si ja.
+   */
+  function renderLinje(l: Tilbudslinje, gruppe: Tilbudslinje[], i: number, innrykk: number) {
+    const Ikon = ART_IKON[l.art]
+    const rad = linjeById.get(l.id)
+    const kanVelge = l.valgfri && !!rad && status !== 'akseptert' && status !== 'avslatt'
+    const fravalgt = l.valgfri && !l.valgt
+    return (
+      <View key={l.id} style={{ borderTopWidth: 0.5, borderTopColor: colors.paperSeparator }}>
+        <View
+          style={{
+            flexDirection: 'row', alignItems: 'flex-start',
+            paddingLeft: spacing.lg + innrykk * spacing.lg, paddingRight: spacing.lg, paddingVertical: spacing.md,
+          }}
+        >
+          {l.valgfri ? (
+            <Pressable hitSlop={10} haptic="light" disabled={!kanVelge}
+              onPress={() => rad && velgTilvalg(rad, tilbud!, !l.valgt)}
+              style={{ width: 26, alignItems: 'center', marginTop: 0 }}>
+              {l.valgt
+                ? <CheckCircle2 size={19} color={colors.paperLabel} strokeWidth={2.2} />
+                : <Circle size={19} color={colors.paperTertiary} strokeWidth={2} />}
+            </Pressable>
+          ) : (
+            <View style={{ width: 26, alignItems: 'center', marginTop: 2 }}>
+              <Ikon size={15} color={colors.paperIcon} strokeWidth={2} />
+            </View>
+          )}
+          <Pressable
+            disabled={!redigerbar || !rad}
+            onPress={() => rad && router.push({ pathname: '/(app)/tilbud/linje', params: { quoteId: tilbud!.id, lineId: rad.id } })}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-start' }}
+          >
+            <View style={{ flex: 1, marginHorizontal: spacing.sm }}>
+              <Text style={l.art === 'tekst' || fravalgt ? [t.subhead, { color: colors.paperSecondary }] : t.body}>
+                {l.beskrivelse || '—'}
+              </Text>
+              {l.art !== 'tekst' && (
+                <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 2 }]}>
+                  {`${String(l.antall).replace('.', ',')} ${l.enhet} × ${formatKr(l.enhetsprisOre)}`}
+                  {l.rabattProsent > 0 ? ` · −${String(l.rabattProsent).replace('.', ',')} %` : ''}
+                  {l.valgfri ? (l.valgt ? ' · tilvalg' : ' · tilvalg, ikke medregnet') : ''}
+                </Text>
+              )}
+            </View>
+            {l.art !== 'tekst' && (
+              <Text style={[t.bodyMedium, { marginTop: 1, color: fravalgt ? colors.paperTertiary : undefined }]}>
+                {fravalgt ? `(${formatKr(l.nettoOre)})` : formatKr(l.nettoOre)}
+              </Text>
+            )}
+          </Pressable>
+        </View>
+        {redigerbar && gruppe.length > 1 && rad && (
+          <View style={{ flexDirection: 'row', gap: spacing.md, paddingLeft: spacing.lg + innrykk * spacing.lg, paddingBottom: spacing.sm }}>
+            <Pressable hitSlop={8} haptic="light" disabled={i === 0} onPress={() => flytt(gruppe, i, -1)}>
+              <ChevronUp size={16} color={i === 0 ? colors.paperSeparator : colors.paperTertiary} strokeWidth={2.2} />
+            </Pressable>
+            <Pressable hitSlop={8} haptic="light" disabled={i === gruppe.length - 1} onPress={() => flytt(gruppe, i, 1)}>
+              <ChevronDown size={16} color={i === gruppe.length - 1 ? colors.paperSeparator : colors.paperTertiary} strokeWidth={2.2} />
+            </Pressable>
+          </View>
+        )}
+      </View>
+    )
+  }
+
+  /**
+   * Områdehodet: navn til venstre, sum til høyre. Summen er halve poenget med
+   * å ha området i det hele tatt — «hva koster bare kjøkkenet».
+   *
+   * Her er den BARE en visning. Områdene lages og endres på kontoret (desktop/
+   * → Tilbud): kalkulasjonen er en skrivebordsjobb med mange kolonner, og en
+   * montør på en stige skal se hva jobben er delt opp i, ikke bygge oppdelingen.
+   */
+  function renderOmradeHode(o: OmradeSum) {
+    return (
+      <View
+        style={{
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: colors.paperFill,
+          borderTopWidth: 0.5, borderTopColor: colors.paperSeparator,
+          paddingLeft: spacing.lg + o.niva * spacing.lg, paddingRight: spacing.lg,
+          paddingVertical: spacing.sm + 2,
+        }}
+      >
+        <View style={{ flex: 1, marginRight: spacing.md }}>
+          <Text style={[t.subhead, { fontWeight: '700' }]}>{o.navn || 'Uten navn'}</Text>
+          <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 1 }]}>
+            {o.antallLinjer === 0 ? 'Tomt' : o.antallLinjer === 1 ? '1 linje' : `${o.antallLinjer} linjer`}
+          </Text>
+        </View>
+        <Text style={[t.bodyMedium, { fontVariant: ['tabular-nums'] }]}>{formatKr(o.nettoOre)}</Text>
+      </View>
+    )
   }
 
   return (
@@ -157,61 +262,31 @@ export default function TilbudDetail() {
           </View>
         )}
 
-        {/* Linjer */}
-        <SectionHeader tone="papir">Linjer</SectionHeader>
+        {/* Innhold — områder med egen sum, slik kunden spør: «hva koster
+            bare kjøkkenet?». Et tilbud uten områder ser ut nøyaktig som før. */}
+        <SectionHeader tone="papir">Innhold</SectionHeader>
         <View style={[{ backgroundColor: colors.paperBg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }, shadows.card]}>
-          {sum.linjer.length === 0 && (
+          {sum.linjer.length === 0 && innhold.omrader.length === 0 && (
             <Text style={[t.footnote, { padding: spacing.lg, textAlign: 'center' }]}>
               Ingen linjer ennå. Legg til materiell, arbeid eller en tekst.
             </Text>
           )}
-          {sum.linjer.map((l, i) => {
-            const Ikon = ART_IKON[l.art]
-            const rad = linjeById.get(l.id)
-            return (
-              <View key={l.id} style={i < sum.linjer.length - 1 ? { borderBottomWidth: 0.5, borderBottomColor: colors.paperSeparator } : undefined}>
-                <Pressable
-                  disabled={!redigerbar || !rad}
-                  onPress={() => rad && router.push({ pathname: '/(app)/tilbud/linje', params: { quoteId: tilbud.id, lineId: rad.id } })}
-                  style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}
-                >
-                  <View style={{ width: 26, alignItems: 'center', marginTop: 2 }}>
-                    <Ikon size={15} color={colors.paperIcon} strokeWidth={2} />
-                  </View>
-                  <View style={{ flex: 1, marginHorizontal: spacing.sm }}>
-                    <Text style={l.art === 'tekst' ? [t.subhead, { color: colors.paperSecondary }] : t.body}>
-                      {l.beskrivelse || '—'}
-                    </Text>
-                    {l.art !== 'tekst' && (
-                      <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 2 }]}>
-                        {`${String(l.antall).replace('.', ',')} ${l.enhet} × ${formatKr(l.enhetsprisOre)}`}
-                        {l.rabattProsent > 0 ? ` · −${String(l.rabattProsent).replace('.', ',')} %` : ''}
-                      </Text>
-                    )}
-                  </View>
-                  {l.art !== 'tekst' && (
-                    <Text style={[t.bodyMedium, { marginTop: 1 }]}>{formatKr(l.nettoOre)}</Text>
-                  )}
-                </Pressable>
-                {redigerbar && sum.linjer.length > 1 && rad && (
-                  <View style={{ flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm }}>
-                    <Pressable hitSlop={8} haptic="light" disabled={i === 0} onPress={() => flytt(rad, -1)}>
-                      <ChevronUp size={16} color={i === 0 ? colors.paperSeparator : colors.paperTertiary} strokeWidth={2.2} />
-                    </Pressable>
-                    <Pressable hitSlop={8} haptic="light" disabled={i === sum.linjer.length - 1} onPress={() => flytt(rad, 1)}>
-                      <ChevronDown size={16} color={i === sum.linjer.length - 1 ? colors.paperSeparator : colors.paperTertiary} strokeWidth={2.2} />
-                    </Pressable>
-                  </View>
-                )}
-              </View>
-            )
-          })}
+
+          {innhold.utenOmrade.map((l, i) => renderLinje(l, innhold.utenOmrade, i, 0))}
+
+          {innhold.omrader.map(o => (
+            <View key={o.id}>
+              {renderOmradeHode(o)}
+              {o.linjer.map((l, i) => renderLinje(l, o.linjer, i, o.niva + 1))}
+            </View>
+          ))}
+
           {redigerbar && (
             <Pressable haptic="medium"
               onPress={() => router.push({ pathname: '/(app)/tilbud/linje', params: { quoteId: tilbud.id } })}
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-                paddingVertical: spacing.md, borderTopWidth: sum.linjer.length > 0 ? 0.5 : 0, borderTopColor: colors.paperSeparator,
+                paddingVertical: spacing.md, borderTopWidth: 0.5, borderTopColor: colors.paperSeparator,
               }}>
               <Plus size={17} color={colors.brand} strokeWidth={2.2} />
               <Text style={[t.subhead, { color: colors.brand, fontWeight: '600' }]}>Legg til linje</Text>
@@ -229,6 +304,12 @@ export default function TilbudDetail() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xs }}>
               <Text style={[t.footnote, { color: colors.paperSecondary }]}>Herav rabatt</Text>
               <Text style={[t.footnote, { color: colors.paperSecondary }]}>{`− ${formatKr(sum.rabattOre)}`}</Text>
+            </View>
+          )}
+          {sum.tilvalgUtenforOre > 0 && (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xs }}>
+              <Text style={[t.footnote, { color: colors.paperSecondary }]}>Tilvalg som kan legges til</Text>
+              <Text style={[t.footnote, { color: colors.paperSecondary }]}>{formatKr(sum.tilvalgUtenforOre)}</Text>
             </View>
           )}
           {sum.mvaFordeling.map(g => (

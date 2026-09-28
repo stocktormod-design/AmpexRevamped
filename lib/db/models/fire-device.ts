@@ -35,6 +35,8 @@ export class FireDevice extends Model {
   @text('model') model: string | null
   @date('placed_at') placedAt: Date | null
   @text('note') note: string | null
+  /** 'tegning' = funnet i symbolforklaringen; symbolet står alt på tegningen, så ingen glyf oppå. null = satt med stempel-verktøyet. */
+  @text('source') source: string | null
   @text('created_by') createdBy: string | null
   @readonly @date('created_at') createdAt: Date
   @readonly @date('updated_at') updatedAt: Date

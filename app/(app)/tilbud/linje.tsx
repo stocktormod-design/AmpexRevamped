@@ -4,7 +4,7 @@ import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { Package, Clock, AlignLeft } from 'lucide-react-native'
+import { Package, Clock, AlignLeft, CheckCircle2, Circle } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { ProductPicker } from '../../../components/product-picker'
 import { Segmented } from '../../../components/segmented'
@@ -88,6 +88,9 @@ export default function Linje() {
   const [aktivitetId, setAktivitetId] = useState<string | null>(null)
   const [elnummer, setElnummer] = useState<string | null>(null)
   const [mvaType, setMvaType] = useState<string | null>(null)
+  // Tilvalg: kunden velger om linja skal med. Et nytt tilvalg er AV til noen
+  // velger det — se lib/quoting.ts.
+  const [tilvalg, setTilvalg] = useState(false)
   const [aktiviteter, setAktiviteter] = useState<Activity[]>([])
   const [busy, setBusy] = useState(false)
   const [klar, setKlar] = useState(!lineId)
@@ -110,6 +113,7 @@ export default function Linje() {
       setAktivitetId(l.activityId)
       setElnummer(l.elnummer)
       setMvaType(l.vatType)
+      setTilvalg(l.isOptional)
       setKlar(true)
     })()
     return () => { montert = false }
@@ -172,6 +176,9 @@ export default function Linje() {
         productId: art === 'materiell' ? produktId : null,
         activityId: art === 'arbeid' ? aktivitetId : null,
         elnummer: art === 'materiell' ? elnummer : null,
+        isOptional: art !== 'tekst' && tilvalg,
+        // Blir linja tilvalg nå, starter den AV. Var den det fra før, beholdes valget.
+        ...(linje && linje.isOptional === tilvalg ? {} : { isSelected: false }),
       }
       if (linje) await oppdaterLinje(linje, felles)
       else await leggTilLinje(quoteId, felles)
@@ -268,6 +275,23 @@ export default function Linje() {
             <Text style={[t.footnote, { marginTop: spacing.xs, marginLeft: spacing.xs }]}>
               Kost vises aldri for kunden. Den er der for at du skal se hva du sitter igjen med.
             </Text>
+
+            {/* Tilvalg: kunden velger. Prisen står på linja, men den teller
+                ikke før noen har sagt ja — slik at «varmekabel på badet» kan
+                stå i tilbudet uten å stå i summen. */}
+            <Pressable haptic="light" onPress={() => setTilvalg(v => !v)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg,
+                backgroundColor: colors.bg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+              }}>
+              {tilvalg
+                ? <CheckCircle2 size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+                : <Circle size={sizes.icon} color={colors.tertiaryLabel} strokeWidth={2} />}
+              <View style={{ flex: 1 }}>
+                <Text style={t.body}>Tilvalg</Text>
+                <Text style={[t.footnote, { marginTop: 1 }]}>Kunden velger om dette skal med. Teller ikke i summen før det er valgt.</Text>
+              </View>
+            </Pressable>
 
             {/* Regnestykket, mens du skriver. */}
             <View style={{

@@ -7,7 +7,6 @@ import { Plus, ChevronRight, FileText } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { Chip, GlassCard } from '../../../components/ui'
 import { ToolGlow } from '../../../components/tool-surface'
-import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { Quote } from '../../../lib/db/models/quote'
 import { useTilbud } from '../../../lib/quotes'
 import { tilbudStatusLabel, type TilbudStatus } from '../../../lib/quoting'
@@ -106,7 +105,6 @@ export default function TilbudScreen() {
             }}>
               <Text style={t.display}>Tilbud</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
-                <AmpexMarkButton />
                 <Pressable
                   haptic="medium" pressScale={0.92}
                   onPress={() => router.push('/(app)/tilbud/ny')}

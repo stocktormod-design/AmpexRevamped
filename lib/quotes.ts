@@ -6,8 +6,12 @@ import { Order } from './db/models/order'
 import { OrderMaterial } from './db/models/order-material'
 import { Quote, type BeslutningsMate } from './db/models/quote'
 import { QuoteLine } from './db/models/quote-line'
+import { QuoteSection } from './db/models/quote-section'
 import { syncQuietly } from './db/sync'
-import { byggTilbudssum, kanRedigeres, type Tilbudssum, type TilbudslinjeArt } from './quoting'
+import {
+  byggTilbudssum, grupperTilbud, kanRedigeres,
+  type TilbudsInnhold, type Tilbudssum, type TilbudslinjeArt,
+} from './quoting'
 
 /**
  * Tilbud mot databasen. Regnestykket ligger i `quoting.ts` og røres ikke her —
@@ -67,6 +71,33 @@ export function useTilbudssum(quoteId: string | null | undefined): Tilbudssum {
   const [sum, setSum] = useState<Tilbudssum>(() => byggTilbudssum([]))
   useEffect(() => { setSum(byggTilbudssum(linjer.map(l => l.somInn))) }, [linjer])
   return sum
+}
+
+export function useOmrader(quoteId: string | null | undefined): QuoteSection[] {
+  const [rows, setRows] = useState<QuoteSection[]>([])
+  useEffect(() => {
+    if (!quoteId) { setRows([]); return }
+    const sub = database.get<QuoteSection>('quote_sections')
+      .query(Q.where('quote_id', quoteId), Q.sortBy('sort_order', Q.asc))
+      .observeWithColumns(['name', 'sort_order', 'parent_id'])
+      .subscribe(setRows)
+    return () => sub.unsubscribe()
+  }, [quoteId])
+  return rows
+}
+
+/**
+ * Tilbudet delt i områder, med sum per område. Skjermen skal ikke måtte holde
+ * linjer og områder i takt selv — særlig ikke mens et område slettes.
+ */
+export function useTilbudsinnhold(quoteId: string | null | undefined): TilbudsInnhold {
+  const sum = useTilbudssum(quoteId)
+  const omrader = useOmrader(quoteId)
+  const [innhold, setInnhold] = useState<TilbudsInnhold>(() => ({ utenOmrade: [], omrader: [] }))
+  useEffect(() => {
+    setInnhold(grupperTilbud(sum.linjer, omrader.map(o => o.somOmrade)))
+  }, [sum, omrader])
+  return innhold
 }
 
 /** Tilbudene knyttet til én kunde — vises på kundekortet. */
@@ -157,6 +188,66 @@ export async function oppdaterTilbud(quote: Quote, patch: TilbudPatch): Promise<
   syncQuietly()
 }
 
+/* ── Områder ──────────────────────────────────────────────────────────── */
+
+/** Nytt område nederst i tilbudet. `forelderId` gir et underområde. */
+export async function opprettOmrade(
+  quoteId: string,
+  navn: string,
+  forelderId: string | null = null,
+  source: string | null = 'manuell',
+): Promise<string> {
+  const sosken = await database.get<QuoteSection>('quote_sections')
+    .query(Q.where('quote_id', quoteId)).fetch()
+  const neste = sosken.reduce((maks, o) => Math.max(maks, o.sortOrder), -1) + 1
+
+  let id = ''
+  await database.write(async () => {
+    const o = await database.get<QuoteSection>('quote_sections').create(r => {
+      r.quoteId = quoteId
+      r.parentId = forelderId
+      r.name = navn.trim()
+      r.sortOrder = neste
+      r.source = source
+    })
+    id = o.id
+  })
+  syncQuietly()
+  return id
+}
+
+export async function giOmradeNyttNavn(omrade: QuoteSection, navn: string): Promise<void> {
+  await database.write(async () => { await omrade.update(r => { r.name = navn.trim() }) })
+  syncQuietly()
+}
+
+/**
+ * Sletter et område. Linjene blir IKKE med: de legges tilbake i tilbudet først,
+ * i samme write. Et trykk som fjerner en overskrift skal aldri kunne fjerne
+ * penger fra summen — og gjør det i to skritt, overlever halvveien en krasj.
+ */
+export async function slettOmrade(omrade: QuoteSection): Promise<void> {
+  const linjer = await database.get<QuoteLine>('quote_lines')
+    .query(Q.where('section_id', omrade.id)).fetch()
+  const under = await database.get<QuoteSection>('quote_sections')
+    .query(Q.where('parent_id', omrade.id)).fetch()
+
+  await database.write(async () => {
+    for (const l of linjer) await l.update(r => { r.sectionId = null })
+    // Underområdene rykker opp ett nivå i stedet for å bli foreldreløse.
+    for (const o of under) await o.update(r => { r.parentId = omrade.parentId })
+    await omrade.markAsDeleted()
+  })
+  syncQuietly()
+}
+
+/** Flytter en linje til et annet område (null = rett i tilbudet). */
+export async function flyttLinjeTilOmrade(line: QuoteLine, omradeId: string | null): Promise<void> {
+  if ((line.sectionId ?? null) === omradeId) return
+  await database.write(async () => { await line.update(r => { r.sectionId = omradeId }) })
+  syncQuietly()
+}
+
 export type LinjeInput = {
   kind: TilbudslinjeArt
   description: string
@@ -169,6 +260,11 @@ export type LinjeInput = {
   productId?: string | null
   activityId?: string | null
   elnummer?: string | null
+  sectionId?: string | null
+  /** Tilvalg: kunden velger. Nytt tilvalg er AV til noen velger det. */
+  isOptional?: boolean
+  isSelected?: boolean
+  priceLocked?: boolean
 }
 
 export async function leggTilLinje(quoteId: string, input: LinjeInput): Promise<string> {
@@ -192,6 +288,10 @@ export async function leggTilLinje(quoteId: string, input: LinjeInput): Promise<
       r.productId = input.productId ?? null
       r.activityId = input.activityId ?? null
       r.elnummer = input.elnummer ?? null
+      r.sectionId = input.sectionId ?? null
+      r.isOptional = input.isOptional ?? false
+      r.isSelected = input.isSelected ?? false
+      r.priceLocked = input.priceLocked ?? false
     })
     id = l.id
   })
@@ -210,7 +310,26 @@ export async function oppdaterLinje(line: QuoteLine, patch: Partial<LinjeInput>)
       if (patch.discountPercent !== undefined) r.discountPercent = patch.discountPercent
       if (patch.vatType !== undefined) r.vatType = patch.vatType
       if (patch.kind !== undefined) r.kind = patch.kind
+      if (patch.sectionId !== undefined) r.sectionId = patch.sectionId
+      if (patch.isOptional !== undefined) r.isOptional = patch.isOptional
+      if (patch.isSelected !== undefined) r.isSelected = patch.isSelected
+      if (patch.priceLocked !== undefined) r.priceLocked = patch.priceLocked
     })
+  })
+  syncQuietly()
+}
+
+/**
+ * Kunden velger et tilvalg av eller på — sammen med montøren, på stedet.
+ *
+ * Lov også etter at tilbudet er SENDT: det er da kunden ser det og velger
+ * (Jobber-mønsteret). Ikke etter at det er besvart — da er valget tatt.
+ */
+export async function velgTilvalg(line: QuoteLine, quote: Quote, valgt: boolean): Promise<void> {
+  if (!line.isOptional) return
+  if (quote.status === 'akseptert' || quote.status === 'avslatt') return
+  await database.write(async () => {
+    await line.update(r => { r.isSelected = valgt })
   })
   syncQuietly()
 }
@@ -235,6 +354,29 @@ export async function flyttLinje(linjer: QuoteLine[], fra: number, til: number):
       if (rekke[i].sortOrder === i) continue
       await rekke[i].update(r => { r.sortOrder = i })
     }
+  })
+  syncQuietly()
+}
+
+/**
+ * Bytter plass på to naboer INNENFOR samme gruppe (samme område, eller de løse
+ * linjene). Bytter bare de to radenes sort_order, så en pil i «Stue» aldri
+ * flytter noe i «Kjøkken».
+ *
+ * To linjer med samme sort_order er et nullbytte — det kan bare oppstå i en
+ * base som er reparert for hånd, og et nullbytte er et bedre svar enn en
+ * rekkefølge som hopper.
+ */
+export async function byttPlassIGruppe(gruppe: QuoteLine[], fra: number, til: number): Promise<void> {
+  if (fra === til || fra < 0 || til < 0 || fra >= gruppe.length || til >= gruppe.length) return
+  const a = gruppe[fra]
+  const b = gruppe[til]
+  const aOrder = a.sortOrder
+  const bOrder = b.sortOrder
+  if (aOrder === bOrder) return
+  await database.write(async () => {
+    await a.update(r => { r.sortOrder = bOrder })
+    await b.update(r => { r.sortOrder = aOrder })
   })
   syncQuietly()
 }
@@ -320,6 +462,10 @@ export async function registrerSvar(quote: Quote, svar: SvarInput): Promise<stri
 
     for (const l of linjer) {
       if (l.kind !== 'materiell') continue
+      // Et fravalgt tilvalg er noe kunden sa NEI til. Det skal ikke bli
+      // planlagt materiell i bilen — det er nøyaktig det Jobber gjør ved
+      // konvertering: fravalgte linjer forsvinner.
+      if (l.isOptional && !l.isSelected) continue
       await database.get<OrderMaterial>('order_materials').create(m => {
         m.orderId = order.id
         m.description = l.description
@@ -360,6 +506,11 @@ export async function registrerSvar(quote: Quote, svar: SvarInput): Promise<stri
 export async function dupliserTilbud(quote: Quote, tittel?: string): Promise<string> {
   const linjer = await database.get<QuoteLine>('quote_lines')
     .query(Q.where('quote_id', quote.id), Q.sortBy('sort_order', Q.asc)).fetch()
+  const omrader = await database.get<QuoteSection>('quote_sections')
+    .query(Q.where('quote_id', quote.id), Q.sortBy('sort_order', Q.asc)).fetch()
+  // Kopien får EGNE områder. Peker kopien på originalens områder, slår en
+  // omdøping i det ene tilbudet gjennom i det andre.
+  const nyeIder = new Map<string, string>()
 
   let id = ''
   await database.write(async () => {
@@ -375,6 +526,24 @@ export async function dupliserTilbud(quote: Quote, tittel?: string): Promise<str
       t.validUntil = standardGyldighet()
     })
     id = ny.id
+    for (const o of omrader) {
+      const kopi = await database.get<QuoteSection>('quote_sections').create(r => {
+        r.quoteId = ny.id
+        r.parentId = null // settes under, når alle nye id-er finnes
+        r.name = o.name
+        r.sortOrder = o.sortOrder
+        r.source = o.source
+      })
+      nyeIder.set(o.id, kopi.id)
+    }
+    for (const o of omrader) {
+      if (!o.parentId) continue
+      const forelder = nyeIder.get(o.parentId)
+      const kopiId = nyeIder.get(o.id)
+      if (!forelder || !kopiId) continue
+      const kopi = await database.get<QuoteSection>('quote_sections').find(kopiId)
+      await kopi.update(r => { r.parentId = forelder })
+    }
     for (const l of linjer) {
       await database.get<QuoteLine>('quote_lines').create(r => {
         r.quoteId = ny.id
@@ -390,6 +559,10 @@ export async function dupliserTilbud(quote: Quote, tittel?: string): Promise<str
         r.productId = l.productId
         r.activityId = l.activityId
         r.elnummer = l.elnummer
+        r.sectionId = l.sectionId ? nyeIder.get(l.sectionId) ?? null : null
+        r.isOptional = l.isOptional
+        r.isSelected = l.isSelected
+        r.priceLocked = l.priceLocked
       })
     }
   })

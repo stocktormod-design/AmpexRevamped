@@ -34,7 +34,10 @@ export default function AppLayout() {
   // Tegningen fyller hele skjermen: dokken over lerretet stjal nederste
   // stripe av tegningen (og la seg over delt skjerm).
   const segments = useSegments() as string[]
+  // Læretidssamtalen og quizen har skrivefeltet nederst — docken ville ligget oppå det.
   const skjulDock = segments.includes('tegning') || segments.includes('tegning-edit')
+    || segments.includes('samtale') || segments.includes('quiz')
+    || (segments.includes('laeretid') && segments.includes('bilder'))
   // Hvilken av Prosjekter/Ordre den delte plassen viser. Følger ruta du står i.
   const [deltValg, setDeltValg] = useState<'prosjekter' | 'ordre'>(segments.includes('prosjekter') ? 'prosjekter' : 'ordre')
   // Står du i Prosjekter (også via deep link), viser plassen Prosjekter — og omvendt.
@@ -173,7 +176,15 @@ export default function AppLayout() {
       {/* Gamle jobber — arkivet. Nås fra Meg og fra kundekortet. */}
       <Tabs.Screen name="arkiv" options={{ href: null }} />
       <Tabs.Screen name="aktiviteter" options={{ href: null }} />
+      {/* Internkontrollen leses fra Meg. Kontoret skriver den. */}
+      <Tabs.Screen name="internkontroll" options={{ href: null }} />
+      {/* Læretid (2026-09-16). Skjult fra dokken inntil lærlingdokken er bygget
+          — flata eies av lærlingen, ikke av firmaet, og skal ha egne knapper
+          for dem som bare har kjøpt læretid. Se docs/LAERLING.md. */}
+      <Tabs.Screen name="laeretid" options={{ href: null }} />
       <Tabs.Screen name="skanner" options={{ href: null }} />
+      {/* Avvik leses fra Meg, som internkontrollen. */}
+      <Tabs.Screen name="avvik" options={{ href: null }} />
       {/* Fullskjerm skanner/viewer — skjul tab-baren mens den er fokusert */}
       <Tabs.Screen name="skann" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>

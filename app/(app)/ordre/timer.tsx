@@ -10,7 +10,6 @@ import { TidForing } from '../../../components/tid-foring'
 import { Pressable } from '../../../components/pressable'
 import { ListCard, SectionHeader } from '../../../components/ui'
 import { ChoiceSheet } from '../../../components/sheet'
-import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Activity } from '../../../lib/db/models/activity'
@@ -148,8 +147,6 @@ export default function TimerScreen() {
           </Pressable>
           <Text style={t.title2}>Timer</Text>
         </View>
-        {/* Merket ER assistenten: «før sju og en halv time montasje» gjør det samme. */}
-        <AmpexMarkButton />
       </View>
 
 

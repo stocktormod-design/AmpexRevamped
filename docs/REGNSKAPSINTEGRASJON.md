@@ -377,3 +377,38 @@ Det som gjør SpeedyCraft-oppsettet tungt, og som vi kan gjøre bedre:
    kan si det FØR kunden prøver, ikke etter.
 3. **Ingen synlig tilstand.** En kunde som ikke er koblet, en time som ikke er
    overført — det skal stå på ordren, ikke oppdages i regnskapet en måned senere.
+
+
+## Fiken — testforetak og verify:fiken (2026-09-14)
+
+**Slik får vi test-tilgang, rett fra Fikens egen API-beskrivelse:** Fiken har ingen
+sandkasse. Man lager en Fiken-bruker på fiken.no, velger **«Registrer et foretak
+som ikke er i Brønnøysundregistrene»**, kaller det noe som tydelig er test («Ampex
+Test»), og API-et er gratis der. Etter 30 dager: e-post til hjelp@fiken.no for
+forlenget gratis tilgang. Personlig API-nøkkel lages under **Rediger konto → API →
+Personlige API-nøkler**; slug står i adresselinja (`fiken.no/foretak/<slug>/…`).
+Legg dem i `.env.local` som `FIKEN_TOKEN` og `FIKEN_COMPANY_SLUG`.
+
+For KUNDENE må vi bruke OAuth2 (kunden autoriserer Ampex mot sin konto): kryss av
+«utvikler» under Rediger konto → Profil → Andre innstillinger, lag en App under
+API-fanen, få client id/secret. Utvikling er begrenset til 5 brukere; produksjons-
+status krever e-post til api@fiken.no etter at 2–3 ekte kunder har brukt
+integrasjonen. API-modulen koster KUNDEN 99 kr/mnd hos Fiken.
+
+**Adapteren er skrevet om** (`lib/accounting/fiken.ts`) mot spesifikasjonen
+(`api.fiken.no/api/v2/docs/swagger.yaml`, lastet ned 14.09). Første utgave sendte
+`text`/`net`/`gross` på utkastlinjene — feltene finnes ikke; det heter
+`description`, `unitPrice` (øre per enhet), `quantity`, `discount` (%),
+`vatType`, `incomeAccount`, `productId`. Adressefeltet heter `postCode` og
+`country` er påkrevd. Faktura-status leses fra `sale.settled` og `dispatches`,
+ikke fra `sent`/`settled` på fakturaen. Nytt: `hvemErJeg`, `hentForetak`
+(`testCompany`-flagget), `synkVare` (idempotent på `productNumber`),
+`synkProsjekt` (på `number`), `synkAktivitet` (navn er unikt hos Fiken),
+`synkTimebruker`, `foerTimer`, `hentUtkast` (Fikens netto/brutto i øre),
+`fakturerUtkast` (`/createInvoice`). `synkKunde` er idempotent på
+`memberNumberString` = vår lokale ID, så på org.nr, så på navn.
+
+**`npm run verify:fiken`** (`tools/verify-fiken.ts`) kjører kjeden hvem er jeg →
+foretak → kunde → vare → prosjekt → aktivitet/timebruker → timer → utkast →
+kontroll av øre mot vårt grunnlag → (`--fakturer`) faktura. Nekter å kjøre hvis
+`testCompany` ikke er sant. **Ikke kjørt ennå: testforetaket og nøkkelen mangler.**

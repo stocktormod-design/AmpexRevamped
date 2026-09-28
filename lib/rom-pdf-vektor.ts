@@ -13,6 +13,11 @@
  */
 
 import type { Segment } from './rom-detekt'
+// Statisk, ikke `await import(...)`: Metro lastet den late bundelen som egen
+// forespørsel og avbrøt den (2026-09-13), så løftet aldri kom tilbake — søket
+// sto på «Leser tegningen …» for alltid. Reserveveien må kunne stoles på.
+import * as pdfjsStatisk from 'pdfjs-dist/legacy/build/pdf.mjs'
+import * as pdfjsWorkerStatisk from 'pdfjs-dist/legacy/build/pdf.worker.mjs'
 
 export type PdfTekst = { tekst: string; x: number; y: number; hoyde: number }
 export type PdfStreker = { segmenter: Segment[]; tekster: PdfTekst[]; breddePt: number; hoydePt: number }
@@ -78,16 +83,21 @@ const bruk = (m: Matrise, x: number, y: number): [number, number] => [m[0] * x +
  * Returnerer tom liste for bilde-PDF-er (skannede tegninger), som er signalet
  * til kalleren om å rasterisere i stedet.
  */
-export async function strekerFraPdf(bytes: Uint8Array): Promise<PdfStreker> {
+/**
+ * `medFyll`: ta med omrisset av fylte flater også (bredde 0, `fyll: true`).
+ * Romdelingen vil ikke ha dem (fyll er ikke vegger), men symbolsøket må: prikken
+ * i «!» på en detektor er en fylt sirkel, ikke en strek.
+ */
+export async function strekerFraPdf(bytes: Uint8Array, valg: { medFyll?: boolean } = {}): Promise<PdfStreker> {
   const settTilbake = fyllInnManglende()
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const pdfjs = pdfjsStatisk
   const OPS = pdfjs.OPS as unknown as Record<string, number>
 
   // pdf.js vil laste kjernen sin i en worker. Det finnes ingen worker her, så
   // vi registrerer modulen selv — pdf.js sjekker `globalThis.pdfjsWorker` før
   // den prøver å importere fila, og kjører da alt på hovedtråden.
   const g = globalThis as unknown as Record<string, unknown>
-  if (!g.pdfjsWorker) g.pdfjsWorker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
+  if (!g.pdfjsWorker) g.pdfjsWorker = pdfjsWorkerStatisk
   pdfjs.GlobalWorkerOptions.workerSrc = 'pdf.worker.mjs' // må være satt, men leses aldri
 
   // Jobben er kort nok til å ligge på hovedtråden.
@@ -152,7 +162,15 @@ export async function strekerFraPdf(bytes: Uint8Array): Promise<PdfStreker> {
         sti = []
         continue
       }
-      if (fn === OPS.fill || fn === OPS.eoFill || fn === OPS.fillStroke) { sti = [] }
+      if (fn === OPS.fill || fn === OPS.eoFill || fn === OPS.fillStroke) {
+        if (valg.medFyll) {
+          for (const [x0, y0, x1, y1] of sti) {
+            const p = bruk(ctm, x0, y0), q = bruk(ctm, x1, y1)
+            ut.push({ x0: p[0], y0: p[1], x1: q[0], y1: q[1], bredde: fn === OPS.fillStroke ? bredde : 0, lys: metning, farge, fyll: true })
+          }
+        }
+        sti = []
+      }
     }
     // Tekstlaget: romnavn og påførte arealer. Brukes som frø i romdelingen.
     const tekster: PdfTekst[] = []

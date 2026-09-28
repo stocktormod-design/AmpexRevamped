@@ -19,7 +19,7 @@ import { ActivityIndicator, View } from 'react-native'
 import { Text } from './text'
 import { Canvas, Group, Image as SkiaImage, ImageSVG, Path, Circle, Skia, useImage, vec } from '@shopify/react-native-skia'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
-import { runOnJS, useDerivedValue, useSharedValue, type SharedValue } from 'react-native-reanimated'
+import { runOnJS, useDerivedValue, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated'
 import * as Haptics from 'expo-haptics'
 import { Trash2 } from 'lucide-react-native'
 import { Q } from '@nozbe/watermelondb'
@@ -246,7 +246,9 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
   useEffect(() => {
     const sub = database.get<DrawingLoop>('drawing_loops')
       .query(Q.where('drawing_id', drawing.id), Q.sortBy('created_at', Q.asc))
-      .observe().subscribe(setLoops)
+      // observeWithColumns: `observe()` varsler bare når sløyfer kommer/går, ikke når
+      // nodene i en eksisterende sløyfe endres — da vistes tappet først ved neste panorering.
+      .observeWithColumns(['nodes', 'color', 'name']).subscribe(setLoops)
     return () => sub.unsubscribe()
   }, [drawing.id])
 
@@ -273,6 +275,7 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
   }, [raster, width, height])
 
   const { scale, tx, ty } = transform
+
   const savedScale = useSharedValue(1)
   const savedTx = useSharedValue(0)
   const savedTy = useSharedValue(0)
@@ -430,10 +433,20 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
     if (onLongPress) onLongPress(pt)
   }
   const handleViewTap = (sx: number, sy: number) => {
-    if (!fitted || !pins?.length || !onTapPin) return
-    for (const p of pins) {
-      const scr = toScreen(p.x, p.y)
-      if (Math.hypot(scr.x - sx, scr.y - sy) < 26) { onTapPin(p.id); return }
+    if (!fitted) return
+    if (pins?.length && onTapPin) {
+      for (const p of pins) {
+        const scr = toScreen(p.x, p.y)
+        if (Math.hypot(scr.x - sx, scr.y - sy) < 26) { onTapPin(p.id); return }
+      }
+    }
+    // Uten verktøy i hånda er et trykk på en komponent «åpne den» — også de
+    // som ikke tegnes (funnet i forklaringen), for symbolet står jo på tegningen.
+    if (edit?.onTapDevice) {
+      for (const dv of devices) {
+        const scr = toScreen(dv.x, dv.y)
+        if (Math.hypot(scr.x - sx, scr.y - sy) < 24) { edit.onTapDevice(dv.id); return }
+      }
     }
   }
 
@@ -645,6 +658,39 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
       else runOnJS(handleViewTap)(e.x, e.y)
     })
 
+  const [, tegnPaaNytt] = useState(0)
+  // Kalles fra JS-tråden når dobbelttrykket starter; venter til animasjonen (220 ms) er
+  // ferdig før håndtakene tegnes på nytt — et tilbakekall inne i withTiming slo ut gestene.
+  const etterZoom = (ds: number, dtx: number, dty: number) => {
+    setTimeout(() => { ended(ds, dtx, dty); tegnPaaNytt(t => t + 1) }, 260)
+  }
+
+  // Dobbelttrykk: zoom til 3× der du trykket, eller tilbake til hele siden. Uten
+  // verktøy i hånda — i redigering skal enkelttrykket komme uten ventetid
+  // (Exclusive venter ellers på at dobbelttrykket skal feile). På Mac er dette
+  // også veien inn, for knip krever ⌥-drag i simulatoren.
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .maxDuration(250)
+    .enabled(!editing || tool === 'ingen')
+    .onEnd(e => {
+      const sOld = scale.value, sNy = sOld > 1.5 ? 1 : 3
+      const cx = width / 2, cy = height / 2
+      // Punktet under fingeren i lerretskoordinater skal bli liggende under fingeren.
+      const px = cx + (e.x - cx - tx.value) / sOld, py = cy + (e.y - cy - ty.value) / sOld
+      const txNy = sNy === 1 ? 0 : e.x - cx - sNy * (px - cx)
+      const tyNy = sNy === 1 ? 0 : e.y - cy - sNy * (py - cy)
+      const dtx = txNy - tx.value, dty = tyNy - ty.value
+      // Håndtakene (RN-visninger) plasseres når skjermen tegnes; de må tegnes på
+      // nytt når animasjonen er FERDIG, ellers står de igjen på et halvveis zoomnivå.
+      scale.value = withTiming(sNy, { duration: 220 })
+      tx.value = withTiming(txNy, { duration: 220 })
+      ty.value = withTiming(tyNy, { duration: 220 })
+      runOnJS(activate)()
+      if (onNavigate) runOnJS(onNavigate)()
+      runOnJS(etterZoom)(sNy / sOld, dtx, dty)
+    })
+
   // Brannsymboler som Skia-SVG (rød — matcher O-plan-konvensjonen); memoisert per kind.
   const deviceSvgs = useMemo(() => {
     const out: Partial<Record<FireDeviceKind, ReturnType<typeof Skia.SVG.MakeFromString>>> = {}
@@ -666,6 +712,16 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
   const pinRi = useDerivedValue(() => 4.5 / scale.value)
   const gripR = useDerivedValue(() => 7 / scale.value)
   const markW = useDerivedValue(() => 2 / scale.value)
+  // Alt som ligger OPPÅ tegningen holder samme størrelse på skjermen uansett zoom
+  // (Tormod 2026-09-13: «alt må være dynamisk basert på zoom»). Blekket (strøk) skalerer
+  // med tegningen, som blekk skal; symboler, noder og kanter deles på zoomen.
+  const invTransform = useDerivedValue(() => [{ scale: 1 / scale.value }])
+  const tynnW = useDerivedValue(() => 1.6 / scale.value)
+  const loopW = useDerivedValue(() => 2.5 / scale.value)
+  const nodeR = useDerivedValue(() => 4 / scale.value)
+  const hodeR = useDerivedValue(() => 6 / scale.value)
+  const hodeIndreR = useDerivedValue(() => 2.5 / scale.value)
+  const ringR = useDerivedValue(() => 9 / scale.value)
 
   if (failed) {
     return (
@@ -696,7 +752,7 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
 
   return (
     <View style={{ width, height }}>
-      <GestureDetector gesture={Gesture.Simultaneous(pinchGesture, panGesture, pan2Gesture, editPanGesture, longPressGesture, tapGesture)}>
+      <GestureDetector gesture={Gesture.Simultaneous(pinchGesture, panGesture, pan2Gesture, editPanGesture, longPressGesture, Gesture.Exclusive(doubleTapGesture, tapGesture))}>
         <Canvas style={{ width, height, backgroundColor: '#E7E7EC' }}>
           <Group transform={userTransform} origin={center}>
             <Group transform={[{ translateX: ox }, { translateY: oy }]}>
@@ -710,16 +766,16 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
                   <Group key={l.id}>
                     {nodes.length >= 2 && (
                       <Path path={svgFrom(nodes)} style="stroke" color={l.color}
-                        strokeWidth={2.5} strokeCap="round" strokeJoin="round" />
+                        strokeWidth={loopW} strokeCap="round" strokeJoin="round" />
                     )}
                     {nodes.map((p, i) => {
                       const paaDetektor = !!l.nodeList[i]?.deviceId
                       const erHode = tool === 'sloyfe' && l.id === loops[loops.length - 1]?.id && i === nodes.length - 1
                       return (
                         <Group key={i}>
-                          {paaDetektor && <Circle cx={p[0]} cy={p[1]} r={9} color={l.color} style="stroke" strokeWidth={1.6} />}
-                          <Circle cx={p[0]} cy={p[1]} r={erHode ? 6 : 4} color={l.color} />
-                          {erHode && <Circle cx={p[0]} cy={p[1]} r={2.5} color="#FFFFFF" />}
+                          {paaDetektor && <Circle cx={p[0]} cy={p[1]} r={ringR} color={l.color} style="stroke" strokeWidth={tynnW} />}
+                          <Circle cx={p[0]} cy={p[1]} r={erHode ? hodeR : nodeR} color={l.color} />
+                          {erHode && <Circle cx={p[0]} cy={p[1]} r={hodeIndreR} color="#FFFFFF" />}
                         </Group>
                       )
                     })}
@@ -733,11 +789,13 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
                   strokeCap="round" strokeJoin="round" />
               ))}
               {/* Brannkomponenter — røde symboler (O-plan-konvensjonen), skalerer med tegningen */}
-              {devices.map(dv => {
+              {/* Funnet i tegningens forklaring (source 'tegning'): symbolet står der alt.
+                  Tegnes ikke oppå — komponenten er en usynlig knapp, som rommene (Tormod 2026-09-13). */}
+              {devices.filter(dv => dv.source !== 'tegning').map(dv => {
                 const svg = deviceSvgs[dv.kind] ?? deviceSvgs.royk
                 const S = 22
                 return (
-                  <Group key={dv.id}>
+                  <Group key={dv.id} transform={invTransform} origin={vec(dv.x * W, dv.y * H)}>
                     <Circle cx={dv.x * W} cy={dv.y * H} r={S * 0.7} color="rgba(255,255,255,0.88)" />
                     {svg && <ImageSVG svg={svg} x={dv.x * W - S / 2} y={dv.y * H - S / 2} width={S} height={S} />}
                   </Group>
@@ -790,7 +848,7 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
                 return (
                   <Group key={`rom${r.id}`}>
                     <Path path={`${svgFrom(pts)} Z`} style="fill" color={c} opacity={0.18} />
-                    <Path path={`${svgFrom(pts)} Z`} style="stroke" color={c} strokeWidth={2 / Math.max(scale.value, 1)} strokeJoin="round" />
+                    <Path path={`${svgFrom(pts)} Z`} style="stroke" color={c} strokeWidth={markW} strokeJoin="round" />
                   </Group>
                 )
               })}

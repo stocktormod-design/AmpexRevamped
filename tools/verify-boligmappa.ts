@@ -25,10 +25,55 @@ function sjekk(ok: boolean, tekst: string) {
   if (!ok) feilet++
 }
 
+/**
+ * Hele filveien: plant → metadata → bytes → kobling til jobben.
+ *
+ * Rekkefølgen er ikke valgfri. `POST /jobs/{nr}/files` tar fil-ID-er, og det
+ * eneste stedet en fil får ID er `POST /plants/{bmNr}/files` — som igjen
+ * krever at eiendommen har et plant.
+ */
+async function filveien(k: BoligmappaKlient, bmNr: string, jobbNummer: number) {
+  const plant = await k.sikrePlant(bmNr)
+  sjekk(plant.ok, plant.ok ? `plant på ${bmNr}${plant.verdi ? ` (${plant.verdi.plantId})` : ' (fantes fra før)'}` : `plant — ${plant.feil}`)
+  if (!plant.ok) return
+
+  const meta = await k.filMetadata(bmNr, {
+    fileName: 'ampex-selvtest.pdf',
+    title: 'Ampex selvtest',
+    description: 'Opprettet av npm run verify:boligmappa -- --fil',
+    isVisibleInBoligmappa: true,
+    chapterTags: [{ id: 4 }], // Samsvarserklæringer og garantibevis
+    professionType: { id: 1 }, // Elektriker
+    documentType: { id: 0 }, // Udefinert — PÅKREVD, uten den kommer INVALID_REQUEST
+  })
+  sjekk(meta.ok, meta.ok ? `filmetadata registrert, id ${meta.verdi.id}` : `filmetadata — ${meta.feil}`)
+  if (!meta.ok) return
+  sjekk(!!meta.verdi.uploadLink, 'fikk uploadLink tilbake')
+  if (!meta.verdi.uploadLink) return
+
+  const opp = await k.lastOppInnhold(meta.verdi.uploadLink, Buffer.from('%PDF-1.4\n% Ampex selvtest\n'))
+  sjekk(opp.ok, opp.ok ? 'innholdet lastet opp på lenken' : `opplasting — ${opp.feil}`)
+
+  const koblet = await k.koblFiler(jobbNummer, [meta.verdi.id])
+  sjekk(koblet.ok, koblet.ok ? `fil ${meta.verdi.id} koblet til jobb ${jobbNummer}` : `kobling — ${koblet.feil}`)
+
+  // Lista henger etter opplastingen med et par sekunder — rett etter PUT er fila
+  // ikke med, noen sekunder senere er den det (målt 2026-09-15). Derfor et par
+  // forsøk før vi kaller det feil.
+  let funnet = false
+  for (let forsok = 0; forsok < 4 && !funnet; forsok++) {
+    if (forsok) await new Promise(r => setTimeout(r, 2000))
+    const filer = await k.plantFiler(bmNr)
+    funnet = filer.ok && filer.verdi.some(f => f.id === meta.verdi.id)
+  }
+  sjekk(funnet, 'fila ligger på eiendommen etterpå')
+}
+
 async function main() {
   const k = new BoligmappaKlient({
     tokenUrl: kreves('BOLIGMAPPA_TOKEN_URL'),
     jobsBase: kreves('BOLIGMAPPA_JOBS_BASE'),
+    proffBase: kreves('BOLIGMAPPA_API_BASE'),
     klientId: kreves('BOLIGMAPPA_CLIENT_ID'),
     klientHemmelighet: kreves('BOLIGMAPPA_CLIENT_SECRET'),
   })
@@ -54,9 +99,41 @@ async function main() {
   const tull = await k.jobb(1)
   sjekk(!tull.ok, `ukjent jobbnummer avvises (${tull.ok ? '?' : tull.status})`)
 
+  // ── Eiendom i STAGING, ikke i produksjon ────────────────────────────────
+  // Nummeret som står på kontoens egne jobber (OON4288) er produksjonsdata og
+  // finnes ikke i staging-basen. Gyldige numre må slås opp her, gjennom gate →
+  // adresse → eiendom. Det var dette som lå bak PROPERTY_NOT_FOUND.
+  const gater = await k.gater('Oslo gate')
+  sjekk(gater.ok, `søkte opp gate${gater.ok ? ` — ${gater.verdi.length} treff` : ' — ' + gater.feil}`)
+  if (!gater.ok) process.exit(1)
+  const gate = gater.verdi[0]
+
+  const adr = await k.adresser(gate.id)
+  sjekk(adr.ok && adr.verdi.length > 0, `adresser i ${gate.streetName}${adr.ok ? ` — ${adr.verdi.length}` : ' — ' + adr.feil}`)
+  if (!adr.ok || adr.verdi.length === 0) process.exit(1)
+
+  const eiendommer = await k.eiendommer(adr.verdi[0].id)
+  sjekk(eiendommer.ok && eiendommer.verdi.length > 0, `eiendommer på adressen${eiendommer.ok ? ` — ${eiendommer.verdi.length}` : ' — ' + eiendommer.feil}`)
+  if (!eiendommer.ok || eiendommer.verdi.length === 0) process.exit(1)
+  console.log(`  (søket gir ${eiendommer.verdi.map(e => e.boligmappaNumber).join(', ')} på ${adr.verdi[0].id})`)
+
+  // MERK: numrene søket returnerer for denne adressen (FPH46xx) kan ikke brukes
+  // til noe — `POST /plants` svarer 500 på alle fire, og jobboppretting svarer
+  // PROPERTY_NOT_FOUND. Søkeindeksen og eiendoms-/jobbasen er ikke enige i
+  // staging. Meldt 2026-09-15; Shaibal bekreftet «issues with the data in
+  // staging» og oppga 20 numre som VIRKER (IPI-90, se docs/BOLIGMAPPA.md).
+  //
+  // Vi bruker det første av dem. Overstyres med BOLIGMAPPA_TEST_EIENDOM.
+  //
+  // Å bare LESE et nummer skiller ikke gyldig fra ugyldig: `GET
+  // /plants/{nr}/files` svarer PLANT_NOT_FOUND for begge deler. Det er
+  // `POST /plants` som avslører forskjellen, og det er den denne testen gjør.
+  const bmNr = process.env.BOLIGMAPPA_TEST_EIENDOM ?? 'ACQ3920'
+  sjekk(!!bmNr, `bruker eiendom ${bmNr} til skrivetestene`)
+
   if (process.argv.includes('--opprett')) {
     const ny = await k.opprettJobb({
-      boligmappaNumber: forste.boligmappaNumber,
+      boligmappaNumber: bmNr,
       organizationNumber: Number(forste.organizationNumber ?? 0),
       title: 'Ampex selvtest',
       initialDescription: 'Opprettet av npm run verify:boligmappa',
@@ -69,18 +146,11 @@ async function main() {
       status: 'InProgress',
       origin: 'PROFF',
     })
-    if (ny.ok) {
-      sjekk(true, `opprettet jobb ${ny.verdi.jobNumber}`)
-    } else if (ny.kode === 'PROPERTY_NOT_FOUND') {
-      // KJENT ÅPEN, ikke en regresjon. Se docs/BOLIGMAPPA.md: eiendommen finnes
-      // i kontoens egne jobber, men jobbtjenesten finner den ikke ved oppretting.
-      // Spurt Boligmappa 2026-09-11; ikke noe vi kan rette selv.
-      console.log(`  (kjent åpen: ${ny.feil} — venter på svar fra Boligmappa)`)
-    } else {
-      sjekk(false, `opprettet jobb — ${ny.feil}`)
-    }
+    sjekk(ny.ok, ny.ok ? `opprettet jobb ${ny.verdi.jobNumber}` : `opprettet jobb — ${ny.feil}`)
+
+    if (ny.ok && process.argv.includes('--fil')) await filveien(k, bmNr, ny.verdi.jobNumber)
   } else {
-    console.log('  (hopper over oppretting — kjør med --opprett)')
+    console.log('  (hopper over oppretting — kjør med --opprett, og --fil for hele filveien)')
   }
 
   console.log(feilet === 0 ? '\nAlt grønt.' : `\n${feilet} feilet.`)

@@ -9,7 +9,6 @@ import { ChevronLeft, AlertTriangle } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { SectionHeader } from '../../../components/ui'
 import { FormFieldView } from '../../../components/form-field-view'
-import { AmpexMarkButton } from '../../../components/ampex-mark-button'
 import { GapCheckReviewSheet } from '../../../components/gap-check-review-sheet'
 import { useVoiceSession } from '../../../lib/ai/voice-session'
 import { loadDraft, clearDraft, listPendingDrafts } from '../../../lib/ai/voice-drafts'
@@ -285,7 +284,6 @@ export default function SkjemaScreen() {
             >
               <ChevronLeft size={sizes.icon} color={colors.paperLabel} strokeWidth={2.2} />
             </Pressable>
-            {!readOnly && <AmpexMarkButton tone="papir" />}
           </View>
           <Text style={[t.title1, { marginTop: spacing.lg }]}>{template.name}</Text>
           <Text style={[t.footnote, { marginTop: spacing.xs }]}>{template.source}</Text>

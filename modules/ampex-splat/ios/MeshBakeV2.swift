@@ -24,7 +24,15 @@ enum MeshBakeV2 {
     // whole-image diagnostic. Never set by the live capture/bake path.
     static var debugImageFieldPlane: SIMD4<Float>? = nil
     // Harness-only quality ablation (§27): keep a nonzero fallback for weak photos.
-    static var debugQualityFloor: Float = 0.3
+    /// Hvor mye SKARPHET får lov å veie mot geometri i vinnervalget. Scoren er
+    /// `facing·|facing|/d² · (gulv + (1−gulv)·kvalitet)`, så gulvet er taket på hvor mye et
+    /// mykt bilde kan straffes. 0,3 ga maks 3,3× straff — for lite (§99): på skannet 13.09
+    /// vant kf24 (skarphet 24) et helt felt på panelveggen over naboer med skarphet 320, og
+    /// feltet står som et innsatt, uskarpt rektangel i teksturen. Gulvet gjør ALDRI en flate
+    /// umalt — scoren er relativ mellom kandidatene for den flaten — det avgjør bare om
+    /// «nærmere» eller «skarpere» vinner. meshscan.qualityfloor overstyrer i harnessen.
+    static let kvalitetsgulvStandard: Float = 0.08
+    static var debugQualityFloor: Float = kvalitetsgulvStandard
 
 
     struct MergedMesh {
@@ -271,8 +279,9 @@ enum MeshBakeV2 {
 
     static func exportTextured(
         anchors: [ARMeshAnchor], to glbURL: URL, framesDir: URL,
-        keyframes: [MeshScanPresenter.Keyframe]
+        keyframes keyframesIn: [MeshScanPresenter.Keyframe]
     ) -> ARMeshGlbExporter.TexturedExportResult {
+        var keyframes = keyframesIn
         var mesh = mergeAnchors(anchors)
         guard !mesh.indices.isEmpty else {
             return ARMeshGlbExporter.TexturedExportResult(success: false, filledFraction: nil, geometryPath: "anchor-v2")
@@ -302,13 +311,37 @@ enum MeshBakeV2 {
            UserDefaults.standard.string(forKey: "meshscan.geometry") != "anchor",
            FileManager.default.fileExists(atPath: framesDir.appendingPathComponent("dense.jsonl").path) {
             ARMeshGlbExporter.progress?("Bygger geometri fra LiDAR…")
-            if let t = MeshTsdfBuild.build(framesDir: framesDir, tillegg: mesh) {
+            var rettede = [Int: [Float]]()
+            if let t = MeshTsdfBuild.build(framesDir: framesDir, tillegg: mesh, poseSink: { rettede = $0 }) {
                 mesh = t
             } else {
                 MeshLog.log("TSDF: bygg feilet i live-skann — beholder ARKit-nettet")
             }
+            keyframes = driftrettedeKeyframes(keyframes, rettede)
         }
         return bake(mesh: mesh, keyframes: keyframes, framesDir: framesDir, to: glbURL)
+    }
+
+    /// Nøkkelbildene får de DRIFTRETTEDE posene fra TSDF-en (MeshTsdfBuild.driftrett), så
+    /// fotoet projiseres med samme pose som geometrien er bygd med. Uten dette står et foto
+    /// fra siste runde inntil 10 cm feil på en vegg bygd av alle rundene. Fixturen på disk
+    /// beholder de rå posene: harnessen retter selv, og skal gi samme svar.
+    static func driftrettedeKeyframes(_ keyframes: [MeshScanPresenter.Keyframe],
+                                      _ rettede: [Int: [Float]]) -> [MeshScanPresenter.Keyframe] {
+        guard !rettede.isEmpty else { return keyframes }
+        var flyttet = 0
+        var maks: Float = 0
+        let ut: [MeshScanPresenter.Keyframe] = keyframes.map { k in
+            guard let m = rettede[k.index], m.count == 16 else { return k }
+            var nk = k
+            let d = simd_length(SIMD3(m[12], m[13], m[14]) - SIMD3(k.transform[12], k.transform[13], k.transform[14]))
+            maks = max(maks, d)
+            if d > 0.0005 { flyttet += 1 }
+            nk.transform = m
+            return nk
+        }
+        MeshLog.log(String(format: "driftretting — %d/%d nøkkelbilder fikk rettet pose (maks flytt %.0f mm)", flyttet, keyframes.count, maks * 1000))
+        return ut
     }
 
     // MARK: - Bake (delt av live skann og fixture-rebake)
@@ -694,7 +727,29 @@ enum MeshBakeV2 {
             simd_float4x4(columns: (SIMD4(a[0], a[1], a[2], a[3]), SIMD4(a[4], a[5], a[6], a[7]),
                                     SIMD4(a[8], a[9], a[10], a[11]), SIMD4(a[12], a[13], a[14], a[15])))
         }
+        // SKARPHET I VINNERVALGET (2026-09-13, §99). Var `skarphet / maks`, lineært. To feil:
+        // maks er ETT bilde — er det knivskarpt blir alle andre nær verdiløse — og lineært
+        // speiler ikke at detalj som ikke finnes i kilden ikke kan hentes inn igjen. Snitt-
+        // veien i samme fil har løst det samme før: `skarphet/p90`, klemt, opphøyd i 2
+        // («V2 snitt-vekt»). Nå samme mapping i vinnervalget. Målt på skannet 13.09: 27 % av
+        // veggarealet fikk en vinner med under halve den skarpheten som fantes for flaten,
+        // 21 % under en firedel. meshscan.vinnerskarphet = "off" gir det gamle tilbake.
+        let vinnerSkarp = UserDefaults.standard.string(forKey: "meshscan.vinnerskarphet") != "off"
+        let vinnerSkarpEksp = MeshBakeV2.flaggTall("meshscan.vinnerskarpeksp", 2)
         let maxSharp = max(kfUse.map(\.sharpness).max() ?? 1, 1e-4)
+        let skarpP90: Float = {
+            let alle = kfUse.map(\.sharpness).sorted()
+            guard !alle.isEmpty else { return maxSharp }
+            return max(alle[min(alle.count - 1, Int(Float(alle.count) * 0.9))], 1e-4)
+        }()
+        func skarpVekt(_ s: Float) -> Float {
+            vinnerSkarp ? pow(min(1, max(0, s / skarpP90)), vinnerSkarpEksp) : s / maxSharp
+        }
+        if vinnerSkarp {
+            let alle = kfUse.map(\.sharpness)
+            MeshLog.log(String(format: "V2 vinner-skarphet — p90 %.0f (maks %.0f, min %.0f), eksp %.1f, gulv %.2f",
+                               skarpP90, maxSharp, alle.min() ?? 0, vinnerSkarpEksp, MeshBakeV2.debugQualityFloor))
+        }
         var cands: [Cand] = []
         cands.reserveCapacity(kfUse.count)
         var frameMeans: [SIMD3<Float>] = [] // lineær snitt-RGB per frame → gain-utjevning
@@ -725,7 +780,7 @@ enum MeshBakeV2 {
                 imgW: Float(k.width), imgH: Float(k.height),
                 // kfQuality = felles rangering med fangsten; blurPx (predikert eksponerings-
                 // uskarphet) er nil på eldre fixtures → faktor 1, gamle bakes er bit-like.
-                quality: MeshScanPresenter.kfQuality(sharpness: k.sharpness / maxSharp, motion: k.motion, blurPx: k.blurPx)
+                quality: MeshScanPresenter.kfQuality(sharpness: skarpVekt(k.sharpness), motion: k.motion, blurPx: k.blurPx)
                     * ((k.preLock ?? false) ? 0.6 : 1),
                 depth: depth, dw: dw, dh: dh, thumb: thumb, tw: tw, th: th
             ), mean)
@@ -1975,14 +2030,26 @@ enum MeshBakeV2 {
             // xatlas-taket kan mesh være forenklet selv om flagget står av, og da ville en
             // gate på 3 kastet de fleste grensepar (819/2687 på device 2026-08-15).
             let minSamples: Float = didSimplify ? 2 : 3
+            // PORTEN ER EN VEKT, IKKE EN DØR (2026-09-13, §100). Gaten kastet greneparet helt.
+            // På TSDF-nettet, der én bake ga 10 758 regioner over 291 051 flater, deler de fleste
+            // naboregioner 1–2 kanter — målt på skannet 13.09 ble **581 av 2172** grensepar brukt,
+            // og en region uten et eneste par står igjen på sitt eget fotos nivå. Det er nettopp
+            // det som ser ut som «et bilde satt inn». Løseren vekter alt med antall samples fra
+            // før, så få samples er allerede uttrykt — gaten gjorde det bare én gang til, binært.
+            // Nå: alle par teller, de under gaten med halv vekt. meshscan.somgate = "hard" gir
+            // den gamle døren.
+            let hardGate = UserDefaults.standard.string(forKey: "meshscan.somgate") == "hard"
+            var svakePar = 0
             for (k, a) in pairAcc {
-                guard a.n >= minSamples else { continue }
+                if hardGate, a.n < minSamples { continue }
                 let lo = Int32(k >> 32), hi = Int32(k & 0xFFFFFFFF)
                 let mean = a.d / a.n
-                adj[Int(lo)].append((hi, mean, a.n))   // g_lo skal ≈ g_hi + (c_hi − c_lo)
-                adj[Int(hi)].append((lo, -mean, a.n))
-                trustedPairs += 1
+                let w = a.n < minSamples ? a.n * 0.5 : a.n
+                adj[Int(lo)].append((hi, mean, w))   // g_lo skal ≈ g_hi + (c_hi − c_lo)
+                adj[Int(hi)].append((lo, -mean, w))
+                if a.n < minSamples { svakePar += 1 } else { trustedPairs += 1 }
             }
+
             // Areal-vektet forankring: STORE regioner definerer tonen og flytter seg knapt,
             // små lapper retter seg etter dem. (Scan #4-lærdom: svak forankring lot en
             // gjenskinns-region dra naboene lysere kjedevis — blomstrende utvasking.)
@@ -2009,7 +2076,8 @@ enum MeshBakeV2 {
                 // meshscan.regionofs.
                 regionOfs[i] = simd_clamp(regionOfs[i], SIMD3(repeating: -regionOfsLim), SIMD3(repeating: regionOfsLim))
             }
-            MeshLog.log("V2 søm-nivellering — \(regionFrame.count) regioner, \(trustedPairs)/\(pairAcc.count) grensepar brukt")
+            MeshLog.log("V2 søm-nivellering — \(regionFrame.count) regioner, \(trustedPairs)/\(pairAcc.count) grensepar brukt"
+                        + (hardGate ? " (hard gate)" : " + \(svakePar) svake til halv vekt"))
 
             // ── Per-hjørne søm-forfining (Waechter-retning). Region-konstantene over fjerner
             // SPRANGET mellom naboregioner; resten er gradienter én konstant ikke kan følge.
@@ -2849,14 +2917,27 @@ enum MeshBakeV2 {
         // ── GPU-bake: én draw per region (gruppert per kildebilde), én tekstur resident om gangen.
         ARMeshGlbExporter.progress?("Baker tekstur…")
         let colorAblation = debugSink != nil && UserDefaults.standard.string(forKey: "meshscan.colorablation") == "on"
-        guard let png = rasterize(uv: uv, winner: winner, region: region, regionFrame: regionFrame,
-                                  regionOfs: regionOfs, cornerOfs: cornerOfs, feather: featherFaces, featherD: featherD,
-                                  topF: topF, topFavg: topFavgUse, topK: topK,
-                                  seamBand: seamBand, kfUse: kfUse, gains: gains, warpGrids: rasterWarpGrids, fieldWarpFace: fieldWarpFace,
-                                  blendAll: blendAll, blendRaw: blendRaw,
-                                  framesDir: framesDir, atlasSize: atlasSize,
-                                  planeAvg: planeAvgByFrame, planeFace: onPlane,
-                                  diagnosticSink: colorAblation ? debugSink : nil) else { return failG }
+        // BORTKASTET MALING (2026-09-13). Kvalitetsveien (fliser) returnerer inne i sin egen
+        // blokk lenger ned og rører aldri dette atlaset — men det ble malt likevel, først av
+        // fem: 22 s av en bake på 172 s gikk til en tekstur ingen så. Nå males standard-
+        // atlaset bare når det faktisk skal eksporteres (standardveien, eller hvis
+        // flise-skrivingen feiler og vi faller tilbake).
+        var pngStandard: Data? = nil
+        func standardAtlas() -> Data? {
+            if let p = pngStandard { return p }
+            pngStandard = rasterize(uv: uv, winner: winner, region: region, regionFrame: regionFrame,
+                                    regionOfs: regionOfs, cornerOfs: cornerOfs, feather: featherFaces, featherD: featherD,
+                                    topF: topF, topFavg: topFavgUse, topK: topK,
+                                    seamBand: seamBand, kfUse: kfUse, gains: gains, warpGrids: rasterWarpGrids, fieldWarpFace: fieldWarpFace,
+                                    blendAll: blendAll, blendRaw: blendRaw,
+                                    framesDir: framesDir, atlasSize: atlasSize,
+                                    planeAvg: planeAvgByFrame, planeFace: onPlane,
+                                    diagnosticSink: colorAblation ? debugSink : nil)
+            return pngStandard
+        }
+        if !kvalitetFliser || colorAblation {
+            guard standardAtlas() != nil else { return failG }
+        }
 
         // Same-run color ablation (§58): remove ALL radiometric/feather/average changes,
         // while keeping camera, winner, geometry, UV and source sampling fixed.
@@ -3314,6 +3395,7 @@ enum MeshBakeV2 {
         }
         do {
             ARMeshGlbExporter.progress?("Skriver 3D-fil…")
+            guard let png = standardAtlas() else { return failG }
             try ARMeshGlbExporter.writeTexturedGlb(positions: uv.positions, normals: uv.normals, uvs: uv.uvs,
                                                    indices: glbIndices, pngAtlas: png, to: glbURL)
             let bytes = ((try? FileManager.default.attributesOfItem(atPath: glbURL.path))?[.size] as? Int) ?? 0
@@ -3580,6 +3662,26 @@ enum MeshBakeV2 {
         // Indeksene blir dermed løpende hjørne-ID-er. Koster ~3× verteksminne (10 MB ved
         // xatlas-taket på 110k tris) — lite mot atlasparet.
         let triCount = winner.count
+        // FLISENE TEGNER BARE SITT (2026-09-13). Ved fliser er UV-ene kroppet til flisens
+        // [0,1], og trekanter utenfor faller uansett utenfor viewporten — men fotoene deres
+        // ble DEKODET og tegnet likevel: 133 4K-JPEG-er × 4 fliser. Her kuttes trekantene som
+        // ikke rører flisen ut av vinner-, fjærings- og snittgruppene, så et foto uten
+        // flater i flisen aldri leses. Standardveien (alle UV-er i [0,1]) er upåvirket.
+        var inne = [Bool](repeating: true, count: triCount)
+        do {
+            var utenfor = 0
+            let m: Float = 0.02
+            for t in 0..<triCount {
+                var lo = SIMD2<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
+                for j in 0..<3 {
+                    let vi = Int(uv.indices[t * 3 + j])
+                    let q = SIMD2(uv.uvs[vi * 2], uv.uvs[vi * 2 + 1])
+                    lo = simd_min(lo, q); hi = simd_max(hi, q)
+                }
+                if hi.x < -m || hi.y < -m || lo.x > 1 + m || lo.y > 1 + m { inne[t] = false; utenfor += 1 }
+            }
+            if utenfor > 0 { MeshLog.log("V2 flis — \(triCount - utenfor)/\(triCount) trekanter i flisen, resten hoppes over") }
+        }
         var vdata = [Float](repeating: 0, count: triCount * 3 * 10)
         for t in 0..<triCount {
             for j in 0..<3 {
@@ -3602,7 +3704,7 @@ enum MeshBakeV2 {
         // Indekser gruppert per REGION, sortert per kildebilde → hver frame dekodes én gang,
         // hver region får sin egen nivellerings-offset i uniformen.
         var groups = [Int32: [UInt32]]()
-        for t in 0..<triCount where winner[t] >= 0 {
+        for t in 0..<triCount where winner[t] >= 0 && inne[t] {
             groups[region[t], default: []].append(contentsOf: [UInt32(t * 3), UInt32(t * 3 + 1), UInt32(t * 3 + 2)])
         }
         var sortedIdx = [UInt32]()
@@ -3894,7 +3996,7 @@ enum MeshBakeV2 {
         var avgRanges = [Int: [(rank: Int, offset: Int, count: Int)]]()
         do {
             var byFR = [Int64: [UInt32]]() // (frame << 2 | rank) → hjørneindekser
-            for t in 0..<triCount {
+            for t in 0..<triCount where inne[t] {
                 for j in 0..<avgK {
                     let f = avgTopF[t * topK + j]
                     guard f >= 0 else { continue }
@@ -3923,7 +4025,7 @@ enum MeshBakeV2 {
         var fIdxBuf: MTLBuffer? = nil
         if !feather.isEmpty, featherPipe != nil {
             var grouped = [Int64: [UInt32]]()
-            for ff in feather {
+            for ff in feather where inne[Int(ff.tri)] {
                 let t = UInt32(ff.tri)
                 grouped[(Int64(ff.frame) << 32) | Int64(ff.region), default: []].append(contentsOf: [t * 3, t * 3 + 1, t * 3 + 2])
             }

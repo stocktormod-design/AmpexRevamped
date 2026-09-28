@@ -11,6 +11,9 @@ import { useTilGodkjenning, useKanGodkjenne } from '../../lib/approvals'
 import { useApneAvvik } from '../../lib/avvik'
 import { useSynkStatus } from '../../lib/db/sync'
 import { useUserId } from '../../lib/auth-user'
+import { Q } from '@nozbe/watermelondb'
+import { database } from '../../lib/db'
+import { LaeretidLaerling } from '../../lib/db/models/laeretid'
 import { supabase } from '../../lib/supabase'
 import { getPreferredVoice, setPreferredVoice, VOICE_OPTIONS } from '../../lib/ai/voice-prefs'
 import { trykkProve, nullstillTrykk, type TrykkProve } from '../../lib/perf'
@@ -52,6 +55,16 @@ export default function Screen() {
   const kanGodkjenne = useKanGodkjenne()
   const apneAvvik = useApneAvvik()
   const insets = useSafeAreaInsets()
+  // Læretid er en egen flate, og raden finnes bare for den som er lærling. En
+  // montør i et Ampex-firma får loggene sine her (docs/LAERLING.md, «Overgangen»).
+  const [erLaerling, setErLaerling] = useState(false)
+  useEffect(() => {
+    if (!userId) return
+    const sub = database.get<LaeretidLaerling>('laeretid_laerling')
+      .query(Q.where('id', userId)).observe()
+      .subscribe(r => setErLaerling(r.length > 0))
+    return () => sub.unsubscribe()
+  }, [userId])
   const [voice, setVoice] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
 
@@ -132,6 +145,21 @@ export default function Screen() {
             <Text style={[t.body]}>Mine timer</Text>
           </View>
         </Pressable>
+        {erLaerling && (
+          <Pressable
+            haptic="light"
+            onPress={() => router.push('/(app)/laeretid' as never)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+              paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
+              borderTopWidth: 1, borderTopColor: colors.separator,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[t.body]}>Læretid</Text>
+            </View>
+          </Pressable>
+        )}
         <Pressable
           haptic="light"
           onPress={() => router.push('/(app)/arkiv')}

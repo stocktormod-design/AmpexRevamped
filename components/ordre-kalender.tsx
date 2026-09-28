@@ -36,7 +36,6 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
   const idag = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime() }, [])
 
   const dagIndeks = valgt ?? standardDag(plan)
-  const dag = plan.dager[dagIndeks]
 
   const bytt = (uker: number) => { setStart(s => flyttUke(s, uker)); setValgt(null) }
 
@@ -131,23 +130,32 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
         </View>
       </PapirCard>
 
-      {/* Den valgte dagen */}
-      <View style={{ marginTop: spacing.xl }}>
-        <PapirSectionHeader>
-          {dag.dato.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </PapirSectionHeader>
-        {dag.jobber.length === 0 ? (
+      {/* Uken dag for dag (Tormod 13.09: «dato-basert»). Alle dager med jobber
+          står under grafen i rekkefølge, ikke bare den du trykket på — søylen
+          du trykker løfter fram dagen sin i lista. «I dag» og «I morgen» sies
+          rett ut; resten får ukedag og dato. */}
+      {plan.sumJobber === 0 ? (
+        <View style={{ marginTop: spacing.xl }}>
           <PapirCard style={{ padding: spacing.lg, alignItems: 'center' }}>
-            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Ingen jobber satt opp denne dagen.</Text>
+            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Ingen jobber satt opp denne uken.</Text>
           </PapirCard>
-        ) : (
+        </View>
+      ) : plan.dager.map((d, i) => d.jobber.length === 0 ? null : (
+        <View key={i} style={{ marginTop: spacing.xl }}>
+          <Text style={[t.eyebrow, {
+            textTransform: 'uppercase',
+            marginHorizontal: spacing.screen + spacing.xs, marginBottom: spacing.sm,
+            color: i === dagIndeks ? colors.label : colors.secondaryLabel,
+          }]}>
+            {dagEtikett(d.dato, idag)}
+          </Text>
           <PapirCard>
-            {dag.jobber.map((o, i, arr) => (
-              <DagRad key={o.id} order={o} last={i === arr.length - 1} onPress={() => onVelg(o)} />
+            {d.jobber.map((o, j, arr) => (
+              <DagRad key={o.id} order={o} last={j === arr.length - 1} onPress={() => onVelg(o)} />
             ))}
           </PapirCard>
-        )}
-      </View>
+        </View>
+      ))}
 
       {/* Jobbene uten dato. De hører ikke til i noen uke — og nettopp derfor
           er de det egentlige arbeidet på denne skjermen. */}
@@ -163,6 +171,15 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
       )}
     </View>
   )
+}
+
+/** «I dag · mandag 14. sep», «I morgen · …», ellers «Onsdag 16. sep». */
+function dagEtikett(dato: Date, idag: number): string {
+  const navn = dato.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'short' })
+  const diff = Math.round((dato.getTime() - idag) / 86_400_000)
+  if (diff === 0) return `I dag · ${navn}`
+  if (diff === 1) return `I morgen · ${navn}`
+  return navn
 }
 
 /** Én jobb i dagslista. Klokkeslettet står først — det er rekkefølgen på dagen. */

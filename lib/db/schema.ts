@@ -4,8 +4,132 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb'
 // identisk med serverens — synk-protokollen mapper 1:1.
 // Ved skjemaendring: bump version + legg til migrations (WatermelonDB docs).
 export const schema = appSchema({
-  version: 37,
+  version: 48,
   tables: [
+    tableSchema({
+      name: 'laeretid_melding',
+      columns: [
+        { name: 'laerling_id', type: 'string', isIndexed: true },
+        { name: 'logg_id', type: 'string', isIndexed: true },
+        { name: 'rolle', type: 'string' },
+        { name: 'tekst', type: 'string' },
+        { name: 'dekker', type: 'string', isOptional: true },
+        { name: 'nek', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'laeretid_sporsmaal',
+      columns: [
+        { name: 'laerling_id', type: 'string', isIndexed: true },
+        // Valgfri siden v48: teorispørsmål hører ikke til en logg, men til et tema.
+        { name: 'logg_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'tema', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'maal_nr', type: 'number' },
+        { name: 'del_id', type: 'string' },
+        { name: 'runde', type: 'number' },
+        { name: 'tekst', type: 'string' },
+        { name: 'svar', type: 'string', isOptional: true },
+        { name: 'vurdering', type: 'string', isOptional: true },
+        { name: 'laget_at', type: 'number' },
+        { name: 'besvart_at', type: 'number', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'laeretid_laerling',
+      columns: [
+        { name: 'laereplan_kode', type: 'string' },
+        { name: 'opplaeringskontor', type: 'string', isOptional: true },
+        { name: 'laerebedrift', type: 'string', isOptional: true },
+        { name: 'kontrakt_fra', type: 'string', isOptional: true },
+        { name: 'kontrakt_til', type: 'string', isOptional: true },
+        { name: 'oppmelding_planlagt', type: 'string', isOptional: true },
+        { name: 'tone', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'laeretid_tilknytning',
+      columns: [
+        { name: 'laerling_id', type: 'string', isIndexed: true },
+        { name: 'person_id', type: 'string', isIndexed: true },
+        { name: 'rolle', type: 'string' },
+        { name: 'gyldig_fra', type: 'string' },
+        { name: 'gyldig_til', type: 'string', isOptional: true },
+        { name: 'created_by', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'laeretid_logg',
+      columns: [
+        { name: 'laerling_id', type: 'string', isIndexed: true },
+        { name: 'tittel', type: 'string', isOptional: true },
+        { name: 'arbeidsdato', type: 'string', isOptional: true },
+        { name: 'status', type: 'string', isIndexed: true },
+        { name: 'innhold', type: 'string', isOptional: true },
+        { name: 'instruks', type: 'string', isOptional: true },
+        { name: 'mal_id', type: 'string', isOptional: true },
+        { name: 'utfylling', type: 'string', isOptional: true },
+        { name: 'ai_endringer_brukt', type: 'number' },
+        { name: 'sendt_at', type: 'number', isOptional: true },
+        { name: 'vurdert_at', type: 'number', isOptional: true },
+        { name: 'vurdert_av', type: 'string', isOptional: true },
+        { name: 'tilbakemelding', type: 'string', isOptional: true },
+        { name: 'created_by', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'laeretid_bilde',
+      columns: [
+        { name: 'laerling_id', type: 'string', isIndexed: true },
+        { name: 'logg_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'tatt_at', type: 'number', isOptional: true },
+        { name: 'rekkefolge', type: 'number' },
+        { name: 'notat', type: 'string', isOptional: true },
+        { name: 'modellbeskrivelse', type: 'string', isOptional: true },
+        { name: 'r2_nokkel', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'laeretid_belegg',
+      columns: [
+        { name: 'laerling_id', type: 'string', isIndexed: true },
+        { name: 'logg_id', type: 'string', isIndexed: true },
+        { name: 'maal_nr', type: 'number', isIndexed: true },
+        { name: 'del_id', type: 'string' },
+        { name: 'kilde', type: 'string' },
+        { name: 'generert', type: 'boolean' },
+        { name: 'utfort_selv', type: 'boolean' },
+        { name: 'utspurt', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'laeretid_invitasjon',
+      columns: [
+        { name: 'laerling_id', type: 'string', isIndexed: true },
+        { name: 'epost', type: 'string' },
+        { name: 'rolle', type: 'string' },
+        { name: 'fra_person_id', type: 'string' },
+        { name: 'sendt_at', type: 'number' },
+        { name: 'utloper_at', type: 'number' },
+        { name: 'status', type: 'string' },
+        { name: 'avgjort_at', type: 'number', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
     tableSchema({
       name: 'product_prices',
       columns: [
@@ -92,6 +216,19 @@ export const schema = appSchema({
       ],
     }),
     tableSchema({
+      name: 'quote_sections',
+      columns: [
+        { name: 'quote_id', type: 'string', isIndexed: true },
+        // Nestet: bygg → etasje → rom. Appen viser ett nivå, dybden finnes for kontoret.
+        { name: 'parent_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'name', type: 'string' },
+        { name: 'sort_order', type: 'number' },
+        { name: 'source', type: 'string', isOptional: true }, // manuell|tegning|pakke
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
       name: 'quotes',
       columns: [
         { name: 'quote_number', type: 'number', isOptional: true }, // settes av server-trigger
@@ -122,6 +259,8 @@ export const schema = appSchema({
       name: 'quote_lines',
       columns: [
         { name: 'quote_id', type: 'string', isIndexed: true },
+        // Området linja hører til. Null = rett i tilbudet, som før.
+        { name: 'section_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'sort_order', type: 'number' }, // brukerens rekkefølge — den er en del av dokumentet
         { name: 'kind', type: 'string' }, // materiell|arbeid|tekst
         { name: 'description', type: 'string' },
@@ -134,6 +273,12 @@ export const schema = appSchema({
         { name: 'cost_price', type: 'number', isOptional: true },
         { name: 'discount_percent', type: 'number', isOptional: true },
         { name: 'vat_type', type: 'string', isOptional: true },
+        // Tilvalg (2026-09-18): kunden velger om linja skal med. is_selected
+        // betyr bare noe når is_optional er sann. Låst pris: «oppdater påslag»
+        // på kontoret rører ikke linja. Se docs/TILBUD_KONKURRENTER.md.
+        { name: 'is_optional', type: 'boolean' },
+        { name: 'is_selected', type: 'boolean' },
+        { name: 'price_locked', type: 'boolean' },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],
@@ -429,6 +574,7 @@ export const schema = appSchema({
         { name: 'model', type: 'string', isOptional: true },
         { name: 'placed_at', type: 'number', isOptional: true },
         { name: 'note', type: 'string', isOptional: true },
+        { name: 'source', type: 'string', isOptional: true }, // 'tegning' = funnet i tegningens symbolforklaring (tegnes ikke oppå symbolet)
         { name: 'created_by', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
@@ -531,6 +677,45 @@ export const schema = appSchema({
         { name: 'page_count', type: 'number', isOptional: true },
         { name: 'source', type: 'string', isOptional: true }, // null/'lokal' | 'ekstern' (skrivebeskyttet grunnlag)
         { name: 'folder_id', type: 'string', isOptional: true, isIndexed: true }, // mappe (bygg/fag); null = rot
+        { name: 'analyzed_at', type: 'number', isOptional: true }, // første-opplastings-analysen (komponenter + rom) er kjørt
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'ik_punkter',
+      columns: [
+        { name: 'nummer', type: 'string' },
+        { name: 'tittel', type: 'string' },
+        { name: 'hjemmel', type: 'string', isOptional: true },
+        { name: 'formal', type: 'string', isOptional: true },
+        { name: 'innhold', type: 'string', isOptional: true },
+        { name: 'ansvarlig', type: 'string', isOptional: true },
+        { name: 'status', type: 'string' },
+        { name: 'gjennomgang_intervall_mnd', type: 'number' },
+        { name: 'sist_gjennomgatt', type: 'string', isOptional: true },
+        { name: 'vedtatt_at', type: 'number', isOptional: true },
+        { name: 'vedtatt_av', type: 'string', isOptional: true },
+        { name: 'gjeldende_versjon', type: 'number' },
+        { name: 'sort_order', type: 'number' },
+        { name: 'created_by', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'ik_rutiner',
+      columns: [
+        { name: 'punkt_id', type: 'string', isIndexed: true },
+        { name: 'tittel', type: 'string' },
+        { name: 'innhold', type: 'string', isOptional: true },
+        { name: 'ansvarlig', type: 'string', isOptional: true },
+        { name: 'status', type: 'string' },
+        { name: 'gjeldende_versjon', type: 'number' },
+        { name: 'sort_order', type: 'number' },
+        { name: 'vedtatt_at', type: 'number', isOptional: true },
+        { name: 'vedtatt_av', type: 'string', isOptional: true },
+        { name: 'created_by', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],

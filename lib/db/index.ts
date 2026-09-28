@@ -51,6 +51,13 @@ import { PurchaseOrder, PurchaseOrderLine } from './models/purchase-order'
 import { OrderArchive } from './models/order-archive'
 import { Quote } from './models/quote'
 import { QuoteLine } from './models/quote-line'
+import { QuoteSection } from './models/quote-section'
+import { IkPunkt } from './models/ik-punkt'
+import { IkRutine } from './models/ik-rutine'
+import {
+  LaeretidLaerling, LaeretidTilknytning, LaeretidLogg,
+  LaeretidBilde, LaeretidBelegg, LaeretidInvitasjon, LaeretidSporsmaal, LaeretidMelding,
+} from './models/laeretid'
 
 const adapter = new SQLiteAdapter({
   schema,
@@ -64,5 +71,6 @@ const adapter = new SQLiteAdapter({
 
 export const database = new Database({
   adapter,
-  modelClasses: [Order, OrderDocument, OrderMaterial, OrderExtra, Product, Customer, Activity, Location, StockMovement, Project, Drawing, DrawingFolder, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, FireDevice, NfcTag, Quote, QuoteLine, OrderSignature, ProductPrice, OrderApproval, OrderArchive, Deviation, ServiceAgreement, PurchaseOrder, PurchaseOrderLine],
+  modelClasses: [Order, OrderDocument, OrderMaterial, OrderExtra, Product, Customer, Activity, Location, StockMovement, Project, Drawing, DrawingFolder, ProjectMember, OrderMember, TimeEntry, Reminder, AssistantNote, Room, DrawingMarkup, Task, FormTemplate, FormRevision, FormComment, DrawingLoop, OrderScan, MeshMarker, FireDevice, NfcTag, Quote, QuoteLine, QuoteSection, OrderSignature, ProductPrice, OrderApproval, OrderArchive, Deviation, ServiceAgreement, PurchaseOrder, PurchaseOrderLine, IkPunkt, IkRutine,
+    LaeretidLaerling, LaeretidTilknytning, LaeretidLogg, LaeretidBilde, LaeretidBelegg, LaeretidInvitasjon, LaeretidSporsmaal, LaeretidMelding],
 })

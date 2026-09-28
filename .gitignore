@@ -31,6 +31,11 @@ yarn-error.*
 *.pem
 
 # local env files
+# .env*.local var dekket, men et rent .env i rota var det IKKE (2026-09-16).
+# Hullet ville sluppet en modellnøkkel rett inn i historikken.
+.env
+.env.*
+!.env.example
 .env*.local
 
 # typescript

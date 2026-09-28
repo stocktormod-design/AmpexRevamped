@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/auth'
 import { hentProsjekter, opprettProsjekt, type Prosjekt } from '@/lib/kontor-lager'
 import { antall, Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
+import { ProsjektPlan } from '@/ruter/ProsjektPlan'
 
 /**
  * Prosjekter.
@@ -29,7 +30,23 @@ const STATUS: Record<string, { navn: string; stil: 'ny' | 'varsel' | 'noytral' }
   ferdig: { navn: 'Ferdig', stil: 'noytral' },
 }
 
+/** `#/prosjekt/<id>` åpner prosjektet på planen; `#/prosjekt` er lista. */
+function valgtFraHash(): string | null {
+  return window.location.hash.replace('#/', '').split('/')[1] || null
+}
+
 export function Prosjekter() {
+  const [valgt, setValgt] = useState<string | null>(valgtFraHash)
+  useEffect(() => {
+    const paa = () => setValgt(valgtFraHash())
+    window.addEventListener('hashchange', paa)
+    return () => window.removeEventListener('hashchange', paa)
+  }, [])
+  if (valgt) return <ProsjektPlan id={valgt} />
+  return <ProsjektListe />
+}
+
+function ProsjektListe() {
   const [rader, setRader] = useState<Prosjekt[]>([])
   const [sok, setSok] = useState('')
   const [feil, setFeil] = useState<string | null>(null)
@@ -114,7 +131,7 @@ export function Prosjekter() {
               {synlige.map(p => {
                 const st = STATUS[p.status ?? ''] ?? { navn: p.status ?? 'Ukjent', stil: 'noytral' as const }
                 return (
-                  <tr key={p.id}>
+                  <tr key={p.id} className="klikkbar" onClick={() => { window.location.hash = `#/prosjekt/${p.id}` }}>
                     <td style={{ fontWeight: 500 }}>{p.name}</td>
                     <td className="dempet">{p.customer_name ?? '–'}</td>
                     <td className="dempet valgbar">{p.address ?? '–'}</td>

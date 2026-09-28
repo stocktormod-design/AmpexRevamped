@@ -19,6 +19,7 @@ struct NodeUniforms {
 struct Field {
     float3 origin;
     float3 invExtent;
+    float voxel;
 };
 struct Veil {
     float4x4 camToWorld;
@@ -73,16 +74,38 @@ fragment float4 coverageFrag(
     constant Field& field [[ buffer(2) ]])
 {
     constexpr sampler s3(coord::normalized, filter::linear, address::clamp_to_edge);
-    float3 uvw = (in.world - field.origin) * field.invExtent;
-    float4 fv = float4(coverageField.sample(s3, uvw));
-    float c = fv.a;
+    // SLØYFE LANGS NORMALEN (2026-09-13). Feltet males der DYBDEKARTET traff; overlegget
+    // leste det dér ARKit-MESHEN ligger. Det er ikke samme sted: verdensrammen glir mens
+    // man går (målt på skannet 13.09: gulvplanet flytter seg 73 mm gjennom opptaket, §97),
+    // og ARKit retter meshen etterpå — feltet står igjen der det ble malt. Målt på samme
+    // skann: 40 % av mesh-hjørnene som HAR dekning innen ±2 voxler har INGENTING i sin
+    // egen voxel, og andelen vegg over terskelen faller 40 → 22 %. Det er «stripene
+    // reagerer ikke på den veggen»: man maler, men overlegget slår opp i tom luft.
+    // Derfor: fem tapper langs flatens normal (0, ±1, ±2 voxler = ±8 cm), sterkeste vinner.
+    // Prisen er at en flate inntil 8 cm foran en dekket flate kan arve dekningen (tynne
+    // ting: karmer, radiatorer) — rett vei å ta feil på når alternativet er at veggen
+    // aldri blir ferdig. Normalen kommer fra skjermderivatene av verdensposisjonen, så
+    // geometrien trenger ikke normaler (live-meshen har ingen).
+    float3 nrm = cross(dfdx(in.world), dfdy(in.world));
+    float nl = length(nrm);
+    nrm = nl > 1e-8 ? nrm / nl : float3(0.0);
+    const float steg[5] = { 0.0, 1.0, -1.0, 2.0, -2.0 };
+    const float vekt[5] = { 1.0, 0.95, 0.95, 0.85, 0.85 };
+    float c = 0.0, cRaa = 0.0;
+    float3 preFarge = float3(0.0);
+    for (int k = 0; k < 5; ++k) {
+        float3 uvw = (in.world + nrm * (steg[k] * field.voxel) - field.origin) * field.invExtent;
+        float4 fv = float4(coverageField.sample(s3, uvw));
+        float s = fv.a * vekt[k];
+        if (s > c) { c = s; cRaa = fv.a; preFarge = fv.rgb; }
+    }
     // Ufanget flate får striper HER (samme skjermrom-mønster som sløret bak) — kamera-
     // bildet skal aldri synes; enten striper eller malt mesh, som Scaniverse.
     if (c < 0.40) {
         float stripe = stripeMaske(in.position.xy);
         return float4(mix(kHvit, kRod, stripe), 1.0);
     }
-    float3 farge = fv.rgb / max(c, 0.01);   // premultiplisert → vektet snitt
+    float3 farge = preFarge / max(cRaa, 0.01);   // premultiplisert → vektet snitt
     return float4(farge, 1.0);
 }
 
