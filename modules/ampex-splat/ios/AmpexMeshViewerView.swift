@@ -680,6 +680,26 @@ enum Blokkpyramide {
     }
   }
 
+  /// Bygger NÅ, på kallerens tråd, med fremdrift i prosent. Kalles på slutten av baken (§136):
+  /// pyramiden er da ferdig før modellen åpnes første gang, i stedet for åtte minutter med
+  /// grov tekstur og et nytt minnetopp oppå vieweren (krasjene 01.11, §134). Feiler den, faller
+  /// vieweren tilbake på byggIBakgrunnen som før.
+  static func byggNå(_ glb: String) {
+    guard UserDefaults.standard.string(forKey: "meshscan.blokker") != "off", !glb.hasSuffix(".ply"), ferdig(glb) == nil else { return }
+    let t0 = CFAbsoluteTimeGetCurrent()
+    ARMeshGlbExporter.progress?("Klargjør visningen…")
+    do {
+      let n = try autoreleasepool { try bygg(glb) { andel in
+        ARMeshGlbExporter.progress?(String(format: "Klargjør visningen… %d %%", Int(andel * 100)))
+      } }
+      MeshLog.log(String(format: "blokkpyramide — %d blokker på %.1f s i baken ← %@", n, CFAbsoluteTimeGetCurrent() - t0,
+                         (glb as NSString).lastPathComponent))
+    } catch {
+      try? FileManager.default.removeItem(at: mappe(glb))
+      MeshLog.log("blokkpyramide — FEIL i baken: \(error)")
+    }
+  }
+
   struct Feil: Error, CustomStringConvertible { let description: String }
 
   private struct Rekt { let bilde: Int; let x: Int, y: Int, w: Int, h: Int; var ox = 0, oy = 0 }
@@ -697,7 +717,7 @@ enum Blokkpyramide {
   /// Selve bygget. Minnet holdes nede: ett kildebilde dekodet om gangen, og blokkatlasene skrives
   /// via en midlertidig råfil på disk før de kodes til JPEG-nivåer.
   @discardableResult
-  static func bygg(_ glb: String, blokk: Float = 1.0) throws -> Int {
+  static func bygg(_ glb: String, blokk: Float = 1.0, fremdrift: ((Double) -> Void)? = nil) throws -> Int {
     guard let fil = try? Data(contentsOf: URL(fileURLWithPath: glb), options: .alwaysMapped), fil.count > 20 else { throw Feil(description: "kan ikke lese GLB") }
     func u32(_ o: Int) -> Int { Int(fil.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: o, as: UInt32.self) }) }
     guard u32(0) == 0x46546C67 else { throw Feil(description: "ikke GLB") }
@@ -834,7 +854,9 @@ enum Blokkpyramide {
     try fh.truncate(atOffset: UInt64(råStørrelse))
 
     // ── 3. Ett kildebilde om gangen: kopier rektanglene inn i blokkatlasene på disk.
-    for bi in størrelse.keys.sorted() {
+    let kilder = størrelse.keys.sorted()
+    for (k, bi) in kilder.enumerated() {
+      fremdrift?(0.7 * Double(k) / Double(max(kilder.count, 1)))
       // Varm telefon: vent, endre ingenting (samme regel som baken, §120). Høyst 5 min.
       var ventet = 0
       while ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue, ventet < 60 {
@@ -870,6 +892,7 @@ enum Blokkpyramide {
     defer { try? les.close() }
     var meta: [[String: Any]] = []
     for (n, b) in liste.enumerated() {
+      if n % 8 == 0 { fremdrift?(0.7 + 0.3 * Double(n) / Double(max(liste.count, 1))) }
       try autoreleasepool {
         let side = b.side
         try les.seek(toOffset: UInt64(b.råOffset))

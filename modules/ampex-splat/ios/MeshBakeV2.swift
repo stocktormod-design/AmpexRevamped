@@ -670,6 +670,39 @@ enum MeshBakeV2 {
         // hele nettet likevel: 267 s oppakking, 4,5 minutter av en 17-minutters bake.
         // Kommentaren over argumenterer selv for 250k som «en helt annen operasjon» enn
         // det skadelige taket på 60k; det er den verdien regelen skulle hatt.
+        // Løsrevne småbiter (§136): vektterskel 1,0 i stedet for 1,5 tetter hull (median 5,2 → 3,4 %
+        // på huset c1794d71), men slipper også gjennom flak der få stråler traff. Biter under
+        // `meshscan.småbiter` m² (standard 0,005 = 50 cm²) som ikke henger i noe, fjernes. En
+        // stikkontakt eller list henger i veggen og er ikke en løs bit.
+        let småGrense = Float(flaggTall("meshscan.småbiter", 0.005))
+        if småGrense > 0, mesh.indices.count >= 3 {
+            let nv = mesh.positions.count / 3, nt = mesh.indices.count / 3
+            var far = Array(0..<nv)
+            func rot(_ x: Int) -> Int { var r = x; while far[r] != r { far[r] = far[far[r]]; r = far[r] }; return r }
+            for t in 0..<nt {
+                let a = rot(Int(mesh.indices[t * 3])), b = rot(Int(mesh.indices[t * 3 + 1])), c = rot(Int(mesh.indices[t * 3 + 2]))
+                far[b] = a; far[rot(c)] = a
+            }
+            func p(_ i: UInt32) -> SIMD3<Float> { let k = Int(i) * 3; return SIMD3(mesh.positions[k], mesh.positions[k + 1], mesh.positions[k + 2]) }
+            var areal = [Int: Float](), triRot = [Int](repeating: 0, count: nt)
+            for t in 0..<nt {
+                let a = p(mesh.indices[t * 3]), b = p(mesh.indices[t * 3 + 1]), c = p(mesh.indices[t * 3 + 2])
+                let r = rot(Int(mesh.indices[t * 3])); triRot[t] = r
+                areal[r, default: 0] += 0.5 * simd_length(simd_cross(b - a, c - a))
+            }
+            let behold = (0..<nt).map { areal[triRot[$0]]! >= småGrense }
+            let fjernet = behold.lazy.filter { !$0 }.count
+            if fjernet > 0 {
+                let bort = areal.values.filter { $0 < småGrense }
+                var idx = [UInt32](); idx.reserveCapacity(mesh.indices.count - fjernet * 3)
+                for t in 0..<nt where behold[t] { idx += mesh.indices[(t * 3)..<(t * 3 + 3)] }
+                if mesh.triAnchor.count == nt { mesh.triAnchor = (0..<nt).filter { behold[$0] }.map { mesh.triAnchor[$0] } }
+                if mesh.faceClass.count == nt { mesh.faceClass = (0..<nt).filter { behold[$0] }.map { mesh.faceClass[$0] } }
+                mesh.indices = idx
+                MeshLog.log(String(format: "småbiter — %d biter, %.2f m², %d tris fjernet (grense %.4f m²)",
+                                   bort.count, bort.reduce(0, +), fjernet, småGrense))
+            }
+        }
         let bigMesh = mesh.indices.count / 3 > 300_000
         var didSimplify = false
         var simplifyFlag = UserDefaults.standard.string(forKey: "meshscan.simplify")

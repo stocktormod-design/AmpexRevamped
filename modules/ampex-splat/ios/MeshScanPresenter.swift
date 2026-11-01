@@ -1769,6 +1769,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             try ARMeshGlbExporter.export(anchors: anchors, to: url, colorProvider: makeColorProvider())
         }
         // Forhåndsvisning til skann-kortene (<glb>.jpg) — rendres fra samme ståsted som vieweren.
+        Blokkpyramide.byggNå(url.path)
         ARMeshGlbExporter.progress?("Lager forhåndsvisning…")
         AmpexGlbLoader.renderThumbnail(glbPath: url.path)
         return MeshScanResult(

@@ -163,6 +163,7 @@ public final class AmpexSplatModule: Module {
         if result.success {
           // Forhåndsvisning (<glb>.jpg) som skann-kortet viser — live-skannet lager den i
           // presenteren, og uten den falt kortet til boks-ikonet etter en ombygging.
+          Blokkpyramide.byggNå(glbURL.path)
           ARMeshGlbExporter.progress?("Lager forhåndsvisning…")
           AmpexGlbLoader.renderThumbnail(glbPath: glbURL.path)
           promise.resolve([
@@ -327,6 +328,8 @@ enum MeshRebakeHarness {
         let result = (hus ? MeshBakeArbeider.bakHus(framesDir: dir, arkit: fixture.mesh, keyframes: fixture.keyframes, to: glbURL) : nil)
             ?? MeshBakeV2.bake(mesh: mesh, keyframes: keyframes, framesDir: dir, to: glbURL)
         let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        // Som appen (§136): pyramiden bygges i baken, ikke ved første åpning. Tiden står for seg.
+        if result.success { Blokkpyramide.byggNå(glbURL.path) }
         finish(result.success ? "OK \(glbURL.lastPathComponent) \(ms)ms" : "FEIL: bake feilet")
     }
 }

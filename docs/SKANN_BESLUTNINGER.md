@@ -5822,3 +5822,25 @@ Simulator, samme bake: hull median 5,6 → 5,2 %, snitt 7,9 → 7,5 %, trapp 11,
 5,0 → 4,4, del 3 6,0 → 5,4. Render av trappetoppen: streken langs øvre og venstre kant av
 gulvflaten er borte; sagtenner langs nedre kant er igjen, mindre. Tid 345 → 436 s (flere trekanter
 i overlappet). Ikke sett på telefon.
+
+## §136 Vektterskel 1,0 + småbit-filter, og pyramiden bygges i baken (01.11)
+
+**Vektterskel 1,5 → 1,0.** Steder sett én gang (kontoret gjennom døra) nådde aldri 1,5 og ble
+grå. Simulator, huset c1794d71, alt annet likt (grupper 0,1;2;3;4, klippnabo 0):
+
+| | hull median/snitt | trapp | flate | løse biter < 0,05 m² |
+|---|---|---|---|---|
+| 1,5 (før) | 5,2 / 7,5 % | 10,8 % | 308 m² | 7,1 m², 1824 biter |
+| 1,0 | 3,4 / 5,2 % | 6,9 % | 333 m² | 8,6 m², 2372 biter |
+| 1,0 + småbiter 0,005 | **3,5 / 5,3 %** | **6,9 %** | 330 m² | **6,6 m², 460 biter** |
+
+Enkeltrom (soverom 9ef06228, global TSDF): hull median 4,0 → 3,3 %, p90 13,9 → 12,0 %,
+løse biter 78 → 26.
+
+**Småbit-filter** (`MeshBakeV2`, før forenklingen): sammenhengende biter under
+`meshscan.småbiter` m² (standard 0,005 = 50 cm²) fjernes. Det som henger i veggen (stikk,
+list) er ikke en løs bit. `meshscan.småbiter 0` slår av.
+
+**Pyramiden i baken.** `Blokkpyramide.byggNå` kjøres etter baken, før miniatyren, i appens
+ombygging, live-skannet og harnessen, med «Klargjør visningen… N %». Rom: 23 s. Feiler den,
+bygger vieweren i bakgrunnen som før. Ikke verifisert på telefon ennå.

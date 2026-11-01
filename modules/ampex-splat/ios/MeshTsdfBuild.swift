@@ -73,7 +73,12 @@ enum MeshTsdfBuild {
         /// (1,5), samme rebake ellers. Tetthetsregelen under satte 1,5 bare når HELE volumet
         /// var tynt; et hus er tynt der man gikk fort, ikke overalt. Overlegget (M1) bruker
         /// samme tall, så «dekket» følger det baken faktisk lager.
-        var minWeight: Float = 1.5
+        ///
+        /// SENKET TIL 1,0 (2026-11-01, §136), huset c1794d71 på simulator, alt annet likt:
+        /// hull median/snitt 5,2/7,5 % → 3,4/5,2 %, trappa 10,8 → 6,9 %, flate 308 → 333 m².
+        /// Prisen var flere løse flak (biter under 0,05 m²: 7,1 → 8,6 m²); dem tar
+        /// småbit-filteret i MeshBakeV2 (`meshscan.småbiter`).
+        var minWeight: Float = 1.0
         /// Blur-passeringer på SELVE VOLUMET før nettet trekkes ut. Taubin på det ferdige
         /// nettet er utilstrekkelig — støyen sitter i SDF-en, ikke i vertekstplasseringen.
         var volumeBlur: Int = 1
