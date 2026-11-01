@@ -19,6 +19,12 @@ public final class AmpexSplatModule: Module {
           MeshRebakeHarness.run(framesDirPath: dirPath)
         }
       }
+      if let glb = UserDefaults.standard.string(forKey: "meshscan.blokktest"), !glb.isEmpty,
+         let bundle = UserDefaults.standard.string(forKey: "meshscan.blokkframes") {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.0) {
+          BlokkHarness.run(glb: glb, bundle: bundle)
+        }
+      }
     }
     // Fasemeldinger fra en ombygging («Bygger geometri fra LiDAR…», «Pakker UV-atlas…») —
     // samme tekster som skanneren viser i sitt overlay, men her til JS-kortet.
@@ -56,6 +62,25 @@ public final class AmpexSplatModule: Module {
           }
         }
       }
+    }
+
+    // §110 «Se i rommet»: linjer og punkter fra 3D-modellen lagt over kamerabildet, plassert
+    // ved at telefonen kjenner igjen rommet mot `<glb>.relok`. Løses når brukeren lukker.
+    AsyncFunction("presentMeshAr") { (glbPath: String, linesJson: String, markersJson: String, promise: Promise) in
+      DispatchQueue.main.async {
+        guard let vc = self.appContext?.utilities?.currentViewController() else {
+          promise.reject("no_vc", "Fant ikke aktiv view controller")
+          return
+        }
+        let ar = MeshArPresenter(glbPath: glbPath, linjerJson: linesJson, punkterJson: markersJson)
+        MeshArPresenter.aktiv = ar
+        ar.present(from: vc) { promise.resolve(nil) }
+      }
+    }
+
+    // Har modellen et relokaliseringskart? (eldre skann får det ved neste ombygging)
+    Function("hasRelocMap") { (glbPath: String) -> Bool in
+      FileManager.default.fileExists(atPath: MeshRelok.kartURL(glb: URL(fileURLWithPath: glbPath)).path)
     }
 
     // Regresjonsselen: kjør V2-baken på nytt mot et persistert skann-bundle (framesDir med
@@ -102,12 +127,14 @@ public final class AmpexSplatModule: Module {
         // for å bruke ARKit-nettet i fixturen. ARKits nett er glattet for okklusjonsbruk,
         // og det er den egentlige grunnen til at bordkanter blir amorfe — se MeshTsdfBuild.
         var mesh = fixture.mesh
-        var keyframes = fixture.keyframes
+        // M2: flere delkart bakes del for del; da hoppes den globale bindingen og TSDF-en over.
+        let hus = MeshBakeArbeider.gjelder(dir)
+        var keyframes = hus ? fixture.keyframes : MeshBildebinding.bind(framesDir: dir, keyframes: fixture.keyframes)
         // Samme regel som det live skannet (MeshBakeV2.exportTextured): LiDAR-geometri er
         // STANDARD når rådybden finnes; meshscan.geometry = "anchor" velger ARKit-nettet.
         // Her er det MENINGEN at det skal ta tid: brukeren har bedt om en bedre modell,
         // telefonen ligger gjerne på lading. Live-skannet tar den raske veien.
-        if UserDefaults.standard.string(forKey: "meshscan.geometry") != "anchor",
+        if !hus, UserDefaults.standard.string(forKey: "meshscan.geometry") != "anchor",
            FileManager.default.fileExists(atPath: dir.appendingPathComponent("dense.jsonl").path) {
           ARMeshGlbExporter.progress?("Bygger geometri fra LiDAR…")
           var rettede = [Int: [Float]]()
@@ -130,7 +157,8 @@ public final class AmpexSplatModule: Module {
           .joined()
         let glbURL = dir.appendingPathComponent("rebake\(tag)-\(ts).glb")
         let t0 = CFAbsoluteTimeGetCurrent()
-        let result = MeshBakeV2.bake(mesh: mesh, keyframes: keyframes, framesDir: dir, to: glbURL)
+        let result = (hus ? MeshBakeArbeider.bakHus(framesDir: dir, arkit: fixture.mesh, keyframes: fixture.keyframes, to: glbURL) : nil)
+            ?? MeshBakeV2.bake(mesh: mesh, keyframes: keyframes, framesDir: dir, to: glbURL)
         let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         if result.success {
           // Forhåndsvisning (<glb>.jpg) som skann-kortet viser — live-skannet lager den i
@@ -206,7 +234,9 @@ enum MeshRebakeHarness {
         ARMeshGlbExporter.isRebake = true
         defer { ARMeshGlbExporter.progress = nil; ARMeshGlbExporter.isRebake = false }
         var mesh = fixture.mesh
-        var keyframes = fixture.keyframes
+        // M2: flere delkart bakes del for del; da hoppes den globale bindingen og TSDF-en over.
+        let hus = MeshBakeArbeider.gjelder(dir)
+        var keyframes = hus ? fixture.keyframes : MeshBildebinding.bind(framesDir: dir, keyframes: fixture.keyframes)
         // Harness-only ablation: identical anchor geometry, but allow local image
         // selection on planes. Default and live capture retain their current policy.
         if UserDefaults.standard.string(forKey: "meshscan.anchorplanelock") == "off" {
@@ -218,7 +248,7 @@ enum MeshRebakeHarness {
            let v = Float(s), v.isFinite, v >= 0.01, v <= 0.5 {
             MeshBakeV2.debugQualityFloor = v
         }
-        if UserDefaults.standard.string(forKey: "meshscan.geometry") != "anchor",
+        if !hus, UserDefaults.standard.string(forKey: "meshscan.geometry") != "anchor",
            FileManager.default.fileExists(atPath: dir.appendingPathComponent("dense.jsonl").path) {
             var rettede = [Int: [Float]]()
             if let t = MeshTsdfBuild.build(framesDir: dir, tillegg: mesh, poseSink: { rettede = $0 }) { mesh = t } else { MeshLog.log("TSDF: bygg feilet — ARKit-nettet") }
@@ -294,7 +324,8 @@ enum MeshRebakeHarness {
             }
             MeshLog.log("harness — trace directory \(traceDir.path)")
         }
-        let result = MeshBakeV2.bake(mesh: mesh, keyframes: keyframes, framesDir: dir, to: glbURL)
+        let result = (hus ? MeshBakeArbeider.bakHus(framesDir: dir, arkit: fixture.mesh, keyframes: fixture.keyframes, to: glbURL) : nil)
+            ?? MeshBakeV2.bake(mesh: mesh, keyframes: keyframes, framesDir: dir, to: glbURL)
         let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         finish(result.success ? "OK \(glbURL.lastPathComponent) \(ms)ms" : "FEIL: bake feilet")
     }

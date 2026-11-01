@@ -628,6 +628,7 @@ enum MeshPoseRefineV2 {
         // PARALLELT (2026-09-06): 55 JPEG-dekodinger til 960 px tok ~20 s på én kjerne og
         // var den lengste stille perioden i en 46-sekunders bake. Hver keyframe er
         // uavhengig; resultatet legges i sin egen plass så rekkefølgen er som før.
+        let linse = MeshBakeV2.linseModell(framesDir)
         let lastet = UnsafeMutablePointer<Frame?>.allocate(capacity: keyframes.count)
         lastet.initialize(repeating: nil, count: keyframes.count)
         defer { lastet.deinitialize(count: keyframes.count); lastet.deallocate() }
@@ -647,6 +648,27 @@ enum MeshPoseRefineV2 {
                 dw = k.depthWidth; dh = k.depthHeight
             }
             let sx = Float(lw) / Float(k.width), sy = Float(lh) / Float(k.height)
+            // Linsemodellen (§107): refinen regner med en ideell linse i Jacobi og projeksjon,
+            // så bildet rettes ut til den i stedet — hver piksel i det rette bildet henter fra
+            // der linsa faktisk la den. Uten dette dro refinen posene bort fra bindingen.
+            if linse.w > 0 {
+                let fx = k.intrinsics[0] * sx, fy = k.intrinsics[1] * sy
+                let cx = k.intrinsics[2] * sx, cy = k.intrinsics[3] * sy
+                var rett = [Float](repeating: 0, count: lw * lh)
+                for y in 0..<lh {
+                    let yn = (Float(y) - cy) / fy
+                    for x in 0..<lw {
+                        let xn = (Float(x) - cx) / fx, r2 = xn * xn + yn * yn
+                        let g = (1 + linse.z) * (1 + linse.x * r2 + linse.y * r2 * r2)
+                        let u = min(max(fx * xn * g + cx, 0), Float(lw - 1) - 0.001)
+                        let v = min(max(fy * yn * g + cy, 0), Float(lh - 1) - 0.001)
+                        let x0 = Int(u), y0 = Int(v), tx = u - Float(x0), ty = v - Float(y0), i = y0 * lw + x0
+                        rett[y * lw + x] = (luma[i] * (1 - tx) + luma[i + 1] * tx) * (1 - ty)
+                            + (luma[i + lw] * (1 - tx) + luma[i + lw + 1] * tx) * ty
+                    }
+                }
+                luma = rett
+            }
             lastet[ki] = Frame(
                 w2c: simd_inverse(mat(k.transform)),
                 camPos: SIMD3(k.transform[12], k.transform[13], k.transform[14]),
@@ -1155,6 +1177,7 @@ enum MeshPoseRefineV2 {
     static func planeAlign(keyframes: [MeshScanPresenter.Keyframe], positions: [Float], planes: [SIMD4<Float>],
                            framesDir: URL, warpGridsByKF: inout [[SIMD2<Float>]]) {
         let t0 = CFAbsoluteTimeGetCurrent()
+        let linse = MeshBakeV2.linseModell(framesDir)
         let gW = warpGridW, gH = warpGridH, G = gW * gH
         if warpGridsByKF.count != keyframes.count {
             warpGridsByKF = [[SIMD2<Float>]](repeating: [], count: keyframes.count)
@@ -1295,7 +1318,11 @@ enum MeshPoseRefineV2 {
                     let camPos = SIMD3(k.transform[12], k.transform[13], k.transform[14])
                     func proj(_ p: SIMD3<Float>) -> SIMD2<Float>? {
                         let c = w2c * SIMD4(p, 1); if c.z > -0.1 { return nil }
-                        let z = -c.z; return SIMD2(fx * c.x / z + cx, fy * (-c.y) / z + cy)
+                        let z = -c.z; var xn = SIMD2(c.x / z, -c.y / z)
+                        if linse.w > 0 {   // §107: samme linsemodell som texel-baken
+                            let r2 = simd_dot(xn, xn); xn *= (1 + linse.z) * (1 + linse.x * r2 + linse.y * r2 * r2)
+                        }
+                        return SIMD2(fx * xn.x + cx, fy * xn.y + cy)
                     }
                     func samp(_ u: Float, _ v: Float) -> Float {
                         let uu = min(max(u, 0), Float(lw - 1) - 0.001), vv = min(max(v, 0), Float(lh - 1) - 0.001)
@@ -1700,6 +1727,15 @@ enum MeshPoseRefineV2 {
                            CFAbsoluteTimeGetCurrent() - tIter - tRect - tNcc)
         MeshLog.log("planAlign — " + sisteLogg)
         measSlots.deinitialize(count: cells.count); measSlots.deallocate()
+        // KONVERGERT → stopp (2026-10-18). Hver runde koster ~9 s på iPhone 13 Pro. På det
+        // første texel-skannet flyttet runde 2 i snitt 1,0 px (4 bilder over 4 px) og runde 3
+        // 0,6 px. Runde 3 flyttet altså under én kildepiksel i snitt; detaljbåndet tåler det.
+        // meshscan.planalignstopp = px-terskel (0 = kjør alle runder).
+        let stoppPx = MeshBakeV2.flaggTall("meshscan.planalignstopp", 1.5)
+        if outer >= 1, stoppPx > 0, movedFrames > 0, sumMove / Float(movedFrames) < stoppPx, moved <= 5 {
+            MeshLog.log("planAlign — konvergert etter runde \(outer + 1), hopper over resten")
+            break
+        }
         } // ytre runder
         // HARNESS-TEST: meshscan.planaligntest = <px> legger en fast forskyvning på ALLE
         // rutenett, så en kan se at baken faktisk sampler gjennom dem (teksturen skal flytte seg).

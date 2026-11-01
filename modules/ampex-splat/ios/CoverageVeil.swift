@@ -28,7 +28,13 @@ final class CoverageVeil {
     /// Før lå sløret ØVERST og slapp kamerabildet gjennom der feltet var fanget — men
     /// ARKit-meshen henger 1–8 s etter feltet, så brukeren så rått kamera før meshen
     /// kom («hvorfor vises noe som helt vanlig kamera så blir det mesh etterpå?»).
-    init?(library: MTLLibrary?, felt: CoverageField?) {
+    ///
+    /// `bak` (DELKART, 2026-10-27): meshen er nå GJENNOMSIKTIG der flaten er dekket, så sløret
+    /// kan ikke ligge under den — det ville skint gjennom. Det henger i stedet langt bak (30 m)
+    /// og tegnes SIST med dybdetest: der det finnes mesh vinner meshens dybde, og bare
+    /// piksler uten mesh blir stripete. Samme løfte som før — kamerabildet vises aldri før
+    /// flaten er fanget — men en ferdig flate viser det skarpe kamerabildet.
+    init?(library: MTLLibrary?, felt: CoverageField?, bak: Bool = false) {
         guard let lib = library else { return nil }
         let plan = SCNPlane(width: 2, height: 2)
         let program = SCNProgram()
@@ -47,6 +53,13 @@ final class CoverageVeil {
         // orientering/linse. Dybdetest er av, så størrelsen koster ingenting.
         node.scale = SCNVector3(12, 12, 1)
         node.renderingOrder = -10_000       // først av alt — alt annet legger seg oppå
+        if bak {
+            let d: Float = 30
+            node.position = SCNVector3(0, 0, -d)
+            node.scale = SCNVector3(12 * d, 12 * d, 1)
+            material.readsFromDepthBuffer = true
+            node.renderingOrder = 10_000    // sist: meshens dybde må ligge der først
+        }
         node.castsShadow = false
         klar = true
     }

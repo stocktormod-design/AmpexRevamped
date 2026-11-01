@@ -289,6 +289,10 @@ enum MeshBakeV2 {
         // Fixturen skrives med ANCHOR-nettet uansett, så en rebake alltid kan sammenligne mot
         // ARKits utgangspunkt. TSDF-en bygges etterpå og erstatter kun det som bakes.
         writeFixture(mesh: mesh, keyframes: keyframes, framesDir: framesDir)
+        // M2: et skann med flere delkart bakes del for del (MeshBakeArbeider) og slås sammen.
+        if let hus = MeshBakeArbeider.bakHus(framesDir: framesDir, arkit: mesh, keyframes: keyframes, to: glbURL) {
+            return hus
+        }
 
         // GEOMETRI FRA RÅ LiDAR også i det LIVE skannet (2026-09-01). Uten dette brukte
         // skanningen ARKits glattede okklusjonsnett mens bare rebake fikk det nye — altså
@@ -307,6 +311,9 @@ enum MeshBakeV2 {
         // ut som en single scan». Det er nøyaktig det de er: mange biter. TSDF-en smelter
         // rådybden til ÉN flate.
         // meshscan.geometry = "anchor" gir ARKit-nettet tilbake.
+        // BILDEBINDING (§109): nøkkelbildene bindes sammen med SIFT + bundle adjustment før
+        // geometrien bygges, så TSDF-en og teksturen bruker de samme bundne posene.
+        keyframes = MeshBildebinding.bind(framesDir: framesDir, keyframes: keyframes)
         if #available(iOS 14.0, *),
            UserDefaults.standard.string(forKey: "meshscan.geometry") != "anchor",
            FileManager.default.fileExists(atPath: framesDir.appendingPathComponent("dense.jsonl").path) {
@@ -366,6 +373,13 @@ enum MeshBakeV2 {
     static func bake(
         mesh meshIn: MergedMesh, keyframes: [MeshScanPresenter.Keyframe], framesDir: URL, to glbURL: URL
     ) -> ARMeshGlbExporter.TexturedExportResult {
+        // §110: relokaliseringskartet ved siden av modellen, i modellens verden (nøkkelbildenes
+        // driftrettede poser). `defer` fordi baken har flere skrivesteder (fliser, alternativ, standard).
+        defer {
+            if FileManager.default.fileExists(atPath: glbURL.path) {
+                MeshRelok.skrivKart(framesDir: framesDir, keyframes: keyframes, glbURL: glbURL)
+            }
+        }
         let t0 = CFAbsoluteTimeGetCurrent()
         let fail = ARMeshGlbExporter.TexturedExportResult(success: false, filledFraction: nil, geometryPath: "anchor-v2")
         // Kvaliteten er avgjort og skal IKKE handles bort for tid (Tormod 2026-09-05).
@@ -390,8 +404,10 @@ enum MeshBakeV2 {
             // Termisk brems (regel 8): flere keyframes = lengre pose-refine og flere snitt-pass.
             // På en varm telefon er det billigere å levere et litt tynnere bake enn å bli strupet
             // midt i jobben — ett hakk ned på stigen, aldri under gulvet.
+            // Varme senker IKKE lenger budsjettet (2026-10-26, Tormod: «aldri kvalitetstap …
+            // ingen throttling, bare mer tid»). Bare minnet (headroom) velger trinn.
             let thermal = ProcessInfo.processInfo.thermalState
-            let hot = thermal == .serious || thermal == .critical
+            let hot = false
             if headroomMB >= 2800 && !hot {
                 atlasSize = 8192; maxKF = 200; topK = 6
             } else if headroomMB >= 2000 && !hot {
@@ -504,7 +520,12 @@ enum MeshBakeV2 {
         // ikke at veggen mangler tekstur. Kuttede skarpe spor slår utvaskede hele spor.
         // Vurderingen ble først gjort på et utsnitt for langt unna til at forskjellen syntes.
         // «raw»/«multiband»/«off» er A/B-armene.
-        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "winner"
+        // STANDARD ER «texel» (2026-10-18, §106). Verken vinner eller snitt: myke vekter PER
+        // TEXEL (ikke topp-K per trekant), i to bånd — tonen blandes bredt over mange syn,
+        // detaljen tas nesten bare fra det beste synet (p=64). Ingen trekantlapper, ingen
+        // hvite flak, panelsporene hele og skarpe, og 30 % raskere enn vinnerveien. Se texelBlend.
+        // «winner» er forrige standard.
+        let blendFlag = UserDefaults.standard.string(forKey: "meshscan.blend") ?? "texel"
         let blendAll = blendFlag != "off" && blendFlag != "winner"
         let blendRaw = blendAll && blendFlag != "multiband"
         var warpGrids = [[SIMD2<Float>]]()
@@ -545,7 +566,10 @@ enum MeshBakeV2 {
 
         // PLAN-JUSTERING (2026-09-12, §96): bilde-mot-bilde på dominantplanene, i tillegg til
         // (ikke i stedet for) den rigide refinen over. Se MeshPoseRefineV2.planeAlign.
-        if UserDefaults.standard.string(forKey: "meshscan.planalign") != "off", !meshIn.planes.isEmpty {
+        // Med bildebindingen (§109) står den AV som standard: bb6r (§107) — bundne poser +
+        // linse + rigid refine uten plan-justering — var den beste armen på alle tre fixturene.
+        let planStandard = MeshBildebinding.gjeldende(framesDir) != nil ? "off" : "on"
+        if (UserDefaults.standard.string(forKey: "meshscan.planalign") ?? planStandard) != "off", !meshIn.planes.isEmpty {
             ARMeshGlbExporter.progress?("Justerer bilder mot flatene…")
             MeshPoseRefineV2.planeAlign(keyframes: kfUse, positions: meshIn.positions, planes: meshIn.planes,
                                         framesDir: framesDir, warpGridsByKF: &warpGrids)
@@ -669,7 +693,11 @@ enum MeshBakeV2 {
             var maxEdge: Float = 0.30
             if let e = UserDefaults.standard.string(forKey: "meshscan.simplifyedge") { maxEdge = e == "off" ? 0 : (Float(e) ?? 0.30) }
             let førTris = mesh.indices.count / 3
-            MeshSimplify.simplify(mesh: &mesh, targetTris: target, errorLimit: 1e-4, maxEdge: maxEdge)
+            // Hus (§135): randen er sveiset mot eldre deler FØR forenklingen. Får den gli langs seg
+            // selv, rettes 2 cm-hakkene ut til lange kanter som ikke følger naboens rand, og skjøten
+            // åpner seg igjen som en rød strek. `meshscan.låsrand off` gir den gamle oppførselen.
+            let låsRand = MeshBakeArbeider.omfang != nil && UserDefaults.standard.string(forKey: "meshscan.låsrand") != "off"
+            MeshSimplify.simplify(mesh: &mesh, targetTris: target, errorLimit: 1e-4, maxEdge: maxEdge, låsRand: låsRand)
             MeshLog.log("forenkling mål \(target) — \(førTris) → \(mesh.indices.count / 3) tris")
         }
 
@@ -857,6 +885,58 @@ enum MeshBakeV2 {
                 gainLo = 1 - d; gainHi = 1 + d
             default: break
             }
+            // LYSSTYRKE FØRST, FRITT (2026-10-22). Låst AE/AWB betyr IKKE like bilder: målt på
+            // taket i skannet 22.10 (1036 takpunkter, 87 bilder) var samme punkt 0,43–1,93× snittet
+            // fra bilde til bilde — kameraets tonemapping demper hele bildet når en lampe er i
+            // synsfeltet. Klemmen på ±5 % lot nesten alt stå igjen, og taket ble et lappeteppe.
+            // Blåstikket fra september kom av fri gain PER KANAL; lysstyrke alene kan ikke gi
+            // fargestikk. Så: én skalar per bilde, løst robust i log-rom (punkt + bilde, Huber,
+            // så lampegjenskinn og glans ikke drar løsningen), deretter fargen per kanal med den
+            // gamle ±5 %-klemmen oppå. meshscan.lumgain = off gir gammel oppførsel (A/B).
+            var lumGain = [Float](repeating: 1, count: cands.count)
+            if UserDefaults.standard.string(forKey: "meshscan.lumgain") != "off" {
+                @inline(__always) func lum(_ c: SIMD3<Float>) -> Float { 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z }
+                var g = [Float](repeating: 0, count: cands.count)      // log-gain per bilde
+                var a = [Float](repeating: 0, count: pointObs.count)   // log-lys per punkt
+                let logL = pointObs.map { $0.map { log(max(lum($0.c), 1e-4)) } }
+                let huber: Float = 0.1
+                @inline(__always) func w(_ r: Float) -> Float { abs(r) <= huber ? 1 : huber / abs(r) }
+                for _ in 0..<15 {
+                    for (pi, obs) in pointObs.enumerated() {
+                        var sw: Float = 0, sv: Float = 0
+                        for (k, o) in obs.enumerated() {
+                            let r = logL[pi][k] - g[Int(o.frame)] - a[pi], ww = w(r)
+                            sw += ww; sv += ww * (logL[pi][k] - g[Int(o.frame)])
+                        }
+                        if sw > 0 { a[pi] = sv / sw }
+                    }
+                    var sw = [Float](repeating: 0, count: cands.count), sv = sw
+                    for (pi, obs) in pointObs.enumerated() {
+                        for (k, o) in obs.enumerated() {
+                            let f = Int(o.frame), r = logL[pi][k] - g[f] - a[pi], ww = w(r)
+                            sw[f] += ww; sv[f] += ww * (logL[pi][k] - a[pi])
+                        }
+                    }
+                    for f in 0..<g.count where sw[f] > 0.5 { g[f] = sv[f] / sw[f] }
+                    // Fjern den globale frihetsgraden (alle lysere = like god løsning).
+                    let brukt = (0..<g.count).filter { sw[$0] > 0.5 }
+                    let snitt = brukt.isEmpty ? 0 : brukt.map { g[$0] }.reduce(0, +) / Float(brukt.count)
+                    for f in 0..<g.count { g[f] = min(max(g[f] - snitt, -log(3)), log(3)) }
+                }
+                // Bildets gain er DEN SOM RETTER det: obs = a + g → del på exp(g).
+                lumGain = g.map { exp(-$0) }
+                for pi in 0..<pointObs.count {
+                    for k in 0..<pointObs[pi].count { pointObs[pi][k].c *= lumGain[Int(pointObs[pi][k].frame)] }
+                }
+                var rest: [Float] = []
+                for (pi, obs) in pointObs.enumerated() {
+                    for o in obs { rest.append(abs(log(max(lum(o.c), 1e-4)) - a[pi])) }
+                }
+                rest.sort()
+                let med = rest.isEmpty ? 0 : rest[rest.count / 2]
+                MeshLog.log(String(format: "V2 lysstyrke per bilde — %d punkter, gain %.2f–%.2f, median rest %.1f %%",
+                                   pointObs.count, lumGain.min() ?? 1, lumGain.max() ?? 1, (exp(med) - 1) * 100))
+            }
             // Alternerende multiplikativ LSQ: punktmål = snitt av g_f·c_f; deretter g_f mot målene.
             for _ in 0..<10 {
                 var num = [SIMD3<Float>](repeating: .zero, count: cands.count)
@@ -894,6 +974,7 @@ enum MeshBakeV2 {
                     gains[i] = simd_clamp(gains[i], SIMD3(repeating: gainLo), SIMD3(repeating: gainHi))
                 }
             }
+            for i in 0..<gains.count { gains[i] *= lumGain[i] }
             let lums = gains.map { 0.299 * $0.x + 0.587 * $0.y + 0.114 * $0.z }
             MeshLog.log("V2 gain-utjevning (overlapp) — \(pointObs.count) punkter, gain-lum \(String(format: "%.2f", lums.min() ?? 1))–\(String(format: "%.2f", lums.max() ?? 1))")
         }
@@ -1552,10 +1633,13 @@ enum MeshBakeV2 {
             }
             return (sum, n)
         }
-        let (seamE0, seamN0) = icmColor ? totalSeamEnergy() : (0, 0)
+        // blend=texel bruker ikke vinnerne til maling — ICM-feiingen (8 s på iPhone 13 Pro)
+        // og sømenergien er da bortkastet. Vinnerne beholdes (regioner/fliser leser dem).
+        let texelVei = blendFlag == "texel"
+        let (seamE0, seamN0) = icmColor && !texelVei ? totalSeamEnergy() : (0, 0)
 
         var switched = 0
-        for _ in 0..<8 {
+        for _ in 0..<(texelVei ? 0 : 8) {
             var changed = 0
             for t in 0..<triCount where winner[t] >= 0 && !locked[t] {
                 var curSame = 0
@@ -1610,7 +1694,7 @@ enum MeshBakeV2 {
             switched += changed
             if changed == 0 { break }
         }
-        if icmColor {
+        if icmColor && !texelVei {
             let (seamE1, seamN1) = totalSeamEnergy()
             let avg0 = seamN0 > 0 ? seamE0 / Double(seamN0) : 0
             let avg1 = seamN1 > 0 ? seamE1 / Double(seamN1) : 0
@@ -3123,14 +3207,26 @@ enum MeshBakeV2 {
             // oppløsning rgba16F (S²×2 → 2 per piksel) + fjæringslaget (1). Med stripevis
             // lesing (§93) er lesebufferet en åttendedel av en full flis, ikke en hel.
             let stripevis = UserDefaults.standard.string(forKey: "meshscan.stripelesing") != "off"
+            // blend=texel har sin egen hale: atlasparet (8) + RGBA16F-akkumulator (8) + maks-lag
+            // R16F (2) + tonelag 3 × 1/16 × 8 (1,5) + HELT lesebuffer (4) + kopien til JPEG (4)
+            // = 28, og målt er det mer: det gamle anslaget sa 465 MB ved 6144, men ledig minne
+            // på iPhone 13 Pro falt 1,46 GB (2169 → 703 MB, 18.10). 36 per piksel treffer det
+            // målte inkludert ett dekodet bilde; med puljen på tre bilder er det 30 B/px + 260 MB.
+            // Med det gamle anslaget ville en 8192-flis (~2,3 GB) blitt valgt med 1,2 GB ledig.
+            let texelHale = (UserDefaults.standard.string(forKey: "meshscan.blend") ?? "texel") == "texel"
             func flisKost(_ s: Int) -> Int {
-                let perPiksel = 2 * 4 + (stripevis ? 1 : 4) + 2 + 1
-                return s * s * perPiksel + 33 * 1024 * 1024
+                let perPiksel = texelHale ? 30 : 2 * 4 + (stripevis ? 1 : 4) + 2 + 1
+                return s * s * perPiksel + (texelHale ? 260 : 33) * 1024 * 1024  // texel: 3 dekodede bilder i puljen
             }
             var flisStr = projStr
             if UserDefaults.standard.string(forKey: "meshscan.flisbudsjett") != "off" {
                 let ledig = MeshSimMem.available()
-                for kandidat in [projStr, 6144, 4096] where kandidat <= projStr {
+                // Startpunktet er 8192, ikke `atlasSize`: budsjettet over leses mens TSDF-volumet
+                // og bildebindingen ennå ligger i minnet, og et live-skann fikk dermed 4096 med
+                // 2037 MB ledig her, der 6144 hadde fått plass (c1794d71, 27.10). Minnet NÅ
+                // avgjør. En eksplisitt meshscan.projektivatlas står fortsatt fast.
+                let start = UserDefaults.standard.object(forKey: "meshscan.projektivatlas") == nil ? max(projStr, 8192) : projStr
+                for kandidat in [start, 6144, 4096] where kandidat <= start {
                     flisStr = kandidat
                     if flisKost(kandidat) <= Int(Double(ledig) * 0.7) { break }
                 }
@@ -3156,9 +3252,10 @@ enum MeshBakeV2 {
             // Målet er 2 × budsjettets atlas, altså det fire brikker à `projStr` ville gitt.
             // Taket på 4×4 er der for å hindre at en liten flisstørrelse eksploderer i antall
             // tegninger. meshscan.projektivfliser overstyrer manuelt.
-            let målEffektiv = 2 * projStr
+            // max: får flisen plass til mer enn det tidlige budsjettet sa, skal målet følge med.
+            let målEffektiv = 2 * max(projStr, flisStr)
             let auto = kvalitetFliser && UserDefaults.standard.string(forKey: "meshscan.projektivfliser") == nil
-            let fliser: Int
+            var fliser: Int
             if auto {
                 fliser = max(2, min(4, Int(ceil(Double(målEffektiv) / Double(flisStr)))))
                 if fliser != 2 {
@@ -3170,9 +3267,39 @@ enum MeshBakeV2 {
                 fliser = (1...4).contains(bedt) ? bedt : (kvalitetFliser ? 2 : 1)
             }
             let kollaps = UserDefaults.standard.string(forKey: "meshscan.projektivkollaps") == "on"
-            guard let alternative = projectiveFixtureUV(uv: uv, region: feltKey, projected: projected,
+            guard var alternative = projectiveFixtureUV(uv: uv, region: feltKey, projected: projected,
                                                         atlasSize: flisStr, fliser: fliser,
                                                         kollapsRest: kollaps) else { return failG }
+            // ── FLISER ETTER FLATEN (§133, 01.11). Målet over er fast (2 × atlas), så en del på
+            // 124 m² fikk de samme 3×3 flisene som en på 41 m², og 1008 mot 1749 texel/m. Tormods
+            // regel: større hus tar lengre tid, aldri dårligere per m². Flere fliser til
+            // kildeskalaen når `meshscan.kildeskalamål` (1,0 = én texel per kildepiksel; over
+            // det er det bare oppskalering). Hver flis males alene, så minnet er det samme;
+            // det koster bare tid. Taket `meshscan.flismaks` (8×8) hindrer at en feil i
+            // pakkingen gir hundrevis av tegninger.
+            if auto {
+                let mål = flaggTall("meshscan.kildeskalamål", 1.0)
+                let maksRuter = max(fliser, min(8, Int(flaggTall("meshscan.flismaks", 8))))
+                while alternative.scale < mål, fliser < maksRuter {
+                    // Skalaen følger sidelengden: n fliser per side gir n/s større skala.
+                    let trengs = Int(ceil(Float(fliser) * mål / max(alternative.scale, 0.01)))
+                    let neste = min(maksRuter, max(fliser + 1, trengs))
+                    guard let større = projectiveFixtureUV(uv: uv, region: feltKey, projected: projected,
+                                                           atlasSize: flisStr, fliser: neste,
+                                                           kollapsRest: kollaps) else { break }
+                    alternative = større; fliser = neste
+                }
+                // Og ned: en liten del (trapp, bad) bar 1,5× flere texler enn fotoene har.
+                // Færre fliser så lenge skalaen holder målet — samme detalj, mindre tid og disk.
+                while fliser > 2 {
+                    guard let mindre = projectiveFixtureUV(uv: uv, region: feltKey, projected: projected,
+                                                           atlasSize: flisStr, fliser: fliser - 1,
+                                                           kollapsRest: kollaps), mindre.scale >= mål else { break }
+                    alternative = mindre; fliser -= 1
+                }
+                MeshLog.log(String(format: "V2 fliser — %d×%d à %d, kildeskala %.2f (mål %.2f)",
+                                   fliser, fliser, flisStr, alternative.scale, mål))
+            }
             if fliser > 1 {
                 // Én rasterisering per flis: UV-ene kroppes til flisens eget [0,1], og
                 // trekanter utenfor havner utenfor viewporten og tegnes ikke.
@@ -3185,6 +3312,23 @@ enum MeshBakeV2 {
                         v * Float(fliser) - (i % 2 == 0 ? kol : rad)
                     }
                     kroppet.atlasSize = flisStr
+                    // En flis uten trekanter (xatlas pakket under rutenettet: c1794d71 del 4 fikk
+                    // 9 fliser og den siste tom, 30.10) lot `rasterize` returnere nil og hele
+                    // delen feile. Den får et lite nøytralt bilde; ingen trekant peker dit.
+                    let tom = !(0..<triCount).contains { t in
+                        var lo = SIMD2<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
+                        for j in 0..<3 {
+                            let vi = Int(kroppet.indices[t * 3 + j])
+                            let q = SIMD2(kroppet.uvs[vi * 2], kroppet.uvs[vi * 2 + 1])
+                            lo = simd_min(lo, q); hi = simd_max(hi, q)
+                        }
+                        return !(hi.x < -0.02 || hi.y < -0.02 || lo.x > 1.02 || lo.y > 1.02)
+                    }
+                    if tom, let grå = MeshImageIO.jpegData([UInt8](repeating: 128, count: 16 * 16 * 4), 16) {
+                        flisData.append(grå)
+                        MeshLog.log("V2 fliser — flis \(f + 1)/\(fliser * fliser) tom, lite nøytralt bilde")
+                        continue
+                    }
                     guard let bilde = autoreleasepool(invoking: { () -> Data? in
                         rasterize(uv: kroppet, winner: winner, region: region, regionFrame: regionFrame,
                                   regionOfs: regionOfs, cornerOfs: cornerOfs,
@@ -3526,7 +3670,7 @@ enum MeshBakeV2 {
         // grensa hindret 3×3. Da ble UV-ene pakket for et 2×2 virtuelt atlas mens
         // flisløkka kuttet i 3×3, og 1057 trekanter havnet på tvers av en grense som
         // pakkingen ikke visste om — de fikk `flisAv = -1` og ble tegnet med flis 0s UV-er.
-        let ruter = max(1, min(4, fliser))
+        let ruter = max(1, min(8, fliser))
         func pack(_ scale: Float) -> [Int: SIMD2<Float>]? {
             var origins = [Int: SIMD2<Float>]()
             var flis = 0, x = 0, y = 0, height = 0
@@ -3590,6 +3734,462 @@ enum MeshBakeV2 {
         /// Høy (12) = nesten winner-take-all → skarpt, men sømmene kommer tilbake.
         /// Dette er den kontinuerlige knappen mellom de to ytterpunktene.
         var camPos: SIMD4<Float> = .zero
+        /// Linsemodell fra bildebindingen (§107): x = k1, y = k2 (radiell), z = brennviddeskala,
+        /// w = 1 når den er i bruk. ARKit oppgir ingen forvrengning; målt ~1,8 % midt ut i
+        /// bildet. Brukes foreløpig bare av texel-veien.
+        var lens: SIMD4<Float> = .zero
+    }
+
+
+    /// Linsemodell fra bildebindingen (§107/§109): (k1, k2, brennviddeskala, 1) eller null.
+    /// Kommer fra bildebinding.json (MeshBildebindingBake) når bindingen er på, ellers fra
+    /// linse.json som tools/scan-bildebinding.py skriver; meshscan.linse = "off" ignorerer
+    /// begge (A/B). Normaliserte koordinater (x/z, y/z med bilde-y ned) ganges med
+    /// (1+s)(1 + k1·r² + k2·r⁴) før intrinsikken.
+    static func linseModell(_ framesDir: URL) -> SIMD4<Float> {
+        guard UserDefaults.standard.string(forKey: "meshscan.linse") != "off" else { return .zero }
+        if let k = MeshBildebinding.gjeldende(framesDir) { return k.linse }
+        guard let d = try? Data(contentsOf: framesDir.appendingPathComponent("linse.json")),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Double],
+              let k1 = o["k1"], let k2 = o["k2"], let fs = o["fs"] else { return .zero }
+        return SIMD4(Float(k1), Float(k2), Float(fs), 1)
+    }
+
+    /// blend=texel (§106): myk vinner per texel. To pass over bildene: pass 1 finner den
+    /// største vekten hvert texel får fra noe syn (bare dybdekartet trengs), pass 2 legger
+    /// inn hvert syn med vekt (w/wmax)^p. Alt strømmes ett bilde om gangen; GPU-minnet er
+    /// akkumulatoren (RGBA16F) + maks-laget (R16F) + de to atlasene som allerede finnes.
+    /// meshscan.texelp = p for detaljbåndet (standard 64). Påfølgende bilder ser veggen nesten
+    /// likt (q-forhold 0,97–0,99), så p = 4–32 blandet dem likevel og vasket ut sporene på
+    /// 0daef323; først ved 64 tar ett syn detaljen. Tonen har sin egen, lave p (texelplav).
+    private static func texelBlend(
+        device: MTLDevice, queue: MTLCommandQueue, lib: MTLLibrary,
+        uv: ARMeshGlbExporter.UVUnwrapResult, inne: [Bool],
+        kfUse: [MeshScanPresenter.Keyframe], gains: [SIMD3<Float>], skarpVekt: [Float],
+        warpGrids: [[SIMD2<Float>]], fieldWarpFace: [Bool], framesDir: URL, atlasSize: Int,
+        normPipe: MTLComputePipelineState, dilatePipe: MTLComputePipelineState,
+        atlasA: MTLTexture, atlasB: MTLTexture
+    ) -> Data? {
+        let t0 = Date()
+        let p = max(0.5, flaggTall("meshscan.texelp", 64))
+        // To bånd: detaljen følger den myke vinneren (p), tonen blandes bredt (plav) fra
+        // fotoet på mip-nivå `lav` (5 ≈ 32 px i 4K-kilden ≈ 2 cm på 1,5 m). lav = 0: ett bånd.
+        let lav = max(0, flaggTall("meshscan.texellav", 5))
+        let plav = max(0.25, flaggTall("meshscan.texelplav", 1))
+        let lowSize = max(256, atlasSize / 4)
+        // §106d: konsensus (IRLS på tonen + avvik i kvaliteten) og parallaksevekt. Konsensusen
+        // er AV: den fjernet LED-flekken og bladprikkene på a1b507ed, men ga doble kanter på
+        // bilderammene i 9ef06228 — referansen er uskarp, så syn med skarp kontrast ser ut til
+        // å «avvike» og straffes. Også med σ 0,7 / 0,35. Beholdt bak meshscan.texelkonsensus.
+        let konsensus = flaggTall("meshscan.texelkonsensus", 0) > 0
+        var rob = SIMD4<Float>(konsensus ? 1 : 0, flaggTall("meshscan.texelsigma", 0.25),
+                               flaggTall("meshscan.texelsigmalys", 0.12), 0)
+        var robAv = SIMD4<Float>(0, 1, 1, 0)
+        // Parallaksen er AV (§106d): målt 6 mm og 3 cm toleranse — begge ga prikker på TV-skjermen
+        // og ved planten, fordi 256×144-dybden har mer støy og kantblødning enn utstikket den
+        // skal se. Konsensusen alene fjernet intercom-flekken. Beholdt bak flagget.
+        let parM = max(0, flaggTall("meshscan.texelparallakse", 0))
+        let kant = flaggTall("meshscan.texelkant", 0.08)
+        guard let vfn = lib.makeFunction(name: "bakev2_texel_vertex"),
+              let maxFn = lib.makeFunction(name: "bakev2_texel_max_fragment"),
+              let accFn = lib.makeFunction(name: "bakev2_texel_acc_fragment") else { return nil }
+        let mdesc = MTLRenderPipelineDescriptor()
+        mdesc.vertexFunction = vfn; mdesc.fragmentFunction = maxFn
+        mdesc.colorAttachments[0].pixelFormat = .r16Float
+        mdesc.colorAttachments[0].isBlendingEnabled = true
+        mdesc.colorAttachments[0].rgbBlendOperation = .max
+        mdesc.colorAttachments[0].alphaBlendOperation = .max
+        mdesc.colorAttachments[0].sourceRGBBlendFactor = .one
+        mdesc.colorAttachments[0].destinationRGBBlendFactor = .one
+        mdesc.colorAttachments[0].sourceAlphaBlendFactor = .one
+        mdesc.colorAttachments[0].destinationAlphaBlendFactor = .one
+        let adesc = MTLRenderPipelineDescriptor()
+        adesc.vertexFunction = vfn; adesc.fragmentFunction = accFn
+        adesc.colorAttachments[0].pixelFormat = .rgba16Float
+        adesc.colorAttachments[0].isBlendingEnabled = true
+        adesc.colorAttachments[0].rgbBlendOperation = .add
+        adesc.colorAttachments[0].alphaBlendOperation = .add
+        adesc.colorAttachments[0].sourceRGBBlendFactor = .one
+        adesc.colorAttachments[0].destinationRGBBlendFactor = .one
+        adesc.colorAttachments[0].sourceAlphaBlendFactor = .one
+        adesc.colorAttachments[0].destinationAlphaBlendFactor = .one
+        guard let maxPipe = try? device.makeRenderPipelineState(descriptor: mdesc),
+              let accPipe = try? device.makeRenderPipelineState(descriptor: adesc) else { return nil }
+        var lowPipe: MTLRenderPipelineState? = nil
+        var composePipe: MTLComputePipelineState? = nil
+        var lowAcc: MTLTexture? = nil, lowA: MTLTexture? = nil, lowB: MTLTexture? = nil, lowR: MTLTexture? = nil
+        if lav > 0, let lfn = lib.makeFunction(name: "bakev2_texel_low_fragment"),
+           let cfn = lib.makeFunction(name: "bakev2_texel_compose") {
+            let ldesc = adesc.copy() as! MTLRenderPipelineDescriptor
+            ldesc.fragmentFunction = lfn
+            lowPipe = try? device.makeRenderPipelineState(descriptor: ldesc)
+            composePipe = try? device.makeComputePipelineState(function: cfn)
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float,
+                                                              width: lowSize, height: lowSize, mipmapped: false)
+            td.usage = [.renderTarget, .shaderRead, .shaderWrite]
+            td.storageMode = .private
+            lowAcc = device.makeTexture(descriptor: td)
+            lowA = device.makeTexture(descriptor: td); lowB = device.makeTexture(descriptor: td)
+            lowR = device.makeTexture(descriptor: td)
+        }
+        let toBand = lowPipe != nil && composePipe != nil && lowAcc != nil && lowA != nil && lowB != nil && lowR != nil
+
+        let accDesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float,
+                                                               width: atlasSize, height: atlasSize, mipmapped: false)
+        accDesc.usage = [.renderTarget, .shaderRead]
+        accDesc.storageMode = .private
+        let maxDesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r16Float,
+                                                               width: atlasSize, height: atlasSize, mipmapped: false)
+        maxDesc.usage = [.renderTarget, .shaderRead]
+        maxDesc.storageMode = .private
+        guard let acc = device.makeTexture(descriptor: accDesc),
+              let wmax = device.makeTexture(descriptor: maxDesc) else { return nil }
+
+        // Hjørnebuffer [x,y,z,u,v,nx,ny,nz,warp]. Verteksnormalen gir en vekt som glir over
+        // flaten; flatenormalen ville gitt et trinn ved hver trekantkant. ARKit-meshen har
+        // spredte flippede normaler, så hjørnenormalen snus til flatenormalens side — ellers
+        // kan interpolasjonen gå gjennom null midt i trekanten.
+        let triCount = uv.indices.count / 3
+        let hasN = uv.normals.count == uv.positions.count
+        func pos(_ vi: Int) -> SIMD3<Float> { SIMD3(uv.positions[vi * 3], uv.positions[vi * 3 + 1], uv.positions[vi * 3 + 2]) }
+        var faceN = [SIMD3<Float>](repeating: .zero, count: triCount)
+        var cent = [SIMD3<Float>](repeating: .zero, count: triCount)
+        var vdata = [Float](repeating: 0, count: triCount * 3 * 9)
+        for t in 0..<triCount {
+            let a = Int(uv.indices[t * 3]), b = Int(uv.indices[t * 3 + 1]), c = Int(uv.indices[t * 3 + 2])
+            let pa = pos(a), pb = pos(b), pc = pos(c)
+            let fnr = simd_cross(pb - pa, pc - pa)
+            let fl = simd_length(fnr)
+            faceN[t] = fl > 1e-12 ? fnr / fl : .zero
+            cent[t] = (pa + pb + pc) / 3
+            for j in 0..<3 {
+                let vi = Int(uv.indices[t * 3 + j])
+                let o = (t * 3 + j) * 9
+                vdata[o] = uv.positions[vi * 3]; vdata[o + 1] = uv.positions[vi * 3 + 1]; vdata[o + 2] = uv.positions[vi * 3 + 2]
+                vdata[o + 3] = uv.uvs[vi * 2]; vdata[o + 4] = uv.uvs[vi * 2 + 1]
+                var n = hasN ? SIMD3(uv.normals[vi * 3], uv.normals[vi * 3 + 1], uv.normals[vi * 3 + 2]) : faceN[t]
+                if simd_length_squared(n) < 1e-8 { n = faceN[t] }
+                if simd_dot(n, faceN[t]) < 0 { n = -n }
+                vdata[o + 5] = n.x; vdata[o + 6] = n.y; vdata[o + 7] = n.z
+                vdata[o + 8] = fieldWarpFace.isEmpty || (fieldWarpFace.indices.contains(t) && fieldWarpFace[t]) ? 1 : 0
+            }
+        }
+        guard let vbuf = device.makeBuffer(bytes: vdata, length: vdata.count * 4) else { return nil }
+
+        func mat(_ a: [Float]) -> simd_float4x4 {
+            simd_float4x4(columns: (SIMD4(a[0], a[1], a[2], a[3]), SIMD4(a[4], a[5], a[6], a[7]),
+                                    SIMD4(a[8], a[9], a[10], a[11]), SIMD4(a[12], a[13], a[14], a[15])))
+        }
+        // Trekanter som KAN være synlige i bildet: foran kameraet, rører bildeflaten, ikke helt
+        // på skrå. Skjuling avgjøres per piksel i shaderen mot synets egen dybde.
+        func members(_ k: MeshScanPresenter.Keyframe) -> [UInt32] {
+            let w2c = simd_inverse(mat(k.transform))
+            let camPos = SIMD3(k.transform[12], k.transform[13], k.transform[14])
+            let fx = k.intrinsics[0], fy = k.intrinsics[1], cx = k.intrinsics[2], cy = k.intrinsics[3]
+            let W = Float(k.width), H = Float(k.height)
+            var out = [UInt32]()
+            out.reserveCapacity(triCount)
+            for t in 0..<triCount where inne.indices.contains(t) ? inne[t] : true {
+                let vd = camPos - cent[t]
+                let dl = simd_length(vd)
+                if dl > 8 || dl < 1e-4 || abs(simd_dot(faceN[t], vd / dl)) < 0.06 { continue }
+                var loX = Float.greatestFiniteMagnitude, hiX = -loX, loY = loX, hiY = -loX
+                var foran = 0
+                for j in 0..<3 {
+                    let vi = Int(uv.indices[t * 3 + j])
+                    let pcam = w2c * SIMD4(pos(vi), 1)
+                    let z = -pcam.z
+                    if z < 0.05 { continue }
+                    foran += 1
+                    let u = fx * pcam.x / z + cx, v = fy * -pcam.y / z + cy
+                    loX = min(loX, u); hiX = max(hiX, u); loY = min(loY, v); hiY = max(hiY, v)
+                }
+                if foran == 0 || hiX < 0 || hiY < 0 || loX > W || loY > H { continue }
+                out.append(UInt32(t * 3)); out.append(UInt32(t * 3 + 1)); out.append(UInt32(t * 3 + 2))
+            }
+            return out
+        }
+        let zeroDepth: MTLTexture? = {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Float, width: 1, height: 1, mipmapped: false)
+            d.usage = .shaderRead
+            guard let t = device.makeTexture(descriptor: d) else { return nil }
+            var z: Float = 0
+            t.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &z, bytesPerRow: 4)
+            return t
+        }()
+        func depthTex(_ k: MeshScanPresenter.Keyframe) -> MTLTexture? {
+            guard let df = k.depthFile, k.depthWidth > 0, k.depthHeight > 0,
+                  let dd = try? Data(contentsOf: framesDir.appendingPathComponent(df)),
+                  dd.count == k.depthWidth * k.depthHeight * 4 else { return zeroDepth }
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Float, width: k.depthWidth,
+                                                             height: k.depthHeight, mipmapped: false)
+            d.usage = .shaderRead
+            guard let t = device.makeTexture(descriptor: d) else { return zeroDepth }
+            dd.withUnsafeBytes { raw in
+                t.replace(region: MTLRegionMake2D(0, 0, k.depthWidth, k.depthHeight), mipmapLevel: 0,
+                          withBytes: raw.baseAddress!, bytesPerRow: k.depthWidth * 4)
+            }
+            return t
+        }
+        let linse = linseModell(framesDir)
+        if linse.w > 0 { MeshLog.log(String(format: "V2 texel — linse k1 %+.4f k2 %+.4f brennvidde %+.2f %%", linse.x, linse.y, linse.z * 100)) }
+        func cam(_ fi: Int) -> CamV2 {
+            let k = kfUse[fi]
+            return CamV2(w2c: simd_inverse(mat(k.transform)),
+                         intr: SIMD4(k.intrinsics[0], k.intrinsics[1], k.intrinsics[2], k.intrinsics[3]),
+                         img: SIMD4(Float(k.width), Float(k.height), Float(atlasSize), kant),
+                         // Skarphet ALENE overså bevegelsesuskarphet: vinnerveien rangerer med
+                         // kfQuality (fart + predikert blurPx), og på 0daef323 valgte texel-
+                         // vekten bilder der panelsporene var borte. Samme straff her.
+                         wb: SIMD4(gains.indices.contains(fi) ? gains[fi] : SIMD3(1, 1, 1),
+                                   (skarpVekt.indices.contains(fi) ? skarpVekt[fi] : 1)
+                                     / (1 + 2 * k.motion) / (1 + max(0, k.blurPx ?? 0) / 30)),
+                         ofs: SIMD4(p, toBand ? lav : 0, plav, Float(lowSize)),
+                         camPos: SIMD4(k.transform[12], k.transform[13], k.transform[14], parM),
+                         lens: linse)
+        }
+        let gW = MeshPoseRefineV2.warpGridW, gH = MeshPoseRefineV2.warpGridH
+        var gdim = SIMD2<Int32>(Int32(gW), Int32(gH))
+        let zeroGrid = [SIMD2<Float>](repeating: .zero, count: gW * gH)
+
+        // PARALLELT I PULJER (2026-10-18). Ett og ett bilde betydde at CPU-en dekodet én 4K-JPEG
+        // (~25 ms) mens GPU-en ventet, og omvendt — og det skjer for hver av de fire flisene.
+        // Nå lages medlemslister (og i pass 2 dekodes bildene) for `pulje` bilder samtidig på
+        // alle kjerner, og GPU-arbeidet for hele puljen går i ÉN kommandobuffer.
+        // Minne: pulje × (RGBA 33 MB + dekodet CGImage) — med i flisKost-konstanten.
+        let pulje = max(1, Int(flaggTall("meshscan.texelpulje", 3)))
+        func encodeDraw(_ cb: MTLCommandBuffer, target: MTLTexture, clear: Bool, pipe: MTLRenderPipelineState,
+                        idx: [UInt32], ibuf: MTLBuffer, c: inout CamV2, grid: inout [SIMD2<Float>],
+                        textures: [(MTLTexture, Int)], rob r: SIMD4<Float> = .zero) {
+            let rp = MTLRenderPassDescriptor()
+            rp.colorAttachments[0].texture = target
+            rp.colorAttachments[0].loadAction = clear ? .clear : .load
+            rp.colorAttachments[0].storeAction = .store
+            rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
+            enc.setRenderPipelineState(pipe)
+            enc.setVertexBuffer(vbuf, offset: 0, index: 0)
+            enc.setFragmentBytes(&c, length: MemoryLayout<CamV2>.stride, index: 0)
+            enc.setFragmentBytes(&grid, length: MemoryLayout<SIMD2<Float>>.stride * gW * gH, index: 1)
+            enc.setFragmentBytes(&gdim, length: MemoryLayout<SIMD2<Int32>>.stride, index: 2)
+            var rr = r
+            enc.setFragmentBytes(&rr, length: MemoryLayout<SIMD4<Float>>.stride, index: 3)
+            for (t, slot) in textures { enc.setFragmentTexture(t, index: slot) }
+            enc.drawIndexedPrimitives(type: .triangle, indexCount: idx.count, indexType: .uint32,
+                                      indexBuffer: ibuf, indexBufferOffset: 0)
+            enc.endEncoding()
+        }
+        func gridFor(_ fi: Int) -> [SIMD2<Float>] {
+            (fi < warpGrids.count && warpGrids[fi].count == gW * gH) ? warpGrids[fi] : zeroGrid
+        }
+
+        // Tonen FØR detaljen (§106d): runde 1 er et vektet snitt, runde 2 vekter hvert syn med
+        // avviket fra runde 1 (IRLS). Resultatet er både tonen i atlaset og referansen
+        // detaljpasset måler avvik mot. Kilden er miniatyrer (~120 px), ikke 4K-dekoding.
+        let tg = MTLSize(width: 16, height: 16, depth: 1)
+        let ng = MTLSize(width: (atlasSize + 15) / 16, height: (atlasSize + 15) / 16, depth: 1)
+        let lg = MTLSize(width: (lowSize + 15) / 16, height: (lowSize + 15) / 16, depth: 1)
+        var lowFinal: MTLTexture? = nil
+        var miniTex = [Int: MTLTexture]()
+        if toBand, let lp = lowPipe, let la = lowAcc, let lA = lowA, let lB = lowB, let lR = lowR {
+            var miniatyr = [Int: (w: Int, h: Int, rgba: [UInt8])]()
+            let lås = NSLock()
+            DispatchQueue.concurrentPerform(iterations: kfUse.count) { fi in
+                let k = kfUse[fi]
+                guard let cg = MeshImageIO.loadCGImageThumb(framesDir, k.file, maxPx: max(64, k.width / 32)),
+                      let rgba = MeshImageIO.rgbaBytes(cg) else { return }
+                lås.lock(); miniatyr[fi] = (cg.width, cg.height, rgba); lås.unlock()
+            }
+            for (fi, m) in miniatyr {
+                let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm_srgb, width: m.w, height: m.h, mipmapped: false)
+                d.usage = .shaderRead
+                guard let t = device.makeTexture(descriptor: d) else { continue }
+                m.rgba.withUnsafeBytes { raw in
+                    t.replace(region: MTLRegionMake2D(0, 0, m.w, m.h), mipmapLevel: 0, withBytes: raw.baseAddress!, bytesPerRow: m.w * 4)
+                }
+                miniTex[fi] = t
+            }
+            let runder = konsensus ? 2 : 1
+            var forrige: MTLTexture = lR
+            for runde in 0..<runder {
+                var firstL = true
+                var f0 = 0
+                while f0 < kfUse.count {
+                    let ids = Array(f0..<min(f0 + 8, kfUse.count))
+                    f0 += 8
+                    autoreleasepool {
+                        var mem = [[UInt32]](repeating: [], count: ids.count)
+                        mem.withUnsafeMutableBufferPointer { m in
+                            DispatchQueue.concurrentPerform(iterations: ids.count) { j in m[j] = members(kfUse[ids[j]]) }
+                        }
+                        guard let cb = queue.makeCommandBuffer() else { return }
+                        for (j, fi) in ids.enumerated() where !mem[j].isEmpty {
+                            guard let mt = miniTex[fi], let ibuf = device.makeBuffer(bytes: mem[j], length: mem[j].count * 4),
+                                  let dtex = depthTex(kfUse[fi]) else { continue }
+                            var c = cam(fi)
+                            var grid = gridFor(fi)
+                            encodeDraw(cb, target: la, clear: firstL, pipe: lp, idx: mem[j], ibuf: ibuf, c: &c, grid: &grid,
+                                       textures: [(mt, 0), (dtex, 1), (forrige, 3)],
+                                       rob: runde > 0 ? rob : robAv)
+                            firstL = false
+                        }
+                        cb.commit(); cb.waitUntilCompleted()
+                    }
+                }
+                // Normaliser + fyll tomme texler (små trekanter kan falle mellom pikslene).
+                var ls = lA, ld = lB
+                if let cb = queue.makeCommandBuffer(), let enc = cb.makeComputeCommandEncoder() {
+                    enc.setComputePipelineState(normPipe)
+                    enc.setTexture(la, index: 0); enc.setTexture(ls, index: 1)
+                    enc.dispatchThreadgroups(lg, threadsPerThreadgroup: tg)
+                    for _ in 0..<8 {
+                        enc.setComputePipelineState(dilatePipe)
+                        enc.setTexture(ls, index: 0); enc.setTexture(ld, index: 1)
+                        enc.dispatchThreadgroups(lg, threadsPerThreadgroup: tg)
+                        swap(&ls, &ld)
+                    }
+                    enc.endEncoding()
+                    if runde < runder - 1, let bl = cb.makeBlitCommandEncoder() {
+                        bl.copy(from: ls, to: lR); bl.endEncoding()
+                    }
+                    cb.commit(); cb.waitUntilCompleted()
+                }
+                forrige = lR
+                lowFinal = ls
+            }
+        }
+        _ = robAv
+
+        // Pass 1 — maks-vekt (bare dybdekart, ingen foto).
+        var first = true
+        var frames = 0
+        var fi0 = 0
+        while fi0 < kfUse.count {
+            let ids = Array(fi0..<min(fi0 + pulje, kfUse.count))
+            fi0 += pulje
+            autoreleasepool {
+                var mem = [[UInt32]](repeating: [], count: ids.count)
+                mem.withUnsafeMutableBufferPointer { m in
+                    DispatchQueue.concurrentPerform(iterations: ids.count) { j in m[j] = members(kfUse[ids[j]]) }
+                }
+                guard let cb = queue.makeCommandBuffer() else { return }
+                for (j, fi) in ids.enumerated() where !mem[j].isEmpty {
+                    guard let ibuf = device.makeBuffer(bytes: mem[j], length: mem[j].count * 4),
+                          let dtex = depthTex(kfUse[fi]) else { continue }
+                    var c = cam(fi)
+                    var grid = zeroGrid
+                    var tex: [(MTLTexture, Int)] = [(dtex, 1)]
+                    if let lf = lowFinal, let mt = miniTex[fi] { tex += [(lf, 3), (mt, 4)] }
+                    encodeDraw(cb, target: wmax, clear: first, pipe: maxPipe, idx: mem[j], ibuf: ibuf,
+                               c: &c, grid: &grid, textures: tex, rob: lowFinal != nil && miniTex[fi] != nil ? rob : robAv)
+                    first = false; frames += 1
+                }
+                cb.commit(); cb.waitUntilCompleted()
+            }
+        }
+        guard frames > 0 else { return nil }
+        ARMeshGlbExporter.progress?("Blander syn…")
+        let t1 = Date()
+
+
+        // Pass 2 — farge (detaljbåndet; tonen er ferdig over).
+        first = true
+        fi0 = 0
+        while fi0 < kfUse.count {
+            let ids = Array(fi0..<min(fi0 + pulje, kfUse.count))
+            fi0 += pulje
+            autoreleasepool {
+                var mem = [[UInt32]](repeating: [], count: ids.count)
+                var bilder = [(w: Int, h: Int, rgba: [UInt8])?](repeating: nil, count: ids.count)
+                mem.withUnsafeMutableBufferPointer { m in
+                    bilder.withUnsafeMutableBufferPointer { b in
+                        DispatchQueue.concurrentPerform(iterations: ids.count) { j in
+                            let k = kfUse[ids[j]]
+                            m[j] = members(k)
+                            guard !m[j].isEmpty, let cg = MeshImageIO.loadCGImage(framesDir, k.file),
+                                  let rgba = MeshImageIO.rgbaBytes(cg) else { return }
+                            b[j] = (cg.width, cg.height, rgba)
+                        }
+                    }
+                }
+                guard let cb = queue.makeCommandBuffer() else { return }
+                for (j, fi) in ids.enumerated() {
+                    guard !mem[j].isEmpty, let img = bilder[j],
+                          let ibuf = device.makeBuffer(bytes: mem[j], length: mem[j].count * 4),
+                          let dtex = depthTex(kfUse[fi]) else { continue }
+                    let trengerMip = toBand && miniTex[fi] == nil
+                    let fdesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm_srgb,
+                                                                         width: img.w, height: img.h, mipmapped: trengerMip)
+                    fdesc.usage = .shaderRead
+                    guard let ftex = device.makeTexture(descriptor: fdesc) else { continue }
+                    img.rgba.withUnsafeBytes { raw in
+                        ftex.replace(region: MTLRegionMake2D(0, 0, img.w, img.h), mipmapLevel: 0,
+                                     withBytes: raw.baseAddress!, bytesPerRow: img.w * 4)
+                    }
+                    if trengerMip, let bl = cb.makeBlitCommandEncoder() { bl.generateMipmaps(for: ftex); bl.endEncoding() }
+                    var c = cam(fi)
+                    var grid = gridFor(fi)
+                    encodeDraw(cb, target: acc, clear: first, pipe: accPipe, idx: mem[j], ibuf: ibuf,
+                               c: &c, grid: &grid, textures: [(ftex, 0), (dtex, 1), (wmax, 2), (lowFinal ?? wmax, 3),
+                                                               (miniTex[fi] ?? wmax, 4)],
+                               rob: { var r = lowFinal != nil && miniTex[fi] != nil ? rob : robAv
+                                      r.w = miniTex[fi] != nil ? 1 : 0; return r }())
+                    first = false
+                }
+                cb.commit(); cb.waitUntilCompleted()
+                if ids[0] % 15 == 0 { ARMeshGlbExporter.progress?("Blander syn… \(ids[0] * 100 / max(kfUse.count, 1)) %") }
+            }
+        }
+
+        // Normaliser → atlasB, dilate, mikrokontrast, les tilbake (samme hale som blend=raw).
+        if let lf = lowFinal, let cp = composePipe,
+           let cb = queue.makeCommandBuffer(), let enc = cb.makeComputeCommandEncoder() {
+            // Detaljen (normaliseres i kjernen) oppå den ferdige tonen.
+            enc.setComputePipelineState(cp)
+            enc.setTexture(acc, index: 0); enc.setTexture(lf, index: 1); enc.setTexture(atlasB, index: 2)
+            enc.dispatchThreadgroups(ng, threadsPerThreadgroup: tg)
+            enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+        } else if let cb = queue.makeCommandBuffer(), let enc = cb.makeComputeCommandEncoder() {
+            enc.setComputePipelineState(normPipe)
+            enc.setTexture(acc, index: 0); enc.setTexture(atlasB, index: 1)
+            enc.dispatchThreadgroups(ng, threadsPerThreadgroup: tg)
+            enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+        }
+        var bsrc = atlasB, bdst = atlasA
+        for _ in 0..<16 {
+            guard let cb = queue.makeCommandBuffer(), let enc = cb.makeComputeCommandEncoder() else { break }
+            enc.setComputePipelineState(dilatePipe)
+            enc.setTexture(bsrc, index: 0); enc.setTexture(bdst, index: 1)
+            enc.dispatchThreadgroups(ng, threadsPerThreadgroup: tg)
+            enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+            swap(&bsrc, &bdst)
+        }
+        let mikro = flaggTall("meshscan.mikrokontrast", 1.6)
+        if mikro > 0.01,
+           let mfn = lib.makeFunction(name: "bakev2_mikro"),
+           let mpipe = try? device.makeComputePipelineState(function: mfn),
+           let cb = queue.makeCommandBuffer(), let enc = cb.makeComputeCommandEncoder() {
+            enc.setComputePipelineState(mpipe)
+            enc.setTexture(bsrc, index: 0); enc.setTexture(bdst, index: 1)
+            var par = SIMD2<Float>(mikro, max(1, flaggTall("meshscan.mikroradius", 3)))
+            enc.setBytes(&par, length: MemoryLayout<SIMD2<Float>>.size, index: 0)
+            enc.dispatchThreadgroups(ng, threadsPerThreadgroup: tg)
+            enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+            swap(&bsrc, &bdst)
+        }
+        let bpr = atlasSize * 4
+        guard let readBuf = device.makeBuffer(length: bpr * atlasSize, options: .storageModeShared),
+              let cb = queue.makeCommandBuffer(), let blit = cb.makeBlitCommandEncoder() else { return nil }
+        blit.copy(from: bsrc, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                  sourceSize: MTLSize(width: atlasSize, height: atlasSize, depth: 1),
+                  to: readBuf, destinationOffset: 0, destinationBytesPerRow: bpr, destinationBytesPerImage: bpr * atlasSize)
+        blit.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+        let pixels = [UInt8](UnsafeBufferPointer(start: readBuf.contents().assumingMemoryBound(to: UInt8.self),
+                                                 count: bpr * atlasSize))
+        MeshLog.log(String(format: "V2 blend=texel — p %.1f, tone %@, konsensus %@, parallakse %.0f mm, %d syn, maks-pass %.1f s, farge-pass %.1f s, atlas %d",
+                           p, toBand ? String(format: "mip %.0f p %.1f", lav, plav) : "av",
+                           lowFinal != nil && konsensus ? "på" : "av", parM * 1000, frames, t1.timeIntervalSince(t0), Date().timeIntervalSince(t1), atlasSize))
+        return MeshImageIO.jpegData(pixels, atlasSize)
     }
 
     private static func rasterize(
@@ -3810,6 +4410,13 @@ enum MeshBakeV2 {
         // ── blend=raw (A/B-arm): hele teksturen = fullfrekvens-SNITT av topp-K per flate,
         // warp-justert. Ingen vinner per flate → ingen sømmer, men tonelapper der topp-K-
         // settet skifter (device 2026-08-26). Selvstendig gren som returnerer FØR vinnerløkka.
+        // blend=texel (§106): myke vekter per texel i stedet for topp-K per trekant. Se texelBlend.
+        if blendRaw && (UserDefaults.standard.string(forKey: "meshscan.blend") ?? "texel") == "texel" {
+            return texelBlend(device: device, queue: queue, lib: lib, uv: uv, inne: inne,
+                              kfUse: kfUse, gains: gains, skarpVekt: skarpVekt, warpGrids: warpGrids,
+                              fieldWarpFace: fieldWarpFace, framesDir: framesDir, atlasSize: atlasSize,
+                              normPipe: normPipe, dilatePipe: dilatePipe, atlasA: atlasA, atlasB: atlasB)
+        }
         if blendRaw {
             let fullDesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float,
                                                                     width: atlasSize, height: atlasSize, mipmapped: false)
@@ -4746,7 +5353,7 @@ enum MeshBakeV2 {
     #include <metal_stdlib>
     using namespace metal;
 
-    struct CamV2 { float4x4 w2c; float4 intr; float4 img; float4 wb; float4 ofs; float4 camPos; };
+    struct CamV2 { float4x4 w2c; float4 intr; float4 img; float4 wb; float4 ofs; float4 camPos; float4 lens; };
     struct VOutV2 { float4 position [[position]]; float3 wp; float3 ofs; float seamDist; float warpEnabled [[flat]]; };
 
     // 10 floats per HJØRNE: [x,y,z,u,v,ox,oy,oz,seamDist,warpEnabled]. ofs er per-hjørne søm-forfining og
@@ -5234,6 +5841,212 @@ enum MeshBakeV2 {
             if (s.a > 0.0) { sum += s.rgb; n += 1.0; }
         }
         dst.write(n > 0.0 ? float4(sum / n, 1.0) : float4(0.0), gid);
+    }
+
+    // ── blend=texel (§106). Vekten regnes PER TEXEL fra det enkelte synets geometri, ikke
+    // per trekant: oppløsning på flaten (cos/z)², myk kant mot bildekanten, myk utfasing
+    // på skrå syn, skjuling og dybdekant fra synets EGEN LiDAR-dybde, og bildets skarphet.
+    // Alt er kontinuerlig over flaten, så det finnes ingen trekantgrense der settet av syn
+    // skifter brått — det var den som ga trappetrinnene i topp-K-snittet.
+    struct VOutT { float4 position [[position]]; float3 wp; float3 n; float warpEnabled [[flat]]; };
+
+    // 9 floats per hjørne: [x,y,z,u,v,nx,ny,nz,warpEnabled]
+    vertex VOutT bakev2_texel_vertex(uint vid [[vertex_id]], const device float* v [[buffer(0)]]) {
+        uint b = vid * 9;
+        VOutT o;
+        o.position = float4(v[b+3] * 2.0 - 1.0, 1.0 - v[b+4] * 2.0, 0.0, 1.0);
+        o.wp = float3(v[b], v[b+1], v[b+2]);
+        o.n = float3(v[b+5], v[b+6], v[b+7]);
+        o.warpEnabled = v[b+8];
+        return o;
+    }
+
+    // Returnerer KVALITETEN q (oppløsning² · skarphet); `gate` får kant-, vinkel- og
+    // skjulingsfaktoren. De holdes adskilt fordi bare q skal opphøyes i p: opphøyes også
+    // uttoningen mot bildekanten, krymper en 8 %-overgang til en skarp tonekant (målt).
+    float bakev2_texel_weight(float3 wp, float3 n, constant CamV2& c,
+                              texture2d<float, access::sample> dep, thread float2& uvOut,
+                              thread float& gate) {
+        gate = 0.0;
+        constexpr sampler ds(filter::nearest, address::clamp_to_edge);
+        float3 pc = (c.w2c * float4(wp, 1.0)).xyz;
+        float z = -pc.z;
+        if (z < 0.05) return 0.0;
+        float2 xn = float2(pc.x / z, -pc.y / z);
+        if (c.lens.w > 0.5) {
+            float r2 = dot(xn, xn);
+            xn *= (1.0 + c.lens.z) * (1.0 + c.lens.x * r2 + c.lens.y * r2 * r2);
+        }
+        float2 pixel = float2(c.intr.x * xn.x + c.intr.z, c.intr.y * xn.y + c.intr.w);
+        float2 uvN = pixel / c.img.xy;
+        uvOut = uvN;
+        float edge = min(min(uvN.x, 1.0 - uvN.x), min(uvN.y, 1.0 - uvN.y));
+        if (edge <= 0.0) return 0.0;
+        // c.img.w = bredden på uttoningen mot bildekanten (andel av bildet), meshscan.texelkant.
+        float border = smoothstep(0.0, max(c.img.w, 0.01), edge);
+        float3 vd = normalize(c.camPos.xyz - wp);
+        float nl = length(n);
+        float facing = nl > 1e-6 ? abs(dot(n / nl, vd)) : 0.5;
+        float grazing = smoothstep(0.08, 0.3, facing);
+        float res = facing / z;
+        float occ = 1.0;
+        float sz = dep.sample(ds, uvN).r;
+        if (sz > 0.2) {
+            float tol = 0.04 + 0.03 * sz;
+            occ = 1.0 - smoothstep(tol, 2.0 * tol, z - sz);
+            float2 st = 2.0 / float2(dep.get_width(), dep.get_height());
+            float dmin = sz, dmax = sz;
+            float d0 = dep.sample(ds, uvN + float2(st.x, 0)).r;
+            float d1 = dep.sample(ds, uvN - float2(st.x, 0)).r;
+            float d2 = dep.sample(ds, uvN + float2(0, st.y)).r;
+            float d3 = dep.sample(ds, uvN - float2(0, st.y)).r;
+            if (d0 > 0.05) { dmin = min(dmin, d0); dmax = max(dmax, d0); }
+            if (d1 > 0.05) { dmin = min(dmin, d1); dmax = max(dmax, d1); }
+            if (d2 > 0.05) { dmin = min(dmin, d2); dmax = max(dmax, d2); }
+            if (d3 > 0.05) { dmin = min(dmin, d3); dmax = max(dmax, d3); }
+            float th = max(0.12, 0.06 * sz);
+            occ *= 1.0 - 0.65 * smoothstep(0.5 * th, th, dmax - dmin);
+            // PARALLAKSE (§106d). Stikker noe ut fra flaten (intercom, bryter, list), viser
+            // synets egen LiDAR det som |z − sz|. Et skrått syn legger det da |z − sz|·tanθ
+            // til siden på veggen — det er den grå kopien. Frontale syn rammes ikke (tanθ ≈ 0).
+            // c.camPos.w = toleranse i meter (0 = av).
+            if (c.camPos.w > 0.0) {
+                float tanT = sqrt(max(1.0 - facing * facing, 0.0)) / max(facing, 0.05);
+                float par = abs(z - sz) * tanT / c.camPos.w;
+                res *= rsqrt(1.0 + par * par);
+            }
+        }
+        gate = border * grazing * occ;
+        return res * res * max(c.wb.w, 1e-4);
+    }
+
+    // KONSENSUS (§106d): hvor mye et syns grovfarge avviker fra referansen (det de fleste
+    // synene ser). Lysere enn referansen straffes hardere (rob.z < rob.y): refleks og
+    // gjenskinn er lyse og ligger ulikt i hvert syn. Kromaleddet tar blader foran en hvit vegg.
+    // rob = (på, σ, σ lys, –).
+    float bakev2_avvik(float3 smp, float3 ref, constant float4& rob) {
+        float ls = dot(smp, float3(0.299, 0.587, 0.114));
+        float lr = dot(ref, float3(0.299, 0.587, 0.114));
+        float d = (ls - lr) / (lr + 0.04);
+        float e = d / (d > 0.0 ? rob.z : rob.y);
+        float ec = length(smp / (ls + 0.02) - ref / (lr + 0.02)) * 0.5 / rob.y;
+        return max(0.02, 1.0 / (1.0 + e * e + ec * ec));
+    }
+
+    // Konsensusfaktoren for et syn i et texel. Ganges inn i q FØR normaliseringen mot wmax,
+    // i begge pass, med samme kilde (miniatyren) — ellers kan forholdet q/wmax bli > 1, og
+    // straffes det beste synet ETTER normaliseringen, blir alle vekter i texelet så små at
+    // RGBA16F-summen er støy (svarte prikker, målt første forsøk). c.img.z = atlasstørrelse.
+    float bakev2_konsensus(float2 uvN, float2 pos, constant CamV2& c, constant float4& rob,
+                           texture2d<float, access::sample> thumb, texture2d<float, access::sample> lowRef) {
+        if (rob.x <= 0.0) return 1.0;
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        float2 qc = uvN - 0.5;
+        float devig = 1.0 + DEVIG_K * dot(qc, qc) * 4.0;
+        float3 low = thumb.sample(s, clamp(uvN, 0.0, 1.0)).rgb * devig * c.wb.rgb;
+        return bakev2_avvik(low, lowRef.sample(s, pos / c.img.z).rgb, rob);
+    }
+
+    // Pass 1: største vekt per texel (max-blending). Trenger ikke fotoet.
+    fragment float4 bakev2_texel_max_fragment(VOutT in [[stage_in]],
+                                              constant CamV2& c [[buffer(0)]],
+                                              constant float4& rob [[buffer(3)]],
+                                              texture2d<float, access::sample> dep [[texture(1)]],
+                                              texture2d<float, access::sample> lowRef [[texture(3)]],
+                                              texture2d<float, access::sample> thumb [[texture(4)]]) {
+        float2 uvN; float gate;
+        float q = bakev2_texel_weight(in.wp, in.n, c, dep, uvN, gate);
+        if (q <= 0.0 || gate <= 0.0) return float4(0.0);
+        q *= bakev2_konsensus(uvN, in.position.xy, c, rob, thumb, lowRef);
+        return float4(q * gate, 0.0, 0.0, 0.0);
+    }
+
+    // Pass 2: (w / wmax)^p — en MYK vinner. Er ett syn klart best, dominerer det (tekstur,
+    // ikke snitt); er to like gode, blandes de jevnt. Vekten glir kontinuerlig mellom dem.
+    // c.ofs.x = p, c.ofs.y = mip-nivå for tonen (detaljen = foto − foto på det nivået).
+    fragment float4 bakev2_texel_acc_fragment(VOutT in [[stage_in]],
+                                              constant CamV2& c [[buffer(0)]],
+                                              constant float2* grid [[buffer(1)]],
+                                              constant int2& gdim [[buffer(2)]],
+                                              constant float4& rob [[buffer(3)]],
+                                              texture2d<float, access::sample> frame [[texture(0)]],
+                                              texture2d<float, access::sample> dep [[texture(1)]],
+                                              texture2d<float, access::read> wmax [[texture(2)]],
+                                              texture2d<float, access::sample> lowRef [[texture(3)]],
+                                              texture2d<float, access::sample> thumb [[texture(4)]]) {
+        constexpr sampler s(filter::linear, mip_filter::linear, address::clamp_to_edge);
+        float2 uvN; float gate;
+        float q = bakev2_texel_weight(in.wp, in.n, c, dep, uvN, gate);
+        if (q <= 0.0 || gate <= 0.0) return float4(0.0);
+        q *= bakev2_konsensus(uvN, in.position.xy, c, rob, thumb, lowRef);
+        // wmax = største q·gate. Synets egen q måles mot den, og gate ganges på LINEÆRT:
+        // når det beste synet toner ut mot sin kant, synker wmax jevnt og de andre tar over.
+        float wm = wmax.read(uint2(in.position.xy)).r;
+        float r = clamp(q / max(wm, 1e-12), 0.0, 1.0);
+        float wk = gate * pow(r, c.ofs.x);
+        if (wk < 1e-4) return float4(0.0);
+        uvN = bakev2_scoped_uv(clamp(uvN, 0.0, 1.0), grid, gdim, in.warpEnabled);
+        float3 src = frame.sample(s, uvN).rgb;
+        // Utbrent i DETTE synet → svakere (et annet syn har trolig flaten riktig eksponert).
+        float lum = dot(src, float3(0.299, 0.587, 0.114));
+        wk *= 1.0 - 0.95 * smoothstep(0.85, 0.99, lum);
+        float2 qc = uvN - 0.5;
+        float devig = 1.0 + DEVIG_K * dot(qc, qc) * 4.0;
+        float3 k = devig * c.wb.rgb;
+        // Detaljen = foto − SAMME lavpass som tonen ble laget av. rob.w > 0: miniatyren er
+        // bundet (standard). Fotoets mip 5 er 67 px høyt der miniatyren er 68 — den
+        // skalaforskjellen la tone og detalj opptil en halv miniatyrpiksel fra hverandre og ga
+        // doble rammekanter (målt, §106d).
+        if (c.ofs.y > 0.0) src -= rob.w > 0.0 ? thumb.sample(s, clamp(uvN, 0.0, 1.0)).rgb
+                                              : frame.sample(s, uvN, level(c.ofs.y)).rgb;
+        return float4(src * k * wk, wk);
+    }
+
+    // Lavbåndet (tonen): samme vekt, men eksponent c.ofs.z (lav) — eksponeringsforskjeller
+    // mellom bilder jevnes ut over mange syn i stedet for å følge vinneren. Kilden er en
+    // MINIATYR av fotoet (≈ mip 5, dekodes på brøkdelen av tiden). Tegnes i et atlas med
+    // lavere oppløsning; c.ofs.w = det atlasets størrelse. rob.x > 0: vekten ganges med
+    // avviket fra forrige runde (lowRef) — IRLS, så flertallet bestemmer tonen.
+    fragment float4 bakev2_texel_low_fragment(VOutT in [[stage_in]],
+                                              constant CamV2& c [[buffer(0)]],
+                                              constant float2* grid [[buffer(1)]],
+                                              constant int2& gdim [[buffer(2)]],
+                                              constant float4& rob [[buffer(3)]],
+                                              texture2d<float, access::sample> thumb [[texture(0)]],
+                                              texture2d<float, access::sample> dep [[texture(1)]],
+                                              texture2d<float, access::sample> lowRef [[texture(3)]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        float2 uvN; float gate;
+        float q = bakev2_texel_weight(in.wp, in.n, c, dep, uvN, gate);
+        if (q <= 0.0 || gate <= 0.0) return float4(0.0);
+        float2 auv = in.position.xy / c.ofs.w;
+        // q^p uten wmax: delt på wmax^p er det en konstant per texel, som normaliseringen
+        // fjerner uansett. Dermed kan tonen lages FØR maks-passet (som trenger den).
+        float wk = gate * pow(q, c.ofs.z);
+        if (wk <= 0.0) return float4(0.0);
+        uvN = bakev2_scoped_uv(clamp(uvN, 0.0, 1.0), grid, gdim, in.warpEnabled);
+        float3 low = thumb.sample(s, uvN).rgb;
+        float lum = dot(low, float3(0.299, 0.587, 0.114));
+        wk *= 1.0 - 0.95 * smoothstep(0.85, 0.99, lum);
+        float2 qc = uvN - 0.5;
+        float devig = 1.0 + DEVIG_K * dot(qc, qc) * 4.0;
+        low *= devig * c.wb.rgb;
+        if (rob.x > 0.0) wk *= bakev2_avvik(low, lowRef.sample(s, auv).rgb, rob);
+        return float4(low * wk, wk);
+    }
+
+    // detalj (normaliseres her) + tone (allerede normalisert og dilatert, samples bilineært).
+    kernel void bakev2_texel_compose(texture2d<float, access::read> hi [[texture(0)]],
+                                     texture2d<float, access::sample> low [[texture(1)]],
+                                     texture2d<float, access::write> dst [[texture(2)]],
+                                     uint2 gid [[thread_position_in_grid]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        if (gid.x >= hi.get_width() || gid.y >= hi.get_height()) return;
+        float4 h = hi.read(gid);
+        if (h.a <= 0.0) { dst.write(float4(0.0), gid); return; }
+        float2 uv = (float2(gid) + 0.5) / float2(hi.get_width(), hi.get_height());
+        float3 col = clamp(h.rgb / h.a + low.sample(s, uv).rgb, 0.0, 1.0);
+        dst.write(float4(col, 1.0), gid);
     }
     """
 }

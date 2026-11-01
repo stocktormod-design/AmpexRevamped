@@ -84,9 +84,13 @@ enum ARMeshGlbExporter {
             byBucket[b] = k
         }
         var guaranteed = Array(byBucket.values).sorted { kfScore($0) > kfScore($1) }
-        if guaranteed.count > budget {
-            MeshLog.log("dekningsbevisst utvalg — \(guaranteed.count) regioner > \(budget) budsjett, kutter til de skarpeste")
-            return Array(guaranteed.prefix(budget))
+        // Flerromsskann 26.10: 170 regioner mot 120 i budsjett, og de 50 som ble kuttet var
+        // områder overlegget hadde vist som ferdige — «mye blir ikke skannet selv om wireframen
+        // viser at det er det». Budsjettet er laget for ETT rom. Hver region beholder nå sitt
+        // beste bilde uansett antall (Tormod: «aldri kvalitetstap … bare mer tid»).
+        if guaranteed.count >= budget {
+            MeshLog.log("dekningsbevisst utvalg — \(guaranteed.count) regioner > \(budget) budsjett, beholder alle")
+            return guaranteed
         }
         let usedIndices = Set(guaranteed.map { $0.index })
         let rest = keyframes
