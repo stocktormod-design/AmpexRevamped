@@ -91,7 +91,15 @@ enum MeshTsdfBuild {
         /// 0,0 mm» var feil slutning: re-ankringen mot ARMeshAnchor flytter INGENTING fordi
         /// ARKit legger korreksjonen i ankerets geometri, ikke i transformen. Målt 13.09:
         /// gulv og tak drev 11 cm i løpet av 80 s. Se `driftrett`.)
-        var maxVelocity: Float = 0.35
+        ///
+        /// HEVET TIL 0,6 (2026-11-02, §137). 0,35 var målt før driftretting og bildebinding; med
+        /// dem og vektterskel 1,0 dempet den over halvparten av kartene (433 av 843 på huset
+        /// c1794d71) ned mot vekt 0,15, og flater sett mens man gikk ble aldri med. Simulator, alt
+        /// annet likt: hus hull median/snitt 3,5/5,3 → 2,0/3,4 %, trapp 6,9 → 4,5 %; soverom
+        /// 9ef06228 3,3 → 2,3 % med samme flate (66,3 → 66,7 m²). Ingen dobbeltvegger å se i
+        /// renderne; andel flate med parallell nabo 2,5–8 cm unna 33,1 → 33,3 %.
+        /// `meshscan.tsdfvel` overstyrer.
+        var maxVelocity: Float = 0.6
         /// Oppskalering av keyframe-dybden med RGB som guide (joint bilateral upsampling).
         /// 1 = av. Keyframene er det eneste stedet med både 4K-bilde og eget dybdekart
         /// perfekt synkronisert. Gir kantpresisjon; dense-framene gir dekning.
@@ -325,6 +333,9 @@ enum MeshTsdfBuild {
         }
         if let s = UserDefaults.standard.string(forKey: "meshscan.tsdfminw"), let v = Float(s), v >= 1 {
             options.minWeight = v
+        }
+        if let s = UserDefaults.standard.string(forKey: "meshscan.tsdfvel"), let v = Float(s), v >= 0 {
+            options.maxVelocity = v
         }
         // Kantfilterets radius i LiDAR-piksler: 0 = gammel test (bare høyre/ned), 1 = fire
         // naboer, 2 = fire naboer i to radier.

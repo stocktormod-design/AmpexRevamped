@@ -5844,3 +5844,23 @@ list) er ikke en løs bit. `meshscan.småbiter 0` slår av.
 **Pyramiden i baken.** `Blokkpyramide.byggNå` kjøres etter baken, før miniatyren, i appens
 ombygging, live-skannet og harnessen, med «Klargjør visningen… N %». Rom: 23 s. Feiler den,
 bygger vieweren i bakgrunnen som før. Ikke verifisert på telefon ennå.
+
+## §137 Fartsfilteret for dybde 0,35 → 0,6 m/s (02.11)
+
+Etter §136 lå de største hullene på flater LiDAR faktisk så: hvit vegg ved reolen, salongbordet,
+den mørke kontorveggen, trappegulvet. Årsaken var fartsfilteret: 433 av 843 dybdekart ble dempet
+(vekt ned mot 0,15) fordi kameraet beveget seg over 0,35 m/s eller 30°/s, og nådde aldri
+terskelen. 0,35 ble målt i september, før driftretting og bildebinding.
+
+| simulator | hull median/snitt | trapp | flate | løse biter |
+|---|---|---|---|---|
+| hus, 0,35 (§136) | 3,5 / 5,3 % | 6,9 % | 330 m² | 6,6 m² |
+| hus, 0,6 | **2,0 / 3,4 %** | **4,5 %** | 376 m² | 8,2 m² |
+| soverom, 0,35 | 3,3 / 4,6 % | | 66,3 m² | 0,43 m² |
+| soverom, 0,6 | **2,3 / 3,4 %** | | 66,7 m² | 0,56 m² |
+
+Dobbeltvegger var risikoen. Andel flate med en parallell nabo 2,5–8 cm unna: 33,1 → 33,3 %
+(grunnivået er overlappet mellom delene, §135), og ingen dobling synlig i renderne. Huset fikk
+46 m² mer flate; soverommet nesten ingenting, så det nye er flater som manglet, ikke tykkelse.
+
+Pyramiden i baken (§136) tok 293 s for huset på Mac.
