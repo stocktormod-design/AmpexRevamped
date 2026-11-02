@@ -448,6 +448,10 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             kfTargetWidth = 3840
         }
         arConfig = config
+        // Tegn i kameraets takt, ikke 60 (§138): 4K-formatet leverer 30 bilder i sekundet, så
+        // annenhver tegning av overlegget og kamerabildet var lik den forrige. Halv GPU-takt
+        // for visningen er ren varme og batteri spart; sporingen og opptaket er urørt.
+        sceneView.preferredFramesPerSecond = max(30, config.videoFormat.framesPerSecond)
         sceneView.scene.rootNode.addChildNode(ghostRoot)
         sceneView.session.run(config)
 

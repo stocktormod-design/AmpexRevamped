@@ -3663,6 +3663,7 @@ enum MeshBakeV2 {
         var keys = [Int](repeating: 0, count: corners / 3)
         var coords = projected
         var bounds = [Int: (lo: SIMD2<Float>, hi: SIMD2<Float>)]()
+        var sentrum = [Int: (sum: SIMD3<Float>, n: Float)]()
         var projectedTriangles = 0
         for t in 0..<corners / 3 {
             let valid = region[t] >= 0 && (0..<3).allSatisfy {
@@ -3682,14 +3683,50 @@ enum MeshBakeV2 {
                 }
                 let p = coords[c]
                 guard p.x.isFinite, p.y.isFinite else { return nil }
+                let s0 = sentrum[key] ?? (.zero, 0)
+                sentrum[key] = (s0.sum + SIMD3(uv.positions[vi * 3], uv.positions[vi * 3 + 1], uv.positions[vi * 3 + 2]), s0.n + 1)
                 let b = bounds[key] ?? (p, p)
                 bounds[key] = (SIMD2(min(b.lo.x, p.x), min(b.lo.y, p.y)), SIMD2(max(b.hi.x, p.x), max(b.hi.y, p.y)))
             }
         }
-        let order = bounds.keys.sorted {
-            let a = bounds[$0]!, b = bounds[$1]!
+        func høyest(_ x: Int, _ y: Int) -> Bool {
+            let a = bounds[x]!, b = bounds[y]!
             let ah = a.hi.y - a.lo.y, bh = b.hi.y - b.lo.y
-            return ah == bh ? $0 < $1 : ah > bh
+            return ah == bh ? x < y : ah > bh
+        }
+        let ruter = max(1, min(8, fliser))
+        var order = bounds.keys.sorted(by: høyest)
+        // ROMLIGE FLISER (§138). Høyest-først over hele delen la biter fra hele rommet i hver
+        // flis, så hvert foto rørte nesten hver flis: 135 av 160 bilder dekodet (4K) og lastet
+        // opp per flis, 25 ganger. Nå sorteres feltene langs en Morton-kurve (25 cm) og deles i
+        // like store grupper, én per flis, høyest-først INNE i gruppen. En gruppe som ikke får
+        // plass renner over i neste flis. `meshscan.romligflis off` gir den gamle rekkefølgen.
+        if ruter > 1, UserDefaults.standard.string(forKey: "meshscan.romligflis") != "off" {
+            func spre(_ v: UInt64) -> UInt64 {
+                var x = v & 0x1fffff
+                x = (x | x << 32) & 0x1f00000000ffff; x = (x | x << 16) & 0x1f0000ff0000ff
+                x = (x | x << 8) & 0x100f00f00f00f00f; x = (x | x << 4) & 0x10c30c30c30c30c3
+                return (x | x << 2) & 0x1249249249249249
+            }
+            func morton(_ k: Int) -> UInt64 {
+                let c = sentrum[k].map { $0.sum / max($0.n, 1) } ?? .zero
+                let q = (c + 512) / 0.25
+                return spre(UInt64(max(0, q.x))) | spre(UInt64(max(0, q.y))) << 1 | spre(UInt64(max(0, q.z))) << 2
+            }
+            let kode = Dictionary(uniqueKeysWithValues: bounds.keys.map { ($0, morton($0)) })
+            let langs = bounds.keys.sorted { kode[$0]! == kode[$1]! ? $0 < $1 : kode[$0]! < kode[$1]! }
+            func areal(_ k: Int) -> Float { let b = bounds[k]!; return (b.hi.x - b.lo.x + 1) * (b.hi.y - b.lo.y + 1) }
+            let total = langs.reduce(0) { $0 + areal($1) }
+            let grupper = ruter * ruter
+            var ut: [Int] = [], gruppe: [Int] = [], sum: Float = 0, g = 1
+            for k in langs {
+                gruppe.append(k); sum += areal(k)
+                if sum >= total * Float(g) / Float(grupper), g < grupper {
+                    ut += gruppe.sorted(by: høyest); gruppe = []; g += 1
+                }
+            }
+            ut += gruppe.sorted(by: høyest)
+            order = ut
         }
         let pad = 8
         // FLISER (2026-09-10). Ett 8192-atlas rommer ~1055 texel/m over et rom på 60 m², så
@@ -3703,7 +3740,6 @@ enum MeshBakeV2 {
         // grensa hindret 3×3. Da ble UV-ene pakket for et 2×2 virtuelt atlas mens
         // flisløkka kuttet i 3×3, og 1057 trekanter havnet på tvers av en grense som
         // pakkingen ikke visste om — de fikk `flisAv = -1` og ble tegnet med flis 0s UV-er.
-        let ruter = max(1, min(8, fliser))
         func pack(_ scale: Float) -> [Int: SIMD2<Float>]? {
             var origins = [Int: SIMD2<Float>]()
             var flis = 0, x = 0, y = 0, height = 0
@@ -4128,12 +4164,15 @@ enum MeshBakeV2 {
         // Pass 2 — farge (detaljbåndet; tonen er ferdig over).
         first = true
         fi0 = 0
+        var dekodet = 0
+        var cpuTid = 0.0, gpuTid = 0.0
         while fi0 < kfUse.count {
             let ids = Array(fi0..<min(fi0 + pulje, kfUse.count))
             fi0 += pulje
             autoreleasepool {
                 var mem = [[UInt32]](repeating: [], count: ids.count)
                 var bilder = [(w: Int, h: Int, rgba: [UInt8])?](repeating: nil, count: ids.count)
+                let tc = CFAbsoluteTimeGetCurrent()
                 mem.withUnsafeMutableBufferPointer { m in
                     bilder.withUnsafeMutableBufferPointer { b in
                         DispatchQueue.concurrentPerform(iterations: ids.count) { j in
@@ -4145,10 +4184,14 @@ enum MeshBakeV2 {
                         }
                     }
                 }
+                cpuTid += CFAbsoluteTimeGetCurrent() - tc
                 guard let cb = queue.makeCommandBuffer() else { return }
+                let tg0 = CFAbsoluteTimeGetCurrent()
+                defer { gpuTid += CFAbsoluteTimeGetCurrent() - tg0 }
                 for (j, fi) in ids.enumerated() {
-                    guard !mem[j].isEmpty, let img = bilder[j],
-                          let ibuf = device.makeBuffer(bytes: mem[j], length: mem[j].count * 4),
+                    guard !mem[j].isEmpty, let img = bilder[j] else { continue }
+                    dekodet += 1
+                    guard let ibuf = device.makeBuffer(bytes: mem[j], length: mem[j].count * 4),
                           let dtex = depthTex(kfUse[fi]) else { continue }
                     let trengerMip = toBand && miniTex[fi] == nil
                     let fdesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm_srgb,
@@ -4219,9 +4262,9 @@ enum MeshBakeV2 {
         blit.endEncoding(); cb.commit(); cb.waitUntilCompleted()
         let pixels = [UInt8](UnsafeBufferPointer(start: readBuf.contents().assumingMemoryBound(to: UInt8.self),
                                                  count: bpr * atlasSize))
-        MeshLog.log(String(format: "V2 blend=texel — p %.1f, tone %@, konsensus %@, parallakse %.0f mm, %d syn, maks-pass %.1f s, farge-pass %.1f s, atlas %d",
+        MeshLog.log(String(format: "V2 blend=texel — p %.1f, tone %@, konsensus %@, parallakse %.0f mm, %d syn (%d dekodet, cpu %.1f s, gpu %.1f s), maks-pass %.1f s, farge-pass %.1f s, atlas %d",
                            p, toBand ? String(format: "mip %.0f p %.1f", lav, plav) : "av",
-                           lowFinal != nil && konsensus ? "på" : "av", parM * 1000, frames, t1.timeIntervalSince(t0), Date().timeIntervalSince(t1), atlasSize))
+                           lowFinal != nil && konsensus ? "på" : "av", parM * 1000, frames, dekodet, cpuTid, gpuTid, t1.timeIntervalSince(t0), Date().timeIntervalSince(t1), atlasSize))
         return MeshImageIO.jpegData(pixels, atlasSize)
     }
 

@@ -5864,3 +5864,29 @@ Dobbeltvegger var risikoen. Andel flate med en parallell nabo 2,5–8 cm unna: 3
 46 m² mer flate; soverommet nesten ingenting, så det nye er flater som manglet, ikke tykkelse.
 
 Pyramiden i baken (§136) tok 293 s for huset på Mac.
+
+## §138 Romlige fliser, og AR-visningen i kameraets takt (02.11)
+
+**Hvor tiden går.** Maling er 182 av 202 s for del 0 på huset. Ny logging per flis («N syn (M
+dekodet, cpu, gpu)») viste hvorfor: høyest-først-pakkingen la biter fra hele delen i hver flis,
+så 135 av 160 bilder rørte hver av de 25 flisene. Hvert 4K-bilde ble dekodet og lastet opp ~25
+ganger.
+
+**Romlige fliser.** Feltene sorteres langs en Morton-kurve (25 cm) og deles i like store grupper,
+én per flis, høyest-først inne i gruppen (`meshscan.romligflis off` = gammel rekkefølge). Bilder
+per flis 135 → 60–100 (et foto ser en stor del av rommet uansett, så gevinsten er mindre enn
+håpet). Simulator, huset:
+
+| | total | maling del 0 | hull | tetthet (verify-scan-tetthet) | GLB |
+|---|---|---|---|---|---|
+| før | 529 s | 182 s | 2,0 / 3,4 % | FEIL: del 1 −21 %, del 3 −33 % | 282 MB |
+| romlig | **474 s** | **130 s** | 2,0 / 3,4 % | **OK**, 1490–1646 texel/m | 306 MB |
+
+Tetthetsregelen består nå: den tettere pakkingen lot små deler nå kildeskalamålet med for få
+fliser (del 3: 4 fliser, 1154 texel/m); nå 9 fliser og 1606.
+
+Neste steg for fart, om det trengs: dekode hvert bilde én gang for alle flisene (krever enten
+alle akkumulatorene samtidig — for mye minne på telefon — eller en hurtigbuffer av dekodede bilder).
+
+**AR-visningen i 30 fps.** `preferredFramesPerSecond` = kameraformatets takt (30 for 4K) i stedet
+for SceneKits 60. Annenhver tegning var lik den forrige. Ikke målt på telefon.
