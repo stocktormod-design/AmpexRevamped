@@ -5918,3 +5918,12 @@ Live-fusjonen sender `lavVekt` 0 og er uendret.
 
 Gamle skann har ingen −z og baker identisk (soverommet, se under). Effekten kan bare måles på et
 NYTT skann fra telefonen.
+
+## §141 Skjørt i skjøten — prøvd, forkastet (02.11)
+
+Ny del klippet bare der eldre flate fantes 2 cm ut til alle fire sider i trekantens plan, så
+delene overlappet ~2 cm i stedet for å møtes kant i kant. Huset: hull 2,0/3,4 → 1,8/3,2 %,
+hullpiksler −5 %, `skjot.py` nesten uendret. Men render 314 (trappa) fikk NYE sorte sikksakk-
+streker over trinnene: randen til den overlappende delen (mørke randtekseler) synes gjennom.
+Verre for øyet enn før; tilbakestilt. De røde stripene i gulvet nede til venstre i 311/314 er
+uendret og er IKKE skjøt mellom deler — hull i én del nær kameraet.
