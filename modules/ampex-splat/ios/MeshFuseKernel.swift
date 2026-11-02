@@ -30,6 +30,7 @@ enum MeshFuseKernel {
         float truncBehind; float fx, fy, cx;
         float cy; int dw, dh; float wf0;   // wf0 = trust * jbuNorm (per kart)
         int edgeRadius, jbuScale, _p0, _p1;
+        float lavVekt, _q0, _q1, _q2;   // §140: vekt for lav-konfidens-piksler (lagret som −z); 0 = hopp over
     };
     inline float dep(device const float* d, int x, int y, int w) { return d[y * w + x]; }
     inline float3 kamp(constant P& p, int px, int py, float pz) {
@@ -49,13 +50,19 @@ enum MeshFuseKernel {
         float v = -p.fy * pc.y / zc + p.cy;
         int x = int(u), y = int(v);
         if (x < 1 || y < 1 || x >= p.dw - 1 || y >= p.dh - 1) return;
-        float z = dep(depth, x, y, p.dw);
+        // §140: med lavVekt > 0 leses alle dybder som |z| (lav konfidens er lagret som −z),
+        // og en lav-konfidens-piksel teller med vekt lavVekt. Med 0 er alt som før.
+        bool lav = p.lavVekt > 0;
+        #define DEP(xx, yy) (lav ? fabs(dep(depth, (xx), (yy), p.dw)) : dep(depth, (xx), (yy), p.dw))
+        float zr = dep(depth, x, y, p.dw);
+        float wl = (lav && zr < 0) ? p.lavVekt : 1.0;
+        float z = DEP(x, y);
         if (z <= 0.3 || z >= 5.0) return;
         // Kantfilter — identisk med CPU-veien (edgeRadius 0/1/2, skalert med JBU).
         float lim = max(0.04, 0.03 * z);
         bool edge = false;
         if (p.edgeRadius <= 0) {
-            float dz = max(fabs(dep(depth, x + 1, y, p.dw) - z), fabs(dep(depth, x, y + 1, p.dw) - z));
+            float dz = max(fabs(DEP(x + 1, y) - z), fabs(DEP(x, y + 1) - z));
             edge = dz > lim;
         } else {
             int r1 = p.jbuScale, r2 = 2 * p.jbuScale;
@@ -64,7 +71,7 @@ enum MeshFuseKernel {
             int n = p.edgeRadius >= 2 ? 8 : 4;
             for (int k = 0; k < n && !edge; k++) {
                 if (nx[k] < 0 || ny[k] < 0 || nx[k] >= p.dw || ny[k] >= p.dh) continue;
-                float dn = dep(depth, nx[k], ny[k], p.dw);
+                float dn = DEP(nx[k], ny[k]);
                 if (dn > 0.3 && fabs(dn - z) > lim) edge = true;
             }
         }
@@ -76,8 +83,8 @@ enum MeshFuseKernel {
             int r = 2 * max(1, p.jbuScale);
             int xa = max(x - r, 0), xb = min(x + r, p.dw - 1);
             int ya = max(y - r, 0), yb = min(y + r, p.dh - 1);
-            float za = dep(depth, xa, y, p.dw), zb = dep(depth, xb, y, p.dw);
-            float zu = dep(depth, x, ya, p.dw), zd = dep(depth, x, yb, p.dw);
+            float za = DEP(xa, y), zb = DEP(xb, y);
+            float zu = DEP(x, ya), zd = DEP(x, yb);
             if (za <= 0.3 || zb <= 0.3 || zu <= 0.3 || zd <= 0.3) return;
             float3 c0 = kamp(p, x, y, z);
             float3 n = cross(kamp(p, xb, y, zb) - kamp(p, xa, y, za), kamp(p, x, yb, zd) - kamp(p, x, ya, zu));
@@ -100,7 +107,8 @@ enum MeshFuseKernel {
         float sdf = (z - zc) * len;
         if (sdf > p.trunc || sdf < -p.truncBehind) return;
         float d = clamp(sdf / p.trunc, -1.0, 1.0);
-        float wf = max(0.25, min(1.5, 1.5 / max(z, 0.4))) * p.wf0;
+        float wf = max(0.25, min(1.5, 1.5 / max(z, 0.4))) * p.wf0 * wl;
+        #undef DEP
         atomic_fetch_add_explicit(&sumWD[slot], d * wf, memory_order_relaxed);
         atomic_fetch_add_explicit(&sumW[slot],  wf,     memory_order_relaxed);
     }
@@ -154,5 +162,6 @@ enum MeshFuseKernel {
         var truncBehind: Float; var fx: Float, fy: Float, cx: Float
         var cy: Float; var dw: Int32, dh: Int32; var wf0: Float
         var edgeRadius: Int32, jbuScale: Int32, p0: Int32, p1: Int32
+        var lavVekt: Float = 0, q0: Float = 0, q1: Float = 0, q2: Float = 0
     }
 }

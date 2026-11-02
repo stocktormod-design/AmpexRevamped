@@ -270,7 +270,8 @@ enum MeshTsdfBuild {
                               dims: SIMD3<Int32>(Int32(dim.x), Int32(dim.y), Int32(dim.z)), trunc: trunc,
                               truncBehind: truncBehind, fx: f.fx, fy: f.fy, cx: f.cx,
                               cy: f.cy, dw: Int32(f.w), dh: Int32(f.h), wf0: f.trust * norm,
-                              edgeRadius: Int32(options.edgeRadius), jbuScale: Int32(f.jbuScale), p0: retning, p1: Int32(bitPattern: yaw.bitPattern))
+                              edgeRadius: Int32(options.edgeRadius), jbuScale: Int32(f.jbuScale), p0: retning, p1: Int32(bitPattern: yaw.bitPattern),
+                              lavVekt: lavKonfVekt)
             guard let c = cb, let enc = c.makeComputeCommandEncoder() else { continue }
             enc.setComputePipelineState(pipe)
             enc.setBuffer(wdBuf, offset: 0, index: 0)
@@ -517,6 +518,8 @@ enum MeshTsdfBuild {
         }
         let S = store.sdf, W = store.wgt
         let jbuRaw = UserDefaults.standard.string(forKey: "meshscan.jbuweight") == "raw"
+        let lavKonfVekt = Self.lavKonfVekt   // én gang — CPU-veien leser den per piksel
+        @inline(__always) func dyp(_ v: Float) -> Float { lavKonfVekt > 0 ? abs(v) : v }
         func jbuNorm(_ f: DFrame) -> Float {
             jbuRaw || f.jbuScale <= 1 ? 1 : 1 / Float(f.jbuScale * f.jbuScale)
         }
@@ -579,12 +582,17 @@ enum MeshTsdfBuild {
                         let y = ri + 1
                         var n = 0
                         for x in 1..<(f.w - 1) {
-                            let z = dep[y * f.w + x]
+                            // §140: lav konfidens er lagret som −z (nye skann). Brukes med vekt
+                            // `lavKonfVekt`; kanttesten ser på |z| så hopp mot lav konfidens
+                            // fortsatt er kanter, men en sammenhengende svart flate ikke er det.
+                            var z = dep[y * f.w + x]
+                            var vLav: Float = 1
+                            if z < 0, lavKonfVekt > 0 { z = -z; vLav = lavKonfVekt }
                             guard z > 0.3, z < 5.0 else { continue }
                             let lim = max(0.04, 0.03 * z)
                             var edge = false
                             if options.edgeRadius <= 0 {
-                                let dz = max(abs(dep[y * f.w + x + 1] - z), abs(dep[(y + 1) * f.w + x] - z))
+                                let dz = max(abs(dyp(dep[y * f.w + x + 1]) - z), abs(dyp(dep[(y + 1) * f.w + x]) - z))
                                 edge = dz > lim
                             } else {
                                 let r1 = f.jbuScale, r2 = 2 * f.jbuScale
@@ -592,7 +600,7 @@ enum MeshTsdfBuild {
                                 if options.edgeRadius >= 2 { nb += [(x + r2, y), (x - r2, y), (x, y + r2), (x, y - r2)] }
                                 for (nx, ny) in nb {
                                     guard nx >= 0, ny >= 0, nx < f.w, ny < f.h else { continue }
-                                    let dn = dep[ny * f.w + nx]
+                                    let dn = dyp(dep[ny * f.w + nx])
                                     if dn > 0.3, abs(dn - z) > lim { edge = true; break }
                                 }
                             }
@@ -600,7 +608,7 @@ enum MeshTsdfBuild {
                             let pc = SIMD3<Float>((Float(x) - f.cx) / f.fx, -(Float(y) - f.cy) / f.fy, -1)
                             let raw = (f.c2w * SIMD4(pc, 0)).xyz
                             let len = simd_length(raw)
-                            let wf = max(0.25, min(1.5, 1.5 / max(z, 0.4))) * f.trust * jbuNorm(f)
+                            let wf = max(0.25, min(1.5, 1.5 / max(z, 0.4))) * f.trust * jbuNorm(f) * vLav
                             mbuf[ri * bredde + n] = Maaling(org: org, dir: raw / len, zr: z * len, wf: wf)
                             n += 1
                         }
@@ -1130,7 +1138,8 @@ enum MeshTsdfBuild {
                               dims: SIMD3<Int32>(Int32(vol.dim.x), Int32(vol.dim.y), Int32(vol.dim.z)), trunc: trunc,
                               truncBehind: truncBehind, fx: f.fx, fy: f.fy, cx: f.cx,
                               cy: f.cy, dw: Int32(f.w), dh: Int32(f.h), wf0: f.trust * norm,
-                              edgeRadius: Int32(options.edgeRadius), jbuScale: Int32(f.jbuScale), p0: retning, p1: Int32(bitPattern: yaw.bitPattern))
+                              edgeRadius: Int32(options.edgeRadius), jbuScale: Int32(f.jbuScale), p0: retning, p1: Int32(bitPattern: yaw.bitPattern),
+                              lavVekt: lavKonfVekt)
             guard let c = cb, let enc = c.makeComputeCommandEncoder() else { continue }
             enc.setComputePipelineState(pipe)
             enc.setBuffer(wdBuf, offset: 0, index: 0)
@@ -2054,6 +2063,13 @@ enum MeshTsdfBuild {
             x[r] = s / A[r * 6 + r]
         }
         return x.allSatisfy { $0.isFinite } ? x : nil
+    }
+
+    /// §140: vekt for lav-konfidens-dybde (svarte/blanke flater), lagret som −z i nye skann.
+    /// 0,25 = fire slike målinger veier som én vanlig. meshscan.lavkonfvekt = 0 slår av.
+    static var lavKonfVekt: Float {
+        if let s = UserDefaults.standard.string(forKey: "meshscan.lavkonfvekt"), let v = Float(s), v >= 0 { return min(v, 1) }
+        return 0.25
     }
 
     private static func trustForMotion(_ lin: Float, _ rot: Float, _ maxVel: Float) -> Float {

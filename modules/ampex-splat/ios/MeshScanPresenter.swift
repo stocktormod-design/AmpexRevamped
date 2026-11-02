@@ -1254,7 +1254,8 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
               case .normal = frame.camera.trackingState,
               UserDefaults.standard.string(forKey: "meshscan.densedepth") != "off",
               let sd = frame.sceneDepth ?? frame.smoothedSceneDepth,
-              let depth = MeshScanPresenter.tightDepth(sd.depthMap, confidence: sd.confidenceMap)
+              let depth = MeshScanPresenter.tightDepth(sd.depthMap, confidence: sd.confidenceMap,
+                                                       lavNegativ: UserDefaults.standard.string(forKey: "meshscan.lavkonf") != "off")
         else { return }
         lastDenseTime = frame.timestamp
         let idx = denseCount
@@ -1623,7 +1624,11 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     /// same dimensions as the depth map when present. Pixels at .low are zeroed — every downstream
     /// reader already treats z<=0.25 as "no sample" (TSDFFusion integration + ICP + bounds sampling),
     /// so this alone drops low-confidence depth everywhere without touching any of that code.
-    private static func tightDepth(_ pb: CVPixelBuffer, confidence: CVPixelBuffer? = nil) -> (data: Data, width: Int, height: Int)? {
+    /// `lavNegativ`: lav-konfidens-piksler lagres som −z i stedet for 0 (§140). Alle lesere
+    /// av dybdekartene krever z > 0,05–0,3, så de hopper over dem som før; bare TSDF-en i
+    /// baken kan velge å bruke dem med lav vekt (svarte og blanke flater).
+    private static func tightDepth(_ pb: CVPixelBuffer, confidence: CVPixelBuffer? = nil,
+                                   lavNegativ: Bool = false) -> (data: Data, width: Int, height: Int)? {
         CVPixelBufferLockBaseAddress(pb, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(pb) else { return nil }
@@ -1649,7 +1654,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 guard let confBase else { continue }
                 let confRow = confBase.advanced(by: row * confBpr).assumingMemoryBound(to: UInt8.self)
                 let depthRow = dstRow.assumingMemoryBound(to: Float32.self)
-                for col in 0..<w where confRow[col] == 0 { depthRow[col] = 0 } // .low → treat as unobserved
+                for col in 0..<w where confRow[col] == 0 {                      // .low → treat as unobserved
+                    depthRow[col] = lavNegativ ? -abs(depthRow[col]) : 0
+                }
             }
         }
         return (out, w, h)

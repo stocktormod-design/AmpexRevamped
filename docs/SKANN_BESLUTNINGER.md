@@ -5890,3 +5890,31 @@ alle akkumulatorene samtidig — for mye minne på telefon — eller en hurtigbu
 
 **AR-visningen i 30 fps.** `preferredFramesPerSecond` = kameraformatets takt (30 for 4K) i stedet
 for SceneKits 60. Annenhver tegning var lik den forrige. Ikke målt på telefon.
+
+## §139 Overlappet dekoding og GPU — prøvd, forkastet (02.11)
+
+Pass 2 committet puljen uten å vente og dekodet neste mens GPU-en tegnet. Del 4 på huset ga
+**identiske** tider per flis (farge-pass 2,0–2,1 s, cpu 1,0 + «gpu» 0,8 s, før og etter).
+«gpu»-tida er CPU-arbeid — `replace` av 33 MB per bilde inn i teksturen, buffere, mipmaps — ikke
+venting på GPU-en, så det var ingenting å skjule. Tilbakestilt (kostet +100 MB per flis).
+Simulatoren er ikke telefonen, men uten målt gevinst beholdes ikke minnekostnaden.
+
+## §140 Lav-konfidens-dybde for svarte og blanke flater (02.11)
+
+**Hull etter §137** ligger mest på svarte/mørke og blanke flater: ARKit merker dybden der som
+`.low`, og `tightDepth` satte den til 0 ved opptak — informasjonen fantes aldri i bundelen.
+
+**Opptak:** dense-kartene (5 Hz, det TSDF-en bygger av) lagrer nå lav konfidens som **−z** i
+stedet for 0 (`meshscan.lavkonf off` = gammelt). Alle lesere av dybdekartene krever z > 0,05–0,3
+(sjekket: TSDF CPU/GPU, bildebinding, delkart-fusjonen live, synlighet i MeshBakeArbeider,
+romgrenser), så de hopper over −z akkurat som 0. Nøkkelbildenes dybde og okklusjonen er urørt.
+
+**Bake:** `ampex_fuse` leser |z| når `lavVekt` > 0, og en lav-konfidens-piksel teller med vekt
+0,25 (`meshscan.lavkonfvekt`, 0 = av). Kanttesten ser på |z|, så et hopp mot lav konfidens er
+fortsatt en kant (flygende piksler i dybdekanter forkastes som før), men en sammenhengende svart
+flate er det ikke. Med vektterskel 1,0 (§136) trengs ~4–6 slike kart før en voxel overlever —
+tilfeldige flygende piksler samler seg ikke, en svart benkeplate sett i ett sekund gjør det.
+Live-fusjonen sender `lavVekt` 0 og er uendret.
+
+Gamle skann har ingen −z og baker identisk (soverommet, se under). Effekten kan bare måles på et
+NYTT skann fra telefonen.
