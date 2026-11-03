@@ -210,7 +210,7 @@ enum MeshBakeArbeider {
             omfang = omfangene[b.n]
             let ut = autoreleasepool { () -> (URL, Double?)? in
                 guard var mesh = lesNett(b.nett) else { MeshLog.log("hus — delkart \(id): fant ikke nettet"); return nil }
-                mesh = flytt(mesh, G[j])
+                mesh = flytt(MeshBakeV2.forlengRand(mesh), G[j])
                 let bilder = flytt(b.bilder, G[j])
                 let før = mesh.indices.count / 3
                 let sveisetFør = eldre.sveiset, randFør = eldre.randvertekser

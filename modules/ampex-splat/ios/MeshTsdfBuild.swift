@@ -51,7 +51,9 @@ enum MeshTsdfBuild {
         /// Kantfilterets radius (LiDAR-piksler): 1 = fire naboer. 2 (to radier) fjernet 13–22 %
         /// av pikslene og ga hull; 1 er praktisk talt likt den gamle høyre/ned-testen, men
         /// symmetrisk. Se meshscan.tsdfedge.
-        var edgeRadius: Int = 1
+        /// 0 (§142, 03.11): bare høyre/ned-naboen. Grå bånd rundt bord, sofa og stol i Tormods stue;
+        /// hullpiksler −17 % der, −12 % på huset (median 2,0 → 1,7 %), løse biter uendret 8,24 m².
+        var edgeRadius: Int = 0
         /// Minste akkumulerte vekt før en voxel regnes som ekte flate. Lavt gir krøllete
         /// falske flater der bare én-to stråler har vært innom; høyt spiser hull. Var 4 (hevet
         /// fra 3 sammen med trunkeringen, mot det svakeste laget i en dobbeltflate).

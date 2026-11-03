@@ -47,6 +47,84 @@ enum MeshBakeV2 {
         var planeLock: Bool = true
     }
 
+    /// RANDFORLENGELSE (§143, 2026-11-03). Grå bånd rundt bord, sofa og stol i Tormods stue var
+    /// ÅPNE render, ikke lukkede hull: TSDF-flaten slutter 2–5 cm før den virkelige kanten, fordi
+    /// pikslene ved et dybdehopp forkastes og voxlene utenfor kanten aldri får vekt. Hver åpen
+    /// randkant får en stripe som fortsetter i nabotrekantens plan, `meshscan.randforleng` cm ut
+    /// (standard 5, 0 = av). Retningen per randhjørne er snittet av de to randkantenes utoverpil;
+    /// hjørner der pilene peker hver sin vei (spisse hjørner, ikke-mangfoldige punkter) står stille.
+    static func forlengRand(_ inn: MergedMesh) -> MergedMesh {
+        let d = Float(flaggTall("meshscan.randforleng", 5)) / 100
+        guard d > 0, inn.indices.count >= 3 else { return inn }
+        var m = inn
+        let nv = m.positions.count / 3, nt = m.indices.count / 3
+        func p(_ i: Int) -> SIMD3<Float> { SIMD3(m.positions[i * 3], m.positions[i * 3 + 1], m.positions[i * 3 + 2]) }
+        // Kopier av samme hjørne slås sammen på posisjon (0,5 mm), som i klippet (MeshBakeArbeider).
+        var kanon = [Int](repeating: 0, count: nv)
+        var førsteMed = [SIMD3<Int32>: Int](minimumCapacity: nv)
+        for v in 0..<nv {
+            let q = p(v) / 0.0005
+            guard q.x.isFinite, q.y.isFinite, q.z.isFinite, simd_reduce_max(simd_abs(q)) < 2e9 else { kanon[v] = v; continue }
+            let k = SIMD3<Int32>(q.rounded(.toNearestOrEven))
+            if let f = førsteMed[k] { kanon[v] = f } else { førsteMed[k] = v; kanon[v] = v }
+        }
+        @inline(__always) func nøkkel(_ a: Int, _ b: Int) -> UInt64 { UInt64(UInt32(min(a, b))) << 32 | UInt64(UInt32(max(a, b))) }
+        var teller = [UInt64: UInt8](minimumCapacity: nt * 2)
+        for t in 0..<nt {
+            for j in 0..<3 {
+                let a = kanon[Int(m.indices[t * 3 + j])], b = kanon[Int(m.indices[t * 3 + (j + 1) % 3])]
+                if a != b { teller[nøkkel(a, b), default: 0] &+= 1 }
+            }
+        }
+        // Randkanter a→b i trekantens retning, med utoverpil i trekantens plan.
+        var kanter: [(a: Int, b: Int, t: Int)] = []
+        var pil = [Int: SIMD3<Float>](), antall = [Int: Int]()
+        for t in 0..<nt {
+            let i0 = kanon[Int(m.indices[t * 3])], i1 = kanon[Int(m.indices[t * 3 + 1])], i2 = kanon[Int(m.indices[t * 3 + 2])]
+            let vs = [i0, i1, i2]
+            for j in 0..<3 {
+                let a = vs[j], b = vs[(j + 1) % 3], c = vs[(j + 2) % 3]
+                guard a != b, teller[nøkkel(a, b)] == 1 else { continue }
+                let pa = p(a), pb = p(b), pc = p(c)
+                let e = pb - pa, el = simd_length(e)
+                guard el > 1e-6 else { continue }
+                let eu = e / el
+                var ut = pa - pc; ut -= simd_dot(ut, eu) * eu       // vinkelrett på kanten, bort fra trekanten
+                let ul = simd_length(ut)
+                guard ul > 1e-6 else { continue }
+                ut /= ul
+                kanter.append((a, b, t))
+                pil[a, default: .zero] += ut; pil[b, default: .zero] += ut
+                antall[a, default: 0] += 1; antall[b, default: 0] += 1
+            }
+        }
+        guard !kanter.isEmpty else { return m }
+        // Nytt hjørne per randhjørne. To randkanter per hjørne er det vanlige; flere = ikke-mangfoldig.
+        var nytt = [Int: Int]()
+        for (v, sum) in pil {
+            guard antall[v] == 2 else { continue }
+            let l = simd_length(sum)
+            guard l > 0.6 else { continue }                       // pilene peker ikke hver sin vei
+            let q = p(v) + sum / l * d
+            nytt[v] = m.positions.count / 3
+            m.positions += [q.x, q.y, q.z]
+            if m.normals.count >= (v + 1) * 3 { m.normals += Array(m.normals[(v * 3)..<(v * 3 + 3)]) }
+            else if m.normals.count == (m.positions.count / 3 - 1) * 3 { m.normals += [0, 1, 0] }
+        }
+        let harAnker = m.triAnchor.count == nt, harKlasse = m.faceClass.count == nt
+        var lagt = 0
+        for (a, b, t) in kanter {
+            guard let a2 = nytt[a], let b2 = nytt[b] else { continue }
+            // Trekanten har a→b; stripen må ha b→a.
+            m.indices += [UInt32(b), UInt32(a), UInt32(a2), UInt32(b), UInt32(a2), UInt32(b2)]
+            if harAnker { m.triAnchor += [m.triAnchor[t], m.triAnchor[t]] }
+            if harKlasse { m.faceClass += [m.faceClass[t], m.faceClass[t]] }
+            lagt += 1
+        }
+        MeshLog.log(String(format: "randforlengelse — %d av %d randkanter forlenget %.0f mm", lagt, kanter.count, d * 1000))
+        return m
+    }
+
     /// Normalized source-image warp, matching bakev2_detail_uv in Metal.
     static func warpedImageUV(_ uv: SIMD2<Float>, grid: [SIMD2<Float>], width: Int, height: Int) -> SIMD2<Float> {
         guard width >= 2, height >= 2, grid.count == width * height else { return uv }
@@ -703,6 +781,9 @@ enum MeshBakeV2 {
                                    bort.count, bort.reduce(0, +), fjernet, småGrense))
             }
         }
+        // Randforlengelse (§143): for hus gjøres den per del FØR klippet mot eldre deler (MeshBakeArbeider),
+        // ellers ville randen klippet lager blitt forlenget inn i den eldre flaten (§141).
+        if MeshBakeArbeider.omfang == nil { mesh = forlengRand(mesh) }
         let bigMesh = mesh.indices.count / 3 > 300_000
         var didSimplify = false
         var simplifyFlag = UserDefaults.standard.string(forKey: "meshscan.simplify")

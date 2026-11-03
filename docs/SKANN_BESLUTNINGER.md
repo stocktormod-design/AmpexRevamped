@@ -5927,3 +5927,39 @@ hullpiksler −5 %, `skjot.py` nesten uendret. Men render 314 (trappa) fikk NYE 
 streker over trinnene: randen til den overlappende delen (mørke randtekseler) synes gjennom.
 Verre for øyet enn før; tilbakestilt. De røde stripene i gulvet nede til venstre i 311/314 er
 uendret og er IKKE skjøt mellom deler — hull i én del nær kameraet.
+
+## §142 Smalere kantfilter (03.11)
+
+Tormods stue (c9844981d, telefon 03.11) hadde grå bånd rundt bord, sofa og stol. `edgeRadius` 1 → 0
+(bare høyre/ned-naboen, som før §114). Ren A/B (NB: de første A/B-ene 03.11 kjørte på et simulator-
+bygg som fortsatt hadde skjørtet fra §141 — kildekoden var tilbakestilt, bygget ikke):
+
+| | hullpiksler | median / snitt | løse biter |
+|---|---|---|---|
+| stue, edge 1 | 86 195 | 1,6 / 2,7 % | 4,69 m² |
+| stue, edge 0 | 72 164 (−16 %) | 1,2 / 2,3 % | 5,01 m² |
+| hus, edge 1 (hus13) | 304 840 | 2,0 / 3,4 % | 8,24 m² |
+| hus, edge 0 (hus16) | 286 126 (−6 %) | 1,8 / 3,2 % | 8,03 m² |
+
+Lukkede små hull ble også prøvd (vifte over randløkker med hull-orientering): bare 10 hull,
+0,01 m² i stua, +70 s. Forkastet — de grå båndene er ÅPNE render, ikke hull.
+
+## §143 Randforlengelse 5 cm (03.11)
+
+TSDF-flaten slutter 2–5 cm før den virkelige kanten (kantpiksler forkastes, voxlene utenfor kanten
+får aldri vekt). `MeshBakeV2.forlengRand`: hver åpen randkant får en stripe i nabotrekantens plan,
+5 cm ut (`meshscan.randforleng` cm, 0 = av). Retning per randhjørne = snittet av de to randkantenes
+utoverpil; spisse og ikke-mangfoldige hjørner står stille. For hus kjøres den per del FØR klippet
+mot eldre deler, så stripene ved skjøtene klippes bort og ikke blir et nytt overlapp (§141).
+
+| | hullpiksler | median / snitt | flate | løse biter | tid |
+|---|---|---|---|---|---|
+| stue, uten | 72 164 | 1,2 / 2,3 % | 134 m² | 5,0 m² | |
+| stue, 3 cm | 25 465 | 0,2 / 0,8 % | 146 m² | 5,1 m² | |
+| stue, 5 cm | **14 244** | **0,0 / 0,5 %** | 158 m² | 5,6 m² | |
+| hus, uten (hus16) | 286 126 | 1,8 / 3,2 % | 379 m² | 8,0 m² | 501 s |
+| hus, 5 cm (hus17) | **120 104** | **0,3 / 1,3 %** | 465 m² | 11,2 m² | 527 s |
+
+Render: sofa-, stol- og gardinkanter lukket, stripa langs bordkanten nesten borte, ingen sorte
+sikksakk-streker (som skjørtet ga). Trappa (314): færre glipper, et par små mørke flekker. Det som
+står igjen er sett aldri (under bordkanten, mørke åpninger) og glass (peisglasset).
