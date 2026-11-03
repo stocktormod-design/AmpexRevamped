@@ -100,12 +100,41 @@ enum MeshBakeV2 {
         }
         guard !kanter.isEmpty else { return m }
         // Nytt hjørne per randhjørne. To randkanter per hjørne er det vanlige; flere = ikke-mangfoldig.
+        // FRI KANT eller GLIPE (§144). En rand som har annen flate rett foran seg (sofa mot gulv,
+        // gardin mot vegg) er en glipe og forlenges helt til `d`. En rand med luft foran seg
+        // (bordkanten over gulvet) forlenges bare `fri` cm: der vet vi ikke hvor den virkelige
+        // kanten går, og 5 cm ut malte stripa med teppet bak, så bordkanten forsvant (Tormod 03.11).
+        let fri = Float(flaggTall("meshscan.randfri", 2)) / 100
+        let celle: Float = 0.02
+        func ck(_ q: SIMD3<Float>) -> SIMD3<Int32> { SIMD3<Int32>((q / celle).rounded(.down)) }
+        var rutenett = [SIMD3<Int32>: [Int32]](minimumCapacity: nv / 4)
+        for v in 0..<nv where kanon[v] == v { rutenett[ck(p(v)), default: []].append(Int32(v)) }
+        func glipe(_ v: Int, _ u: SIMD3<Float>) -> Bool {
+            let pv = p(v)
+            for s in [Float(0.025), 0.04, d] where s <= d + 1e-4 {
+                let q = pv + u * s, k = ck(q)
+                for dz in -1...1 { for dy in -1...1 { for dx in -1...1 {
+                    guard let liste = rutenett[k &+ SIMD3(Int32(dx), Int32(dy), Int32(dz))] else { continue }
+                    for w in liste {
+                        let pw = p(Int(w))
+                        if simd_dot(pw - pv, u) > 0.01, simd_length_squared(pw - q) < 0.02 * 0.02 { return true }
+                    }
+                } } }
+            }
+            return false
+        }
         var nytt = [Int: Int]()
+        var glipeAntall = 0
         for (v, sum) in pil {
             guard antall[v] == 2 else { continue }
             let l = simd_length(sum)
             guard l > 0.6 else { continue }                       // pilene peker ikke hver sin vei
-            let q = p(v) + sum / l * d
+            let u = sum / l
+            let erGlipe = glipe(v, u)
+            if erGlipe { glipeAntall += 1 }
+            let lengde = erGlipe ? d : min(d, fri)
+            guard lengde > 0 else { continue }
+            let q = p(v) + u * lengde
             nytt[v] = m.positions.count / 3
             m.positions += [q.x, q.y, q.z]
             if m.normals.count >= (v + 1) * 3 { m.normals += Array(m.normals[(v * 3)..<(v * 3 + 3)]) }
@@ -121,7 +150,8 @@ enum MeshBakeV2 {
             if harKlasse { m.faceClass += [m.faceClass[t], m.faceClass[t]] }
             lagt += 1
         }
-        MeshLog.log(String(format: "randforlengelse — %d av %d randkanter forlenget %.0f mm", lagt, kanter.count, d * 1000))
+        MeshLog.log(String(format: "randforlengelse — %d av %d randkanter forlenget; %d av %d randhjørner er glipe (%.0f mm), resten fri kant (%.0f mm)",
+                           lagt, kanter.count, glipeAntall, nytt.count, d * 1000, min(d, fri) * 1000))
         return m
     }
 

@@ -5963,3 +5963,13 @@ mot eldre deler, så stripene ved skjøtene klippes bort og ikke blir et nytt ov
 Render: sofa-, stol- og gardinkanter lukket, stripa langs bordkanten nesten borte, ingen sorte
 sikksakk-streker (som skjørtet ga). Trappa (314): færre glipper, et par små mørke flekker. Det som
 står igjen er sett aldri (under bordkanten, mørke åpninger) og glass (peisglasset).
+
+## §144 Fri kant 2 cm, glipe 5 cm (03.11)
+
+Tormod på telefon etter §143: «bordet forsvinner litt i kanten». 5 cm forlengelse ut i luft (bordkant
+over gulv) gikk forbi den virkelige kanten, og stripa ble malt med teppet bak — kanten ble utvisket.
+Nå sjekkes hvert randhjørne: finnes annen flate foran randen innen 5 cm (2 cm-rutenett, punkt med
+positiv avstand langs pila og innen 2 cm fra prøvepunktet), er det en glipe og forlenges 5 cm; ellers
+er det en fri kant og forlenges 2 cm (`meshscan.randfri`). Stua: 40 % av randhjørnene er glipe.
+Hullpiksler 72 164 (uten) → 28 968 (glipe/fri) mot 14 244 (5 cm overalt). Render: bordkanten skarp
+igjen, sofaglipa fortsatt lukket; tynn rød stripe langs bordets side (aldri sett).
