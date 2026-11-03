@@ -5973,3 +5973,12 @@ positiv avstand langs pila og innen 2 cm fra prøvepunktet), er det en glipe og 
 er det en fri kant og forlenges 2 cm (`meshscan.randfri`). Stua: 40 % av randhjørnene er glipe.
 Hullpiksler 72 164 (uten) → 28 968 (glipe/fri) mot 14 244 (5 cm overalt). Render: bordkanten skarp
 igjen, sofaglipa fortsatt lukket; tynn rød stripe langs bordets side (aldri sett).
+
+## §145 Sagtenner langs bordkanten — ikke fra randforlengelsen (03.11)
+
+Tormods skjermbilde (Skann 14) viste lange tenner langs bordkanten mot sofaen og på veggsøylen.
+Render 77 av samme bake: tennene finnes LIKT i edge 1 uten forlengelse, edge 0 uten forlengelse,
+og med glipe/fri-forlengelse — og uten forenkling (`meshscan.simplify off`). De er TSDF-geometri
+der kanten bare er sett fra få, bratte vinkler. Laplace-glatting av ytterringen (8 runder) ga
+ingen synlig forskjell og flere hullpiksler (28 968 → 32 660); tilbakestilt. Mulig vei: trimme
+randen mot fotoets silhuett (fargeskille mellom bord og teppe) — større jobb.
