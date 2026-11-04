@@ -5982,3 +5982,23 @@ og med glipe/fri-forlengelse — og uten forenkling (`meshscan.simplify off`). D
 der kanten bare er sett fra få, bratte vinkler. Laplace-glatting av ytterringen (8 runder) ga
 ingen synlig forskjell og flere hullpiksler (28 968 → 32 660); tilbakestilt. Mulig vei: trimme
 randen mot fotoets silhuett (fargeskille mellom bord og teppe) — større jobb.
+
+## §146 Guidet matching i bildebinding trinn 2 — bygget, AV som standard (04.11)
+
+Trinn 2 kjører alle-mot-alle SIFT-matching på GPU igjen (~11 s per del på telefonen) selv om posene
+allerede er bundet. Prøvd: hvert trekk sammenlignes bare med trekk innen 3 × vinduet rundt spådd posisjon
+(rutenett per bilde, forholdstest mot naboene, beste treff innen vinduet), valgfritt gjensidig sjekk.
+
+Stua (102 bilder, del 0 trinn 2, simulator):
+
+| variant | matching | treff | epipolar median / p90 | flytt median | hull |
+|---|---|---|---|---|---|
+| alle mot alle (i dag) | 2.3 s | 82 366 | 0.55 / 1.64 px | 4 mm | 29 181 |
+| guidet, ratio 0.8 | 0.8 s | 106 817 | 0.72 / 2.68 | 8 mm | 29 171 |
+| guidet + gjensidig | 0.8 s | 102 993 | 0.69 / 2.40 | 7 mm | 23 629 |
+| guidet + gjensidig, ratio 0.7 | 0.5 s | 93 171 | 0.63 / 1.94 | 6 mm | 26 614 |
+
+3–4× raskere matching, men p90 kommer aldri ned på dagens nivå: den lokale forholdstesten slipper gjennom
+treff som den globale (hele bildet) ville drept. Gevinst på telefon ≈ 8 s per del (~15 s av 3:18) — ikke verdt
+usikker kvalitet. Ligger bak `meshscan.bbguidet on` (+ `meshscan.bbgjensidig`, `meshscan.bbratio`).
+Større tidsposter å ta først: pyramide 54 s, maling 40 s.

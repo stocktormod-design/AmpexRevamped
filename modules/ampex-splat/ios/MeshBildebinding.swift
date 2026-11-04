@@ -21,6 +21,8 @@ import simd
 /// Frittstående (Foundation + simd + Accelerate + MeshSift) så den kjøres fra kommandolinja
 /// på Mac-en mot fixturene.
 enum MeshBildebinding {
+    static var guidetGjensidig: Bool { UserDefaults.standard.string(forKey: "meshscan.bbgjensidig") != "off" }
+    static var guidetRatio: Double { let r = UserDefaults.standard.double(forKey: "meshscan.bbratio"); return r > 0 ? r * r : 0.64 }
     struct Bilde {
         let index: Int
         let timestamp: Double
@@ -46,6 +48,7 @@ enum MeshBildebinding {
         var lager: TrekkLager? = nil  // trekk fra en tidligere kjøring (ommatching uten ny SIFT)
         var dumpObs: URL? = nil
         var kart: URL? = nil          // §110: landemerkene som relokaliseringskart (MeshRelok)
+        var guidet = false            // §146: kandidater bare rundt spådd posisjon (trinn 2), ikke alle mot alle
     }
 
     /// SIFT-trekkene fra én kjøring, så andre trinn (ommatching med bundne poser) slipper å regne dem på nytt.
@@ -226,14 +229,79 @@ enum MeshBildebinding {
         }
 
         // ── 3. Matching (alle mot alle på GPU) → spådd posisjon → RANSAC ──────────────
-        let knn = sift.matchAll(descriptors: dbuf, offsets: off, pairs: par)
+        // §146 GUIDET MATCHING i trinn 2: posene er bundet, så hvert trekk sammenlignes bare med trekk
+        // innen 3 × vinduet rundt der det spås å havne (forholdstesten mot dem), og beste treff må ligge
+        // innen vinduet. Alle-mot-alle på GPU kostet 11 s per del på telefonen; dette er en brøkdel.
+        let knn = o.guidet ? [] : sift.matchAll(descriptors: dbuf, offsets: off, pairs: par)
+        let rCelle = max(8.0, o.tol), rSøk = 3 * o.tol
+        let gRatio = MeshBildebinding.guidetRatio, gGjensidig = MeshBildebinding.guidetGjensidig
+        var trekkNett = [[Int64: [Int32]]](repeating: [:], count: o.guidet ? N : 0)
+        if o.guidet {
+            for f in 0..<N {
+                var g = [Int64: [Int32]]()
+                for (b, q) in XY[f].enumerated() {
+                    let k = Int64(Double(q.x) / rCelle) << 32 | Int64(UInt32(bitPattern: Int32(Double(q.y) / rCelle)))
+                    g[k, default: []].append(Int32(b))
+                }
+                trekkNett[f] = g
+            }
+        }
+        let dsk = dbuf.contents().assumingMemoryBound(to: UInt8.self)
+        @inline(__always) func avstand(_ x: Int, _ y: Int) -> Int {
+            let a = dsk + x * 128, b = dsk + y * 128
+            var s = SIMD8<Int32>()
+            var k = 0
+            while k < 128 {
+                let va = SIMD8<Int32>(truncatingIfNeeded: UnsafeRawPointer(a + k).loadUnaligned(as: SIMD8<UInt8>.self))
+                let vb = SIMD8<Int32>(truncatingIfNeeded: UnsafeRawPointer(b + k).loadUnaligned(as: SIMD8<UInt8>.self))
+                let d = va &- vb
+                s &+= d &* d
+                k += 8
+            }
+            return Int(s.wrappedSum())
+        }
         struct Obs { var i: Int32, j: Int32, qi: Int32, qj: Int32; var ui: Double, vi: Double, uj: Double, vj: Double, zi: Double }
         var parObs = [[Obs]](repeating: [], count: par.count)
         parObs.withUnsafeMutableBufferPointer { slots in
             DispatchQueue.concurrentPerform(iterations: par.count) { pi in
-                let (i, j) = par[pi], m = knn[pi]
-                guard m.count == XY[i].count, XY[i].count >= 10, XY[j].count >= 10 else { return }
+                let (i, j) = par[pi]
                 var kand: [Obs] = []
+                if o.guidet {
+                    guard XY[i].count >= 10, XY[j].count >= 10 else { return }
+                    let nett = trekkNett[j]
+                    var bestB = [Int32: (Int, Int)]()   // gjensidig: b → (avstand, kandidatindeks)
+                    for a in 0..<XY[i].count {
+                        let u = Double(XY[i][a].x), v = Double(XY[i][a].y)
+                        let (z, ok) = sampleDepth(i, u, v); guard ok else { continue }
+                        let (p, zp) = project(j, M0i[j], lift(i, M0[i], u, v, z))
+                        guard zp > 0.2 else { continue }
+                        var b1 = -1, d1 = Int.max, d2 = Int.max
+                        let cx0 = Int((p.x - rSøk) / rCelle), cx1 = Int((p.x + rSøk) / rCelle)
+                        let cy0 = Int((p.y - rSøk) / rCelle), cy1 = Int((p.y + rSøk) / rCelle)
+                        guard cx1 >= 0, cy1 >= 0 else { continue }
+                        for cy in max(0, cy0)...cy1 { for cx in max(0, cx0)...cx1 {
+                            guard let liste = nett[Int64(cx) << 32 | Int64(UInt32(bitPattern: Int32(cy)))] else { continue }
+                            for bb in liste {
+                                let b = Int(bb), q = XY[j][b]
+                                guard hypot(Double(q.x) - p.x, Double(q.y) - p.y) < rSøk else { continue }
+                                let d = avstand(off[i] + a, off[j] + b)
+                                if d < d1 { d2 = d1; d1 = d; b1 = b } else if d < d2 { d2 = d }
+                            }
+                        } }
+                        guard b1 >= 0, d2 == Int.max || Double(d1) < gRatio * Double(d2) else { continue }
+                        let uj = Double(XY[j][b1].x), vj = Double(XY[j][b1].y)
+                        guard hypot(p.x - uj, p.y - vj) < o.tol else { continue }
+                        if gGjensidig, let (dv, kv) = bestB[Int32(b1)] {
+                            if d1 >= dv { continue }
+                            kand[kv].qj = -1   // tidligere vinner taper — b1 er nærmere dette trekket
+                        }
+                        bestB[Int32(b1)] = (d1, kand.count)
+                        kand.append(Obs(i: Int32(i), j: Int32(j), qi: Int32(a), qj: Int32(b1), ui: u, vi: v, uj: uj, vj: vj, zi: z))
+                    }
+                    kand.removeAll { $0.qj < 0 }
+                }
+                let m = o.guidet ? [] : knn[pi]
+                guard o.guidet || (m.count == XY[i].count && XY[i].count >= 10 && XY[j].count >= 10) else { return }
                 for a in 0..<m.count {
                     // Lowes forholdstest over HELE bildet (0,8 på avstand = 0,64 på kvadrat)
                     guard Double(m[a].y) < 0.64 * Double(m[a].z) else { continue }
@@ -757,6 +825,7 @@ enum MeshBildebinding {
             return nb
         }
         var v2 = o; v2.lager = lager; v2.tol = tol2; v2.vinkel = vinkel2
+        v2.guidet = UserDefaults.standard.string(forKey: "meshscan.bbguidet") == "on"   // §146: av — raskere, men dårligere p90
         logg("bildebinding: trinn 2 — ommatching med bundne poser (vindu \(Int(tol2)) px, vinkel \(Int(vinkel2))°)")
         guard let r2 = kjør(framesDir: framesDir, bilder: b2, valg: v2, logg: logg), r2.index == r1.index else { return r1 }
         return Resultat(index: r2.index, t: r2.t, m0: r1.m0, m1: r2.m1, linse: r2.linse, rapport: r1.rapport + r2.rapport,
