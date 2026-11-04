@@ -55,9 +55,15 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
    * løkke: uten den kan en ny arbeider som tar over under omlastingen sette i
    * gang en ny omlasting.
    */
+  //
+  // Bare når en arbeider styrte sida fra før. Første besøk har ingen, og `claim`
+  // fyrer `controllerchange` likevel — omlastingen da sendte den som kom fra en
+  // passordlenke rett forbi passordskjermen (04.11). Det er ingen gammel kode å
+  // bytte ut på første besøk, så det er ingenting å laste på nytt for.
+  const hadde = navigator.serviceWorker.controller !== null
   let laster = false
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (laster) return
+    if (!hadde || laster) return
     laster = true
     window.location.reload()
   })

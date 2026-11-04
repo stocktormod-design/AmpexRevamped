@@ -1,7 +1,7 @@
 import type { Rolle } from '@delt/kontor-tilgang'
 import type { Session } from '@supabase/supabase-js'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { lenke, lenkeFeil, lenkeType, supabase } from '@/supabase'
+import { glemPassordlenke, lenke, lenkeFeil, passordlenke, supabase } from '@/supabase'
 
 export type Profil = {
   id: string
@@ -49,9 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Bare invitasjon og gjenoppretting skal ende i passordskjermen. En bekreftet
   // e-post eller en magisk lenke er en helt vanlig innlogging — den som klikker
   // der har allerede et passord, og skal ikke bes om å finne på et nytt.
-  const [gjenoppretting, setGjenoppretting] = useState(
-    lenkeType !== null || lenke?.type === 'invite' || lenke?.type === 'recovery',
-  )
+  const [gjenoppretting, setGjenoppretting] = useState(passordlenke !== null)
+  // Ferdig, avbrutt eller død lenke: ikke tilbake til passordskjermen ved neste omlasting.
+  useEffect(() => { if (!gjenoppretting) glemPassordlenke() }, [gjenoppretting])
   const [lenkefeil, setLenkefeil] = useState<string | null>(lenkeFeil)
 
   // ── Løs inn koden fra vår egen e-postlenke ──────────────────────────────
