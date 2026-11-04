@@ -718,6 +718,7 @@ enum Blokkpyramide {
   /// via en midlertidig råfil på disk før de kodes til JPEG-nivåer.
   @discardableResult
   static func bygg(_ glb: String, blokk: Float = 1.0, fremdrift: ((Double) -> Void)? = nil) throws -> Int {
+    var tFase = CFAbsoluteTimeGetCurrent(), faser: [String] = []
     guard let fil = try? Data(contentsOf: URL(fileURLWithPath: glb), options: .alwaysMapped), fil.count > 20 else { throw Feil(description: "kan ikke lese GLB") }
     func u32(_ o: Int) -> Int { Int(fil.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: o, as: UInt32.self) }) }
     guard u32(0) == 0x46546C67 else { throw Feil(description: "ikke GLB") }
@@ -816,6 +817,8 @@ enum Blokkpyramide {
       }
     }
     guard !blokker.isEmpty else { throw Feil(description: "ingen trekanter") }
+    func fase(_ n: String) { let t = CFAbsoluteTimeGetCurrent(); faser.append(String(format: "%@ %.1f s", n, t - tFase)); tFase = t }
+    fase("blokker")
 
     // ── 2. Pakk hver blokk (hyller i et kvadrat som vokser til alt får plass).
     let liste = blokker.sorted { ($0.key.x, $0.key.y, $0.key.z) < ($1.key.x, $1.key.y, $1.key.z) }.map(\.value)
@@ -839,22 +842,87 @@ enum Blokkpyramide {
       }
       b.side = side
       b.råOffset = råStørrelse
-      råStørrelse += side * side * 4
+      råStørrelse += (side * side * 4 + 16383) & ~16383   // sidejustert: blokkene kartlegges hver for seg
     }
+    fase("pakking")
     let ut = mappe(glb)
     try? FileManager.default.removeItem(at: ut)
     try FileManager.default.createDirectory(at: ut, withIntermediateDirectories: true)
-    let ledig = ((try? URL(fileURLWithPath: NSTemporaryDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
-      .volumeAvailableCapacityForImportantUsage).map(Int.init) ?? Int.max
-    guard råStørrelse + (2 << 30) < ledig else { throw Feil(description: "for lite lagring (\(råStørrelse >> 20) MB råfil)") }
-    let rå = ut.appendingPathComponent("raa.tmp")
-    FileManager.default.createFile(atPath: rå.path, contents: nil)
-    defer { try? FileManager.default.removeItem(at: rå) }
-    let fh = try FileHandle(forWritingTo: rå)
-    try fh.truncate(atOffset: UInt64(råStørrelse))
 
-    // ── 3. Ett kildebilde om gangen: kopier rektanglene inn i blokkatlasene på disk.
-    let kilder = størrelse.keys.sorted()
+    // ── 3. Ett kildebilde om gangen kopieres inn i blokkatlasene (§147). Får alle plass i ~30 % av ledig
+    // minne, ligger de i RAM; ellers i en råfil som kartlegges blokk for blokk (aldri hele: huset c1794d71
+    // ga en råfil iOS ikke ville kartlegge, telefon 01.11). Før: seek+write per rad — stua 2,6 GB, 32 av 40 s.
+    // Større telefon → mer ledig minne → oftere ingen disk i det hele tatt.
+    let budsjett = Int(Double(MeshSimMem.available()) * 0.3)
+    let tvang = UserDefaults.standard.string(forKey: "meshscan.pyrdisk")   // on/off: tving disk/RAM (test)
+    let iRam = tvang == "off" || (råStørrelse <= budsjett && tvang != "on")
+    var ramBuf: [UnsafeMutableRawPointer] = []
+    var fd: Int32 = -1
+    let rå = ut.appendingPathComponent("raa.tmp")
+    defer {
+      ramBuf.forEach { free($0) }
+      if fd >= 0 { close(fd); try? FileManager.default.removeItem(at: rå) }
+    }
+    if iRam {
+      ramBuf = liste.map { calloc($0.side * $0.side, 4)! }
+    } else {
+      let ledig = ((try? URL(fileURLWithPath: NSTemporaryDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+        .volumeAvailableCapacityForImportantUsage).map(Int.init) ?? Int.max
+      guard råStørrelse + (2 << 30) < ledig else { throw Feil(description: "for lite lagring (\(råStørrelse >> 20) MB råfil)") }
+      fd = open(rå.path, O_RDWR | O_CREAT | O_TRUNC, 0o600)
+      guard fd >= 0, ftruncate(fd, off_t(råStørrelse)) == 0 else { throw Feil(description: "råfil") }
+    }
+    /// Blokkens piksler: RAM-bufferet, eller et kart inn i råfila som `slipp` lukker.
+    func hent(_ n: Int, skriv: Bool) -> UnsafeMutableRawPointer? {
+      if iRam { return ramBuf[n] }
+      let b = liste[n]
+      let p = mmap(nil, b.side * b.side * 4, skriv ? PROT_READ | PROT_WRITE : PROT_READ, MAP_SHARED, fd, off_t(b.råOffset))
+      return p == MAP_FAILED ? nil : p
+    }
+    func slipp(_ n: Int, _ p: UnsafeMutableRawPointer) { if !iRam { munmap(p, liste[n].side * liste[n].side * 4) } }
+
+    // ── 4. Nivåer som JPEG, geometri med UV i blokkatlaset. Én blokk per kjerne.
+    func lagNivåer(_ n: Int, _ b: Blokk, _ px: UnsafeMutableRawPointer) throws -> [String: Any] {
+      let side = b.side
+      guard let prov = CGDataProvider(dataInfo: nil, data: px, size: side * side * 4, releaseData: { _, _, _ in }),
+            var cg = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4,
+                             space: CGColorSpaceCreateDeviceRGB(),
+                             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                             provider: prov, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { throw Feil(description: "atlas \(n)") }
+      var nivåer: [Int] = []
+      while true {
+        let url = ut.appendingPathComponent("b\(n)_L\(nivåer.count).jpg")
+        guard let dst = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) else { throw Feil(description: "jpeg") }
+        CGImageDestinationAddImage(dst, cg, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+        guard CGImageDestinationFinalize(dst) else { throw Feil(description: "jpeg \(n)") }
+        nivåer.append(cg.width)
+        if cg.width <= 32 { break }
+        let nw = max(1, cg.width / 2)
+        guard let ctx = CGContext(data: nil, width: nw, height: nw, bitsPerComponent: 8, bytesPerRow: nw * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { break }
+        ctx.interpolationQuality = .high
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: nw, height: nw))
+        guard let neste = ctx.makeImage() else { break }
+        cg = neste
+      }
+      var geo = b.geo
+      for t in 0..<b.rektAv.count {
+        let r = b.rekter[Int(b.rektAv[t])]
+        for j in 0..<3 {
+          let o = (t * 3 + j) * 5
+          geo[o + 3] = (geo[o + 3] - Float(r.x) + Float(r.ox)) / Float(side)
+          geo[o + 4] = (geo[o + 4] - Float(r.y) + Float(r.oy)) / Float(side)
+        }
+      }
+      try geo.withUnsafeBytes { try Data($0).write(to: ut.appendingPathComponent("b\(n).geo")) }
+      return ["id": n, "lo": [b.lo.x, b.lo.y, b.lo.z], "hi": [b.hi.x, b.hi.y, b.hi.z],
+              "tetthet": (b.texelAreal / max(b.areal, 1e-9)).squareRoot(), "nivåer": nivåer]
+    }
+
+    let t0 = CFAbsoluteTimeGetCurrent()
+    var brukere = [Int: [Int]]()
+    for (n, b) in liste.enumerated() { for bi in Set(b.rekter.map(\.bilde)) { brukere[bi, default: []].append(n) } }
+    let kilder = brukere.keys.sorted()
     for (k, bi) in kilder.enumerated() {
       fremdrift?(0.7 * Double(k) / Double(max(kilder.count, 1)))
       // Varm telefon: vent, endre ingenting (samme regel som baken, §120). Høyst 5 min.
@@ -866,74 +934,51 @@ enum Blokkpyramide {
         guard let d = bildeData(bi), let src = CGImageSourceCreateWithData(d as CFData, nil),
               let cg = CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return }
         let w = cg.width, h = cg.height
-        var px = [UInt8](repeating: 0, count: w * h * 4)
-        px.withUnsafeMutableBytes { m in
-          let ctx = CGContext(data: m.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                              space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-          ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
-        }
-        for b in liste {
+        // Ikke nullstilt: .copy skriver hver piksel.
+        let m = UnsafeMutableRawBufferPointer.allocate(byteCount: w * h * 4, alignment: 64)
+        defer { m.deallocate() }
+        let ctx = CGContext(data: m.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setBlendMode(.copy)
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        for n in brukere[bi] ?? [] {
+          let b = liste[n]
+          guard let dst = hent(n, skriv: true) else { throw Feil(description: "kart \(n)") }
+          defer { slipp(n, dst) }
           for r in b.rekter where r.bilde == bi {
             for y in 0..<r.h {
-              try fh.seek(toOffset: UInt64(b.råOffset + ((r.oy + y) * b.side + r.ox) * 4))
-              let s = ((r.y + y) * w + r.x) * 4
-              try px.withUnsafeBytes { try fh.write(contentsOf: Data($0[s..<(s + r.w * 4)])) }
+              memcpy(dst + ((r.oy + y) * b.side + r.ox) * 4, m.baseAddress! + ((r.y + y) * w + r.x) * 4, r.w * 4)
             }
           }
         }
       }
     }
-    try fh.close()
-
-    // ── 4. Nivåer som JPEG, geometri med UV i blokkatlaset.
-    // Blokk for blokk med FileHandle, ikke hele fila minnekartlagt: huset c1794d71 (1774 Mpx) ga
-    // en råfil iOS ikke ville kartlegge («raa.tmp couldn't be opened», telefon 01.11).
-    let les = try FileHandle(forReadingFrom: rå)
-    defer { try? les.close() }
-    var meta: [[String: Any]] = []
-    for (n, b) in liste.enumerated() {
-      if n % 8 == 0 { fremdrift?(0.7 + 0.3 * Double(n) / Double(max(liste.count, 1))) }
-      try autoreleasepool {
-        let side = b.side
-        try les.seek(toOffset: UInt64(b.råOffset))
-        guard let blokkData = try les.read(upToCount: side * side * 4), blokkData.count == side * side * 4,
-              let prov = CGDataProvider(data: blokkData as CFData),
-              var cg = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4,
-                               space: CGColorSpaceCreateDeviceRGB(),
-                               bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                               provider: prov, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { throw Feil(description: "atlas \(n)") }
-        var nivåer: [Int] = []
-        while true {
-          let url = ut.appendingPathComponent("b\(n)_L\(nivåer.count).jpg")
-          guard let dst = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) else { throw Feil(description: "jpeg") }
-          CGImageDestinationAddImage(dst, cg, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
-          guard CGImageDestinationFinalize(dst) else { throw Feil(description: "jpeg \(n)") }
-          nivåer.append(cg.width)
-          if cg.width <= 32 { break }
-          let nw = max(1, cg.width / 2)
-          guard let ctx = CGContext(data: nil, width: nw, height: nw, bitsPerComponent: 8, bytesPerRow: nw * 4,
-                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { break }
-          ctx.interpolationQuality = .high
-          ctx.draw(cg, in: CGRect(x: 0, y: 0, width: nw, height: nw))
-          guard let neste = ctx.makeImage() else { break }
-          cg = neste
-        }
-        var geo = b.geo
-        for t in 0..<b.rektAv.count {
-          let r = b.rekter[Int(b.rektAv[t])]
-          for j in 0..<3 {
-            let o = (t * 3 + j) * 5
-            geo[o + 3] = (geo[o + 3] - Float(r.x) + Float(r.ox)) / Float(side)
-            geo[o + 4] = (geo[o + 4] - Float(r.y) + Float(r.oy)) / Float(side)
+    let t1 = CFAbsoluteTimeGetCurrent()
+    var meta = [[String: Any]?](repeating: nil, count: liste.count)
+    var feil: Error?
+    let lås = NSLock()
+    let ferdigTeller = UnsafeMutablePointer<Int>.allocate(capacity: 1); ferdigTeller.pointee = 0
+    defer { ferdigTeller.deallocate() }
+    meta.withUnsafeMutableBufferPointer { slots in
+      DispatchQueue.concurrentPerform(iterations: liste.count) { n in
+        do {
+          try autoreleasepool {
+            guard let px = hent(n, skriv: false) else { throw Feil(description: "kart \(n)") }
+            defer { slipp(n, px) }
+            slots[n] = try lagNivåer(n, liste[n], px)
           }
-        }
-        try geo.withUnsafeBytes { try Data($0).write(to: ut.appendingPathComponent("b\(n).geo")) }
-        meta.append(["id": n, "lo": [b.lo.x, b.lo.y, b.lo.z], "hi": [b.hi.x, b.hi.y, b.hi.z],
-                     "tetthet": (b.texelAreal / max(b.areal, 1e-9)).squareRoot(), "nivåer": nivåer])
+        } catch { lås.lock(); feil = error; lås.unlock() }
+        lås.lock(); ferdigTeller.pointee += 1; let f = ferdigTeller.pointee; lås.unlock()
+        if f % 8 == 0 { fremdrift?(0.7 + 0.3 * Double(f) / Double(liste.count)) }
       }
     }
+    if let feil { throw feil }
+    let tKopi = t1 - t0, tJpeg = CFAbsoluteTimeGetCurrent() - t1
+    fase("atlas")
+    MeshLog.log("blokkpyramide — " + faser.joined(separator: ", ") + String(format: " (dekoding+kopi %.1f s, jpeg %.1f s), %d MB %@",
+                                                                          tKopi, tJpeg, råStørrelse >> 20, iRam ? "i RAM" : "på disk"))
     // blokker.json skrives SIST: den er merket på at pyramiden er hel.
-    try JSONSerialization.data(withJSONObject: ["versjon": versjon, "blokk": blokk, "blokker": meta])
+    try JSONSerialization.data(withJSONObject: ["versjon": versjon, "blokk": blokk, "blokker": meta.compactMap { $0 }])
       .write(to: ut.appendingPathComponent("blokker.json"), options: .atomic)
     return liste.count
   }
