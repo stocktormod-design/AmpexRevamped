@@ -22,6 +22,9 @@ import { Room } from './db/models/room'
 import { lesTegningsvektorer } from './brann-fra-tegning'
 import { komponenterFraStrekerAsync } from './brann-symboler'
 import { finnRomPaaTegning } from './rom-fra-tegning'
+import { maalestokkFraTekst } from './rom-fra-streker'
+
+export { maalestokkFraTekst }
 import { termiskTilstand } from '../modules/ampex-splat'
 import { aiLogg } from './ai/ai-logg'
 
@@ -32,15 +35,6 @@ export type AnalyseResultat =
   | { kind: 'feil'; melding: string }
 
 const pågår = new Set<string>()
-
-/** «1 : 50», «1:100», «M 1:50» i tittelfeltet → 50. Ingen → null (romdelingen bruker 50). */
-export function maalestokkFraTekst(tekster: { tekst: string }[]): number | null {
-  for (const t of tekster) {
-    const m = /(?:^|[^\d])1\s*:\s*(\d{2,4})(?!\d)/.exec(t.tekst)
-    if (m) { const n = parseInt(m[1], 10); if (n >= 10 && n <= 2000) return n }
-  }
-  return null
-}
 
 /**
  * Kjør analysen for én tegning. Idempotent: komponenter og rom som alt finnes
@@ -102,7 +96,7 @@ export async function analyserTegning(
           r.drawingId = drawing.id
           r.plan = drawing.plan
           r.name = f.navn ?? `Rom ${i + 1}`
-          r.shape = JSON.stringify({ points: f.punkter })
+          r.shape = JSON.stringify({ points: f.punkter, ...(f.bekreftet === false ? { usikker: true } : {}) })
         })),
         drawing.prepareUpdate(d => { d.analyzedAt = new Date() }),
       )

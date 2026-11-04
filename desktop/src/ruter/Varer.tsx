@@ -148,12 +148,7 @@ export function Varer() {
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
 
       {rader.length === 0 && !laster && sok.trim() === '' ? (
-        <Kort tittel="Varekartoteket er tomt">
-          <p className="kort-hjelp">
-            Importer en prisfil fra grossisten, så fylles det. Det er den ene jobben kontor-PC-en har
-            som telefonen ikke skal ha.
-          </p>
-        </Kort>
+<Kort tittel="Varekartoteket er tomt" />
       ) : (
         <div className="arbeidsflate">
           <Tabell rader={rader} kolonner={kolonner} nokkel={v => v.id} tomTekst="Ingen treff" />

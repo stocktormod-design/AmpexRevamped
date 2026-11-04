@@ -662,3 +662,49 @@ be Schneider ta Elko med når de svarer.
 
 **EFObasen er ingen snarvei:** API-avtalen sier innholdet ikke kan «formidles
 til tredjepart overhodet» uten særskilt avtale. Produsentens ja trengs uansett.
+
+## Bildeoppslag teknisk sjekket — 2026-09-30
+
+Spørsmålet: kan vi finne bildet på produsentens EGEN side ut fra det vi har
+(el-nummer, EAN, artikkelnummer = siste ord i varenavnet)? Da er et ja alt vi
+trenger fra e-posten. Tre eksempelvarer per merke fra `solar.sqlite`, vanlig
+HTTP, ingen omgåelse av sperrer, ikke EFObasen eller grossistsider.
+
+**Ingen merker gir en bildeadresse vi kan bygge direkte.** Alle har en ugjennomsiktig
+id eller hash i bildeadressen, så hver vare trenger ETT oppslag. Svaret (URL-en,
+ikke bildet) lagres og slås opp på nytt ved 404.
+
+Andel = varer i Solar-katalogen (126 589).
+
+| Merke | Andel | Oppslag | Nøkkel | Treff | Status e-post |
+|---|---|---|---|---|---|
+| Schneider | 13,3 % | produktside `se.com/no/no/product/<art>/` → CDN `download.schneider-electric.com` | art.nr | 3/3 (via annet nett; curl herfra 403) | spurt 15.09 via skjema, intet svar |
+| Eaton | 9,9 % | sperret (Akamai) | — | 0/3 | Norge eier ikke bildene, «ikke prioritert» 24.09 |
+| Siemens | 6,9 % | SiePortal sperret/JS | — | 0/3 | JA 29.09 — be om eksport |
+| ABB | 6,5 % | sperret (Akamai) | — | 0/3 | ikke spurt (bare skjema) |
+| Telemecanique | 2,5 % | `telemecaniquesensors.com/global/en/product/reference/<art>` | art.nr | 1/1 | ikke spurt (eget selskap nå) |
+| SG Armatur | 2,2 % | søk `sg-as.com/no/no/search-content?search=<elnr>` (JSON i HTML) | el-nr | 3/3 | spurt 30.09 |
+| Elis | 2,2 % | WooCommerce `eliselektro.no/wp-json/wc/store/v1/products?sku=<elnr,elnr,…>` | el-nr | 3/3 | JA 01.10 (Nanna Wister: «hente bildene fra nettsiden vår») |
+| nVent Hoffman | 2,1 % | side `nvent.com/en-no/hoffman/products/enc<art>` | art.nr | 3/3 | spurt 30.09 |
+| Wibe | 1,9 % | søk `wibe-group.com/no/sokeresultater?q=<elnr>` | el-nr | 3/3 | JA 24.09 |
+| Øglænd | 1,8 % | søk `oglaend-system.com/search/category294.html?q=<elnr>` | el-nr | 2/3 | spurt 23.09; robots nekter ClaudeBot, Crawl-delay 5 |
+| Milwaukee | 1,6 % | Algolia (nøkkel utløper, leses fra siden) | art.nr | 3/3 | spurt 30.09 |
+| LAPP | 1,5 % | sperret; BMEcat via skjema | — | 0/3 | spurt 23.09 |
+| Phoenix | 1,4 % | side `phoenixcontact.com/product/<art>` → og:image | art.nr | 3/3 | spurt 23.09 |
+| Melbye | 1,1 % | Algolia (offentlig søkenøkkel) | el-nr/EAN | 3/3 | spurt 30.09 |
+| Carlo Gavazzi | 1,1 % | side `gavazziautomation.com/en-global/product/<art>` → og:image | art.nr | 3/3 | JA 01.10 (Torunn Kleven, på vegne av daglig leder) — vil gjerne se appen/skjermbilder |
+| HellermannTyton | 1,1 % | side `hellermanntyton.com/products/<art>` → og:image | art.nr | 3/3 | spurt 30.09 |
+| Rittal | 1,0 % | side `rittal.com/no-no/products/show/<art>` → og:image | art.nr | 3/3 | spurt 30.09 |
+| Nexans | 0,8 % | DAM-id, ikke oppslag | — | — | JA; fil med URL per vare kan fås |
+| Arvid Nilsson | 0,8 % | Cloudflare-sperre | — | 0/3 | 01.10: Tommy sendte videre til marked + material master data — venter |
+| Prysmian | 0,8 % | Salesforce, bare JS | — | 0/3 | vi takket nei til møte 30.09 |
+| Bahco | 0,8 % | Cloudflare-sperre | — | 0/3 | ikke spurt (bare skjema) |
+
+**Fellene:** Carlo Gavazzi sender ukjent kode til forsida (logoen som og:image) —
+avvis. Schneider-CDN-en gir en plassholder-PNG med `default_image=` — dropp
+parameteren. HellermannTyton og Wibe har logoen som første og:image. Rittal
+virker bare med `no-no`. Phoenix: behold `:0181`-suffikset. Grossistens varenavn
+kan være feil (Phoenix 3209510 heter «REKL INNST», er en gjennomføringsklemme) —
+match på nummer. Bildene er ofte familiebilder, ikke per variant. Flere er store
+PNG-er (1 MB+). Alt oppslag gjelder bare etter et ja — robots og vilkår (se
+Schneider/Nexans over) sier «spør».

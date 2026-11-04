@@ -8,7 +8,7 @@ import { Q } from '@nozbe/watermelondb'
 import { Check, ChevronDown, ChevronLeft, Columns2, Grid2x2, LayoutGrid, ScanLine, ScanSearch, FileText, Flame, Link, Link2Off, MousePointer2, Pencil, Plus, Undo2, Upload, Waypoints } from 'lucide-react-native'
 import { useSharedValue } from 'react-native-reanimated'
 import { Pressable } from '../../../components/pressable'
-import { DrawingPane, type EditTool, type PaneDelta } from '../../../components/drawing-pane'
+import { DrawingPane, type EditTool } from '../../../components/drawing-pane'
 import { TaskPinSheet, type TaskPinSheetState } from '../../../components/task-pin-sheet'
 import { Ark, ChoiceSheet } from '../../../components/sheet'
 import { database } from '../../../lib/db'
@@ -51,14 +51,18 @@ function Knapp({ Icon, aktiv, onPress }: {
 
 /** Navnepille inne i en rute — trykk for å bytte tegning i ruta. */
 function RutePill({ tekst, top, onPress }: { tekst: string; top: number; onPress: () => void }) {
+  // Hver rute har sin egen, likt plassert: trykk = bytt tegning i DENNE ruta (Tormod 04.11:
+  // «det burde være lettere å se hvor man bytter tegning»).
   return (
-    <Pressable onPress={onPress} pressScale={0.95}
+    <Pressable onPress={onPress} pressScale={0.95} haptic="light"
       style={{
-        position: 'absolute', top, left: spacing.screen, maxWidth: '70%',
-        paddingHorizontal: spacing.md, height: 32, borderRadius: radius.pill, justifyContent: 'center',
+        position: 'absolute', top, left: spacing.sm, maxWidth: '75%',
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        paddingLeft: spacing.md, paddingRight: spacing.sm, height: 32, borderRadius: radius.pill,
         backgroundColor: PANEL, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.08)', ...shadows.card,
       }}>
-      <Text style={[t.caption, { fontWeight: '700' }]} numberOfLines={1}>{tekst}</Text>
+      <Text style={[t.caption, { fontWeight: '700', flexShrink: 1 }]} numberOfLines={1}>{tekst}</Text>
+      <ChevronDown size={14} color={colors.paperSecondary} strokeWidth={2.4} />
     </Pressable>
   )
 }
@@ -218,18 +222,23 @@ export default function TegningViewer() {
     nullstill()
     setVisning(v => erPad ? (v === 'en' ? 'to' : v === 'to' ? 'fire' : 'en') : (v === 'en' ? 'to' : 'en'))
   }
-  /** Låst: de andre rutene står stille under gesten og hopper etter når du slipper. */
-  function syncFra(fra: number, d: PaneDelta) {
-    if (!locked || !split) return
-    const antall = visning === 'fire' ? 4 : 2
-    for (let i = 0; i < antall; i++) {
-      if (i === fra) continue
-      const m = alleTransformer[i]
-      m.scale.value = Math.min(Math.max(m.scale.value * d.ds, 1), 8)
-      m.tx.value += d.dtx
-      m.ty.value += d.dty
+  /**
+   * Låst = ÉN transform for alle rutene (Tormod 04.11). Før ble endringen kopiert over
+   * når du slapp: rutene sto stille under gesten, klemmene (zoom 1–8) og fokuspunktet
+   * ga glidning over tid, og hver rute kunne flyttes for seg. Nå deler de verdiene,
+   * så de beveger seg likt mens du drar og kan ikke komme ut av takt.
+   */
+  function byttLaas() {
+    if (locked) {
+      // Løs opp: hver rute fortsetter fra det felles bildet.
+      for (let i = 1; i < 4; i++) {
+        const m = alleTransformer[i]
+        m.scale.value = scale.value; m.tx.value = tx.value; m.ty.value = ty.value
+      }
     }
+    setLocked(v => !v)
   }
+  const transformFor = (i: number) => (locked && split ? alleTransformer[0] : alleTransformer[i])
   useEffect(() => {
     if (!drawingId || !userId) { setMyTasks([]); return }
     const sub = database.get<Task>('tasks')
@@ -267,7 +276,7 @@ export default function TegningViewer() {
     setDeler(true)
     try {
       const forslag = await finnRomPaaTegning(localUri, { maalestokk })
-      if (!forslag.length) { Alert.alert('Fant ingen rom', 'Sjekk at målestokken stemmer med tegningen.'); return }
+      if (!forslag.length) { Alert.alert('Fant ingen rom'); return }
       forslag.sort((a, b) => b.areal - a.areal)
       await database.write(async () => {
         await database.batch(...forslag.map((f, i) => database.get<Room>('rooms').prepareCreate(r => {
@@ -275,7 +284,7 @@ export default function TegningViewer() {
           r.drawingId = drawing.id
           r.plan = drawing.plan
           r.name = f.navn ?? `Rom ${i + 1}`
-          r.shape = JSON.stringify({ points: f.punkter })
+          r.shape = JSON.stringify({ points: f.punkter, ...(f.bekreftet === false ? { usikker: true } : {}) })
         })))
       })
       syncQuietly()
@@ -297,14 +306,14 @@ export default function TegningViewer() {
     try {
       const svar = await finnKomponenterPaaTegning(localUri)
       if (svar.utenForklaring) {
-        Alert.alert('Fant ingen symbolforklaring', 'Søket leser symbolene fra tegningens egen forklaring (SYMBOLFORKLARING). Denne tegningen har ingen.')
+        Alert.alert('Fant ingen symbolforklaring')
         return
       }
       const iProsjektet = await database.get<FireDevice>('fire_devices').query(Q.where('project_id', drawing.projectId)).fetch()
       const paaTegningen = iProsjektet.filter(d => d.drawingId === drawing.id)
       // Alt som alt står der (innen 0,4 % av sidebredden) hoppes over — søket kan kjøres igjen.
       const nye = svar.forslag.filter(f => !paaTegningen.some(d => Math.hypot(d.x - f.x, d.y - f.y) < 0.004))
-      if (!nye.length) { Alert.alert('Ingenting nytt', `Fant ${svar.forslag.length} komponenter, alle er alt registrert.`); return }
+      if (!nye.length) { Alert.alert('Ingenting nytt', `${svar.forslag.length} komponenter, alle registrert`); return }
       // Auto-tag fortsetter der stempel-verktøyet slapp (neste ledige adresse på sløyfe 01).
       let max = 0
       for (const d of iProsjektet) { const m = /^01\.(\d+)$/.exec(d.tag); if (m) max = Math.max(max, parseInt(m[1], 10)) }
@@ -321,7 +330,7 @@ export default function TegningViewer() {
         })))
       })
       syncQuietly()
-      Alert.alert('Komponenter fra tegningen', `${nye.length} lagt til. Forklaringen har ${svar.symboltyper.length} symboltyper. Trykk på en komponent for å fylle ut.`)
+      Alert.alert('Komponenter fra tegningen', `${nye.length} lagt til · ${svar.symboltyper.length} symboltyper`)
     } catch (e) {
       console.error('[symbol] stoppet', e instanceof Error ? e.stack : e)
       Alert.alert('Søket stoppet', e instanceof Error ? e.message : String(e))
@@ -413,7 +422,7 @@ export default function TegningViewer() {
   const rutenavn = (d: Drawing) => [d.name, flerePlaner ? d.plan : null].filter(Boolean).join(' · ')
   const panel = { backgroundColor: PANEL, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.08)', ...shadows.card } as const
   const laasPille = (
-    <Pressable haptic="light" pressScale={0.92} onPress={() => setLocked(v => !v)}
+    <Pressable haptic="light" pressScale={0.92} onPress={byttLaas}
       style={[panel, {
         flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, height: 34, borderRadius: radius.pill,
         backgroundColor: locked ? colors.paperLabel : PANEL,
@@ -425,7 +434,7 @@ export default function TegningViewer() {
   /** Rute i (0 = tegningen du kom fra, 1–3 = valgte). Tom rute = «Velg tegning». */
   function rute(i: number, w: number, h: number) {
     const d = i === 0 ? drawing : (ruter[i - 1] ? siblings.find(x => x.id === ruter[i - 1]) ?? null : null)
-    const m = alleTransformer[i]
+    const m = transformFor(i)
     if (!d) {
       return (
         <Pressable onPress={() => setPicking(i)} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm }}>
@@ -441,11 +450,10 @@ export default function TegningViewer() {
         <DrawingPane
           drawing={d} width={w} height={h}
           transform={m}
-          onGestureEnd={delta => syncFra(i, delta)}
           rooms={i === 0 ? rooms.map(r => ({ id: r.id, navn: r.name, punkter: r.shapePoints ?? [] })).filter(r => r.punkter.length >= 3) : undefined}
           onRoomLongPress={i === 0 ? id => setRomPanel(rooms.find(r => r.id === id) ?? null) : undefined}
         />
-        {i > 0 && <RutePill tekst={rutenavn(d)} top={spacing.sm} onPress={() => setPicking(i)} />}
+        <RutePill tekst={rutenavn(d)} top={spacing.sm} onPress={() => (i === 0 ? setVelger(true) : setPicking(i))} />
       </>
     )
   }
@@ -622,9 +630,11 @@ export default function TegningViewer() {
                     style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: c, borderWidth: color === c ? 3 : 1, borderColor: color === c ? colors.paperLabel : 'rgba(0,0,0,0.15)' }} />
                 ))}
                 <View style={{ width: 0.5, height: 22, backgroundColor: 'rgba(0,0,0,0.12)' }} />
-                <Text style={[t.caption, { color: colors.paperSecondary, fontWeight: '600' }]} numberOfLines={1}>
-                  {aktivSloyfe ? `${aktivSloyfe.name} · ${aktivSloyfe.nodeList.length}` : 'Trykk en detektor'}
-                </Text>
+                {aktivSloyfe && (
+                  <Text style={[t.caption, { color: colors.paperSecondary, fontWeight: '600' }]} numberOfLines={1}>
+                    {`${aktivSloyfe.name} · ${aktivSloyfe.nodeList.length}`}
+                  </Text>
+                )}
                 <View style={{ flex: 1 }} />
                 <Pressable haptic="light" pressScale={0.94} onPress={angreNode} disabled={!aktivSloyfe?.nodeList.length}
                   style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', opacity: aktivSloyfe?.nodeList.length ? 1 : 0.3 }}>
@@ -664,15 +674,8 @@ export default function TegningViewer() {
                   {finner ? <ActivityIndicator size="small" color={colors.brandLabel} /> : <ScanSearch size={14} color={colors.brandLabel} strokeWidth={2.4} />}
                   <Text style={[t.caption, { color: colors.brandLabel, fontWeight: '700' }]}>{finner ? 'Leser tegningen …' : 'Finn fra tegningen'}</Text>
                 </Pressable>
-                <Text style={[t.caption, { color: colors.paperTertiary, textAlign: 'center' }]}>Eller trykk der detektoren skal stå</Text>
               </View>
-            ) : (
-              <Text style={[t.caption, { color: colors.paperTertiary, textAlign: 'center', paddingBottom: 2 }]}>
-                {tool === 'ingen'
-                  ? 'Én finger flytter · to fingre zoomer · hold på et rom i ett sekund'
-                  : 'Trykk på noe for å velge det'}
-              </Text>
-            )}
+            ) : null}
           </View>
         </View>
       )}

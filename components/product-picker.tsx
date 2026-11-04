@@ -81,8 +81,8 @@ export function ProductPicker({ onVelg, onNy, autoFocus, flate = 'verktoy' }: {
       {treff.length === 0 ? (
         <Text style={[t.footnote, { paddingHorizontal: spacing.lg }]}>
           {q
-            ? katalogTreff.length > 0 ? 'Ikke i kartoteket ennå — velg fra katalogen under.' : 'Ingen treff.'
-            : 'Ingen varer ennå. Last inn en prisfil fra grossisten, eller opprett varen når du tar den ut.'}
+            ? katalogTreff.length > 0 ? 'Ikke i kartoteket' : 'Ingen treff'
+            : 'Ingen varer'}
         </Text>
       ) : (
         <View style={{

@@ -62,10 +62,6 @@ export default function TegningNyScreen() {
         ))}
       </View>
 
-      <Text style={[t.footnote, { marginHorizontal: spacing.screen, marginTop: spacing.lg }]}>
-        PDF-opplasting kommer — tegningen opprettes som metadata nå, filen legges til etterpå.
-      </Text>
-
       <Pressable haptic="medium" onPress={create} disabled={!canSave}
         style={{ height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.cta, alignItems: 'center', justifyContent: 'center', marginHorizontal: spacing.screen, marginTop: spacing.xl, opacity: canSave ? 1 : 0.35 }}>
         <Text style={[t.headline, { color: colors.ctaLabel }]}>Legg til tegning</Text>

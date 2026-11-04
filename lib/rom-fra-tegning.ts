@@ -15,17 +15,11 @@ import * as FileSystem from 'expo-file-system/legacy'
 import { Skia } from '@shopify/react-native-skia'
 import { renderPdfPage, isPdfRasterAvailable } from '../modules/ampex-splat'
 import { finnRom, STANDARD } from './rom-detekt'
+import { ptPerMeter, romFraStreker, type Romforslag } from './rom-fra-streker'
 import { morkMaske, linjerFraMaske } from './rom-linjer'
 import { strekerFraPdf, type PdfStreker } from './rom-pdf-vektor'
 
-export type Romforslag = {
-  /** Hjørnene i normaliserte sidekoordinater (0..1) — samme form som Room.shape. */
-  punkter: [number, number][]
-  /** Gulvareal i kvadratmeter. */
-  areal: number
-  /** Navn lest av tegningen, når den har et tekstlag. */
-  navn?: string
-}
+export { ptPerMeter, type Romforslag } from './rom-fra-streker'
 
 export type Romdelingsvalg = {
   /** Ferdig leste streker og tekst (fra lesTegningsvektorer) — da leses ikke PDF-en på nytt. */
@@ -51,29 +45,6 @@ function fraBase64(s: string): Uint8Array {
   return n === ut.length ? ut : ut.subarray(0, n)
 }
 
-/**
- * Romnavnet står rett over arealpåskriften («Teknisk» over «20,3 m²»).
- * Vi tar nærmeste tekst over, innen halvannen linjehøyde, og hopper over
- * tall-koder og taggene med `=` som RIV-tegninger er fulle av.
- */
-function romnavn(merke: { x: number; y: number; hoyde: number }, alle: Array<{ tekst: string; x: number; y: number }>): string | undefined {
-  let best: { t: string; d: number } | null = null
-  for (const t of alle) {
-    const dy = merke.y - t.y
-    if (dy <= 0 || dy > merke.hoyde * 2.2) continue
-    if (Math.abs(t.x - merke.x) > merke.hoyde * 6) continue
-    if (/m(²|2)/i.test(t.tekst) || t.tekst.includes('=') || /^[\d.,\s-]+$/.test(t.tekst)) continue
-    const d = dy + Math.abs(t.x - merke.x) * 0.3
-    if (!best || d < best.d) best = { t: t.tekst, d }
-  }
-  return best?.t
-}
-
-/** Punkter per meter på papiret ved gitt målestokk (1:50 → 56,69 pt/m). */
-export function ptPerMeter(maalestokk: number): number {
-  return (1000 / maalestokk) / 25.4 * 72
-}
-
 // ── hoved ───────────────────────────────────────────────────────────────────
 
 export const kanDeleIRom = isPdfRasterAvailable
@@ -93,26 +64,17 @@ export async function finnRomPaaTegning(pdfSti: string, valg: Romdelingsvalg): P
   try {
     const lest = valg.streker ?? await (async () => {
       const b64 = await FileSystem.readAsStringAsync(pdfSti.replace('file://', ''), { encoding: 'base64' })
-      return strekerFraPdf(fraBase64(b64))
+      return strekerFraPdf(fraBase64(b64), { medFyll: true }) // mørkt fyll kan være veggene
     })()
-    const { segmenter, tekster, breddePt, hoydePt } = lest
-    sidebreddePt = breddePt // gjelder også rasterveien under
-    if (segmenter.length >= 200) {
+    sidebreddePt = lest.breddePt // gjelder også rasterveien under
+    if (lest.segmenter.length >= 200) {
       // Arealpåskriftene («20,3 m²») står inne i hvert rom og er de sikreste
-      // frøene vi kan få: ett per rom, alltid på gulvet.
-      // NB: ingen \b etter «²» — den er ikke et ordtegn, så grensen treffer aldri.
-      const merker = tekster.filter(t => /\d\s*m(²|2)/i.test(t.tekst))
-      // Påskriften sier også HVOR STORT rommet er — det avgjør hvem som får en navnløs
-      // stripe når to rom deler den (se bruktEtiketter i rom-detekt).
-      const arealAv = (t: string): number | undefined => { const m = /(\d+(?:[.,]\d+)?)\s*m(²|2)/i.exec(t); return m ? parseFloat(m[1].replace(',', '.')) : undefined }
-      const rom = finnRom(segmenter, { ...STANDARD, ptPerM }, merker.map(m => ({ x: m.x, y: m.y, areal: arealAv(m.tekst) })))
-      // Null rom av vektorene betyr som regel at strekene bare er ramma og tittelfeltet
-      // (bilde-PDF med vektorramme, Torvhaugan 2026-09-13) — da må rasteret ta over.
-      if (rom.length > 0) return rom.map(r => ({
-        punkter: r.polygon.map(p => [p.x / breddePt, p.y / hoydePt] as [number, number]),
-        areal: r.areal / (ptPerM * ptPerM),
-        navn: r.etiketter.length ? romnavn(merker[r.etiketter[0]], tekster) : undefined,
-      }))
+      // frøene vi kan få: ett per rom, alltid på gulvet. De sier også HVOR STORT rommet
+      // er — det avgjør hvem som får en navnløs stripe når to rom deler den (se
+      // bruktEtiketter i rom-detekt), hvilken målestokk tegningen egentlig har, og
+      // hvilke rom vi kan stå inne for (se finnRomMedPaaskrifter).
+      const rom = romFraStreker(lest, maalestokk)
+      if (rom.length > 0) return rom
     }
   } catch {
     // Skannet PDF, uvanlig innhold eller pdf.js som ikke kom i gang: ta rasteret.

@@ -206,8 +206,7 @@ export default function OrdreScreen() {
             <View style={{ width: sizes.iconChip + 8, height: sizes.iconChip + 8, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
               <Inbox size={sizes.iconLg} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
             </View>
-            <Text style={[t.headline, { color: colors.label, marginTop: spacing.md }]}>Ingen ordre ennå</Text>
-            <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.xs, textAlign: 'center' }]}>Trykk + for å opprette en.</Text>
+            <Text style={[t.headline, { color: colors.label, marginTop: spacing.md }]}>Ingen ordre</Text>
           </View>
         }
       />

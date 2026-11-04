@@ -106,7 +106,6 @@ export function Chatboble() {
           <div className="chat-hode">
             <div>
               <div className="chat-tittel">Chat</div>
-              <div className="chat-under">Mellom dere i firmaet</div>
             </div>
             <button className="ikonknapp" onClick={() => setApen(false)} title="Lukk">
               <X size={16} strokeWidth={2} />

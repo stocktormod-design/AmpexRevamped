@@ -91,7 +91,7 @@ export default function MedlemScreen() {
               )
             })}
             {profiles.length === 0 && (
-              <Text style={[t.footnote, { padding: spacing.lg }]}>Fant ingen folk i firmaet.</Text>
+              <Text style={[t.footnote, { padding: spacing.lg }]}>Ingen i firmaet</Text>
             )}
           </View>
         </ScrollView>

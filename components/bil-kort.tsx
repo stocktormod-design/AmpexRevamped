@@ -136,10 +136,6 @@ export function BilKort({ userId }: { userId: string | null }) {
         }}
       >
         <Text style={[t.headline]}>Bilen din</Text>
-        <Text style={[t.footnote, { marginTop: spacing.xs }]}>
-          Skriv inn registreringsnummeret, så henter vi merke, modell og farge fra Vegvesen og
-          viser bilen her. Den blir lageret ditt på hjul: uttak og handleliste følger den.
-        </Text>
         <Text style={[t.footnote, { marginTop: spacing.md, fontWeight: '600', color: colors.label }]}>Legg til bil</Text>
       </Pressable>
     )
@@ -190,7 +186,7 @@ export function BilKort({ userId }: { userId: string | null }) {
         )
       ) : (
         <Text style={[t.footnote, { textAlign: 'center', paddingVertical: spacing.xl }]}>
-          Ingen bil er tildelt deg ennå.
+          Ingen bil
           {__DEV__ ? `\nuid:${userId ?? 'NULL'} biler:${biler.length} tildelt:${biler.map(b => b.assignedTo ?? '-').join(',')}` : ''}
         </Text>
       )}
@@ -221,7 +217,6 @@ export function BilKort({ userId }: { userId: string | null }) {
       <ChoiceSheet
         synlig={velger}
         tittel="Velg bilen din"
-        forklaring="Bilen er lageret ditt på hjul — uttak og handleliste følger den."
         valg={valg}
         valgt={min?.id}
         onVelg={id => {

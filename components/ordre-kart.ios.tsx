@@ -102,7 +102,7 @@ export function OrdreKart({ orders, onVelg }: { orders: Order[]; onVelg: (order:
       {pins.length === 0 && (
         <View style={{ position: 'absolute', left: 0, right: 0, top: '45%', alignItems: 'center' }}>
           <Text style={[t.footnote, { textAlign: 'center', paddingHorizontal: spacing.xxl }]}>
-            Ingen av jobbene har en adresse som lot seg plassere.
+            Ingen adresser å vise
           </Text>
         </View>
       )}

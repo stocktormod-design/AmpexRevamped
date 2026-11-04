@@ -153,9 +153,6 @@ export default function ProsjekterScreen() {
             borderWidth: 1, borderColor: colors.separator, borderStyle: 'dashed',
           }}>
             <Text style={[t.headline, { color: colors.label }]}>Ingen prosjekter</Text>
-            <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.xs, textAlign: 'center' }]}>
-              Opprett et prosjekt for å legge til tegninger.
-            </Text>
           </View>
         }
       />

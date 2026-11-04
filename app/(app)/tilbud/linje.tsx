@@ -252,7 +252,7 @@ export default function Linje() {
           value={beskrivelse} onChangeText={setBeskrivelse}
           autoFocus={!redigerer && art === 'tekst'}
           multiline={art === 'tekst'}
-          placeholder={art === 'tekst' ? 'Overskrift eller forbehold — f.eks. «Stillas er ikke inkludert»' : 'Hva linja gjelder'}
+          placeholder={art === 'tekst' ? 'Tekst' : 'Hva linja gjelder'}
           placeholderTextColor={colors.tertiaryLabel}
           style={[t.body, {
             backgroundColor: colors.bg, borderRadius: radius.lg,
@@ -272,9 +272,6 @@ export default function Linje() {
               <Felt label="Rabatt" verdi={rabatt} onEndre={setRabatt} suffiks="%" flex={1} />
               <Felt label="Vår kost" verdi={kost} onEndre={setKost} suffiks="kr" flex={1.3} />
             </View>
-            <Text style={[t.footnote, { marginTop: spacing.xs, marginLeft: spacing.xs }]}>
-              Kost vises aldri for kunden. Den er der for at du skal se hva du sitter igjen med.
-            </Text>
 
             {/* Tilvalg: kunden velger. Prisen står på linja, men den teller
                 ikke før noen har sagt ja — slik at «varmekabel på badet» kan
@@ -289,7 +286,6 @@ export default function Linje() {
                 : <Circle size={sizes.icon} color={colors.tertiaryLabel} strokeWidth={2} />}
               <View style={{ flex: 1 }}>
                 <Text style={t.body}>Tilvalg</Text>
-                <Text style={[t.footnote, { marginTop: 1 }]}>Kunden velger om dette skal med. Teller ikke i summen før det er valgt.</Text>
               </View>
             </Pressable>
 

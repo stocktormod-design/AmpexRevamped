@@ -79,7 +79,6 @@ export default function SkannerScreen() {
               <ScanLine size={24} color={colors.secondaryLabel} strokeWidth={1.8} />
             </View>
             <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen skann ennå</Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>Trykk Nytt skann for å måle opp et rom.</Text>
           </View>
         ) : (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm + 2, marginHorizontal: spacing.screen }}>
@@ -94,6 +93,7 @@ export default function SkannerScreen() {
                   onScan={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind] ?? 'Skann', title: s.title, viewPath: '' } })}
                   onOpenRevision={rev => router.push({ pathname: '/(app)/skann', params: { viewPath: rev.path, title: `${s.title} · ${new Date(rev.ts).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` } })}
                   onDelete={() => slett(s)}
+                  onRename={async n => { await database.write(async () => { await s.update(x => { x.title = n }) }); syncQuietly() }}
                   onRebuilt={async path => {
                     if (s.scanPath) await archiveRevision(s.id, s.scanPath)
                     await database.write(async () => { await s.update(x => { x.scanPath = path }) })

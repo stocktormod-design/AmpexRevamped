@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { sendSkannlogg } from '../lib/skannlogg'
 import { View, Image, ActionSheetIOS, Alert, Platform, ActivityIndicator } from 'react-native'
 import { Text } from './text'
 import { Box, Ellipsis } from 'lucide-react-native'
@@ -12,7 +13,7 @@ import { colors, spacing, radius, type as t } from '../lib/theme'
 // innstillinger-rad. Handlinger (ny skann / revisjoner / slett) i native action
 // sheet via ⋯ eller langt trykk. Uten skann: rolig capture-kort med CTA.
 
-export function ScanCard({ title, meta, scanPath, revisionKey, onOpen, onScan, onOpenRevision, onDelete, onRebuilt }: {
+export function ScanCard({ title, meta, scanPath, revisionKey, onOpen, onScan, onOpenRevision, onDelete, onRename, onRebuilt }: {
   title: string
   meta?: string
   scanPath: string | null
@@ -21,6 +22,8 @@ export function ScanCard({ title, meta, scanPath, revisionKey, onOpen, onScan, o
   onScan: () => void
   onOpenRevision: (rev: ScanRevision) => void
   onDelete?: () => void
+  /** «Gi nytt navn» i treprikkmenyen. Utelatt der navnet ikke er skannets eget (f.eks. typenavn). */
+  onRename?: (title: string) => void | Promise<void>
   /** Kalles med ny GLB-sti når modellen er bygget om fra samme skann. Kortet venter på den
    *  før overlayet forsvinner, så kalleren kan lagre og åpne vieweren i samme bevegelse. */
   onRebuilt?: (glbPath: string) => void | Promise<void>
@@ -34,6 +37,8 @@ export function ScanCard({ title, meta, scanPath, revisionKey, onOpen, onScan, o
     if (Platform.OS !== 'ios') return
     const revisions = await listRevisions(revisionKey)
     const options = ['Åpne i 3D', 'Bygg skarpere modell', 'Skann på nytt']
+    if (onRename) options.push('Gi nytt navn')
+    options.push('Send skannlogg')
     if (revisions.length > 0) options.push(`Revisjoner (${revisions.length})`)
     if (onDelete) options.push('Slett skann')
     options.push('Avbryt')
@@ -49,10 +54,21 @@ export function ScanCard({ title, meta, scanPath, revisionKey, onOpen, onScan, o
         if (chosen === 'Åpne i 3D') onOpen()
         else if (chosen === 'Bygg skarpere modell') rebuild()
         else if (chosen === 'Skann på nytt') onScan()
+        else if (chosen === 'Gi nytt navn') rename()
+        else if (chosen === 'Send skannlogg') sendLogg()
         else if (chosen?.startsWith('Revisjoner')) showRevisions(revisions)
         else if (chosen === 'Slett skann') confirmDelete()
       },
     )
+  }
+
+  async function sendLogg() {
+    try {
+      await sendSkannlogg()
+      Alert.alert('Sendt', 'Takk! Skannloggen er sendt til Ampex.')
+    } catch (e: any) {
+      Alert.alert('Fikk ikke sendt', e?.message ?? 'Prøv igjen når du har nett.')
+    }
   }
 
   // Bygger modellen på nytt fra det lagrede skann-bundlet, uten å skanne rommet igjen.
@@ -100,6 +116,13 @@ export function ScanCard({ title, meta, scanPath, revisionKey, onOpen, onScan, o
       { title: 'Tidligere versjoner', options: [...labels, 'Avbryt'], cancelButtonIndex: labels.length },
       idx => { if (idx < labels.length) onOpenRevision(revisions[idx]) },
     )
+  }
+
+  function rename() {
+    Alert.prompt('Gi nytt navn', undefined, [
+      { text: 'Avbryt', style: 'cancel' },
+      { text: 'Lagre', onPress: (v?: string) => { const n = (v ?? '').trim(); if (n && n !== title) void onRename?.(n) } },
+    ], 'plain-text', title)
   }
 
   function confirmDelete() {

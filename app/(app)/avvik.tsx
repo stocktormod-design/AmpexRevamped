@@ -109,7 +109,7 @@ function Skjema({ ferdig }: { ferdig: () => void }) {
         <TextInput
           value={sted}
           onChangeText={setSted}
-          placeholder="Hvor (ordre, adresse, rom)"
+          placeholder="Sted"
           placeholderTextColor={colors.tertiaryLabel}
           style={[t.body, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
         />
@@ -118,7 +118,7 @@ function Skjema({ ferdig }: { ferdig: () => void }) {
         <TextInput
           value={beskrivelse}
           onChangeText={setBeskrivelse}
-          placeholder="Hva ble funnet, og hvordan (valgfritt)"
+          placeholder="Beskrivelse (valgfritt)"
           placeholderTextColor={colors.tertiaryLabel}
           multiline
           style={[t.body, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, minHeight: 72, textAlignVertical: 'top' }]}
@@ -194,7 +194,7 @@ function Rad({ avvik }: { avvik: Deviation }) {
               <TextInput
                 value={tiltak}
                 onChangeText={setTiltak}
-                placeholder="Hva ble gjort for å rette det?"
+                placeholder="Tiltak"
                 placeholderTextColor={colors.tertiaryLabel}
                 multiline
                 style={[t.body, { paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 4, minHeight: 60, textAlignVertical: 'top' }]}
@@ -269,9 +269,6 @@ export default function AvvikScreen() {
         {apne.length === 0 && !melder ? (
           <View style={{ alignItems: 'center', paddingTop: spacing.xxl, paddingHorizontal: spacing.xxl }}>
             <Text style={[t.headline, { color: colors.label }]}>Ingen åpne avvik</Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>
-              Ser du noe som er feil, meld det med én gang. Det tar ti sekunder, og det er slik systemet lever.
-            </Text>
           </View>
         ) : apne.length > 0 ? (
           <View style={{

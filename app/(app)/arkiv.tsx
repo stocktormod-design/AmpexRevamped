@@ -4,7 +4,7 @@ import { Text, TextInput } from '../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
-import { ChevronLeft, Archive, ChevronRight, ShieldCheck } from 'lucide-react-native'
+import { ChevronLeft, Archive, ChevronRight } from 'lucide-react-native'
 import { Pressable } from '../../components/pressable'
 import { Chip } from '../../components/ui'
 import { ToolGlow } from '../../components/tool-surface'
@@ -92,7 +92,7 @@ export default function Arkiv() {
         <Text style={[t.display, { marginTop: spacing.md }]}>Gamle jobber</Text>
         <Text style={[t.footnote, { marginTop: 2 }]}>
           {arkivKunder.length === 0
-            ? 'Ingenting arkivert ennå. Ordrer fryses når de er fakturert og godkjent.'
+            ? 'Ingenting arkivert'
             : `${arkivKunder.length} arkiverte jobber`}
         </Text>
 
@@ -135,21 +135,9 @@ export default function Arkiv() {
         showsVerticalScrollIndicator={false}
         renderItem={({ item, index }) => <Rad arkiv={item} indeks={index} />}
         ListEmptyComponent={
-          arkivKunder.length === 0 ? (
-            <View style={{ alignItems: 'center', marginTop: spacing.xl }}>
-              <View style={{
-                width: sizes.iconChip + 12, height: sizes.iconChip + 12, borderRadius: radius.pill,
-                backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center',
-              }}>
-                <ShieldCheck size={sizes.iconLg} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
-              </View>
-              <Text style={[t.footnote, { marginTop: spacing.md, textAlign: 'center', paddingHorizontal: spacing.xxl }]}>
-                En arkivert jobb er låst med en sjekksum. Endres pakken, stemmer den ikke lenger.
-              </Text>
-            </View>
-          ) : (
+          arkivKunder.length === 0 ? null : (
             <Text style={[t.footnote, { textAlign: 'center', marginTop: spacing.xl }]}>
-              Ingen treff. Prøv et annet år eller en annen kunde.
+              Ingen treff
             </Text>
           )
         }

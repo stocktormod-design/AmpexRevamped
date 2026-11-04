@@ -146,9 +146,6 @@ export default function TilbudScreen() {
                 <FileText size={sizes.iconLg} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
               </View>
               <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen tilbud her</Text>
-              <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>
-                Et tilbud som blir akseptert oppretter ordren automatisk.
-              </Text>
             </View>
           </GlassCard>
         }

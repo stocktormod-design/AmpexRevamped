@@ -85,7 +85,6 @@ import { antall, Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/k
  * internkontrollen i drift merker det — se `src/lib/ik2-lager.ts`.
  */
 
-const HINT_FOR: Record<string, string> = Object.fromEntries(IK_SKJELETT.map(p => [p.nummer, p.hint]))
 const FORSLAG_FOR: Record<string, string[]> = Object.fromEntries(IK_SKJELETT.map(p => [p.nummer, p.forslag]))
 
 function useSti(): string[] {
@@ -197,21 +196,10 @@ export function InternkontrollV2() {
   if (!laster && kapitler.length === 0) {
     return (
       <>
-        <Sidehode tittel="Internkontroll v2" under="Firmaets IK-system" />
+        <Sidehode tittel="Internkontroll v2" />
         {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
-        <Kort tittel="Ingen internkontroll opprettet ennå">
-          <p className="kort-hjelp">
-            Ampex setter opp {antall(IK_SKJELETT.length)} kapitler: de fem som
-            internkontrollforskriften krever skriftlig, tre andre fra forskriften, fem
-            elektrofaglige (kvalifikasjoner, sluttkontroll, samsvarserklæring, overlevering og
-            instrumenter) og ett om oppbevaring.
-          </p>
-          <p className="kort-hjelp" style={{ marginTop: 14 }}>
-            Kapitlene har hjemmel, men <strong>ingen tekst</strong>. Punktene og rutinene skriver
-            firmaet selv, slik at de beskriver hvordan dere jobber. Faglig ansvarlig bør
-            kontrollere hjemmelshenvisningene mot gjeldende forskrift.
-          </p>
-          <div style={{ marginTop: 20 }}>
+        <Kort tittel="Ingen internkontroll opprettet">
+          <div>
             <Knapp stil="merke" onClick={start} disabled={!kanSkrive || jobber}>
               {jobber ? 'Oppretter …' : 'Opprett skjelettet'}
             </Knapp>
@@ -251,7 +239,7 @@ export function InternkontrollV2() {
 
   return (
     <>
-      <Sidehode tittel="Internkontroll v2" under="Firmaets IK-system" />
+      <Sidehode tittel="Internkontroll v2" />
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
 
       <div className="arbeidsflate">
@@ -633,17 +621,14 @@ function KapittelSide({ kapittel, tilstand, sistEndret, punkter, skjemaer, lesin
             <Felt firkant etikett="Tittel" value={utkast.tittel}
               onChange={e => setUtkast(u => ({ ...u, tittel: e.target.value }))} />
             <Felt firkant etikett="Hjemmel" value={utkast.hjemmel ?? ''}
-              placeholder="Slå opp paragrafen i gjeldende forskrift"
               onChange={e => setUtkast(u => ({ ...u, hjemmel: e.target.value || null }))} />
             <label className="felt felt-firkant">
               <span className="felt-etikett">Hovedformål</span>
               <textarea className="felt-inn skrivefelt skrivefelt-lav" value={utkast.formal ?? ''}
-                placeholder="Hva kapittelet skal sikre i firmaet."
                 onChange={e => setUtkast(u => ({ ...u, formal: e.target.value || null }))} />
             </label>
             <Felt firkant etikett="Hva ble endret, og hvorfor?" value={notat}
               placeholder="Presisert at måling skal loggføres"
-              hjelp="Må fylles ut. Vises i historikken."
               onChange={e => setNotat(e.target.value)} />
             <div className="rad">
               <Knapp stil="merke" disabled={!endret || !notat.trim() || jobber}
@@ -683,8 +668,7 @@ function KapittelSide({ kapittel, tilstand, sistEndret, punkter, skjemaer, lesin
 
         {punkter.length === 0 && nyttPunkt === null ? (
           <div className="ik2-tom">
-            <p>Ingen punkter ennå. Del kapittelet opp etter arbeidet dere gjør.</p>
-            {HINT_FOR[kapittel.nummer] ? <p className="felt-hjelp">{HINT_FOR[kapittel.nummer]}</p> : null}
+            <p>Ingen punkter ennå.</p>
           </div>
         ) : punkter.map(p => {
           const skrevne = p.rutiner.filter(r => r.innhold?.trim()).length
@@ -721,7 +705,6 @@ function KapittelSide({ kapittel, tilstand, sistEndret, punkter, skjemaer, lesin
           >
             <Felt firkant autoFocus etikett="Hva heter punktet?" value={nyttPunkt}
               placeholder="Arbeid i tavle"
-              hjelp="Rutinene legger du til under punktet etterpå."
               onChange={e => setNyttPunkt(e.target.value)} />
             <div className="rad" style={{ marginTop: 12 }}>
               <Knapp stil="merke" type="submit" disabled={!nyttPunkt.trim() || jobber}>
@@ -737,7 +720,7 @@ function KapittelSide({ kapittel, tilstand, sistEndret, punkter, skjemaer, lesin
             på et tomt kapittel. Rutinene under skriver de selv. */}
         {kanSkrive && forslag.length > 0 ? (
           <div className="ik2-forslag">
-            <span className="ik2-forslag-etikett">{punkter.length === 0 ? 'Eller start med et av disse:' : 'Forslag til punkter:'}</span>
+            <span className="ik2-forslag-etikett">Forslag til punkter:</span>
             <div className="filter">
               {forslag.map(t => (
                 <button
@@ -762,12 +745,12 @@ function KapittelSide({ kapittel, tilstand, sistEndret, punkter, skjemaer, lesin
           registeret sier hva som faktisk står. */}
       {kapittel.nummer === '4' ? (
         <section className="ik2-avsnitt">
-          <Rad tittel="Avvik" under="Meldte avvik og tiltak" mer={apneAvvik === 0 ? 'Ingen åpne' : stk(apneAvvik, 'åpent', 'åpne')} onClick={() => gaa('avvik')} />
+          <Rad tittel="Avvik" mer={apneAvvik === 0 ? 'Ingen åpne' : stk(apneAvvik, 'åpent', 'åpne')} onClick={() => gaa('avvik')} />
         </section>
       ) : null}
       {kapittel.nummer === '7' ? (
         <section className="ik2-avsnitt">
-          <Rad tittel="Opplæringsregister" under="Kurs og sertifikater for hver ansatt" mer={fse.totalt === 0 ? '' : `${fse.gyldige} av ${fse.totalt} har gyldig FSE`} onClick={() => gaa('opplaering')} />
+          <Rad tittel="Opplæringsregister" mer={fse.totalt === 0 ? '' : `${fse.gyldige} av ${fse.totalt} har gyldig FSE`} onClick={() => gaa('opplaering')} />
         </section>
       ) : null}
       </div>
@@ -881,7 +864,7 @@ function KapittelSide({ kapittel, tilstand, sistEndret, punkter, skjemaer, lesin
           <summary>Historikk<span className="ik2-rad-mer">versjon {kapittel.gjeldende_versjon}</span></summary>
           <div className="ik2-avsnitt">
             <Historikk hentRevisjoner={hentRev} hentAudit={hentAud} seAudit={seAudit}
-              tom="Kapittelet står slik det ble opprettet." />
+              tom="Ingen endringer." />
           </div>
         </details>
       </aside>
@@ -940,14 +923,6 @@ function PunktSide({ kapittel, punkt, kanSkrive, etterEndring }: {
         </p>
       </header>
 
-      {/* Et vedtatt kapittel er det de ansatte har bekreftet. Den som skriver
-          her skal vite at endringen må vedtas på nytt før den gjelder. */}
-      {vedtatt && kanSkrive ? (
-        <p className="ik2-merknad">
-          Kapittelet er vedtatt. Endrer du noe her, må kapittelet vedtas på nytt, og alle må lese det igjen.
-        </p>
-      ) : null}
-
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
 
       <section className="ik2-avsnitt">
@@ -960,7 +935,6 @@ function PunktSide({ kapittel, punkt, kanSkrive, etterEndring }: {
             <p>Ingen rutiner ennå.</p>
             {kanSkrive ? (
               <>
-                <p className="felt-hjelp">En rutine beskriver én arbeidsoppgave, slik at alle gjør den likt.</p>
                 <div style={{ marginTop: 8 }}>
                   <Knapp stil="merke" onClick={() => gaa(kapittel.id, punkt.id, 'ny')}>
                     <Plus size={15} strokeWidth={2} />Skriv første rutine
@@ -1052,12 +1026,10 @@ function RutineSkjema({ utkast, setUtkast, jobber, kanLagre, lagreTekst, lagrerT
           <span className="felt-etikett">Tagger</span>
           <Tagvelger tagger={tagger} valgt={utkast.tagIds} jobber={jobber} onNyTag={onNyTag}
             onEndre={ids => setUtkast(u => ({ ...u, tagIds: ids }))} />
-          <span className="felt-hjelp">Velg tagger, eller skriv inn en ny. Taggene brukes til å filtrere håndboka.</span>
         </div>
         <label className="felt felt-firkant">
           <span className="felt-etikett">Slik gjøres det</span>
           <textarea className="felt-inn skrivefelt" rows={12} autoFocus={!!utkast.tittel} value={utkast.innhold}
-            placeholder="Hvem gjør hva, i hvilken rekkefølge, og hvordan vet man at det er gjort?"
             onChange={e => setUtkast(u => ({ ...u, innhold: e.target.value }))} />
         </label>
         <div className="rad">
@@ -1096,7 +1068,7 @@ function NyRutineSide({ kapittel, punkt, tagger, etterEndring }: {
 
       <header className="ik2-hode">
         <h2 className="ik2-tittel">Ny rutine</h2>
-        <p className="ik2-underlinje">Under «{punkt.tittel}». Ingenting lagres før du trykker Lagre.</p>
+        <p className="ik2-underlinje">Under «{punkt.tittel}»</p>
       </header>
 
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
@@ -1166,9 +1138,6 @@ function RutineSide({ kapittel, punkt, rutine, tagger, kanSkrive, etterEndring }
         <>
           <header className="ik2-hode">
             <h2 className="ik2-tittel">{rutine.innhold?.trim() ? 'Rediger rutinen' : 'Skriv rutinen'}</h2>
-            {kapittel.status === 'vedtatt' ? (
-              <p className="ik2-underlinje">Kapittelet er vedtatt. Lagrer du en endring, må det vedtas på nytt før den gjelder.</p>
-            ) : null}
           </header>
           <RutineSkjema
             utkast={utkast}
@@ -1283,7 +1252,6 @@ function AvvikSide({ avvik, ansatte, naa, kanSkrive, etterEndring }: {
         <h2 className="ik2-tittel">Avvik</h2>
         <p className="ik2-underlinje">
           {apne.length === 0 ? 'Ingen åpne avvik.' : `${stk(apne.length, 'åpent avvik', 'åpne avvik')}.`}
-          {' '}Avvik meldes her eller i appen, og lukkes når tiltaket er gjort.
         </p>
       </header>
 
@@ -1460,7 +1428,6 @@ function AvvikDetalj({ avvik, ansatte, kanSkrive, etterEndring }: {
                 <textarea className="felt-inn skrivefelt skrivefelt-lav" rows={4} value={tiltak}
                   placeholder="Jordfeilbryter montert og funksjonstestet 17.09."
                   onChange={e => setTiltak(e.target.value)} />
-                <span className="felt-hjelp">Må fylles ut før avviket kan lukkes.</span>
               </label>
               <div className="rad" style={{ marginTop: 12 }}>
                 <Knapp stil="primar" disabled={!tiltak.trim() || jobber} onClick={() => void kjor(() => lukkAvvik(avvik.id, tiltak))}>
@@ -1516,12 +1483,11 @@ function OpplaeringSide({ ansatte, kompetanse, naa }: {
         <h2 className="ik2-tittel">Opplæring</h2>
         <p className="ik2-underlinje">
           {fse.totalt === 0 ? 'Ingen ansatte registrert.' : `${fse.gyldige} av ${fse.totalt} har gyldig FSE.`}
-          {' '}FSE og førstehjelp går ut etter ett år. Trykk på en person for å registrere kurs.
         </p>
       </header>
 
       {sortert.length === 0 ? (
-        <div className="ik2-tom"><p>Ansatte legges til under Firma.</p></div>
+        <div className="ik2-tom"><p>Ingen ansatte.</p></div>
       ) : (
         <div className="ik2-tabell" role="table">
           <div className="ik2-tabell-hode" role="row">
@@ -1624,7 +1590,7 @@ function AnsattSide({ ansatt, kompetanse, naa, kanSkrive, etterEndring }: {
                     }} />
                 </div>
                 <div style={{ width: 170 }}>
-                  <Felt firkant etikett="Gyldig til" type="date" value={ny.gyldig_til} hjelp="La stå tomt hvis det ikke går ut"
+                  <Felt firkant etikett="Gyldig til" type="date" value={ny.gyldig_til}
                     onChange={e => setNy(v => (v ? { ...v, gyldig_til: e.target.value } : v))} />
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -1775,7 +1741,6 @@ function TaggerSide({ tagger, punkter, kanSkrive, etterEndring }: {
       <Sti ledd={[{ navn: 'Kapitler', til: [] }]} />
       <header className="ik2-hode">
         <h2 className="ik2-tittel">Tagger</h2>
-        <p className="ik2-underlinje">Med tagger finner du rutiner på tvers av kapitlene. Endrer du navnet her, endres det på alle rutinene.</p>
       </header>
 
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}

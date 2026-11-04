@@ -45,7 +45,7 @@ export function Stegene({ t, rutiner, skrevne, versjon, vedtattAt, sistEndret, m
     {
       navn: 'Skrevet',
       gjort: !m.has('ikke_skrevet'),
-      tekst: rutiner === 0 ? 'Ingen rutiner ennå. Legg til et punkt og skriv rutinene under det.'
+      tekst: rutiner === 0 ? 'Ingen rutiner.'
         : `${skrevne} av ${rutiner} ${rutiner === 1 ? 'rutine' : 'rutiner'} har tekst.`,
       handling: null as React.ReactNode,
     },
@@ -53,8 +53,8 @@ export function Stegene({ t, rutiner, skrevne, versjon, vedtattAt, sistEndret, m
       navn: m.has('endret_etter_vedtak') ? 'Vedta endringene' : 'Vedtatt',
       gjort: vedtatt && !m.has('endret_etter_vedtak'),
       tekst: m.has('endret_etter_vedtak')
-        ? `Rutinene ble endret ${dato(sistEndret)}, etter vedtaket ${dato(vedtattAt)}. Når du vedtar på nytt, blir det versjon ${versjon + 1}, og alle må lese kapittelet igjen.`
-        : vedtatt ? `Versjon ${versjon}, vedtatt ${dato(vedtattAt)}.` : 'Faglig ansvarlig eller daglig leder vedtar kapittelet når det er skrevet.',
+        ? `Rutinene ble endret ${dato(sistEndret)}, etter vedtaket ${dato(vedtattAt)}.`
+        : vedtatt ? `Versjon ${versjon}, vedtatt ${dato(vedtattAt)}.` : 'Ikke vedtatt.',
       handling: !kanSkrive ? null : m.has('endret_etter_vedtak') ? (
         <form className="ik2-steg-skjema" onSubmit={e => { e.preventDefault(); if (notat.trim()) handling.vedtaPaaNytt(notat) }}>
           <Felt firkant value={notat} onChange={e => setNotat(e.target.value)}
@@ -69,8 +69,8 @@ export function Stegene({ t, rutiner, skrevne, versjon, vedtattAt, sistEndret, m
       navn: 'Gjennomgått',
       gjort: vedtatt && !m.has('gjennomgang_forfalt'),
       varsel: m.has('gjennomgang_forfalt'),
-      tekst: !t.frist ? 'Fristen settes når kapittelet vedtas.'
-        : m.has('gjennomgang_forfalt') ? `Fristen gikk ut ${dato(t.frist)}. Les gjennom kapittelet og bekreft.`
+      tekst: !t.frist ? 'Ingen frist.'
+        : m.has('gjennomgang_forfalt') ? `Fristen gikk ut ${dato(t.frist)}.`
         : `Neste gjennomgang innen ${dato(t.frist)}.`,
       // Gjennomgangen kan kvitteres når som helst etter vedtaket, ikke bare
       // når den er forfalt — men den er bare framhevet når den haster.
@@ -84,7 +84,7 @@ export function Stegene({ t, rutiner, skrevne, versjon, vedtattAt, sistEndret, m
     {
       navn: 'Lest av alle',
       gjort: vedtatt && !m.has('endret_etter_vedtak') && !m.has('ikke_lest'),
-      tekst: !vedtatt ? 'Når kapittelet er vedtatt, bekrefter de ansatte at de har lest det.'
+      tekst: !vedtatt ? 'Ikke vedtatt.'
         : k.skalLese === 0 ? 'Ingen ansatte registrert.'
         : m.has('ikke_lest') ? `${k.lestAv} av ${k.skalLese} har lest versjon ${versjon}. Ikke lest: ${mangler.join(', ')}.`
         : `Alle ${k.skalLese} har lest versjon ${versjon}.`,

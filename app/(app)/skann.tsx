@@ -6,7 +6,7 @@ import Animated, { FadeIn } from 'react-native-reanimated'
 import { SvgXml } from 'react-native-svg'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
-import { X, ScanLine, Check, TriangleAlert, Trash2 } from 'lucide-react-native'
+import { X, ScanLine, Check, TriangleAlert, Trash2, Undo2, Pencil } from 'lucide-react-native'
 import { Pressable } from '../../components/pressable'
 import { database } from '../../lib/db'
 import { syncQuietly } from '../../lib/db/sync'
@@ -17,13 +17,27 @@ import { MeshMarker } from '../../lib/db/models/mesh-marker'
 import { SYMBOLS, getSymbol, symbolSvg } from '../../lib/symbols'
 import { useUserId } from '../../lib/auth-user'
 import * as FileSystem from 'expo-file-system/legacy'
-import { NativeMeshViewer, nativeSplatAvailable, presentMeshScan, resolveScanPath, type MeshScanResult } from '../../lib/splat'
+import { NativeMeshViewer, nativeSplatAvailable, presentMeshScan, resolveScanPath, type MeshScanResult, type PlanLine } from '../../lib/splat'
 import { ensureScanLocal, ensureScanUploaded } from '../../lib/scan-storage'
+import { supabase } from '../../lib/supabase'
 import { colors, spacing, radius, type as t } from '../../lib/theme'
 
 type MarkerSheetState = { mode: 'new'; point: { x: number; y: number; z: number } } | { mode: 'edit'; marker: MeshMarker } | null
 
 type Stage = 'intro' | 'done' | 'view'
+// To moduser: VIS (se rundt i skannet som Street View, AR-knappen viser redigeringene på veggene
+// i rommet) og REDIGER (sett punkter og tegn linjer på modellen).
+type Visning = 'vis' | 'rediger'
+type Verktøy = 'punkt' | 'linje'
+const VERKTØY: { id: Verktøy; label: string }[] = [{ id: 'punkt', label: 'Punkt' }, { id: 'linje', label: 'Linje' }]
+
+// Planlagte linjer (§110) ligger i en fil ved siden av modellen, `<glb>.linjer.json`: de hører til
+// DENNE revisjonen (samme koordinater som GLB-en og relokaliseringskartet). Bare lokalt foreløpig —
+// ikke synket, så en kollega ser dem ikke.
+const linjeFil = (glbPath: string) => 'file://' + glbPath + '.linjer.json'
+async function lesLinjer(glbPath: string): Promise<PlanLine[]> {
+  try { return JSON.parse(await FileSystem.readAsStringAsync(linjeFil(glbPath))) } catch { return [] }
+}
 
 export default function SkannScreen() {
   const insets = useSafeAreaInsets()
@@ -39,7 +53,10 @@ export default function SkannScreen() {
   // Punkter er knyttet til DENNE skann-revisjonen (scan_path) — ikke bare rommet/ordren.
   // Skannes på nytt, følger gamle punkter forrige GLB uten transform (se confirmRescan).
   const [scanPath, setScanPath] = useState<string | null>(viewPath ?? null)
-  const [markerMode, setMarkerMode] = useState(false)
+  const [visning, setVisning] = useState<Visning>('vis')
+  const [verktøy, setVerktøy] = useState<Verktøy>('linje')
+  const [lines, setLines] = useState<PlanLine[]>([])
+  const [draft, setDraft] = useState<[number, number, number][]>([])
   const [markers, setMarkers] = useState<MeshMarker[]>([])
   const [sheet, setSheet] = useState<MarkerSheetState>(null)
   const userId = useUserId()
@@ -51,6 +68,7 @@ export default function SkannScreen() {
   // ble stående på forrige økts «Skann ferdig» med den gamle modellen. Re-synk derfor på
   // HVER fokusering: uten viewPath skal en (re)åpning alltid starte på intro.
   useFocusEffect(useCallback(() => {
+    setVisning('vis')
     if (viewPath) {
       setStage('view')
       setMesh({ glbPath: resolveScanPath(viewPath), framesDir: '', keyframes: 0, textured: true, filledFraction: null, geometryPath: 'anchor-v2' })
@@ -79,6 +97,29 @@ export default function SkannScreen() {
     })()
     return () => { alive = false }
   }, [viewPath])
+
+  useEffect(() => {
+    setDraft([])
+    if (!mesh?.glbPath) { setLines([]); return }
+    let alive = true
+    lesLinjer(mesh.glbPath).then(l => { if (alive) setLines(l) })
+    return () => { alive = false }
+  }, [mesh?.glbPath])
+
+  async function saveLines(next: PlanLine[]) {
+    setLines(next)
+    if (mesh?.glbPath) await FileSystem.writeAsStringAsync(linjeFil(mesh.glbPath), JSON.stringify(next)).catch(() => {})
+  }
+
+  function finishLine() {
+    if (draft.length >= 2) saveLines([...lines, { id: String(Date.now()), punkter: draft }])
+    setDraft([])
+  }
+
+  function undoLine() {
+    if (draft.length > 0) { setDraft(draft.slice(0, -1)); return }
+    if (lines.length > 0) saveLines(lines.slice(0, -1))
+  }
 
   useEffect(() => {
     if (!scanPath) { setMarkers([]); return }
@@ -177,9 +218,15 @@ export default function SkannScreen() {
           key={`${mesh.glbPath}#${glbReload}`}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
           glbPath={mesh.glbPath}
-          markerMode={markerMode}
+          markerMode={visning === 'rediger'}
           markers={JSON.stringify(markers.map(m => ({ id: m.id, x: m.x, y: m.y, z: m.z })))}
-          onTapPoint={(e: any) => markerMode && setSheet({ mode: 'new', point: e.nativeEvent })}
+          lines={JSON.stringify(draft.length ? [...lines, { id: 'utkast', punkter: draft }] : lines)}
+          onTapPoint={(e: any) => {
+            const p = e.nativeEvent
+            if (visning !== 'rediger') return
+            if (verktøy === 'punkt') setSheet({ mode: 'new', point: p })
+            else setDraft(d => [...d, [p.x, p.y, p.z]])
+          }}
           onTapMarker={(e: any) => {
             const m = markers.find(x => x.id === e.nativeEvent.id)
             if (m) setSheet({ mode: 'edit', marker: m })
@@ -194,6 +241,20 @@ export default function SkannScreen() {
           <X size={20} color="#fff" strokeWidth={2.2} />
         </Pressable>
         <Text style={[t.headline, { color: '#fff', flex: 1 }]} numberOfLines={1}>{heading}</Text>
+        {stage === 'view' && !!mesh && (
+          visning === 'vis' ? (
+            <Pressable onPress={() => setVisning('rediger')} haptic="light" pressScale={0.95}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.14)' }}>
+              <Pencil size={15} color="#fff" strokeWidth={2.2} />
+              <Text style={[t.subhead, { color: '#fff', fontWeight: '600' }]}>Rediger</Text>
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => { finishLine(); setVisning('vis') }} haptic="medium" pressScale={0.95}
+              style={{ height: 36, paddingHorizontal: spacing.lg, borderRadius: radius.pill, backgroundColor: '#fff', justifyContent: 'center' }}>
+              <Text style={[t.subhead, { color: '#000', fontWeight: '600' }]}>Ferdig</Text>
+            </Pressable>
+          )
+        )}
       </View>
 
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.screen }}>
@@ -203,9 +264,6 @@ export default function SkannScreen() {
               <ScanLine size={44} color="#fff" strokeWidth={1.5} />
             </View>
             <Text style={[t.title1, { color: '#fff', marginTop: spacing.xl }]}>Skann rommet</Text>
-            <Text style={[t.body, { color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: spacing.sm, maxWidth: 300 }]}>
-              Beveg telefonen rolig rundt i rommet. LiDAR fanger dybde + farge og bygger en 3D-modell på enheten.
-            </Text>
           </Animated.View>
         )}
 
@@ -230,7 +288,7 @@ export default function SkannScreen() {
               }}>
                 <TriangleAlert size={14} color={colors.warning} strokeWidth={2.2} />
                 <Text style={[t.footnote, { color: colors.warning, fontWeight: '600' }]}>
-                  {!mesh.textured ? 'Uten tekstur. Vurder å skanne på nytt' : 'Lav dekning i deler av rommet'}
+                  {!mesh.textured ? 'Uten tekstur' : 'Lav dekning i deler av rommet'}
                 </Text>
               </View>
             )}
@@ -263,17 +321,17 @@ export default function SkannScreen() {
         )}
         {stage === 'view' && (
           <View style={{ gap: spacing.sm }}>
-            {!!mesh && (
+            {!!mesh && visning === 'rediger' && (
               <View style={{ flexDirection: 'row', alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: radius.pill, padding: 3 }}>
-                {([false, true] as const).map(on => (
-                  <Pressable key={String(on)} haptic="light" pressScale={0.96} onPress={() => setMarkerMode(on)}
-                    style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: markerMode === on ? colors.brand : 'transparent' }}>
-                    <Text style={[t.subhead, { color: '#fff', fontWeight: '600' }]}>{on ? 'Merk' : 'Se'}</Text>
+                {VERKTØY.map(v => (
+                  <Pressable key={v.id} haptic="light" pressScale={0.96} onPress={() => { if (v.id !== 'linje') finishLine(); setVerktøy(v.id) }}
+                    style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: verktøy === v.id ? colors.brand : 'transparent' }}>
+                    <Text style={[t.subhead, { color: '#fff', fontWeight: '600' }]}>{v.label}</Text>
                   </Pressable>
                 ))}
               </View>
             )}
-            {markers.length > 0 && (
+            {visning === 'rediger' && markers.length > 0 && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: 2 }}>
                 {markers.map(m => {
                   const sym = getSymbol(m.symbolId)
@@ -287,10 +345,25 @@ export default function SkannScreen() {
                 })}
               </ScrollView>
             )}
-            <Text style={[t.footnote, { color: 'rgba(255,255,255,0.55)', textAlign: 'center' }]}>
-              {markerMode ? 'Trykk på flaten for å sette et punkt' : 'Dra for å se rundt · klyp for å gå · to fingre flytter · dobbelttrykk nullstiller'}
-            </Text>
-            {opensExisting && (scanId || roomId) && (
+            {visning === 'rediger' && verktøy === 'linje' && (
+              <View style={{ flexDirection: 'row', gap: spacing.sm, justifyContent: 'center' }}>
+                <Pressable haptic="light" pressScale={0.96} onPress={undoLine} disabled={draft.length === 0 && lines.length === 0}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, height: 36, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <Undo2 size={16} color="#fff" strokeWidth={2} />
+                  <Text style={[t.subhead, { color: '#fff', fontWeight: '600' }]}>Angre</Text>
+                </Pressable>
+                <Pressable haptic="medium" pressScale={0.96} onPress={finishLine} disabled={draft.length < 2}
+                  style={{ paddingHorizontal: spacing.lg, height: 36, borderRadius: radius.pill, justifyContent: 'center', backgroundColor: draft.length >= 2 ? '#fff' : 'rgba(255,255,255,0.08)' }}>
+                  <Text style={[t.subhead, { color: draft.length >= 2 ? '#000' : 'rgba(255,255,255,0.4)', fontWeight: '600' }]}>Ferdig linje</Text>
+                </Pressable>
+              </View>
+            )}
+            {visning !== 'vis' && verktøy !== 'punkt' && draft.length > 0 && (
+              <Text style={[t.footnote, { color: 'rgba(255,255,255,0.55)', textAlign: 'center' }]}>
+                {`${draft.length} punkt${draft.length === 1 ? '' : 'er'}`}
+              </Text>
+            )}
+            {visning === 'vis' && opensExisting && (scanId || roomId) && (
               <Pressable onPress={confirmRescan} pressScale={0.97}
                 style={{ height: 48, borderRadius: radius.xl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={[t.headline, { color: '#fff' }]}>Skann på nytt</Text>

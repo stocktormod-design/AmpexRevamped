@@ -1,9 +1,10 @@
 import { kan, rollenavn, type Rettighet } from '@delt/kontor-tilgang'
-import { Building2, Calculator, ClipboardList, Ellipsis, FileText, FlaskConical, FolderKanban, Globe, House, Package, ShieldCheck, UserRound, Users } from 'lucide-react'
+import { Building2, Calculator, ClipboardList, Ellipsis, FileText, FlaskConical, FolderKanban, Globe, House, MessageSquareWarning, Package, ShieldCheck, UserRound, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/auth'
 import { erAmpexAdmin } from '@/lib/brukere'
 import { AmpexAdmin } from '@/ruter/AmpexAdmin'
+import { Tilbakemeldinger } from '@/ruter/Tilbakemeldinger'
 import { Firma } from '@/ruter/Firma'
 import { Internkontroll } from '@/ruter/Internkontroll'
 import { InternkontrollV2 } from '@/ruter/InternkontrollV2'
@@ -92,6 +93,9 @@ const RUTER = [
 const AMPEX_RUTE = {
   id: 'ampex', navn: 'Ampex', gruppe: 'Ampex', ikon: Globe, vis: () => <AmpexAdmin />,
 } as const
+const TILBAKEMELDING_RUTE = {
+  id: 'tilbakemelding', navn: 'Tilbakemeldinger', gruppe: 'Ampex', ikon: MessageSquareWarning, vis: () => <Tilbakemeldinger />,
+} as const
 
 /**
  * MONTØRFLATENE — en annen app i samme skall.
@@ -126,7 +130,7 @@ const TELEFONORDEN = ['oversikt', 'ordre', 'ik', 'meg'] as const
 /** Maks antall knapper i bunnlinja, «Mer» medregnet. Over fem blir de for smale å treffe. */
 const BUNNPLASSER = 5
 
-type Rute = (typeof RUTER)[number] | (typeof MONTOR_RUTER)[number] | typeof AMPEX_RUTE
+type Rute = (typeof RUTER)[number] | (typeof MONTOR_RUTER)[number] | typeof AMPEX_RUTE | typeof TILBAKEMELDING_RUTE
 
 export function App() {
   const { sesjon, profil, laster, feil, gjenoppretting, loggUt } = useAuth()
@@ -158,7 +162,7 @@ export function App() {
     ? MONTOR_RUTER.filter(r => kan(profil?.role, r.rett))
     : [
         ...RUTER.filter(r => kan(profil?.role, r.rett)),
-        ...(ampexAdmin ? [AMPEX_RUTE] : []),
+        ...(ampexAdmin ? [AMPEX_RUTE, TILBAKEMELDING_RUTE] : []),
       ]
 
   useEffect(() => {
@@ -177,8 +181,7 @@ export function App() {
     return (
       <Sperre tittel="Mangler oppsett">
         <p className="kort-hjelp">
-          <code>VITE_SUPABASE_URL</code> og <code>VITE_SUPABASE_ANON_KEY</code> er ikke satt. Kopier{' '}
-          <code>desktop/.env.example</code> til <code>desktop/.env</code> og fyll dem inn.
+          <code>VITE_SUPABASE_URL</code> og <code>VITE_SUPABASE_ANON_KEY</code> er ikke satt.
         </p>
       </Sperre>
     )
@@ -223,8 +226,7 @@ export function App() {
     return (
       <Sperre tittel="Ingen flate for denne rollen" avslutt={loggUt}>
         <p className="kort-hjelp">
-          Du er logget inn som {rollenavn(profil.role).toLowerCase()}, og den rollen har ingen flater
-          her. Be en administrator se på rolleoppsettet.
+          Rollen {rollenavn(profil.role).toLowerCase()} har ingen flater her.
         </p>
       </Sperre>
     )
@@ -241,8 +243,7 @@ export function App() {
     return (
       <Sperre tittel="Ingen flater å vise" avslutt={loggUt}>
         <p className="kort-hjelp">
-          Rollen {rollenavn(profil.role).toLowerCase()} har ingen kontorflater. Det er sannsynligvis
-          en feil i rolleoppsettet — be en administrator se på det.
+          Rollen {rollenavn(profil.role).toLowerCase()} har ingen kontorflater.
         </p>
       </Sperre>
     )

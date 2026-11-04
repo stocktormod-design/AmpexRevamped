@@ -45,7 +45,7 @@ export function ArkivKort({ order }: { order: Order }) {
         ok ? 'Arkivet er uendret' : 'Arkivet stemmer IKKE',
         ok
           ? 'Sjekksummen matcher pakken som ble frosset.'
-          : 'Pakken i lagringen er ikke den som ble frosset. Dette må undersøkes.',
+          : 'Pakken i lagringen er ikke den som ble frosset.',
       )
     } catch (e) {
       Alert.alert('Kunne ikke kontrollere', e instanceof Error ? e.message : 'Ukjent feil')
@@ -60,11 +60,11 @@ export function ArkivKort({ order }: { order: Order }) {
         <Archive size={18} color={arkiv ? colors.brand : colors.iconMuted} strokeWidth={2.2} />
         <View style={{ flex: 1 }}>
           <Text style={t.headline}>{arkiv ? 'Arkivert' : 'Ikke arkivert'}</Text>
-          <Text style={[t.footnote, { marginTop: 1 }]}>
-            {arkiv
-              ? `Frosset ${formatDate(arkiv.frossetAt)} · oppbevares til ${formatDate(arkiv.oppbevaresTil)}`
-              : 'Frys jobben når den er ferdig — da er den låst med en sjekksum.'}
-          </Text>
+          {!!arkiv && (
+            <Text style={[t.footnote, { marginTop: 1 }]}>
+              {`Frosset ${formatDate(arkiv.frossetAt)} · oppbevares til ${formatDate(arkiv.oppbevaresTil)}`}
+            </Text>
+          )}
         </View>
         {jobber ? (
           <ActivityIndicator color={colors.brand} />

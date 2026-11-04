@@ -900,7 +900,7 @@ export default function OrderDetailScreen() {
                 <Text style={[t.subhead, { fontWeight: '600', fontVariant: ['tabular-nums'] }]}>{grunnlag ? `${formatKr(grunnlag.bruttoOre)} kr` : ''}</Text>
               </View>
               {!grunnlag || grunnlag.linjer.length === 0 ? (
-                <Text style={t.footnote}>Ingenting å fakturere ennå. Timer og materiell havner her.</Text>
+                <Text style={t.footnote}>Ingenting å fakturere</Text>
               ) : (
                 <>
                   {grunnlag.linjer.slice(0, 3).map((l, i) => (
@@ -918,9 +918,11 @@ export default function OrderDetailScreen() {
             <View style={{ width: kortBredde, padding: spacing.md, paddingHorizontal: spacing.lg, gap: spacing.sm, justifyContent: 'space-between' }}>
               <View>
                 <Text style={t.title3}>Marker som ferdig</Text>
-                <Text style={[t.footnote, { marginTop: 4 }]}>
-                  {order.status === 'fakturaklar' ? 'Ordren er ferdig og klar til faktura.' : order.status === 'fakturert' ? 'Ordren er fakturert.' : 'Ordren går til fakturering. Du får se hele grunnlaget først.'}
-                </Text>
+                {(order.status === 'fakturaklar' || order.status === 'fakturert') && (
+                  <Text style={[t.footnote, { marginTop: 4 }]}>
+                    {order.status === 'fakturaklar' ? 'Klar til faktura' : 'Fakturert'}
+                  </Text>
+                )}
               </View>
               <Pressable haptic="medium" pressScale={0.985} disabled={order.status === 'fakturert'} onPress={() => setBekreft(true)}
                 style={{ height: 46, borderRadius: radius.md, backgroundColor: order.status === 'fakturaklar' ? colors.successSoft : colors.label, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: spacing.sm, opacity: order.status === 'fakturert' ? 0.4 : 1 }}>
@@ -939,7 +941,6 @@ export default function OrderDetailScreen() {
           <View style={{ paddingHorizontal: spacing.screen, gap: spacing.md }}>
             <View>
               <Text style={t.title3}>Sikker?</Text>
-              <Text style={[t.footnote, { marginTop: 2 }]}>Dette er alt som faktureres på ordren.</Text>
             </View>
             <View style={{ gap: 6 }}>
               {(grunnlag?.linjer ?? []).map((l, i) => (
@@ -948,7 +949,7 @@ export default function OrderDetailScreen() {
                   <Text style={[t.subhead, { color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>{formatKr(l.nettoOre)}</Text>
                 </View>
               ))}
-              {(grunnlag?.linjer.length ?? 0) === 0 && <Text style={t.footnote}>Ingen linjer. Ordren blir ferdig uten noe å fakturere.</Text>}
+              {(grunnlag?.linjer.length ?? 0) === 0 && <Text style={t.footnote}>Ingen linjer</Text>}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.separator, paddingTop: spacing.sm, marginTop: 4 }}>
                 <Text style={[t.headline]}>Å betale</Text>
                 <Text style={[t.headline, { fontVariant: ['tabular-nums'] }]}>{grunnlag ? `${formatKr(grunnlag.bruttoOre)} kr` : '0 kr'}</Text>

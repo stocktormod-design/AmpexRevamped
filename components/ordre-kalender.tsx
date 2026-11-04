@@ -137,7 +137,7 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
       {plan.sumJobber === 0 ? (
         <View style={{ marginTop: spacing.xl }}>
           <PapirCard style={{ padding: spacing.lg, alignItems: 'center' }}>
-            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Ingen jobber satt opp denne uken.</Text>
+            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Ingen jobber denne uken</Text>
           </PapirCard>
         </View>
       ) : plan.dager.map((d, i) => d.jobber.length === 0 ? null : (

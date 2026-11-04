@@ -49,7 +49,7 @@ export default function NyttSkjema() {
       <ScrollView contentContainerStyle={{ padding: spacing.screen, paddingBottom: insets.bottom + spacing.xxl }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <TextInput
           value={title} onChangeText={setTitle} autoFocus
-          placeholder="Tittel, f.eks. Sluttkontroll bolig" placeholderTextColor={colors.paperTertiary}
+          placeholder="Tittel" placeholderTextColor={colors.paperTertiary}
           style={[t.title3, { backgroundColor: colors.paperBg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
         />
 

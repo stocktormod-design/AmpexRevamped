@@ -36,6 +36,34 @@ export type Grunnlag = {
 /** Hvor mange ganger et punkt spørres om før det regnes som «husker ikke». */
 export const MAKS_FORSOK = 2
 
+/**
+ * Smarte spørsmål: når avhørslista er tom, ser modellen på malen og det den
+ * alt vet (bildene, notatene, svarene) og spør om det der én setning fyller
+ * mest av det som mangler — «Gikk det som planlagt, og hva er du mest fornøyd
+ * med?». Ingen fast liste: det som står på bildene spørres det ikke om.
+ * Taket er her, ikke i modellen: «ingen lærlinger vil bruke tid på en logg».
+ * Tre var for lite: ti rollespilte logger mot Tormods egne (28.09.2026) fikk
+ * aldri et «hvorfor», og risikovurderingen ble gjettet. Fem gir rom for
+ * hvorfor → risiko → kontroll → egenvurdering. Tormod 30.09: «du kan godt gjøre
+ * 3 high impact spørsmål» — inntil tre hvorfor, derfor sju.
+ */
+export const MAKS_EKSTRA = 7
+/** Merket på en bot-melding som var et nøkkelspørsmål (feltet `dekker`). */
+export const EKSTRA = 'ekstra'
+
+type Rad = { rolle: 'laerling' | 'bot'; dekker: string | null }
+
+/** Nøkkelspørsmål boten alt har stilt i denne loggen. */
+export function ekstraBrukt(rader: Rad[]): number {
+  return rader.filter(r => r.rolle === 'bot' && r.dekker === EKSTRA).length
+}
+
+/** Står et nøkkelspørsmål ubesvart? Da er det ikke tid for «Skriv loggen» ennå. */
+export function venterPaaEkstra(rader: Rad[]): boolean {
+  const siste = rader[rader.length - 1]
+  return siste?.rolle === 'bot' && siste.dekker === EKSTRA
+}
+
 const MAALING = /\b(m[åa]lt|m[åa]ling|m[åa]lte|spenning|isolasjon|kontinuitet|jordfeilbryter.*test|megg)/i
 const KABEL = /\b(kabel|kabler|pfsp|pfxp|prp|tfxp|pr\b|ex\b|leder|kvadrat|mm²|mm2)/i
 

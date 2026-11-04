@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { TAB_BAR_HOYDE, tabBarBunn } from './glass-tab-bar'
 import { View } from 'react-native'
 import { Text } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -105,7 +106,8 @@ export function VoiceAssistantOverlay() {
           position: 'absolute',
           left: 0,
           right: 0,
-          bottom: insets.bottom + spacing.xxl,
+          // Over fanelinja, ikke oppå den — orben lå over fanene og var umulig å treffe.
+          bottom: tabBarBunn(insets.bottom) + TAB_BAR_HOYDE + spacing.lg,
           alignItems: 'center',
         },
         containerStyle,

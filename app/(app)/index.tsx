@@ -252,7 +252,6 @@ function TomPlate() {
     }}>
       <CircleCheck size={sizes.iconLg} color={colors.brand} strokeWidth={sizes.lucideStroke} />
       <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen ordrer i dag</Text>
-      <Text style={[t.footnote, { marginTop: spacing.xs }]}>Nye ordre dukker opp her.</Text>
     </View>
   )
 }
@@ -397,7 +396,7 @@ export default function HomeScreen() {
           </View>
           <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, overflow: 'hidden' }}>
             {siste.length === 0 ? (
-              <Text style={[t.footnote, { padding: spacing.lg }]}>Ingen ordre ennå.</Text>
+              <Text style={[t.footnote, { padding: spacing.lg }]}>Ingen ordre</Text>
             ) : siste.map((o, i) => (
               <Pressable key={o.id} haptic="light" onPress={() => router.push(`/(app)/ordre/${o.id}`)}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.separator }}>

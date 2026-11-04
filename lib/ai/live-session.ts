@@ -104,6 +104,11 @@ const MAKS_TALE_MS = 20_000
 const AVBRYT_MS = 400
 const FORBUFFER_BITER = 4
 const IDLE_MS = 3 * 60_000
+// Uten ekko-kansellering (simulator, Android, VoiceProcessingIO som svikter) holdes
+// mikrofonen døv litt ETTER at avspillingen skal være ferdig: høyttalerens forsinkelse
+// og romklangen ga hale av hennes egen stemme over TALE_RMS → activityStart → hun
+// svarte «ja» på seg selv i det uendelige (2026-11-04, simulator).
+const ETTERKLANG_MS = 900
 
 const LIVE_WS_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained'
 
@@ -764,7 +769,7 @@ export class LiveSession {
    */
   private port(bytes: Uint8Array, rms: number): void {
     const na = Date.now()
-    const modellSnakker = na < this.playbackEndsAtMs
+    const modellSnakker = na < this.playbackEndsAtMs + (this.harAek ? 0 : ETTERKLANG_MS)
     emitVoiceLevel({ level: rms, modelSpeaking: modellSnakker })
 
     if (modellSnakker && !this.aktivitetAapen) {

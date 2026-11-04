@@ -38,7 +38,7 @@ import {
   SPORSMAAL, erFerdig, finnForbudte, gjenstaaende, type Tilstand,
 } from '../lib/laeretid/utsporing'
 import {
-  MALER, NEK_NOKKEL, STANDARD_MAL_ID, finnMal, fyllResten, jaNei, lesUtfylling, mangler, nekFelter, tilTekst, tomUtfylling, vaskUtfylling,
+  BILDE_NOKKEL, MALER, NEK_NOKKEL, STANDARD_MAL_ID, bildeforklaring, ordneBilder, settBildetekst, skrevetBildetekst, utenGlemtHvorfor, delBeskrivelse, finnMal, slaaSammenBeskrivelse, fyllResten, jaNei, lesUtfylling, mangler, nekFelter, tilTekst, tomUtfylling, vaskUtfylling,
 } from '../lib/laeretid/mal'
 import { loggPdfHtml } from '../lib/pdf/logg'
 import { arbeidsdatoFraBilder, lesExifTid, tidFraExif } from '../lib/laeretid/bildetid'
@@ -46,7 +46,7 @@ import { byggProfil, fokus, fordeling, nesteTema, nivaaFor, temaProfil } from '.
 import { ENHETER, TEMAER, finnTema } from '../lib/laeretid/teori'
 import { finnOppslag as nekOppslag } from '../lib/laeretid/nek-kart'
 import {
-  MAKS_FORSOK, gjennomgang, nekHenvisning, paastaarNek, rensNek, trygtNekSvar, vaskBelegg,
+  EKSTRA, MAKS_EKSTRA, MAKS_FORSOK, ekstraBrukt, gjennomgang, venterPaaEkstra, nekHenvisning, paastaarNek, rensNek, trygtNekSvar, vaskBelegg,
   type Grunnlag, type Melding,
 } from '../lib/laeretid/samtale'
 
@@ -776,6 +776,58 @@ sjekk('ordet sluttkontroll flagges for ettersyn',
   finnForbudte('Vi tok en sluttkontroll etterpå.').length, 1)
 sjekk('en ryddig setning gaar gjennom',
   finnForbudte('Selve stigen monterte jeg ikke, men jeg la kabelen på den.'), [])
+
+// ── Nøkkelspørsmål etter lista ──────────────────────────────────────────────
+{
+  const b = (dekker: string | null) => ({ rolle: 'bot' as const, dekker })
+  const h = { rolle: 'laerling' as const, dekker: '' }
+  sjekk('ingen nøkkelspørsmål brukt i ny samtale', ekstraBrukt([b('utfort-selv'), h]), 0)
+  sjekk('nøkkelspørsmål telles', ekstraBrukt([b('utfort-selv'), h, b(EKSTRA), h, b(EKSTRA)]), 2)
+  sjekk('ubesvart nøkkelspørsmål holder igjen «Skriv loggen»', venterPaaEkstra([b('utfort-selv'), h, b(EKSTRA)]), true)
+  sjekk('besvart nøkkelspørsmål slipper den fram', venterPaaEkstra([b(EKSTRA), h]), false)
+  sjekk('ferdigmelding (tom) venter ikke', venterPaaEkstra([b(EKSTRA), h, b('')]), false)
+  sjekk('taket er lite — ingen lange avhør', MAKS_EKSTRA <= 7, true)
+}
+
+// ── Bildetekst fra modellen ─────────────────────────────────────────────────
+{
+  const m = slaaSammenBeskrivelse('Sirene 1009 åpnet, loop koblet', 'Bildet viser en rød sirene.\nTo linjer.')
+  sjekk('bildeteksten er første linje', delBeskrivelse(m).bildetekst, 'Sirene 1009 åpnet, loop koblet')
+  sjekk('beskrivelsen er resten, også flere linjer', delBeskrivelse(m).beskrivelse, 'Bildet viser en rød sirene.\nTo linjer.')
+  sjekk('notatet hans slår modellens tekst', bildeforklaring('Min tekst', m), 'Min tekst')
+  sjekk('uten notat: modellens bildetekst', bildeforklaring('  ', m), 'Sirene 1009 åpnet, loop koblet')
+  sjekk('uten bildetekst er beskrivelsen hel', delBeskrivelse(slaaSammenBeskrivelse('', 'Bare beskrivelse.')).beskrivelse, 'Bare beskrivelse.')
+  sjekk('gammel beskrivelse uten linjeskift gir ingen bildetekst', bildeforklaring(null, 'Bildet viser en sirene.'), '')
+}
+
+// ── «Husker ikke hvorfor» hører ikke hjemme i utførelsen ───────────────────
+sjekk('glemt hvorfor tas ut, resten står',
+  utenGlemtHvorfor('Jeg koblet fra alt utstyr. Jeg husker ikke hvorfor jeg isolasjonsmålte frakoblet. Så målte jeg kursen.'),
+  'Jeg koblet fra alt utstyr. Så målte jeg kursen.')
+sjekk('«kan ikke forklare» tas ut',
+  utenGlemtHvorfor('Gulvføleren lå i rør, men jeg husker ikke helt hvordan jeg skal forklare det.'), '')
+sjekk('et glemt FAKTUM blir stående',
+  utenGlemtHvorfor('Jeg husker ikke kabeltypen.'), 'Jeg husker ikke kabeltypen.')
+sjekk('avsnitt bevares', utenGlemtHvorfor('Første.\n\nAndre.'), 'Første.\n\nAndre.')
+
+// ── Bildetekster skrevet sammen med loggen ──────────────────────────────────
+const medBilder = vaskUtfylling(std, { [BILDE_NOKKEL]: [['b1', ' PE-lederen før tilkobling '], ['b2', ''], [undefined, 'uten id'], 'tull'] })
+sjekk('bildetekst: tomme og id-løse rader forsvinner', medBilder[BILDE_NOKKEL], [['b1', 'PE-lederen før tilkobling']])
+sjekk('bildetekst: slås opp per bilde', skrevetBildetekst(medBilder, 'b1'), 'PE-lederen før tilkobling')
+sjekk('bildetekst: ukjent bilde gir tomt', skrevetBildetekst(medBilder, 'b9'), '')
+sjekk('bildetekst: overlever lagring', skrevetBildetekst(lesUtfylling(std, JSON.stringify(medBilder)), 'b1'), 'PE-lederen før tilkobling')
+sjekk('bildetekst: teller ikke som mangel', mangler(std, medBilder).some(m => m.seksjon === BILDE_NOKKEL), false)
+const lest = slaaSammenBeskrivelse('Forslag fra se', 'Typeskilt Gessler MLB10')
+sjekk('forklaring: loggens tekst (notatet gjort ferdig) går foran', bildeforklaring('Mitt notat', lest, 'Skrevet'), 'Skrevet')
+sjekk('forklaring: notatet når loggen ikke har tekst', bildeforklaring('Mitt notat', lest, ''), 'Mitt notat')
+sjekk('forklaring: skrevet går foran se-forslaget', bildeforklaring('', lest, 'Skrevet'), 'Skrevet')
+const tre = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'ny' }]
+const ordnet = vaskUtfylling(std, { [BILDE_NOKKEL]: [['b', 'start'], ['c', 'midt'], ['a', 'ferdig produkt']] })
+sjekk('rekkefølge: loggens, nye bilder sist', ordneBilder(tre, ordnet).map(b => b.id), ['b', 'c', 'a', 'ny'])
+sjekk('rekkefølge: uten logg står de som de kom', ordneBilder(tre, tomUtfylling(std)).map(b => b.id), ['a', 'b', 'c', 'ny'])
+sjekk('rette tekst: endrer bare det ene bildet', settBildetekst(ordnet, 'c', 'Rettet'), [['b', 'start'], ['c', 'Rettet'], ['a', 'ferdig produkt']])
+sjekk('rette tekst: bilde uten rad legges til sist', settBildetekst(ordnet, 'ny', 'Ny').slice(-1), [['ny', 'Ny']])
+sjekk('forklaring: se-forslaget når ingenting er skrevet', bildeforklaring(null, lest), 'Forslag fra se')
 
 console.log('')
 if (feil > 0) {

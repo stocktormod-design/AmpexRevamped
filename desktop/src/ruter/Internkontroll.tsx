@@ -66,7 +66,6 @@ function dato(v: string | Date | null | undefined): string {
 const GRUPPE_FOR: Record<string, string> = Object.fromEntries(
   IK_SKJELETT.map(p => [p.nummer, IK_GRUPPENAVN[p.gruppe]]),
 )
-const HINT_FOR: Record<string, string> = Object.fromEntries(IK_SKJELETT.map(p => [p.nummer, p.hint]))
 
 export function Internkontroll() {
   const { profil } = useAuth()
@@ -171,22 +170,10 @@ export function Internkontroll() {
   if (!laster && punkter.length === 0) {
     return (
       <>
-        <Sidehode tittel="Internkontroll" under="Firmaets IK-system" />
+        <Sidehode tittel="Internkontroll" />
         {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
-        <Kort tittel="Ingen internkontroll opprettet ennå">
-          <p className="kort-hjelp">
-            Ampex kan sette opp et skjelett med {antall(IK_SKJELETT.length)} punkter: de fem
-            internkontrollforskriften krever skriftlig, de tre som er bindende uten krav om
-            skriftlighet, fem elektrofaglige om kvalifikasjoner, sluttkontroll, samsvarserklæring,
-            overlevering og instrumenter, og ett om oppbevaring.
-          </p>
-          <p className="kort-hjelp" style={{ marginTop: 14 }}>
-            Punktene kommer med formål og hjemmel, men <strong>uten innhold</strong>. Rutinene må
-            firmaet skrive selv — et IK-system skrevet av leverandøren er nettopp den døde permen
-            forskriften skal hindre. Hjemmelshenvisningene er et utgangspunkt, og faglig ansvarlig
-            må kontrollere dem mot gjeldende forskrift.
-          </p>
-          <div style={{ marginTop: 20 }}>
+        <Kort tittel="Ingen internkontroll opprettet">
+          <div>
             <Knapp stil="merke" onClick={start} disabled={!kanSkrive || jobber}>
               {jobber ? 'Oppretter …' : 'Opprett skjelettet'}
             </Knapp>
@@ -219,7 +206,7 @@ export function Internkontroll() {
           <div className="liste">
             <div className="liste-verktoy">
               <div className="dempet-mer" style={{ fontSize: 12 }}>
-                {laster ? 'Henter …' : `${stk(punkter.length, 'punkt', 'punkter')} · 1–5 skal være skriftlige (§ 5)`}
+                {laster ? 'Henter …' : stk(punkter.length, 'punkt', 'punkter')}
               </div>
             </div>
             {/* Gruppert, ikke én lang rull. Fjorten punkter uten inndeling er
@@ -424,7 +411,7 @@ function Rutine({
               hentRevisjoner={hentRev}
               hentAudit={hentAud}
               seAudit={seAudit}
-              tom="Rutinen står slik den ble opprettet."
+              tom="Ingen endringer."
             />
           </div>
         </>
@@ -455,7 +442,6 @@ function Rutine({
             etikett="Hva ble endret, og hvorfor?"
             value={notat}
             placeholder="Presisert at måling skal loggføres"
-            hjelp="Påkrevd. Blir stående i historikken."
             onChange={e => setNotat(e.target.value)}
           />
           <div className="rad">
@@ -476,8 +462,6 @@ function Rutine({
             <Knapp stil="naken" disabled={jobber != null} onClick={() => { setNotat(''); setRedigerer(false) }}>
               Avbryt
             </Knapp>
-            {!endret ? <span className="felt-hjelp">Ingenting er endret ennå.</span> : null}
-            {endret && !notat.trim() ? <span className="felt-hjelp">Skriv hva som ble endret.</span> : null}
           </div>
         </div>
       )}
@@ -626,9 +610,7 @@ function Punkt({
                     ) : null}
                   </div>
                   <p className="kort-hjelp valgbar">
-                    {punkt.formal || (kanSkrive
-                      ? 'Ikke skrevet ennå. Skriv hva dette punktet skal sikre hos dere.'
-                      : 'Ikke skrevet ennå.')}
+                    {punkt.formal || 'Ikke skrevet ennå.'}
                   </p>
                 </div>
 
@@ -658,7 +640,6 @@ function Punkt({
                         etikett="Hva heter rutinen?"
                         value={nyRutine}
                         placeholder="Arbeid i tavle"
-                        hjelp="Bare tittelen nå. Selve teksten skrives i neste steg, med endringsnotat."
                         onChange={e => setNyRutine(e.target.value)}
                       />
                       <div className="rad" style={{ marginTop: 12 }}>
@@ -682,9 +663,6 @@ function Punkt({
                   {rutiner.length === 0 ? (
                     <div className="dokument-tom">
                       <p>Ingen rutiner skrevet ennå.</p>
-                      {HINT_FOR[punkt.nummer] ? (
-                        <p className="felt-hjelp" style={{ maxWidth: '58ch' }}>{HINT_FOR[punkt.nummer]}</p>
-                      ) : null}
                     </div>
                   ) : (
                     <div className="stabel" style={{ gap: 14 }}>
@@ -719,8 +697,6 @@ function Punkt({
                     firkant
                     etikett="Hjemmel"
                     value={utkast.hjemmel ?? ''}
-                    placeholder="Slå opp paragrafen i gjeldende forskrift"
-                    hjelp="Fritekst. Forskrifter endres, og en låst kodeliste blir feil ved neste revisjon."
                     onChange={e => setUtkast(u => ({ ...u, hjemmel: e.target.value || null }))}
                   />
                   <label className="felt felt-firkant">
@@ -730,15 +706,13 @@ function Punkt({
                       value={utkast.formal ?? ''}
                       onChange={e => setUtkast(u => ({ ...u, formal: e.target.value || null }))}
                     />
-                    <span className="felt-hjelp">Hva punktet skal sikre. Endres sjelden.</span>
                   </label>
                   <Felt
                     firkant
                     etikett="Hva ble endret, og hvorfor?"
                     value={notat}
                     placeholder="Presisert at måling skal loggføres"
-                    hjelp="Påkrevd. Blir stående i historikken."
-                    onChange={e => setNotat(e.target.value)}
+                            onChange={e => setNotat(e.target.value)}
                   />
                   <div className="rad">
                     <Knapp
@@ -758,8 +732,6 @@ function Punkt({
                     <Knapp stil="naken" onClick={avbryt} disabled={jobber != null}>
                       Avbryt
                     </Knapp>
-                    {!endret ? <span className="felt-hjelp">Ingenting er endret ennå.</span> : null}
-                    {endret && !notat.trim() ? <span className="felt-hjelp">Skriv hva som ble endret.</span> : null}
                   </div>
                 </div>
               </div>
@@ -805,12 +777,6 @@ function Punkt({
                       {jobber === 'kvitter' ? 'Registrerer …' : 'Gjennomgått i dag'}
                     </Knapp>
                   )}
-                  {punkt.status !== 'vedtatt' && !harTekst ? (
-                    <span className="felt-hjelp">Skriv minst én rutine først.</span>
-                  ) : null}
-                  {punkt.status !== 'vedtatt' && redigerer ? (
-                    <span className="felt-hjelp">Lagre eller avbryt redigeringen først.</span>
-                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -915,10 +881,6 @@ function Punkt({
                         <CircleCheck size={15} strokeWidth={1.9} />
                         {jobber === 'lest' ? 'Bekrefter …' : 'Jeg har lest denne'}
                       </Knapp>
-                      <p className="felt-hjelp" style={{ marginTop: 8 }}>
-                        Gjelder versjon {punkt.gjeldende_versjon}. Endres rutinen, spør den om ny
-                        bekreftelse.
-                      </p>
                     </div>
                   )}
                 </>
@@ -933,7 +895,7 @@ function Punkt({
                 hentRevisjoner={hentRev}
                 hentAudit={hentAud}
                 seAudit={seAudit}
-                tom="Punktet står slik det ble opprettet."
+                tom="Ingen endringer."
               />
             </div>
           </div>

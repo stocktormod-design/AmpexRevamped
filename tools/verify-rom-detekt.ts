@@ -8,7 +8,7 @@
  * hele stripa til ett av rommene (60/40 i stedet for 50/50). Nå deler vegglinja
  * stripa, og arealpåskriftene avgjør hvem som får bitene.
  */
-import { finnRom, STANDARD, type Segment } from '../lib/rom-detekt'
+import { finnRom, finnRomMedPaaskrifter, romPaaskrifter, arealFraTekst, STANDARD, type Segment } from '../lib/rom-detekt'
 
 let feil = 0
 function sjekk(navn: string, ok: boolean, detalj?: unknown) {
@@ -47,6 +47,31 @@ if (rom.length === 2) {
 // Uten påskrifter skal det fortsatt bli to rom (ingen krasj, ingen regresjon)
 const uten = finnRom(seg, { ...STANDARD, ptPerM: p }, [])
 sjekk('Uten påskrifter: fortsatt rom', uten.length >= 1, uten.length)
+
+
+// Arealpåskriftene: dobbeltlag, summer og tusenskille (Sandsli 2026-10-25)
+{
+  const t = (tekst: string, x: number, y: number, hoyde = 5.8) => ({ tekst, x, y, hoyde })
+  const ut = romPaaskrifter([
+    t('BAD', 250, 268), t('5,5 m²', 250, 274), t('5,5 m²', 250, 274), t('5,5 m²', 271, 274), // to lag, 0 og 21 pt
+    t('SOV', 255, 394), t('9,3 m²', 253, 401),
+    t('STUE', 305, 308), t('26,5 m²', 317, 315),
+    t('LEILIGHET', 306, 397, 7.8), t('51,5 m²', 313, 406, 7.8), // summen midt i stua, større skrift
+    t('BRA', 100, 50), t('48,0 m²', 100, 56), // sum-overskrift rett over
+  ])
+  sjekk('Påskrifter: dobbeltlag blir én, summer kastes', ut.map(u => u.tekst).join('|') === '5,5 m²|9,3 m²|26,5 m²', ut.map(u => u.tekst))
+  sjekk('Areal med tusenskille', arealFraTekst('1 003,5 m²') === 1003.5 && arealFraTekst('12.2 m2') === 12.2)
+}
+
+// Målestokken av påskriftene: planen er tegnet i 1:100, tittelfeltet sier 1:50
+{
+  const p100 = 28.35, skal = p100 / p
+  const seg100 = seg.map(s => ({ ...s, x0: s.x0 * skal, y0: s.y0 * skal, x1: s.x1 * skal, y1: s.y1 * skal }))
+  const et = [{ x: 2.5 * p100, y: 4 * p100, areal: 37.5 }, { x: 7.5 * p100, y: 4 * p100, areal: 37.5 }, { x: 2.5 * p100, y: 2 * p100, areal: 37.5 }]
+  const svar = finnRomMedPaaskrifter(seg100, et, 50)
+  sjekk('Målestokken 1:100 finnes selv om tittelfeltet sier 1:50', svar.maalestokk === 100, svar.maalestokk)
+  sjekk('Rommene som stemmer med påskriften er bekreftet', svar.rom.filter(r => r.bekreftet).length === 2, svar.rom.map(r => [(r.areal / p100 / p100).toFixed(1), r.bekreftet]))
+}
 
 if (feil > 0) { console.error(`\n${feil} feil`); process.exit(1) }
 console.log('\nAlle påstander passerer.')

@@ -79,3 +79,6 @@ worker/build/
 worker/build.log
 
 .vercel
+
+# Ampex-utvidelsen bygges med npm run utvidelse:bygg
+extension/dist/

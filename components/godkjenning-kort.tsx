@@ -60,10 +60,6 @@ export function GodkjenningKort({ godkjenninger, grunnlag }: {
             {avvik.map((a, i) => (
               <Text key={i} style={[t.footnote, { marginTop: i === 0 ? 0 : 2 }]}>{`· ${a}`}</Text>
             ))}
-            <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: spacing.sm }]}>
-              Godkjenningen gjelder tallene slik de sto. Skal den stå, bør faglig
-              ansvarlig se over på nytt.
-            </Text>
           </View>
         )}
       </View>

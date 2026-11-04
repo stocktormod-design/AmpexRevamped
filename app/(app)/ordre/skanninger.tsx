@@ -76,7 +76,7 @@ export default function SkanningerScreen() {
         {scans.length === 0 ? (
           <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.separator, borderStyle: 'dashed', alignItems: 'center', padding: spacing.xl }}>
             <Text style={[t.footnote, { textAlign: 'center' }]}>
-              {slag === 'planlegging' ? 'Ingen planleggingsskann ennå. Mål opp rommet før jobben.' : 'Ingen dokumentasjonsskann ennå. Vis hvordan det ble.'}
+              Ingen skann
             </Text>
           </View>
         ) : (
@@ -92,6 +92,7 @@ export default function SkanningerScreen() {
                   onScan={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind], title: s.title, viewPath: '' } })}
                   onOpenRevision={rev => router.push({ pathname: '/(app)/skann', params: { viewPath: rev.path, title: `${s.title} · ${new Date(rev.ts).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` } })}
                   onDelete={() => slett(s)}
+                  onRename={async n => { await database.write(async () => { await s.update(x => { x.title = n }) }); syncQuietly() }}
                   onRebuilt={async path => {
                     if (s.scanPath) await archiveRevision(s.id, s.scanPath)
                     await database.write(async () => { await s.update(x => { x.scanPath = path }) })

@@ -43,7 +43,7 @@ export function SvarKort({ svar, tall }: { svar: Svar; tall: Registertall }) {
       <p className="ik2-svar-under">
         {alt
           ? `Alt er i orden.${svar.nesteFrist ? ` Neste gjennomgang ${dato(svar.nesteFrist)}.` : ''}`
-          : `${svar.lovpalagtIOrden} av ${svar.lovpalagtTotalt} lovpålagte kapitler er i orden. Et kapittel er i orden når det er skrevet, vedtatt, gjennomgått innen fristen og lest av alle ansatte.`}
+          : `${svar.lovpalagtIOrden} av ${svar.lovpalagtTotalt} lovpålagte kapitler er i orden.`}
       </p>
 
       {/* Det DLE ber om å se først på tilsyn. Tallene er knapper. */}

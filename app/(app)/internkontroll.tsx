@@ -91,7 +91,7 @@ function Punkt({ punkt, rutiner }: { punkt: IkPunkt; rutiner: IkRutine[] }) {
                 <Text style={[t.caption, { color: colors.tertiaryLabel, marginTop: 2 }]}>Utkast · ikke vedtatt ennå</Text>
               )}
               <Text style={[t.body, { color: colors.label, marginTop: spacing.sm }]}>
-                {r.innhold?.trim() || 'Rutinen er ikke skrevet ennå.'}
+                {r.innhold?.trim() || 'Ikke skrevet'}
               </Text>
             </View>
           ))}
@@ -101,7 +101,7 @@ function Punkt({ punkt, rutiner }: { punkt: IkPunkt; rutiner: IkRutine[] }) {
             </View>
           )}
           {rutiner.length === 0 && !tekst && (
-            <Text style={[t.footnote, { color: colors.tertiaryLabel }]}>Ingen rutine er skrevet under dette punktet ennå.</Text>
+            <Text style={[t.footnote, { color: colors.tertiaryLabel }]}>Ingen rutine</Text>
           )}
         </View>
       )}
@@ -136,9 +136,6 @@ export default function InternkontrollScreen() {
         {sortert.length === 0 ? (
           <View style={{ alignItems: 'center', paddingTop: spacing.xxl, paddingHorizontal: spacing.xxl }}>
             <Text style={[t.headline, { color: colors.label }]}>Ingen internkontroll ennå</Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>
-              Firmaets IK-system skrives i Ampex Kontor. Når punktene er lagt inn der, står de her.
-            </Text>
           </View>
         ) : (
           sortert.map(p => <Punkt key={p.id} punkt={p} rutiner={perPunkt.get(p.id) ?? []} />)

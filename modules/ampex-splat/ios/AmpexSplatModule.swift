@@ -1,5 +1,8 @@
 import ExpoModulesCore
 import Foundation
+import ImageIO
+import UIKit
+import os
 
 /// Holder mesh-skanneren i live mens dens UI er presentert.
 enum MeshSession {
@@ -81,6 +84,58 @@ public final class AmpexSplatModule: Module {
     // Har modellen et relokaliseringskart? (eldre skann får det ved neste ombygging)
     Function("hasRelocMap") { (glbPath: String) -> Bool in
       FileManager.default.fileExists(atPath: MeshRelok.kartURL(glb: URL(fileURLWithPath: glbPath)).path)
+    }
+
+    // «Send skannlogg» (04.11): testere utenfor huset har skann vi ellers aldri ser — en
+    // TestFlight-app kan ikke kopieres ut over USB. Samler slutten av pipeline.log, tre
+    // nedskalerte RÅ kamerabilder fra siste skann (skiller fangst fra bake: er bildene alt
+    // lyse/blå, er det kameraet; ellers fargebehandlingen i baken) og telefonens minnetall.
+    AsyncFunction("skannDiagnose") { (promise: Promise) in
+      DispatchQueue.global(qos: .userInitiated).async {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var logg = ""
+        if let d = try? Data(contentsOf: docs.appendingPathComponent("room-scans/pipeline.log")) {
+          logg = String(decoding: d.suffix(300_000), as: UTF8.self)
+        }
+        let rot = docs.appendingPathComponent("scan-frames", isDirectory: true)
+        let økter = ((try? FileManager.default.contentsOfDirectory(at: rot, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
+          .sorted { a, b in
+            let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return da > db
+          }
+        var bilder: [String] = []
+        var økt = ""
+        if let siste = økter.first {
+          økt = siste.lastPathComponent
+          let jpg = ((try? FileManager.default.contentsOfDirectory(atPath: siste.path)) ?? [])
+            .filter { $0.hasPrefix("frame-") && $0.hasSuffix(".jpg") }
+            .sorted { (Int($0.dropFirst(6).dropLast(4)) ?? 0) < (Int($1.dropFirst(6).dropLast(4)) ?? 0) }
+          let valgt = jpg.isEmpty ? [] : Array(Set([0, jpg.count / 2, jpg.count - 1])).sorted().map { jpg[$0] }
+          for navn in valgt {
+            autoreleasepool {
+              let url = siste.appendingPathComponent(navn) as CFURL
+              guard let src = CGImageSourceCreateWithURL(url, nil),
+                    let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                                                          kCGImageSourceThumbnailMaxPixelSize: 1024,
+                                                                          kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary)
+              else { return }
+              let ut = NSMutableData()
+              guard let dst = CGImageDestinationCreateWithData(ut, "public.jpeg" as CFString, 1, nil) else { return }
+              CGImageDestinationAddImage(dst, cg, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+              if CGImageDestinationFinalize(dst) { bilder.append((ut as Data).base64EncodedString()) }
+            }
+          }
+        }
+        var sys = utsname(); uname(&sys)
+        let modell = withUnsafeBytes(of: &sys.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        promise.resolve([
+          "logg": logg, "bilder": bilder, "okt": økt, "modell": modell,
+          "ios": UIDevice.current.systemVersion,
+          "ramMB": Int(ProcessInfo.processInfo.physicalMemory >> 20),
+          "ledigMB": Int(os_proc_available_memory() >> 20),
+        ])
+      }
     }
 
     // Regresjonsselen: kjør V2-baken på nytt mot et persistert skann-bundle (framesDir med

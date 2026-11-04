@@ -80,7 +80,7 @@ function NfcSimSheet({ onCommit, onClose }: { onCommit: (p: Product, qty: number
           <Search size={16} color={colors.tertiaryLabel} strokeWidth={2} />
           <TextInput
             value={query} onChangeText={setQuery}
-            placeholder="Søk navn eller el-nummer" placeholderTextColor={colors.tertiaryLabel}
+            placeholder="Søk" placeholderTextColor={colors.tertiaryLabel}
             style={[t.body, { flex: 1 }]}
           />
         </View>
@@ -102,7 +102,7 @@ function NfcSimSheet({ onCommit, onClose }: { onCommit: (p: Product, qty: number
             </View>
           ))}
           {filtered.length === 0 && (
-            <Text style={[t.footnote, { marginHorizontal: spacing.screen }]}>Ingen varer funnet.</Text>
+            <Text style={[t.footnote, { marginHorizontal: spacing.screen }]}>Ingen treff</Text>
           )}
         </ScrollView>
 
@@ -314,7 +314,7 @@ export default function LocationDetailScreen() {
 
         {stock.length === 0 && (
           <Text style={[t.caption, { marginHorizontal: spacing.screen + spacing.lg, marginTop: spacing.sm }]}>
-            Ingen beholdning ennå. Legg til varer, eller la bestillinger og forbruk fylle den.
+            Ingen beholdning
           </Text>
         )}
       </ScrollView>

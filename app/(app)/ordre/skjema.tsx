@@ -7,7 +7,7 @@ import * as Haptics from 'expo-haptics'
 import { Q } from '@nozbe/watermelondb'
 import { ChevronLeft, AlertTriangle } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
-import { SectionHeader } from '../../../components/ui'
+import { Chip, SectionHeader } from '../../../components/ui'
 import { FormFieldView } from '../../../components/form-field-view'
 import { GapCheckReviewSheet } from '../../../components/gap-check-review-sheet'
 import { useVoiceSession } from '../../../lib/ai/voice-session'
@@ -18,10 +18,11 @@ import { syncQuietly } from '../../../lib/db/sync'
 import { supabase } from '../../../lib/supabase'
 import { Order } from '../../../lib/db/models/order'
 import { OrderDocument, type AiFieldOriginMap } from '../../../lib/db/models/order-document'
+import type { OrderMaterial } from '../../../lib/db/models/order-material'
 import { getTemplate } from '../../../lib/forms/templates'
 import { resolveTemplate } from '../../../lib/forms/resolve'
-import { FormValues, FormPrefill, type FormTemplate } from '../../../lib/forms/types'
-import { visibleSections, pruneHidden } from '../../../lib/forms/visibility'
+import { FormValues, FormPrefill, type FormSection, type FormTemplate } from '../../../lib/forms/types'
+import { visibleSections, pruneHidden, foreslatteTemaer, temaVerdier } from '../../../lib/forms/visibility'
 import { findUnfilledRequired } from '../../../lib/forms/gap-check'
 import { formatDateTime } from '../../../lib/format'
 import { colors, spacing, radius, sizes, paperType as t } from '../../../lib/theme'
@@ -60,6 +61,8 @@ export default function SkjemaScreen() {
   const [ready, setReady] = useState(false)
   const [processingAi, setProcessingAi] = useState(false)
   const [review, setReview] = useState<GapCheckExtraction | null>(null)
+  // Temavalget før skjemaet lages (velger-seksjon). null = ikke i valgsteget.
+  const [temaSteg, setTemaSteg] = useState<string[] | null>(null)
   const docRef = useRef<OrderDocument | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reviewSessionIdRef = useRef<string | null>(null)
@@ -90,6 +93,15 @@ export default function SkjemaScreen() {
           }
         }
         setValues(prefilled)
+        // Har malen et temavalg, velger montøren hva skjemaet skal inneholde FØR det lages.
+        // Det ordren nevner er krysset av på forhånd; resten er ett trykk unna.
+        if (template.sections.some(s => s.velger)) {
+          const materiell = await database.get<OrderMaterial>('order_materials')
+            .query(Q.where('order_id', orderId), Q.where('deleted_at', null)).fetch()
+          if (!mounted) return
+          const tekst = [order.title, order.description ?? '', ...materiell.map(m => m.description)].join('\n')
+          setTemaSteg(foreslatteTemaer(template, tekst))
+        }
       }
       setReady(true)
     })()
@@ -262,6 +274,15 @@ export default function SkjemaScreen() {
   if (!template) return <View style={{ flex: 1, backgroundColor: colors.paperCanvas }} />
   const readOnly = status === 'fullfort'
 
+  async function lagMedTemaer(valgt: string[]) {
+    if (!template) return
+    const next = pruneHidden(template, { ...values, ...temaVerdier(template, valgt) })
+    setValues(next)
+    setTemaSteg(null)
+    await persist(next)
+    syncQuietly()
+  }
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.paperCanvas }}>
       <ScrollView
@@ -309,7 +330,41 @@ export default function SkjemaScreen() {
           </View>
         )}
 
-        {ready && visibleSections(template, values).map(section => (
+        {ready && temaSteg !== null && (
+          <View style={{ marginHorizontal: spacing.screen }}>
+            <Text style={[t.headline, { marginBottom: spacing.lg }]}>Hva inneholder jobben?</Text>
+            <TemaValg
+              seksjon={template.sections.find(s => s.velger)!}
+              valgt={temaSteg}
+              onToggle={k => setTemaSteg(v => (v ?? []).includes(k) ? v!.filter(x => x !== k) : [...(v ?? []), k])}
+            />
+            <Pressable
+              haptic="medium"
+              onPress={() => void lagMedTemaer(temaSteg)}
+              style={{
+                height: sizes.ctaHeight, borderRadius: radius.xl, marginTop: spacing.xl,
+                backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={[t.headline, { color: colors.brandLabel }]}>
+                {temaSteg.length ? `Lag risikovurdering · ${temaSteg.length} ${temaSteg.length === 1 ? 'tema' : 'temaer'}` : 'Lag risikovurdering'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
+        {ready && temaSteg === null && visibleSections(template, values).map(section => section.velger ? (
+          <View key={section.title} style={{ marginBottom: spacing.screen }}>
+            <SectionHeader tone="papir">{section.title}</SectionHeader>
+            <View style={{ marginHorizontal: spacing.screen }} pointerEvents={readOnly ? 'none' : 'auto'}>
+              <TemaValg
+                seksjon={section}
+                valgt={section.fields.filter(f => values[f.key] === 'Ja').map(f => f.key)}
+                onToggle={k => onFieldChange(k, values[k] === 'Ja' ? 'Nei' : 'Ja')}
+              />
+            </View>
+          </View>
+        ) : (
           <View key={section.title} style={{ marginBottom: spacing.screen }}>
             <SectionHeader tone="papir">{section.title}</SectionHeader>
             <View style={{ backgroundColor: colors.paperBg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
@@ -331,7 +386,7 @@ export default function SkjemaScreen() {
           </View>
         ))}
 
-        {ready && (readOnly ? (
+        {ready && temaSteg === null && (readOnly ? (
           <View style={{ marginHorizontal: spacing.screen, alignItems: 'center', gap: spacing.md }}>
             <Text style={t.footnote}>{`Fullført ${formatDateTime(completedAt) ?? ''}`}</Text>
             <Pressable onPress={gjenapne} hitSlop={8}>
@@ -358,9 +413,6 @@ export default function SkjemaScreen() {
                   {mangler.length > 4 && (
                     <Text style={[t.footnote, { marginTop: 2 }]}>{`· … og ${mangler.length - 4} til`}</Text>
                   )}
-                  <Text style={[t.caption, { color: colors.paperSecondary, marginTop: spacing.sm }]}>
-                    Alt du har skrevet er lagret. Skjemaet kan fullføres når disse er besvart.
-                  </Text>
                 </View>
               </View>
             )}
@@ -393,5 +445,16 @@ export default function SkjemaScreen() {
         />
       )}
     </KeyboardAvoidingView>
+  )
+}
+
+/** Temaene som avkryssing — samme visning i valgsteget og øverst i skjemaet. */
+function TemaValg({ seksjon, valgt, onToggle }: { seksjon: FormSection; valgt: string[]; onToggle: (key: string) => void }) {
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+      {seksjon.fields.map(f => (
+        <Chip key={f.key} label={f.label} selected={valgt.includes(f.key)} onPress={() => onToggle(f.key)} />
+      ))}
+    </View>
   )
 }

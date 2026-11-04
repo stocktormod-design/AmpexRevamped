@@ -149,25 +149,15 @@ export function Inviter({ ferdig }: { ferdig: () => void }) {
       <form className="stabel" onSubmit={bekreftPamelding}>
         <div className="logginn-tittel">
           <h3>Koble en autentiseringsapp</h3>
-          <p className="felt-hjelp">
-            Å invitere noen er å lage en ny dør inn i firmaet, og å bestemme hvor mye den
-            personen får se. Derfor spør vi om en kode først — denne ene gangen for å koble
-            appen, og siden hver gang du inviterer.
-          </p>
         </div>
 
         <div className="qr-rad">
           {pamelding ? <img className="qr" src={pamelding.qr} alt="QR-kode for autentiseringsappen" /> : null}
           <div className="stabel">
-            <p className="felt-hjelp">
-              Skann koden med Google Authenticator, Microsoft Authenticator, 1Password eller
-              en annen app som lager engangskoder.
-            </p>
             {/* Fallback for den som sitter PÅ telefonen og ikke kan skanne sin
                 egen skjerm, eller som har kamera som ikke vil. */}
             <p className="felt-hjelp">
-              Får du ikke skannet, skriv inn denne i appen i stedet:
-              {' '}<code className="valgbar">{pamelding?.hemmelighet}</code>
+              <code className="valgbar">{pamelding?.hemmelighet}</code>
             </p>
           </div>
         </div>
@@ -178,7 +168,6 @@ export function Inviter({ ferdig }: { ferdig: () => void }) {
           inputMode="numeric"
           autoComplete="one-time-code"
           autoFocus
-          hjelp="Seks siffer."
           value={kode}
           onChange={e => setKode(e.target.value)}
         />
@@ -244,7 +233,7 @@ export function Inviter({ ferdig }: { ferdig: () => void }) {
           </Knapp>
         </div>
       ) : (
-        <p className="felt-hjelp">Ti om gangen er taket. Send disse først, så tar du resten etterpå.</p>
+        <p className="felt-hjelp">Maks ti om gangen.</p>
       )}
 
       <Felt
@@ -252,7 +241,6 @@ export function Inviter({ ferdig }: { ferdig: () => void }) {
         firkant
         inputMode="numeric"
         autoComplete="one-time-code"
-        hjelp="Seks siffer. Kreves hver gang det inviteres, ikke bare ved innlogging."
         value={kode}
         onChange={e => setKode(e.target.value)}
       />
@@ -264,8 +252,6 @@ export function Inviter({ ferdig }: { ferdig: () => void }) {
           {jobber ? 'Sender …' : `Send ${rader.length === 1 ? 'invitasjon' : 'invitasjoner'}`}
         </Knapp>
         <Knapp type="button" onClick={lukk}>Avbryt</Knapp>
-        <span className="strekk" />
-        <span className="dempet-mer">Rollen kan endres etterpå.</span>
       </div>
     </form>
   )

@@ -12,6 +12,7 @@ export default function LagerLayout() {
       <Stack.Screen name="prisfil" />
       <Stack.Screen name="varer" />
       <Stack.Screen name="vare" />
+      <Stack.Screen name="efobasen" />
     </Stack>
   )
 }

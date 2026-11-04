@@ -105,12 +105,10 @@ export function MappeNySheet({ synlig, onLukk, onOpprett, forelder }: {
       <View style={{ paddingHorizontal: spacing.screen, gap: spacing.md }}>
         <View>
           <Text style={t.title3}>Ny mappe</Text>
-          <Text style={[t.footnote, { marginTop: 2 }]}>
-            {forelder ? `Inne i ${forelder}` : 'På prosjektets rot — f.eks. et bygg, eller et fag'}
-          </Text>
+          {!!forelder && <Text style={[t.footnote, { marginTop: 2 }]}>{`Inne i ${forelder}`}</Text>}
         </View>
         <TextInput
-          value={navn} onChangeText={setNavn} autoFocus placeholder="Navn (f.eks. Bygg A, Elkraft, IKT)"
+          value={navn} onChangeText={setNavn} autoFocus placeholder="Navn"
           placeholderTextColor={colors.tertiaryLabel} returnKeyType="done"
           onSubmitEditing={() => kan && onOpprett(navn.trim())}
           style={[t.body as TextStyle, { backgroundColor: colors.fill, borderRadius: radius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }]}
@@ -295,9 +293,7 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
       {under.length === 0 && her.length === 0 && !(erRot && utenMappe > 0) && (
         <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.separator, borderStyle: 'dashed', alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.xl }}>
           <Text style={[t.footnote, { textAlign: 'center' }]}>
-            {parentId === null && !rotTegninger
-              ? 'Ingen tegninger ennå. Legg til en tegning, eller lag mapper for bygg og fag.'
-              : 'Tomt her. Legg til en tegning, eller en mappe til.'}
+            {parentId === null && !rotTegninger ? 'Ingen tegninger' : 'Tom mappe'}
           </Text>
         </View>
       )}
@@ -317,13 +313,6 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
           </Pressable>
         </View>
       )}
-      {kanRedigere && (under.length > 0 || her.length > 0) && (
-        <Text style={[t.caption, { marginHorizontal: spacing.screen + spacing.xs, marginTop: spacing.sm, color: colors.tertiaryLabel }]}>
-          {under.length > 0 && her.length > 0
-            ? 'Hold inne en mappe eller tegning for å flytte, gi nytt navn eller slette'
-            : under.length > 0 ? 'Hold inne en mappe for å gi nytt navn, flytte eller slette' : 'Hold inne en tegning for å flytte den'}
-        </Text>
-      )}
 
       <MappeNySheet
         synlig={nyMappe} forelder={forelder} onLukk={() => setNyMappe(false)}
@@ -332,7 +321,6 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
       <ChoiceSheet
         synlig={flytter !== null}
         tittel={flytter ? `Flytt «${flytter.name}»` : 'Flytt'}
-        forklaring="Velg mappa tegningen skal ligge i."
         valg={flyttValg}
         valgt={flytter?.folderId ?? ''}
         onVelg={async id => { const d = flytter; setFlytter(null); if (d) await flyttTegning(d, id || null) }}
@@ -345,7 +333,7 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
         valg={[
           { verdi: 'omdop', etikett: 'Gi nytt navn' },
           { verdi: 'flytt', etikett: 'Flytt til …', underetikett: mappeValgt ? (mappeSti(mappeValgt.parentId, mapper).join(' / ') || 'Ligger på prosjektets rot') : undefined },
-          { verdi: 'slett', etikett: 'Slett mappe', underetikett: 'Innholdet flyttes ett hakk opp' },
+          { verdi: 'slett', etikett: 'Slett mappe' },
         ]}
         onVelg={h => {
           if (h === 'slett') { const m = mappeValgt; setMappeValgt(null); if (m) bekreftSlett(m); return }
@@ -364,7 +352,6 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
       <ChoiceSheet
         synlig={mappeValgt !== null && mappeHandling === 'flytt'}
         tittel={mappeValgt ? `Flytt «${mappeValgt.name}»` : 'Flytt'}
-        forklaring="Velg hvor mappa skal ligge. Alt under den blir med."
         valg={mappeFlyttValg}
         valgt={mappeValgt?.parentId ?? ''}
         onVelg={async id => { const m = mappeValgt; setMappeValgt(null); setMappeHandling(null); if (m) await flyttMappe(m, id || null, mapper) }}

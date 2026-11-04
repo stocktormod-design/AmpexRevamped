@@ -1,4 +1,5 @@
-import { JA_NEI_IA, type FormTemplate } from './types'
+import { RISIKO_ORD } from '../risiko-katalog'
+import { JA_NEI_IA, type FormField, type FormSection, type FormTemplate } from './types'
 
 /**
  * De 5 sikre — Ampex-maler v1.
@@ -15,9 +16,77 @@ import { JA_NEI_IA, type FormTemplate } from './types'
 
 const REVIEW = 'Ampex-mal (utkast). Faglig ansvarlig i firmaet må vurdere om malen passer arbeidet.'
 
+/** Et tema i risikovurderingen: Ja/Nei-valget og seksjonen det slår på. */
+function tema(key: string, label: string, title: string, fields: FormField[]): { valg: FormField; seksjon: FormSection } {
+  const felt = `tema_${key}`
+  return {
+    valg: { key: felt, label, type: 'choice', choices: ['Ja', 'Nei'] },
+    seksjon: { title, fields: fields.map(f => ({ ...f, showIf: { field: felt, equals: ['Ja'] } })) },
+  }
+}
+const jn = (key: string, label: string, help?: string): FormField => ({ key, label, type: 'choice', choices: JA_NEI_IA, help })
+
+/**
+ * Temaene. Rekkefølgen er rekkefølgen i valget og i skjemaet. Ordene i `RISIKO_ORD`
+ * (lib/risiko-katalog.ts) krysser av på forhånd når ordren nevner dem — montøren retter.
+ */
+const TEMAER = [
+  tema('tavle', 'Arbeid i tavle eller sikringsskap', 'Tavle og sikringsskap', [
+    jn('tavle_frakoblet', 'Er tavla frakoblet, sikret mot innkobling (lås og skilt) og prøvd spenningsløs?', 'FSE §§ 12–14'),
+    jn('tavle_skjerm', 'Er deler som må stå på skjermet mot berøring?'),
+    jn('tavle_vern', 'Er vern dimensjonert etter kabel og forlegning?', 'NEK 400-4-43, 5-52'),
+  ]),
+  tema('inntak', 'Inntak eller hovedsikring', 'Inntak', [
+    jn('inntak_nettselskap', 'Er arbeidet avtalt med nettselskapet (plombering, frakobling)?'),
+    jn('inntak_overspenning', 'Er overspenningsvern vurdert?', 'NEK 400-4-44, 5-534'),
+    jn('inntak_last', 'Er lastberegning gjort for hovedsikringen?'),
+  ]),
+  tema('bad', 'Bad eller våtrom', 'Bad og våtrom', [
+    jn('bad_soner', 'Er utstyret plassert etter sonene med riktig IP-grad?', 'NEK 400-7-701'),
+    jn('bad_jordfeil', 'Har alle kurser i rommet jordfeilvern 30 mA?', 'NEK 400-7-701'),
+    jn('bad_utjevning', 'Er tilleggsutjevning vurdert?', 'NEK 400-7-701'),
+  ]),
+  tema('varmekabel', 'Varmekabel eller gulvvarme', 'Varmekabel', [
+    jn('varme_effekt', 'Passer W/m² for gulvet, og ligger kabelen ikke under faste innretninger?', 'NEK 400-7-753'),
+    jn('varme_maling', 'Er isolasjonsmåling gjort før og etter støp/flislegging?'),
+    jn('varme_dok', 'Er plasseringen dokumentert med bilde og tegning?'),
+  ]),
+  tema('elbil', 'Elbillader', 'Elbillading', [
+    jn('elbil_rcd', 'Er jordfeilvernet type B, eller type A med 6 mA DC-deteksjon i laderen?', 'NEK 400-7-722, 5-53'),
+    jn('elbil_kurs', 'Har hvert ladepunkt egen kurs?', 'NEK 400-7-722'),
+    jn('elbil_last', 'Er lastberegning eller lastbalansering på plass?'),
+  ]),
+  tema('varmepumpe', 'Varmepumpe', 'Varmepumpe', [
+    jn('vp_vern', 'Er kurs og vern etter produsentens krav?'),
+    jn('vp_bryter', 'Er det sikkerhetsbryter ved utedelen?'),
+    jn('vp_ip', 'Har utstyret ute riktig IP-grad?', 'NEK 400-5-51'),
+  ]),
+  tema('kjokken', 'Kjøkken eller komfyr', 'Kjøkken', [
+    jn('kjokken_komfyrvakt', 'Er komfyrvakt montert?', 'NEK 400-4-42'),
+    jn('kjokken_kurs', 'Har komfyren egen kurs dimensjonert etter effekten?'),
+  ]),
+  tema('ute', 'Utendørs', 'Utendørs', [
+    jn('ute_ip', 'Har utstyret IP44 eller bedre, og tåler det kystklima?', 'NEK 400-5-51 (AD, AF)'),
+    jn('ute_jordfeil', 'Har uttak ute jordfeilvern 30 mA?'),
+  ]),
+  tema('styring', 'Lysstyring, dimmer eller smarthus', 'Lysstyring', [
+    jn('styring_last', 'Passer dimmeren lasten (LED-driver), med nedregulering ved flere i samme boks?'),
+  ]),
+  tema('hoyde', 'Arbeid i høyden', 'Arbeid i høyden', [
+    jn('hoyde_utstyr', 'Er stige eller plattform kontrollert og riktig for jobben?'),
+    jn('hoyde_to', 'Er det to personer ved tunge løft i høyden?'),
+  ]),
+  tema('eldre', 'Eldre bygg eller rehabilitering', 'Eldre bygg', [
+    jn('eldre_asbest', 'Er byggeår og materialer avklart (mulig asbest)?'),
+    jn('eldre_kabelsok', 'Er det søkt etter skjulte kabler og rør før boring?'),
+  ]),
+]
+
 export const risikovurdering: FormTemplate = {
   id: 'ampex.risikovurdering',
-  version: 1,
+  // v2 (30.10): temavalg øverst, seksjoner per tema. v1-nøklene står uendret, og temaseksjonene
+  // er skjult uten valg, så et v1-dokument leses akkurat som før.
+  version: 2,
   name: 'Risikovurdering',
   source: 'Basert på DSB «Rapport fra risikovurdering» (fel § 16, fse)',
   reviewNote: REVIEW,
@@ -33,6 +102,11 @@ export const risikovurdering: FormTemplate = {
       ],
     },
     {
+      title: 'Jobben inneholder',
+      fields: TEMAER.map(x => x.valg),
+      velger: { match: Object.fromEntries(TEMAER.map(x => [x.valg.key, RISIKO_ORD[x.valg.key.slice(5) as keyof typeof RISIKO_ORD]])) },
+    },
+    {
       title: 'Farevurdering',
       fields: [
         { key: 'spenningslost', label: 'Kan arbeidet utføres spenningsløst (AUS unngås)?', type: 'choice', choices: JA_NEI_IA },
@@ -43,6 +117,7 @@ export const risikovurdering: FormTemplate = {
         { key: 'verneutstyr', label: 'Er nødvendig verneutstyr tilgjengelig og vurdert?', type: 'choice', choices: JA_NEI_IA },
       ],
     },
+    ...TEMAER.map(x => x.seksjon),
     {
       title: 'Tiltak og konklusjon',
       fields: [

@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(({ data, error }) => {
         if (avbrutt) return
         if (error) setFeil(error.message)
-        else if (!data) setFeil('Brukeren har ingen profil. Be en administrator legge deg til i firmaet.')
+        else if (!data) setFeil('Brukeren har ingen profil.')
         else { setProfil(data as Profil); setFeil(null) }
         setLaster(false)
       })

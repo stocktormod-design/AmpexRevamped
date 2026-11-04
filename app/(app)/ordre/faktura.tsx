@@ -129,8 +129,7 @@ export default function FakturaScreen() {
     if (!order || !grunnlag) return
     Alert.alert(
       'Marker som fakturert?',
-      'Linjene låses mot ny fakturering. Dette sender ingenting til regnskapet — '
-      + 'det gjør synken når Fiken er koblet.',
+      'Sendes ikke til regnskapet.',
       [
         { text: 'Avbryt', style: 'cancel' },
         {
@@ -145,8 +144,7 @@ export default function FakturaScreen() {
               if (e instanceof ManglerGodkjenning) {
                 Alert.alert(
                   'Mangler faglig godkjenning',
-                  'Ordren må godkjennes av faglig ansvarlig før den kan faktureres. '
-                  + 'Den ligger i «Til godkjenning» så snart den er satt fakturaklar.',
+                  'Faglig ansvarlig må godkjenne først.',
                 )
               } else {
                 throw e
@@ -162,7 +160,7 @@ export default function FakturaScreen() {
 
   function bekreftAngre() {
     if (!order) return
-    Alert.alert('Angre fakturering?', 'Linjene låses opp og ordren går tilbake til Fakturaklar.', [
+    Alert.alert('Angre fakturering?', undefined, [
       { text: 'Avbryt', style: 'cancel' },
       {
         text: 'Angre',
@@ -198,11 +196,11 @@ export default function FakturaScreen() {
               <AlertTriangle size={20} color={colors.warning} strokeWidth={sizes.lucideStroke} />
               <View style={{ flex: 1 }}>
                 <Text style={t.bodyMedium}>Ingen kunde valgt</Text>
-                <Text style={[t.footnote, { marginTop: 2 }]}>
-                  {order?.customerName
-                    ? `Ordren har navnet «${order.customerName}», men ikke en kunde i registeret. Regnskapet trenger en kunde med ID for å motta fakturaen.`
-                    : 'Regnskapet trenger en kunde med ID for å motta fakturaen.'}
-                </Text>
+                {!!order?.customerName && (
+                  <Text style={[t.footnote, { marginTop: 2 }]}>
+                    {`«${order.customerName}» er ikke i kunderegisteret`}
+                  </Text>
+                )}
                 <Pressable
                   onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
                   style={{ marginTop: spacing.md }}

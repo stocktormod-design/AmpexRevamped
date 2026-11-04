@@ -24,16 +24,6 @@ const TYPE_LABEL: Record<FormFieldType, string> = {
   check: 'Avkryss', choice: 'Klikkliste', text: 'Tekst', multiline: 'Fritekst',
   number: 'Tall', table: 'Tabell', photo: 'Foto', info: 'Informasjon',
 }
-const TYPE_HINT: Record<FormFieldType, string> = {
-  check: 'Ja / Nei / Ikke aktuelt',
-  choice: 'Egne alternativer — f.eks. OK / Avvik / Utbedret',
-  text: 'Én linje',
-  multiline: 'Flere linjer',
-  number: 'Måleverdi, med enhet',
-  table: 'Rader som gjentas — kursfortegnelse, måleprotokoll',
-  photo: 'Bilde tas i appen',
-  info: 'Tekst som bare skal leses — lagres ikke',
-}
 
 function newId(prefix: string): string {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -193,7 +183,7 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
           {field.type !== 'info' && (
             <View>
               <Text style={[t.caption, { color: colors.paperTertiary, marginBottom: spacing.xs }]}>Veiledning (valgfritt)</Text>
-              <MiniInput value={field.help ?? ''} placeholder="Vises under punktet"
+              <MiniInput value={field.help ?? ''} placeholder=""
                 onChangeText={v => onChange({ help: v || undefined })} />
             </View>
           )}
@@ -243,11 +233,6 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
               <Text style={[t.subhead, { color: source ? colors.paperLabel : colors.paperSecondary }]}>
                 {source ? `Bare når «${source.label || 'uten navn'}» er…` : 'Alltid'}
               </Text>
-              {candidates.length === 0 && (
-                <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 2 }]}>
-                  Krever et avkryss- eller klikklistepunkt lenger opp i skjemaet.
-                </Text>
-              )}
             </Pressable>
 
             {!!source && (
@@ -274,7 +259,7 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
         synlig={typeSheet}
         tittel="Type punkt"
         valgt={field.type}
-        valg={TYPES.map<Valg<FormFieldType>>(ty => ({ verdi: ty, etikett: TYPE_LABEL[ty], underetikett: TYPE_HINT[ty] }))}
+        valg={TYPES.map<Valg<FormFieldType>>(ty => ({ verdi: ty, etikett: TYPE_LABEL[ty] }))}
         onVelg={setType}
         onAvbryt={() => setTypeSheet(false)}
       />
@@ -282,10 +267,9 @@ function FieldCard({ field, candidates, flagg, onChange, onRemove }: {
       <ChoiceSheet<string>
         synlig={sourceSheet}
         tittel="Vis punktet bare når…"
-        forklaring="Velg punktet som styrer. Etterpå huker du av hvilke svar som slår dette på."
         valgt={field.showIf?.field}
         valg={[
-          { verdi: '', etikett: 'Alltid', underetikett: 'Ingen betingelse' },
+          { verdi: '', etikett: 'Alltid' },
           ...candidates.map<Valg<string>>(c => ({
             verdi: c.id,
             etikett: c.label || 'Uten navn',

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { View, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native'
+import { View, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native'
 import { Text, TextInput } from '../../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -12,8 +12,8 @@ import {
 } from '../../../../lib/db/models/laeretid'
 import { useUserId } from '../../../../lib/auth-user'
 import type { Laereplankode } from '../../../../lib/laeretid/laereplan'
-import { gjennomgang, nekHenvisning } from '../../../../lib/laeretid/samtale'
-import { nesteReplikk, skrivLogg, tilMelding } from '../../../../lib/laeretid/samtale-klient'
+import { gjennomgang, nekHenvisning, venterPaaEkstra } from '../../../../lib/laeretid/samtale'
+import { nesteReplikk, skrivLogg, startSamtalenPaaNytt, tilMelding } from '../../../../lib/laeretid/samtale-klient'
 import { Boble, Fremdrift, Knapp, lt } from '../../../../components/laeretid-ui'
 import { finnMal } from '../../../../lib/laeretid/mal'
 
@@ -59,7 +59,7 @@ export default function Samtale() {
   const status = useMemo(() => gjennomgang({
     instruks: logg?.instruks ?? null,
     notater: bilder.map(b => b.notat?.trim() ?? '').filter(Boolean),
-    bilderUtenNotat: bilder.filter(b => !b.notat?.trim()).length,
+    bilderUtenNotat: bilder.filter(b => !b.notat?.trim() && !b.modellbeskrivelse?.trim()).length,
     malKrav: finnMal(logg?.malId).sporOm,
   }, rader.map(tilMelding)), [logg, bilder, rader])
 
@@ -98,6 +98,17 @@ export default function Samtale() {
     return () => clearTimeout(t)
   }, [rader.length, venter, feil])
 
+  function paaNytt() {
+    if (!logg || venter || skriver) return
+    Alert.alert('Start samtalen på nytt?', 'Svarene slettes.', [
+      { text: 'Avbryt', style: 'cancel' },
+      { text: 'Start på nytt', style: 'destructive', onPress: async () => {
+        await startSamtalenPaaNytt(logg)
+        runde(null)
+      } },
+    ])
+  }
+
   async function skriv() {
     if (!logg || !brukerId || skriver) return
     setSkriver(true)
@@ -116,6 +127,8 @@ export default function Samtale() {
     runde(s)
   }
 
+  // Et ubesvart nøkkelspørsmål: svar på det, eller hopp over.
+  const ekstraVenter = venterPaaEkstra(rader)
   const harTekst = !!logg?.innhold?.trim()
   const erKladd = logg?.status === 'kladd'
 
@@ -141,9 +154,6 @@ export default function Samtale() {
         contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 4, paddingBottom: 16, gap: 14 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={{ fontSize: 13, fontWeight: '700', color: lt.svak, letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>
-          Bare du ser denne samtalen
-        </Text>
         {rader.map(r => {
           if (r.rolle === 'laerling') {
             return (
@@ -204,14 +214,24 @@ export default function Samtale() {
       </ScrollView>
 
       {/* Når avhørslista er gjennomgått, er loggen den ene handlingen. */}
-      {status.ferdig && erKladd && rader.length > 0 && (
-        <View style={{ paddingHorizontal: 18, paddingBottom: 10 }}>
+      {status.ferdig && erKladd && rader.length > 0 && ekstraVenter && !venter && (
+        <Pressable haptic="light" onPress={skriv} disabled={skriver} style={{ alignSelf: 'center', paddingVertical: 8 }}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: lt.svak }}>
+            {skriver ? 'Fyller ut malen …' : 'Hopp over og skriv loggen'}
+          </Text>
+        </Pressable>
+      )}
+      {status.ferdig && erKladd && rader.length > 0 && !ekstraVenter && (
+        <View style={{ paddingHorizontal: 18, paddingBottom: 10, gap: 4 }}>
           <Knapp
             tekst={skriver ? 'Fyller ut malen …' : harTekst ? 'Skriv loggen på nytt' : 'Skriv loggen'}
             venter={skriver}
             disabled={venter}
             onPress={skriv}
           />
+          <Pressable haptic="light" onPress={paaNytt} disabled={skriver || venter} style={{ alignSelf: 'center', paddingVertical: 8 }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: lt.svak }}>Start samtalen på nytt</Text>
+          </Pressable>
         </View>
       )}
 

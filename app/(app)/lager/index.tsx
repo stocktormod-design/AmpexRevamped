@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { View, ScrollView } from 'react-native'
+import { View, ScrollView, Platform } from 'react-native'
 import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { Plus, Warehouse, Search, Car } from 'lucide-react-native'
+import { Plus, Warehouse, Search, Car, BookOpen } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { MegAvatar } from '../../../components/meg-avatar'
 import { PapirSectionHeader, usePapirFokus } from '../../../components/papir-surface'
@@ -11,6 +11,7 @@ import { database } from '../../../lib/db'
 import { Location } from '../../../lib/db/models/location'
 import { useLocationCounts } from '../../../lib/stock'
 import { useVareantall } from '../../../lib/products'
+import { EFOBASEN_I_APPEN } from '../../../lib/pricefile/varekort'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
 
 function useLocations() {
@@ -135,9 +136,6 @@ export default function LagerScreen() {
                 <Warehouse size={sizes.iconLg} color={colors.brand} strokeWidth={sizes.lucideStroke} />
               </View>
               <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen lokasjoner</Text>
-              <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>
-                Bilen din er lageret på hjul. Legg den til over, så følger uttak og handleliste den.
-              </Text>
             </View>
           </View>
         ) : (
@@ -159,13 +157,34 @@ export default function LagerScreen() {
           <Search size={18} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
           <View style={{ flex: 1 }}>
             <Text style={[t.body, { color: colors.secondaryLabel }]}>
-              {vareantall === 0 ? 'Kartoteket er tomt — importer en prisfil' : 'Søk i varer'}
+              {vareantall === 0 ? 'Kartoteket er tomt' : 'Søk i varer'}
             </Text>
           </View>
           {vareantall > 0 && (
             <Text style={[t.caption, { color: colors.tertiaryLabel, fontVariant: ['tabular-nums'] }]}>{`${vareantall}`}</Text>
           )}
         </Pressable>
+
+        {/* EFObasen er katalogen, vi er kurven: bla der, bestill her. Ikke på
+            web — EFObasen nekter å bli vist inne i en annen side. */}
+        {Platform.OS !== 'web' && EFOBASEN_I_APPEN && (
+          <Pressable
+            haptic="light"
+            onPress={() => router.push('/(app)/lager/efobasen')}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+              backgroundColor: colors.bg, borderRadius: radius.lg,
+              borderWidth: 1, borderColor: colors.separator,
+              marginHorizontal: spacing.screen, marginTop: -spacing.md, marginBottom: spacing.screen,
+              paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,
+            }}
+          >
+            <BookOpen size={18} color={colors.label} strokeWidth={sizes.lucideStroke} />
+            <View style={{ flex: 1 }}>
+              <Text style={t.body}>Bla i EFObasen</Text>
+            </View>
+          </Pressable>
+        )}
 
         <Group title="Lager" items={lagre} />
             <Group title="Biler" items={biler} />

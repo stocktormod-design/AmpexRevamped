@@ -269,7 +269,7 @@ export default function ProsjektDetailScreen() {
               }}
             >
               <Text style={[t.subhead, { color: statusOutcome.kind === 'answered' ? colors.brand : colors.label }]}>
-                {statusOutcome.kind === 'answered' ? statusOutcome.spokenReply : 'Fikk ikke svart — prøv igjen.'}
+                {statusOutcome.kind === 'answered' ? statusOutcome.spokenReply : 'Fikk ikke svar'}
               </Text>
             </Pressable>
           )}
@@ -335,7 +335,7 @@ export default function ProsjektDetailScreen() {
           <View style={{ marginBottom: spacing.screen }}>
             <SectionHeader>{`${treff.length} ${treff.length === 1 ? 'tegning' : 'tegninger'}`}</SectionHeader>
             {treff.length === 0 ? (
-              <Text style={[t.footnote, { marginHorizontal: spacing.screen + spacing.xs }]}>Ingen tegning passer. Prøv et annet ord, eller et annet fag.</Text>
+              <Text style={[t.footnote, { marginHorizontal: spacing.screen + spacing.xs }]}>Ingen treff</Text>
             ) : (
               <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator }}>
                 {treff.map((d, i) => <TegningRad key={d.id} d={d} sti={sti(d)} siste={i === treff.length - 1} />)}
@@ -401,7 +401,6 @@ export default function ProsjektDetailScreen() {
                 <Plus size={sizes.icon - 2} color={colors.secondaryLabel} strokeWidth={2} />
                 <View style={{ flex: 1 }}>
                   <Text style={t.bodyMedium}>Ny oppgave</Text>
-                  <Text style={[t.footnote, { marginTop: 1 }]}>Del ut til folk på prosjektet, gjerne knyttet til et rom</Text>
                 </View>
               </Pressable>
             ) : (
@@ -492,7 +491,7 @@ export default function ProsjektDetailScreen() {
         synlig={!!medlemValg}
         tittel={medlemValg?.userName || 'Person'}
         valg={[
-          { verdi: 'ansvarlig' as const, etikett: medlemValg?.isScanResponsible ? 'Ikke LiDAR-ansvarlig lenger' : 'Gjør til LiDAR-ansvarlig', underetikett: 'Én per prosjekt — får skann-oppgavene' },
+          { verdi: 'ansvarlig' as const, etikett: medlemValg?.isScanResponsible ? 'Ikke LiDAR-ansvarlig lenger' : 'Gjør til LiDAR-ansvarlig' },
           { verdi: 'fjern' as const, etikett: 'Fjern fra prosjektet' },
         ]}
         onVelg={valg => {
@@ -500,7 +499,7 @@ export default function ProsjektDetailScreen() {
           setMedlemValg(null)
           if (!m) return
           if (valg === 'ansvarlig') { void toggleScanResponsible(m, members); return }
-          Alert.alert(`Fjerne ${m.userName || 'personen'}?`, 'Oppgavene de har fått står igjen.', [
+          Alert.alert(`Fjerne ${m.userName || 'personen'}?`, undefined, [
             { text: 'Avbryt', style: 'cancel' },
             { text: 'Fjern', style: 'destructive', onPress: async () => { await database.write(async () => m.markAsDeleted()); syncQuietly() } },
           ])

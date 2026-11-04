@@ -61,7 +61,7 @@ export default function NyttTilbud() {
       >
         <TextInput
           value={tittel} onChangeText={setTittel} autoFocus
-          placeholder="Hva gjelder det? F.eks. Nytt sikringsskap"
+          placeholder="Tittel"
           placeholderTextColor={colors.tertiaryLabel}
           style={[t.title3, {
             backgroundColor: colors.bg, borderRadius: radius.lg,
@@ -131,15 +131,12 @@ export default function NyttTilbud() {
             <Pressable haptic="light" onPress={() => router.push('/(app)/kunder/ny')}
               style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
               <Text style={[t.body, { flex: 1, color: colors.secondaryLabel }]}>
-                {sok.trim() ? 'Ingen treff — opprett kunde' : 'Kunderegisteret er tomt — opprett kunde'}
+                Opprett kunde
               </Text>
               <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
             </Pressable>
           )}
         </View>
-        <Text style={[t.footnote, { marginTop: spacing.xs, marginLeft: spacing.xs }]}>
-          Kunden kan settes senere, men uten kunde kan tilbudet ikke sendes.
-        </Text>
       </ScrollView>
     </KeyboardAvoidingView>
   )

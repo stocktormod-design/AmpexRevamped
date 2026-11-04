@@ -46,3 +46,21 @@ export function pruneHidden(template: FormTemplate, values: FormValues): FormVal
   }
   return out
 }
+
+/**
+ * Temavalget i en `velger`-seksjon: hvilke temaer ordren nevner, som forhåndsavkryssing.
+ * Bare et forslag — montøren krysser av og fra før skjemaet lages.
+ */
+export function foreslatteTemaer(template: FormTemplate, ordretekst: string): string[] {
+  const tekst = ordretekst.toLowerCase()
+  return template.sections.flatMap(s => s.velger
+    ? s.fields.filter(f => s.velger!.match[f.key]?.test(tekst)).map(f => f.key)
+    : [])
+}
+
+/** Verdiene temavalget skriver: «Ja» på det som er valgt, «Nei» på resten — så valget står i dokumentet. */
+export function temaVerdier(template: FormTemplate, valgt: string[]): FormValues {
+  const ut: FormValues = {}
+  for (const s of template.sections) if (s.velger) for (const f of s.fields) ut[f.key] = valgt.includes(f.key) ? 'Ja' : 'Nei'
+  return ut
+}

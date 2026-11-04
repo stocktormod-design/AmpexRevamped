@@ -102,7 +102,7 @@ export function AmpexAdmin() {
         eier_navn: eierNavn,
       })
       setKvittering(
-        `${laget.navn} er opprettet. Invitasjonen gikk til ${laget.eier_epost} — eieren velger sitt eget passord og legger inn resten av folkene selv.`,
+        `${laget.navn} er opprettet. Invitasjon sendt til ${laget.eier_epost}.`,
       )
       setNavn(''); setOrgNr(''); setEierEpost(''); setEierNavn(''); setApen(false)
       last()
@@ -180,10 +180,7 @@ export function AmpexAdmin() {
 
   return (
     <>
-      <Sidehode
-        tittel="Ampex"
-        under="Kundene. Denne flata tilhører ingen av dem."
-      />
+      <Sidehode tittel="Ampex" />
 
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
 
@@ -195,7 +192,7 @@ export function AmpexAdmin() {
           {!firmaer ? (
             <p className="kort-hjelp">Henter …</p>
           ) : firmaer.length === 0 ? (
-            <p className="kort-hjelp">Ingen firmaer ennå.</p>
+            <p className="kort-hjelp">Ingen firmaer.</p>
           ) : (
             <table className="linjer">
               <thead>
@@ -337,7 +334,6 @@ export function AmpexAdmin() {
                     etikett="Organisasjonsnummer"
                     firkant
                     inputMode="numeric"
-                    hjelp="Ni siffer. Kontrollsifferet sjekkes."
                     value={orgNr}
                     onChange={e => setOrgNr(e.target.value)}
                   />
@@ -356,7 +352,6 @@ export function AmpexAdmin() {
                   <Felt
                     etikett="Eierens navn"
                     firkant
-                    hjelp="I et enmannsforetak er dette installatøren selv."
                     value={eierNavn}
                     onChange={e => setEierNavn(e.target.value)}
                   />
@@ -365,7 +360,6 @@ export function AmpexAdmin() {
                     type="email"
                     inputMode="email"
                     firkant
-                    hjelp="Får invitasjonen og velger sitt eget passord."
                     value={eierEpost}
                     onChange={e => setEierEpost(e.target.value)}
                   />

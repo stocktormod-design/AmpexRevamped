@@ -26,14 +26,14 @@ const MINSTE_PASSORD = 8
 function norsk(melding: string): string {
   const m = melding.toLowerCase()
   if (/invalid login credentials|invalid credentials/.test(m)) return 'Feil e-post eller passord.'
-  if (/email not confirmed/.test(m)) return 'E-postadressen er ikke bekreftet ennå. Se etter bekreftelsen i innboksen.'
+  if (/email not confirmed/.test(m)) return 'E-postadressen er ikke bekreftet.'
   if (/email address .* is invalid|invalid email/.test(m)) return 'Det ser ikke ut som en gyldig e-postadresse.'
   if (/rate limit|too many requests|for security purposes/.test(m)) return 'For mange forsøk. Vent et minutt og prøv igjen.'
-  if (/failed to fetch|networkerror|network request failed|load failed/.test(m)) return 'Får ikke kontakt med Ampex. Sjekk nettforbindelsen og prøv igjen.'
+  if (/failed to fetch|networkerror|network request failed|load failed/.test(m)) return 'Får ikke kontakt med Ampex.'
   if (/user not found/.test(m)) return 'Fant ingen konto på den adressen.'
-  if (/same password/.test(m)) return 'Det nye passordet er det samme som det gamle. Velg et annet.'
+  if (/same password/.test(m)) return 'Det nye passordet er det samme som det gamle.'
   if (/password should be at least/.test(m)) return `Passordet må ha minst ${MINSTE_PASSORD} tegn.`
-  if (/weak password/.test(m)) return 'Passordet er for svakt. Velg et lengre, med flere slags tegn.'
+  if (/weak password/.test(m)) return 'Passordet er for svakt.'
   if (/expired|invalid/.test(m) && /session|jwt|token/.test(m)) return 'Økta er utløpt. Logg inn på nytt.'
   return melding
 }
@@ -128,17 +128,15 @@ function Meldinger({ feil, ok }: { feil: string | null; ok?: string | null }) {
 }
 
 /** Rammen de tre skjermene deler: merket, kortet, linja under. */
-function Flate({ under, children }: { under: ReactNode; children: ReactNode }) {
+function Flate({ children }: { children: ReactNode }) {
   return (
     <div className="logginn">
       <div className="logginn-boks">
         <div className="logginn-merke">
           <AmpexLogo size={44} />
           <div className="logginn-navn">Ampex Kontor</div>
-          <div className="logginn-under">Samme konto som i appen</div>
         </div>
         {children}
-        <p className="logginn-bunn">{under}</p>
       </div>
     </div>
   )
@@ -222,11 +220,10 @@ export function Logginn() {
 
   if (modus === 'glemt') {
     return (
-      <Flate under="Kommer det ingen e-post, se i søppelposten — eller be installatøren i firmaet nullstille for deg.">
+      <Flate>
         <form className="logginn-kort stabel" onSubmit={glemt}>
           <div className="logginn-tittel">
             <h2>Glemt passord</h2>
-            <p className="felt-hjelp">Vi sender en lenke som lar deg sette et nytt.</p>
           </div>
           <Felt
             etikett="E-post"
@@ -251,7 +248,7 @@ export function Logginn() {
   }
 
   return (
-    <Flate under="Konto opprettes av installatøren i firmaet.">
+    <Flate>
       <form className="logginn-kort stabel" onSubmit={logginn}>
         <Felt
           etikett="E-post"
@@ -344,13 +341,10 @@ export function NyttPassord() {
 
   if (lagret) {
     return (
-      <Flate under="Glemmer du det, bruker du «Glemt passord?» på innloggingssiden.">
+      <Flate>
         <div className="logginn-kort stabel">
           <div className="logginn-tittel">
             <h2>Passordet er lagret</h2>
-            <p className="felt-hjelp">
-              Det gjelder både her og i appen på telefonen. Lenka fra e-posten er brukt opp.
-            </p>
           </div>
           {/* Egen knapp i stedet for å sende deg videre av seg selv: den som
               nettopp har satt et passord skal få lese at det gikk bra, i sitt
@@ -364,15 +358,10 @@ export function NyttPassord() {
   }
 
   return (
-    <Flate under="Passordet gjelder både her og i appen på telefonen.">
+    <Flate>
       <form className="logginn-kort stabel" onSubmit={lagre}>
         <div className="logginn-tittel">
           <h2>{invitert ? 'Velkommen til Ampex' : 'Velg et nytt passord'}</h2>
-          <p className="felt-hjelp">
-            {invitert
-              ? 'Velg et passord, så er du inne. Det er det eneste som mangler.'
-              : 'Lenka er brukt opp når dette er lagret.'}
-          </p>
         </div>
         <Passordfelt
           etikett={invitert ? 'Passord' : 'Nytt passord'}

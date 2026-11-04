@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="nb">
+<head>
+  <meta charset="utf-8">
+  <title>Ampex</title>
+  <style>
+    body { margin: 0; width: 280px; font: 14px/1.4 -apple-system, Helvetica, Arial, sans-serif; color: #1d1d1f; background: #fff; }
+    main { padding: 16px; display: grid; gap: 10px; }
+    h1 { font-size: 16px; margin: 0; }
+    p { margin: 0; color: #6e6e73; font-size: 13px; }
+    input { padding: 8px 10px; border: 0.5px solid rgba(0,0,0,.2); border-radius: 8px; font: inherit; }
+    button { padding: 9px 12px; border: 0; border-radius: 8px; font: inherit; font-weight: 600; background: #1d1d1f; color: #fff; cursor: pointer; }
+    button.stille { background: #f2f2f4; color: #1d1d1f; }
+    .feil { color: #c62828; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Ampex</h1>
+    <form id="inn" hidden>
+      <div style="display:grid;gap:8px">
+        <p>Logg inn med Ampex-kontoen din for å se firmaets priser i EFObasen.</p>
+        <input id="epost" type="email" placeholder="E-post" autocomplete="username" required>
+        <input id="passord" type="password" placeholder="Passord" autocomplete="current-password" required>
+        <button type="submit">Logg inn</button>
+        <p id="feil" class="feil"></p>
+      </div>
+    </form>
+    <section id="ute" hidden>
+      <div style="display:grid;gap:8px">
+        <p>Innlogget som <b id="hvem"></b>. Gå til en vare i EFObasen, så vises prisene nede til høyre.</p>
+        <button id="efo">Åpne EFObasen</button>
+        <button id="loggut" class="stille">Logg ut</button>
+      </div>
+    </section>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

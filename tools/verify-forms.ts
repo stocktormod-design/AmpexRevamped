@@ -21,7 +21,8 @@ import {
 } from '../lib/forms/schema'
 import { convertFirmField, convertFirmSections, validateFirmSections } from '../lib/forms/firm-schema'
 import { aiKanFylle, avvisningsgrunn } from '../lib/forms/ai-fill-rules'
-import { isFieldVisible, pruneHidden, visibleFields, visibleSections } from '../lib/forms/visibility'
+import { foreslatteTemaer, isFieldVisible, pruneHidden, temaVerdier, visibleFields, visibleSections } from '../lib/forms/visibility'
+import { risikovurdering } from '../lib/forms/templates'
 import type { FormTemplate, FormValues } from '../lib/forms/types'
 
 let feil = 0
@@ -204,6 +205,26 @@ sjekk('avvisningen sier hvor punktet fylles i stedet',
 sjekk('et felt AI-en KAN fylle har ingen avvisningsgrunn', avvisningsgrunn('number'), null)
 
 console.log('')
+// ── Risikovurdering med temavalg (v2, 30.10) ──────────────────────────────
+// «Hvis det ikke er elbillader skal man jo ikke ha spørsmål om det.»
+const rv = risikovurdering
+const seksjoner = (v: FormValues) => visibleSections(rv, v).map(s => s.title)
+sjekk('v1-dokument (uten temavalg) ser ut som før', seksjoner({ spenningslost: 'Ja' }),
+  ['Anlegg og arbeid', 'Jobben inneholder', 'Farevurdering', 'Tiltak og konklusjon'])
+sjekk('ingen elbillader → ingen elbil-spørsmål', seksjoner(temaVerdier(rv, ['tema_bad'])).includes('Elbillading'), false)
+sjekk('bad valgt → badseksjonen og bare den', seksjoner(temaVerdier(rv, ['tema_bad'])),
+  ['Anlegg og arbeid', 'Jobben inneholder', 'Farevurdering', 'Bad og våtrom', 'Tiltak og konklusjon'])
+sjekk('temavalget skriver Ja/Nei på alle temaer', Object.values(temaVerdier(rv, ['tema_elbil'])).filter(v => v === 'Ja').length, 1)
+sjekk('ordreteksten krysser av på forhånd', foreslatteTemaer(rv, 'Montere Easee ladeboks i garasjen, ny kurs fra sikringsskapet').sort(),
+  ['tema_elbil', 'tema_tavle'])
+sjekk('uten treff krysses ingenting av', foreslatteTemaer(rv, 'Befaring'), [])
+sjekk('fjernes et tema, forsvinner svarene på det',
+  pruneHidden(rv, { ...temaVerdier(rv, []), elbil_rcd: 'Ja' }).elbil_rcd, undefined)
+sjekk('alle temaseksjoner peker på et valg som finnes',
+  rv.sections.flatMap(s => s.fields).filter(f => f.showIf).every(f => rv.sections.some(s => s.fields.some(x => x.key === f.showIf!.field))), true)
+sjekk('feltnøklene er unike', new Set(rv.sections.flatMap(s => s.fields.map(f => f.key))).size, rv.sections.flatMap(s => s.fields).length)
+sjekk('hvert tema har ord som krysser av', rv.sections.find(s => s.velger)!.fields.every(f => rv.sections.find(s => s.velger)!.velger!.match[f.key] instanceof RegExp), true)
+
 if (feil > 0) {
   console.error(`${feil} sjekk(er) feilet.`)
   process.exit(1)

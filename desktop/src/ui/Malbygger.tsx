@@ -233,7 +233,7 @@ export function Malbygger({
                         {f.type === 'choice' ? (
                           <input
                             className="felt-inn mal-ekstra"
-                            placeholder="Valgene, med komma: TN, IT, TT"
+                            placeholder="TN, IT, TT"
                             value={(f.choices ?? []).join(', ')}
                             onChange={e => endrePunkt(i, k, { choices: tilListe(e.target.value) })}
                             aria-label="Valgene"
@@ -241,7 +241,7 @@ export function Malbygger({
                         ) : f.type === 'table' ? (
                           <input
                             className="felt-inn mal-ekstra"
-                            placeholder="Kolonnene, med komma: Kurs, Vern, Kabel"
+                            placeholder="Kurs, Vern, Kabel"
                             value={(f.columns ?? []).map(c => c.label).join(', ')}
                             onChange={e => endrePunkt(i, k, {
                               columns: tilListe(e.target.value).map((label, n) => ({
@@ -261,7 +261,7 @@ export function Malbygger({
                           />
                         ) : null}
                         {!erInfo ? (
-                          <label className="mal-pakrevd" title="Montøren får ikke fullført skjemaet uten svar her">
+                          <label className="mal-pakrevd">
                             <input
                               type="checkbox"
                               checked={!!f.required}
@@ -313,7 +313,6 @@ export function Malbygger({
               firkant
               etikett="Hva ble endret, og hvorfor?"
               placeholder="La til måling av jordfeilbryter"
-              hjelp="Påkrevd. Blir stående i historikken."
               value={notat}
               onChange={e => setNotat(e.target.value)}
             />

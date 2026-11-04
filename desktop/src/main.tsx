@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from '@/App'
 import { AuthProvider } from '@/auth'
+import { DeltOrdre } from '@/ruter/DeltOrdre'
 // Tokenene er en virtuell modul (se vite.config.ts) og kan derfor ikke hentes
 // med @import fra styles.css — postcss-import løper før vite-pluginene og leter
 // etter en fil på disk. Den lastes her i stedet, før stilarket som bruker den.
@@ -63,10 +64,19 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   })
 }
 
+/**
+ * Delingslenka (`#/del/<nøkkel>`) er en egen, åpen side: ingen innlogging, ingen
+ * AuthProvider, ingen kontor rundt. Den avgjøres før appen starter, så en kunde aldri
+ * ser innloggingsskjemaet blinke forbi.
+ */
+const del = window.location.hash.match(/^#\/del\/([A-Za-z0-9_-]{24,})/)
+
 createRoot(rot).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    {del ? <DeltOrdre token={del[1]} /> : (
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    )}
   </StrictMode>,
 )

@@ -137,7 +137,7 @@ export function Oversikt() {
         {tilGodkjenning.length === 0 && klarTilFaktura.length === 0 && (data?.oppgaver.length ?? 0) === 0 ? (
           <div className="rad" style={{ color: 'var(--gronn)' }}>
             <CircleCheck size={18} strokeWidth={1.9} />
-            <span>Ingenting venter. Alt er planlagt, godkjent og fakturert.</span>
+            <span>Ingenting venter.</span>
           </div>
         ) : (
           <div className="oppgaver">

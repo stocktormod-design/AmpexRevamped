@@ -110,6 +110,7 @@ export default function RomDetailScreen() {
               await database.write(async () => { await room.update(r => { r.scanPath = null }) })
               syncQuietly()
             } : undefined}
+            onRename={async n => { await database.write(async () => { await room.update(r => { r.name = n }) }); syncQuietly() }}
             onRebuilt={async path => {
               if (room.scanPath) await archiveRevision(room.id, room.scanPath)
               await database.write(async () => { await room.update(r => { r.scanPath = path }) })

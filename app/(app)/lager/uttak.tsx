@@ -78,10 +78,6 @@ export default function UttakScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-        <Text style={[t.footnote, { marginHorizontal: spacing.screen, marginBottom: spacing.md }]}>
-          Legg til flere om gangen — de samles i handlekurven, som du plasserer på en ordre etterpå.
-        </Text>
-
         {soker ? (
           <View style={{ marginHorizontal: spacing.screen }}>
             <ProductPicker onVelg={velgVare} onNy={nyVare} autoFocus />

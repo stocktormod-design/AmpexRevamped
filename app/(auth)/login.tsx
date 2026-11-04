@@ -18,7 +18,8 @@ export default function LoginScreen() {
   async function signIn(e: string = email, p: string = password) {
     setLoading(true)
     setError(null)
-    const { error } = await supabase.auth.signInWithPassword({ email: e, password: p })
+    // trim: iOS-forslagslinja legger et mellomrom etter e-posten, og da avviser Supabase innloggingen
+    const { error } = await supabase.auth.signInWithPassword({ email: e.trim().toLowerCase(), password: p })
     if (error) setError('Feil e-post eller passord')
     setLoading(false)
   }
@@ -110,10 +111,6 @@ export default function LoginScreen() {
             <Text style={[t.caption, { color: colors.tertiaryLabel }]}>dev</Text>
           </Pressable>}
         </Animated.View>
-
-        <Text style={[t.footnote, { color: colors.tertiaryLabel, textAlign: 'center' }]}>
-          Kontakt din administrator for tilgang
-        </Text>
       </View>
     </KeyboardAvoidingView>
   )

@@ -170,6 +170,115 @@ tre med montert/alle per tegning, ↑/↓ og «/» på tastaturet) med tegningen
 Grunnmuren under alt dette er fart: tegningen som bilde først, ingen hvit skjerm, ingen
 spinner (se åpen sak om UI-respons). Konkurrentene tapte på det, ikke på funksjoner.
 
+## Runde 2 (2026-10-04): Autodesk Forma i dybden, og hvem som gjør telefonen bedre
+
+Tormod ville «kopiere Autodesk Forma litt», men mistenkte at noe bedre fantes. To
+research-løp. Konklusjon: **Forma er feil forbilde, Fieldwire er grunnmodellen — og ingen
+har gjort «visning ER redigering».** Alle har fortsatt et eget velg-verktøy og en
+verktøylinje du må velge fra før noe skjer. Der kan Ampex være først.
+
+### Autodesk Forma Build (ACC omdøpt 24.03.2026, ex-PlanGrid)
+
+Opplasting er en veiviser i fire steg: fil → samling + versjonssett → gjennomgå
+tegningsnumre (tittelfeltet forstørret ved siden av OCR-forslaget, rett enkeltvis eller i
+bulk) → titler/tagger → publiser. Flersides PDF splittes til ark. Lenker mellom ark lages
+etter publisering, tar «minutter til timer», og leser bare sirkel-henvisninger.
+Sammenligning: web har overlegg rød/blå OG side-om-side med glider; iPad/iPhone har bare
+overlegg (side-om-side på iPad er et åpent ønske). Mobilsøk har to faner: nummer/tittel og
+innhold (tekst i tegningen), med trefframmer i arket. Favoritter øverst, «nylig sett».
+Mobilverktøy: Select (velg ELLER panorér), penn, merkepenn, pil, linje, firkant, sirkel,
+kryss, tekst, sky-callout, pluss sak/foto-markering; stilpanel med kant/fyll/opasitet.
+Alle markeringer er private til noen med rett publiserer dem.
+
+Mest påklaget: et versjonssett tar ikke imot samme arknummer to ganger — hver revisjon
+krever nytt sett. «Gå til ark» fra oppgave svikter på iPhone, ingen bakgrunnsnedlasting
+med låst skjerm, tapte bilder/markeringer i synk, og fotorapporten med nøkkelkart fra
+PlanGrid er borte og etterspurt. PlanGrid står i vedlikeholdsmodus siden ~2020; brukerne
+savner enkelheten. Det PlanGrid hadde: lasso øverst i verktøylinja, **dobbelttrykk på et
+verktøy låser det** (ellers ett bruk), øye-ikon som skjuler alt krom, filter på
+type/farge/forfatter, autolenker allerede i 2013.
+
+AI: OCR av nummer/tittel, autolenker og «Automated Drawing Extraction» (tittelfeltmal →
+attributter → mappe med navnestandard) leverer. Drawing Change Analysis, Assistant-søk i
+tegninger og Compliance Review er ANNONSERT på AU2026 — «previewed, not generally
+available», utrulling 2027.
+
+### De andre
+
+**Fieldwire** (4,8/5, ~14 000 vurderinger; «easier to use than the desktop version»):
+OCR navngir ark ved opplasting, henvisninger blir røde lenker (krever tekst i PDF-en),
+samling → mappe per fag → ark + tagger, søk på arknummer og «#tag», hver rad viser
+oppgaveantall og versjonskonflikt, markeringer følger med til ny versjon, lilla = private,
+overlegg på mobil også mellom fag (himling mot lys), nåler, offline, egen oppsettguide for
+elektrikere. Verktøylinje nede til høyre; langtrykk på markering → rediger/flytt/
+dupliser/farge. Gratis ≤ 5 brukere, Pro 39 $, Business 64 $/bruker/mnd. Klager: pris per
+bruker.
+
+**Dalux Field**: Locations = bygg → etasje, ikke mapper; åpner siste tegning; bytt
+bygg/etasje ved å trykke navnet nederst; trykk på planen viser det som er registrert der;
+QR på stedet åpner riktig sone; ny versjon kjennes på filnavnet; grønn/oransje
+sammenligning også på mobil. «Virtually foolproof», «always works fast … opening large
+drawings».
+
+**Procore**: nål/sky lenket til RFI, bilde, mangel; sammenligning blå/rød på mobil. Men
+side-for-side-godkjenning ved opplasting er «wonky», laster samme detaljer på nytt, «battery
+and storage hog».
+
+**Bluebeam**: Revu for iPad lagt ned 31.12.2025; erstatteren har ~1,5/5. «Selecting the
+markups is hard because the selection boundary is so far outside of the markup», «I can't
+edit my own mark-ups». Advarsel: presis markering og faste symbolsett er det fagfolk savner.
+
+**Drawboard** (beste blekk, «pen feels natural», men treg på store PDF-er og ingen
+register), **PlanRadar** (nålelogg, vanskelig å finne én sak blant hundrevis),
+**STACK/SmartUse** (faner/bokmerker mellom ark). UX utenfor bransjen: Concepts
+(verktøyhjul), Morpholio Trace (kalkerpapir-lag), GoodNotes/PDF Expert (lasso, kruss over
+for å slette, penn tegner mens finger panorerer), Freeform (ingen modus).
+AI-oppstarter (Articulate, Structured AI, Helonic, Bidflow, Quotr) leser tegninger på
+KONTORET — ingen bygger feltvisning. Bidflow (teller el-symboler) er nærmest vår
+symbolforklaring.
+
+### Hva vi tar
+
+1. **Fieldwire som grunnmodell:** OCR av tittelfeltet ved import (nummer, tittel, rev),
+   autolenker på ALLE treff på kjente arknumre (ikke bare sirkler), søk på arknummer,
+   markeringer og komponenter som følger med til ny revisjon, antall åpne ting per ark i
+   lista.
+2. **Revisjon som automatisk kjede:** samme arknummer = ny versjon av samme ark, nyeste er
+   gjeldende. Aldri versjonssett (Builds verste friksjon). Overlegg grønn/oransje på
+   telefon, side-om-side med glider i delt visning (har vi allerede).
+3. **Dalux sin finne-fram:** åpne siste tegning; bygg/etasje/fag som én bryter nederst.
+   Mappetreet fra OneDrive er importformatet; montøren leter med søk og arknummer.
+4. **Ingen modus — det ingen har:** uten verktøy panorerer én finger og trykk på en
+   markering/komponent VELGER den (stramme treffgrenser, Bluebeam-klagen). Langtrykk på tomt
+   område → «Oppgave her / Foto her / Brannkomponent her». Penn (Apple Pencil) tegner alltid
+   mens fingeren panorerer. Kruss over for å slette. PlanGrids låsing: ett trykk = én bruk,
+   dobbelttrykk = låst (stempling av 40 detektorer).
+5. **Tegningen er stedet ting henger på** (Procore): nål → avvik, bilde, ordre, skjema.
+   Foto med plassering og fotorapport med nøkkelkart (savnet fra PlanGrid).
+6. **Søk med to faner** (nummer/tittel, innhold) og trefframmer — vi har vektorteksten.
+
+Unngå: privat/publisert-skille på markeringer for montøren, stilpanel med
+kant/fyll/opasitet (tre farger holder), lenkegenerering som tar timer, godkjenning side
+for side ved opplasting (kontoret ser forhåndsvisningen ÉN gang, resten går av seg selv).
+
+Kilder runde 2: help.autodesk.com (Upload_And_Publish_Sheets, Review_Edit_Sheet_Numbers,
+Version-Sets, Link-Sheets-Markups, Automated_Drawing_Extraction, Compare_Sheets,
+View_Manage_Sheets_Mobile, Markups_Mobile, Issues_Create, Measure_2D_Files_Mobile) ·
+autodesk.com/support (Sheet-number-version-error) · forums.autodesk.com (side-by-side
+iPad, photo reports from sheets) · help.plangrid.com (224133567, 224144127) ·
+techcrunch.com/2013/06/03/plangrids-blueprint-app-adds-automatic-hyperlinking ·
+architosh.com/2026/09/au2026-autodesk-expands-forma-and-leverages-ai ·
+planops.ai/insights/weekly-roundup/2026-09-18-weekly-roundup ·
+help.fieldwire.com (360000488886, 360049713811, 115004752483, 4406931599131,
+360061902452) · apps.apple.com/us/app/780165517 · dalux.zendesk.com/360010386193 ·
+support.dalux.com (10022982079004, 14101695854364) · capterra.com/p/154695 ·
+support.procore.com (compare-drawings-android) · support.bluebeam.com (revu-for-ipad-eos) ·
+apps.apple.com/us/app/bluebeam/id1479484276 · g2.com/products/drawboard-projects ·
+planradar.com/us/planradar-reviews · concepts.app · morpholioapps.com/trace ·
+ycombinator.com/companies/helonic · stru.ai-bloggen (svak kilde, konkurrent).
+Ikke verifisert: YouTube-gjennomganger (transkripsjoner utilgjengelige); flere Autodesk-
+sider ga 403 og er lest som søkeutdrag.
+
 ## Kilder
 
 Norsk: support.smartdok.no/knowledge/tegne/skisse-i-app · smartdok.no/ny-app ·

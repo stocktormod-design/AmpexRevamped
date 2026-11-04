@@ -62,10 +62,7 @@ export function Firma() {
             {!data ? (
               <p className="kort-hjelp">Henter …</p>
             ) : data.ansatte.length === 0 ? (
-              <p className="kort-hjelp">
-                Ingen ansatte ennå. Inviter dem nedenfor — de får en e-post med en lenke der de
-                velger sitt eget passord.
-              </p>
+              <p className="kort-hjelp">Ingen ansatte.</p>
             ) : (
               <table className="linjer">
                 <thead>
@@ -151,14 +148,6 @@ export function Firma() {
                 </div>
               </div>
             )}
-          </div>
-
-          <div className="seksjon">
-            <div className="seksjon-tittel">Kommer</div>
-            <p className="kort-hjelp">
-              Endre innstillinger og importere fra SpeedyCraft. Importen hører på denne
-              maskinen fordi det er her den gamle databasen ligger.
-            </p>
           </div>
         </div>
       </div>

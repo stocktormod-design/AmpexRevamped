@@ -456,3 +456,27 @@ export async function hentArkiv(orderId: string): Promise<Arkivrad | null> {
   if (error) throw new Error(error.message)
   return (data ?? null) as Arkivrad | null
 }
+
+// ── Skjema på ordren fra kontoret (30.10) ─────────────────────────────────────
+
+export type Mal = { id: string; navn: string; versjon: number }
+
+/** Firmaets egne publiserte maler. Ampex-malene ligger i `@delt/forms/templates`. */
+export async function hentFirmamaler(): Promise<Mal[]> {
+  const { data, error } = await supabase.from('form_templates')
+    .select('id,title,current_version').eq('status', 'published').is('deleted_at', null).order('title')
+  if (error) throw new Error(`Kunne ikke hente malene: ${error.message}`)
+  return (data ?? []).map(r => ({ id: r.id as string, navn: r.title as string, versjon: r.current_version as number }))
+}
+
+/**
+ * Legger et tomt skjema (utkast) på ordren. Montøren finner det på ordren i appen og fyller
+ * det ut der; raden er den samme appen selv ville laget ved første endring.
+ */
+export async function opprettSkjema(ordreId: string, companyId: string, mal: Mal): Promise<void> {
+  const { error } = await supabase.from('order_documents').insert({
+    id: nyId(), company_id: companyId, order_id: ordreId,
+    template_id: mal.id, template_version: mal.versjon, status: 'utkast', data: '{}',
+  })
+  if (error) throw new Error(`Kunne ikke legge til skjemaet: ${error.message}`)
+}

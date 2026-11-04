@@ -179,7 +179,7 @@ export default function SkjemaDetail() {
             ))
           ) : (
             <View style={{ alignItems: 'center', paddingTop: spacing.xxl }}>
-              <Text style={[t.footnote]}>Tomt skjema. Trykk Rediger for å legge til felt.</Text>
+              <Text style={[t.footnote]}>Tomt skjema</Text>
             </View>
           )}
         </Animated.ScrollView>
@@ -224,7 +224,7 @@ export default function SkjemaDetail() {
             showsVerticalScrollIndicator={false}>
             {comments.length === 0 ? (
               <View style={{ alignItems: 'center', paddingTop: spacing.xxl }}>
-                <Text style={[t.footnote, { textAlign: 'center' }]}>Ingen diskusjon ennå.{'\n'}Spør om hvordan et punkt funker, eller foreslå en endring.</Text>
+                <Text style={[t.footnote, { textAlign: 'center' }]}>Ingen diskusjon</Text>
               </View>
             ) : (
               comments.map(c => (
@@ -262,7 +262,7 @@ export default function SkjemaDetail() {
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm }}>
               <TextInput
                 value={draft} onChangeText={setDraft}
-                placeholder="Spør eller foreslå endring…"
+                placeholder="Kommentar"
                 placeholderTextColor={colors.paperTertiary}
                 multiline
                 style={[t.body, { flex: 1, maxHeight: 110, minHeight: 40, backgroundColor: colors.paperFill, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingTop: 10, paddingBottom: 10 }]}

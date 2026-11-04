@@ -3,12 +3,12 @@
 // fallback for Expo Go, og ga et falskt «bake»-forløp uten ekte 3D-modell.)
 import {
   isNativeSplatAvailable, getNativeMeshViewerView, presentMeshScan, rebakeMeshScan, buildSplat,
-  subscribeRebakeProgress,
-  type MeshScanResult,
+  subscribeRebakeProgress, presentMeshAr, hasRelocMap, skannDiagnose,
+  type MeshScanResult, type PlanLine,
 } from '../modules/ampex-splat'
 
-export { presentMeshScan, rebakeMeshScan, buildSplat, subscribeRebakeProgress }
-export type { MeshScanResult }
+export { presentMeshScan, rebakeMeshScan, buildSplat, subscribeRebakeProgress, presentMeshAr, hasRelocMap, skannDiagnose }
+export type { MeshScanResult, PlanLine }
 
 import * as FileSystem from 'expo-file-system/legacy'
 

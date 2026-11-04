@@ -293,9 +293,6 @@ export default function Screen() {
             )
           })}
       </View>
-      <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>
-        Gjelder fra neste samtale · trykk på Ampex-merket for å starte en.
-      </Text>
 
       {/* Synken er usynlig (regel 2) og skal forbli det. Men blir vi AVVIST av
           serveren tre ganger på rad, er det en defekt, ikke en kjeller · og da
@@ -307,7 +304,7 @@ export default function Screen() {
           <View style={{ flex: 1 }}>
             <Text style={[t.body, { color: colors.label, fontWeight: '600' }]}>{synk.tekst}</Text>
             <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 2 }]}>
-              Ingenting er tapt · alt ligger lagret på telefonen. Men det kommer ikke fram før dette er rettet.
+              Lagret på telefonen, ikke sendt.
             </Text>
             {synk.detalj && (
               <Text style={[t.caption, { color: colors.secondaryLabel, marginTop: spacing.sm }]}>{synk.detalj}</Text>
@@ -330,7 +327,7 @@ export default function Screen() {
           annet firma inn, nullstiller company-guard basen før synk. */}
       <Pressable
         haptic="light"
-        onPress={() => Alert.alert('Logge ut?', 'Du kan logge inn igjen med samme bruker.', [
+        onPress={() => Alert.alert('Logge ut?', undefined, [
           { text: 'Avbryt', style: 'cancel' },
           { text: 'Logg ut', style: 'destructive', onPress: () => { void supabase.auth.signOut({ scope: 'local' }).then(() => router.replace('/(auth)/login')) } },
         ])}

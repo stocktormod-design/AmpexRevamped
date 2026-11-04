@@ -125,9 +125,9 @@ export function Skjemaer() {
   if (tom && !kanSkrive) {
     return (
       <>
-        <Sidehode tittel="Skjemaer" under="Firmaets maler" />
+        <Sidehode tittel="Skjemaer" />
         {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
-        <p className="dempet-mer">Ingen skjemamaler ennå.</p>
+        <p className="dempet-mer">Ingen skjemamaler.</p>
       </>
     )
   }
@@ -195,9 +195,6 @@ export function Skjemaer() {
                 <div className="hero">
                   <div className="hero-topp"><span className="hero-nr">Ny mal</span></div>
                   <h1 className="hero-tittel">Nytt skjema</h1>
-                  <div className="hero-linje">
-                    <span>Skriv spørsmålene montøren skal svare på. Til høyre ser du skjemaet slik det blir.</span>
-                  </div>
                 </div>
                 <div className="detalj-kropp">
                   <Malbygger
@@ -325,11 +322,6 @@ function Mal({
                     </Knapp>
                   ) : null}
                 </div>
-                <p className="kort-hjelp">
-                  Malen endres aldri på stedet. «Ny versjon» åpner den slik den er nå; det du
-                  lagrer blir versjon {mal.current_version + 1} med endringsnotat, og skjemaer som
-                  alt er fylt ut peker fortsatt på versjonen de ble fylt ut mot.
-                </p>
               </div>
               <div className="blokk">
                 <div className="blokk-hode"><div className="blokk-tittel">Historikk</div></div>
@@ -337,7 +329,7 @@ function Mal({
                   hentRevisjoner={hentRev}
                   hentAudit={hentAud}
                   seAudit={seAudit}
-                  tom="Ingen revisjoner. Malen står slik den ble laget."
+                  tom="Ingen revisjoner."
                 />
               </div>
             </div>

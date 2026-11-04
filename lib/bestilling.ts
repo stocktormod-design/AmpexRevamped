@@ -113,6 +113,7 @@ export async function leggVareIHandleliste(
     beskrivelse: vare.name,
     elnummer: vare.elnummer,
     produktId: vare.id,
+    enhet: vare.unit,
     antall,
   }, opts)
 }

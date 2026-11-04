@@ -85,9 +85,6 @@ export default function SkjemaIndex() {
             <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
           </Pressable>
           <Text style={[t.display, { marginTop: spacing.lg }]}>Skjema</Text>
-          <Text style={[t.footnote, { marginTop: spacing.xs, maxWidth: 320 }]}>
-            Levende dokumentasjon. Endre, diskuter og revider — alt med logg og begrunnelse.
-          </Text>
 
           {/* Import står SIDE OM SIDE med «nytt», ikke gjemt i en meny. De aller
               fleste firma har skjemaene sine fra før — å be dem taste dem inn
@@ -124,10 +121,7 @@ export default function SkjemaIndex() {
             <View style={{ width: 64, height: 64, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
               <FileCheck2 size={30} color={colors.secondaryLabel} strokeWidth={1.6} />
             </View>
-            <Text style={[t.headline, { marginTop: spacing.lg }]}>Ingen skjema ennå</Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center', lineHeight: 19 }]}>
-              Importer skjemaet dere alt bruker — PDF eller bilde — eller lag firmaets første fra bunnen.
-            </Text>
+            <Text style={[t.headline, { marginTop: spacing.lg }]}>Ingen skjema</Text>
           </View>
         ) : (
           cats.map((cat, ci) => (

@@ -154,7 +154,7 @@ export function TaskPinSheet({ state, userId, onClose }: {
             </View>
           )}
           <TextInput
-            value={beskrivelse} onChangeText={setBeskrivelse} placeholder="Notat til den som får oppgaven"
+            value={beskrivelse} onChangeText={setBeskrivelse} placeholder="Notat"
             placeholderTextColor={colors.tertiaryLabel} multiline
             style={[t.body, {
               backgroundColor: colors.bg, borderRadius: radius.lg, borderWidth: 1,

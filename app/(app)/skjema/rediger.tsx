@@ -80,11 +80,10 @@ export default function RedigerSkjema() {
           <Text style={[t.caption, { textTransform: 'uppercase', marginBottom: spacing.sm, marginLeft: spacing.xs }]}>Hvorfor endrer du dette?</Text>
           <TextInput
             value={note} onChangeText={setNote}
-            placeholder="F.eks. «Punkt om jording var uklart, omformulert etter innspill fra montør»"
+            placeholder="Begrunnelse"
             placeholderTextColor={colors.paperTertiary} multiline
             style={[t.body, { backgroundColor: colors.paperBg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, minHeight: 72 }]}
           />
-          <Text style={[t.footnote, { marginTop: spacing.xs, marginLeft: spacing.xs }]}>Lagres i historikken slik at alle ser hvorfor.</Text>
 
           <View style={{ marginTop: spacing.xl }}>
             <FormProblems problems={problems} />

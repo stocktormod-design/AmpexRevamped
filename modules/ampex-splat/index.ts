@@ -20,6 +20,7 @@ type NativeModule = {
   buildSplat(framesDirPath: string, targetCount: number, topK: number): Promise<SplatResult>
   presentMeshAr(glbPath: string, linesJson: string, markersJson: string): Promise<void>
   hasRelocMap(glbPath: string): boolean
+  skannDiagnose(): Promise<SkannDiagnose>
   addListener(event: 'onRebakeProgress', cb: (e: { message: string }) => void): { remove: () => void }
 }
 
@@ -61,6 +62,14 @@ export type PlanLine = { id: string; punkter: [number, number, number][] }
 export async function presentMeshAr(glbPath: string, lines: PlanLine[], markers: { x: number; y: number; z: number }[]): Promise<void> {
   if (!native) throw new Error('AmpexSplat native module not available')
   return native.presentMeshAr(glbPath, JSON.stringify(lines), JSON.stringify(markers))
+}
+
+export type SkannDiagnose = { logg: string; bilder: string[]; okt: string; modell: string; ios: string; ramMB: number; ledigMB: number }
+
+/** Slutten av skannloggen + tre råbilder fra siste skann + minnetall — til «Send skannlogg». */
+export async function skannDiagnose(): Promise<SkannDiagnose> {
+  if (!native) throw new Error('AmpexSplat native module not available')
+  return native.skannDiagnose()
 }
 
 /** Har modellen relokaliseringskart? Skann bygd før §110 får det ved neste «Bygg skarpere modell». */

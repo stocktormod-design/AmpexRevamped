@@ -72,7 +72,7 @@ export function Meg() {
 function Utseende() {
   const [tema, sett] = useTema()
   return (
-    <Kort tittel="Utseende" merkelapp="Gjelder denne maskinen">
+    <Kort tittel="Utseende">
       <div className="temaer" role="radiogroup" aria-label="Tema">
         {TEMAER.map(t => (
           <button
@@ -86,7 +86,6 @@ function Utseende() {
             <Prove tema={t.id} />
             <div>
               <div className="tema-navn">{t.navn}</div>
-              <div className="tema-om">{t.om}</div>
             </div>
           </button>
         ))}
@@ -302,10 +301,6 @@ function Totrinn() {
 
         {steg === 'av' ? (
           <>
-            <p className="kort-hjelp">
-              En autentiseringsapp gir en engangskode i tillegg til passordet. Kontoret spør etter
-              den når du inviterer ansatte, og den gjør kontoen din vesentlig vanskeligere å kapre.
-            </p>
             {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
             <div>
               <Knapp stil="merke" disabled={jobber} onClick={start}>
@@ -321,12 +316,7 @@ function Totrinn() {
               {pamelding ? <img className="qr" src={pamelding.qr} alt="QR-kode for autentiseringsappen" /> : null}
               <div className="stabel">
                 <p className="felt-hjelp">
-                  Skann koden med Google Authenticator, Microsoft Authenticator, 1Password eller en
-                  annen app som lager engangskoder.
-                </p>
-                <p className="felt-hjelp">
-                  Får du ikke skannet, skriv inn denne i appen i stedet:
-                  {' '}<code className="valgbar">{pamelding?.hemmelighet}</code>
+                  <code className="valgbar">{pamelding?.hemmelighet}</code>
                 </p>
               </div>
             </div>
@@ -336,7 +326,6 @@ function Totrinn() {
               inputMode="numeric"
               autoComplete="one-time-code"
               autoFocus
-              hjelp="Seks siffer."
               value={kode}
               onChange={e => setKode(e.target.value)}
             />
@@ -354,10 +343,6 @@ function Totrinn() {
 
         {steg === 'pa' ? (
           <>
-            <p className="kort-hjelp">
-              Autentiseringsappen er koblet til kontoen din. Bytter du telefon, koble den fra her
-              først og koble den nye til etterpå.
-            </p>
             {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
             <div>
               <Knapp onClick={() => { setSteg('kobler-fra'); setFeil(null); setKvittering(null) }}>
@@ -369,9 +354,6 @@ function Totrinn() {
 
         {steg === 'kobler-fra' ? (
           <form className="stabel" onSubmit={fjern}>
-            <p className="kort-hjelp">
-              Skriv inn en kode fra appen for å bekrefte at det er du som kobler den fra.
-            </p>
             <Felt
               etikett="Kode fra appen"
               firkant

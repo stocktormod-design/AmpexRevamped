@@ -1,6 +1,6 @@
 # Hvor vi står nå
 
-**Sist oppdatert: 2026-09-28, natt (læretid).**
+**Sist oppdatert: 2026-10-30 (Verona: tegnemodus, Dokumentasjon på ordren, R2-CORS, planleggingsgjennomgang).**
 
 Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 `docs/GJENNOMGANG_2026-09-08.md`), så les denne først.
@@ -16,6 +16,234 @@ Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 - `npm run typecheck` er grønn. `npm run verify:laeretid` er grønn (~200 sjekker).
 - Supabase-endringene 27.–28. september er KJØRT mot live-basen og edge-funksjonene
   er deployet (se læretid under). Repo-migrasjonene er skrevet i tillegg.
+
+## 4. november — første eksterne tester (Ingebrigt, iPhone 17 Pro Max)
+
+**Kjente feil, ikke rettet:**
+- **Ny ordre: valgt kunde reagerer ikke.** Velger man en kunde når man lager en ordre,
+  skjer ingenting. Meldt av Tormod 04.11, ikke undersøkt.
+- **AI på skjemasiden er nede:** gap-sjekk, skjemaimport, ordreoppslag med opptak og
+  prosjektstatus bruker `gemini-2.5-flash`, som Google har pensjonert (404). Rettes med
+  ny standardmodell i `supabase/functions/ai-voice/index.ts` + redeploy. Stemmeassistenten
+  (sirkelen, Gemini Live) virker — testet 04.11.
+- **Skann på 17 Pro Max ble for lyst og blått** mot det varme kunstlyset i rommet.
+  Årsak ukjent (fangst eller bakens fargebehandling); venter på «Send skannlogg».
+
+**Gjort 04.11:** TestFlight-bygg med timeredigering, låst delt visning (felles transform),
+nytt navn på skann, «Send skannlogg» (tabell `skannlogg`), økt minnegrense
+(`com.apple.developer.kernel.increased-memory-limit`), trim av e-post ved innlogging.
+Passordlenka på ampex.no hoppet over passordskjermen ved første besøk (service workeren
+lastet sida på nytt) — rettet og deployet. Testkonto `iser@live.no` i Ampex Test AS.
+
+## 30. oktober — Verona: tegnemodus, dokumentasjon på ordren, planleggingen
+
+- **Planleggingen av Verona** fra inntak til ferdigmelding med begrunnelse og NEK-pekere:
+  `docs/VERONA_PLANLEGGING.md` (læremateriale, ikke innlevering). Hovedvalg: TN 400 V 3 × 40 A +
+  laststyring, hovedtavle i boden ved døra fra gangen (brannvesenet finner den), inntakskap på
+  bodens østvegg, fundamentjord, RCBO per kurs, 22 kurser + underfordeling i garasjen,
+  apparat for apparat (komfyrvakt, bereder, varmekabel, varmepumpe, elbil med DC-deteksjon).
+  **Halogenfri kabel overalt** (IFXI-typen) — Tormod: «ikke pfxp. ikke halogen».
+- **Dokumentasjon på ordren** (kontoret, `Ordre.tsx`): alltid synlig boks; KUN der opprettes
+  skjema (Ampex- og firmamaler → `order_documents` utkast), lastes opp plan og åpnes
+  tegnemodus. Risikovurderingen er levende (`forslag` fra ordretekst + materiell + tegning,
+  «+ N nye» legger dem inn). Ikke prøvd mot ekte data.
+- **R2-CORS satt** på `ampex-tiles` (se 22.09-avsnittet; regelen i `supabase/r2-cors.json`).
+- `lib/kursforslag.ts` foreslår nå IFXI i stedet for PFSP. Demo-katalogen merker fortsatt
+  PFSP/PFXP som «halogenfri» (feil — Nexans-databladet sier nei); ikke rettet, selvtestene
+  bruker radene.
+- **Venter på Tormod:** `npx supabase functions deploy delt-ordre --project-ref vymgogzcicbaizjlaurr`
+  (delingslenka). Alt er ukommittert.
+
+## 29. oktober — skann M2 steg 3: full tekstur i rommet du står i (Mac-testet)
+
+- Vieweren: et hus over teksturbudsjettet viser rommet du står i med samme oppløsning som et
+  enkeltrom, og resten nedskalert. Bytter når du går inn i et annet rom. Enkeltrom og gamle
+  skann er uendret. SKANN_BESLUTNINGER §125.
+- Baken logger fase 1 per del (binding og geometri), så det synes hvor tiden etter Ferdig går.
+- **Venter på Tormod:** ja/nei til bake i bakgrunnen (se §125 og meldingen 29.10).
+
+## 28. oktober (kveld) — skann M3/M4: sveiset skjøt, trapp- og veggveiledning, veggfylling (Mac-testet)
+
+- Skjøten mellom deler sveises: randen klippet lager, flyttes inn på eldre flate (≈ 90 % av
+  randverteksene i testskannene). Når et delkart lukkes, ber veiledningen om en runde til i
+  trappa, eller peker mot en vegg som mangler. Vegg bak sofa/seng fylles mellom gulv og tak
+  (`meshscan.veggfyll off` slår av). Vieweren skalerer ned teksturen ved innlasting når huset
+  blir for stort. SKANN_BESLUTNINGER §124.
+- **Tormod 29.10:** Glenn-testen (to etasjer, opp og ned), se etter hull i skjøtene, pilen
+  «En vegg mangler» og trappeteksten, og veggen bak sofaen fra rommet ved siden av.
+
+## 28. oktober — skann M3: husets poser i ett løp, loop closure og etasjer (Mac-testet)
+
+- Baken går i tre faser: alle deler bindes og bygges, så løses husets poser samlet (dreining om
+  loddlinjen + flytting per del, bånd fra felles bilder og gulv på samme etasje), så bakes hver
+  del på plass. En runde opp og ned igjen retter nå hele veien. Kjent drift opptil 1,2°/81 mm
+  i ring finnes igjen med 0,017°/1 mm. SKANN_BESLUTNINGER §123 (erstatter §122).
+- **Glenn-testen:** to etasjer, opp OG ned igjen. Mål et punkt i taket nede mot gulvet rett
+  over. Krav ≤ 3 cm.
+
+## 28. oktober — skann M3, første del: delene i samme verden (Mac-testet)
+
+- Delene bindes for seg og kan skille noen cm. Lånte bilder har pose i begge delene, så hver del
+  flyttes inn i husets verden før den bakes (median over felles bilder, 16–168 per del i
+  testskannene). En kjent feil på 1,5°/38 mm finnes igjen med 0,07°/4 mm. SKANN_BESLUTNINGER §122.
+- Ikke gjort: etasjer som bånd, loop closure, lukking av skjøten, gjenåpning.
+
+## 27. oktober (kveld) — skann M2: bake per delkart (Mac-testet, ikke telefon)
+
+- `MeshBakeArbeider.swift`: hvert delkart bakes med samme kjede som ett rom, bare med sine
+  egne bilder og dybdekart, og slås sammen til én GLB + ett relok-kart (vieweren og AR
+  uendret) pluss `hus.json`. SKANN_BESLUTNINGER §120.
+- **Standard for alle skann med to eller flere bakegrupper** (§121, 28.10): hver del får også
+  bildene og dybdekartene fra andre delkart som ser delens flate, så en runde tilbake kommer
+  rommet til gode. Baketiden blir omtrent summen av delene (3–4× for 8f3b8017, ikke målt).
+  `meshscan.delkartbake off` gir den globale baken.
+- `tools/verify-scan-hus.py` grønn på c1794d71 og 8f3b8017. Typesjekket.
+- **Tormod:** ett bygg tester §118–§121. For M2: ombygg c1794d71 (det eneste
+  skannet med delkart-mappe på telefonen; 8f3b8017 er fra før M1) eller ta et nytt
+  flerromsskann, og sammenlign med `-meshscan.delkartbake off`.
+
+## 27. oktober (kveld) — skann: dekningspasset vokser ikke lenger med skannet
+
+- Veiledningens CPU-pass gikk gjennom hele meshen hvert sekund (21 → 59 ms over 80 pass).
+  Nå hopper det over ferdige flater i ankre ARKit ikke har endret. Typesjekket, ikke bygget.
+  SKANN_BESLUTNINGER §119.
+- **Tormod:** ett bygg tester både §118 (overlegget viser kamerabildet, stripene toner) og
+  §119. Se etter at `dekningspass — snitt` i loggen holder seg flatt i et langt skann.
+
+## 27. oktober — skann M1: delkart live, overlegget fra W (klar for telefon)
+
+- Bygget bak `meshscan.delkart` (på): live-fusjon i delkart med bakens egen kjerne,
+  overlegget og veiledningen leser fusjonsvekten W. Baken er uendret. Gammel vei
+  slettes først når M1 er godkjent. Detaljer i SKANN_BESLUTNINGER §116.
+- Målt på Mac på M0-skannet: live og bake gir samme volum (0,003 % av flatevoxlene skiller).
+  Overlegg-sannhet 67,5 → 78,1 % innen 5 cm, 94,6 % innen 10 cm. Resten er poseforskjell
+  live/bake og hører til M2.
+- **Tormod:** bygg, skann tre rom og tilbake, og ta første trappeskann (opp én etasje + ett rom).
+
+## 27. oktober — skann M0 klar for test (delkart-omskrivingen har startet)
+
+- M0 bygget, ingen endring i oppførsel: et ARAnchor hvert 30. s logger om ARKit flytter
+  det (`anker —`-linjer i `pipeline.log`, `ankere.json` i bundlen), og ved Ferdig dumpes
+  dekningen overlegget viste til `dekning-ferdig.bin`. `tools/audit-scan-overlegg-sannhet.py
+  <bundle> <glb>` holder den mot den ferdige GLB-en. Detaljer i SKANN_BESLUTNINGER §115.
+- Bygget og testet 27.10 (skann 8f3b8017). Ankrene skyves ikke, men startankeret ble rotert
+  1,4° da Tormod kom tilbake. Overlegg-sannhet 67,5 % (1/5 av «dekket» ligger 5–10 cm fra
+  flaten = poseforskjell live/bake), 14,1 % av meshen lå under striper. Venter på gå-videre til M1.
+
+## 26. oktober — skann: vurdering av veien videre (venter på ja)
+
+- `docs/SKANN_VURDERING_2026-10-26.md`: hele skannmodulen lest mot kravene i
+  `PROMPT_FABLE_SKANN.md`. **Anbefaling: skriv om kjernen rundt delkart** (representasjon,
+  poser, minne, orkestrering), behold binding, SIFT, fusjonskjerne, surface nets,
+  texel-bake, relok og opptaket. Ikke fra bunnen. Sju konkrete steder i koden der
+  kvaliteten synker med husets størrelse (global forenkling til 250k, globalt atlas,
+  globalt volum, binding over 450, global driftretting, minne i JBU/refine/texel/viewer,
+  overlegg og resultat som to modeller). Milepæler M0–M6 med telefontest hver.
+- Målt hvor «13 % sett, men tapt» går (`tools/audit-scan-sett-tapt.py` på f92f1be0):
+  filtre og terskel flytter 1–5 prosentpoeng; tapte ruter er streifet av 33–70 piksler
+  mot 1200–1600 for de som overlever. Det er opptak og veiledning, ikke fusjon, og
+  overlegget må bruke fusjonens vektregel som dekningsregel.
+- Ingen Swift endret. Neste: Tormod sier ja/nei til planen; M0 er to målinger uten
+  endring i oppførsel (ARAnchor-drift, overlegg-sannhet).
+- **Gjennomføringsplan for Opus:** `docs/PROMPT_OPUS_SKANN_DELKART.md` (samme kveld).
+  Selvstendig brief: regler, terreng (filer og symboler slik de er 26.10), målarkitektur,
+  filer og typer som skal finnes, M0–M6 steg for steg med telefontest og leveranse
+  (§115 og utover i beslutningsloggen), risikoer som skal måles, og praktisk
+  (typesjekk uten Xcode, bygg, devicectl, harness). Gis til en Opus-økt som første melding.
+
+## 25. oktober — smarthus-idé (bare plan)
+
+- `docs/SMARTHUS.md`: billige moduler (Shelly) + vår app, montøren setter opp huset i
+  Ampex mot tegningen. Skapet styrer alt med egen kurs (varme, bereder, lader) og måler
+  per kurs; lys sitter ved punktet. Ingen egen maskinvare før salget krever det. Ikke kodet.
+- Skann: måling av «flere runder = mindre feil» (`scan-bildebinding.py --kryssandel --runder`)
+  kjørt på de tre fixturene, se SKANN_BESLUTNINGER §112.
+
+## 22. oktober kveld — TestFlight og helt hus
+
+- **TestFlight:** appen «Ampex» er opprettet i App Store Connect (app-id 6825845532,
+  `no.ampex.app`). Testinformasjon delvis lagret: kontaktinfo mangler telefonnummer.
+  Opplasting feilet («Failed to Use Accounts»): ingen Apple-ID i Xcode → Settings →
+  Accounts. Ny lisensavtale må godtas av Tormod. EFObasen er skjult bak
+  `EFOBASEN_I_APPEN = false` (`lib/pricefile/varekort.ts`). Arkivet må lages på nytt før
+  opplasting (det har ikke dekningsfeltrettingen). **Løst 23:24:** bygg 2610222312 lastet
+  opp med `scripts/testflight.sh` + ASC-API-nøkkel 9NPRXZV8CZ (MÅ være Admin — App Manager
+  får ikke skysignere), fila ligger i `~/.appstoreconnect/private_keys/`. Xcode har fortsatt
+  ingen Apple-ID; trengs ikke. CFBundleVersion i begge Info.plist peker nå på
+  `$(CURRENT_PROJECT_VERSION)` — `ios/` er ikke i git, så `expo prebuild` visker det ut.
+- **Ekstern TestFlight (23:58):** bygg 2610222329 (riktige posisjonstekster, krypterings-svar
+  «none») ligger i ekstern gruppe «Pilot» og er sendt til Beta App Review. Offentlig lenke
+  (maks 50): **https://testflight.apple.com/join/HHa7XpDG** — virker først når review er
+  godkjent. Nettsiden viste ingen «External Testing»-seksjon; gruppa ble laget via API-et
+  (`node scripts/asc.mjs …`). Demokonto til Apple: `test@ampex.no`.
+- **Skann 18:37 (rom 6,8 × 7,8 m):** veggen som aldri ble ferdig var utenfor dekningsfeltet
+  (9,6 m rundt startpunktet). Utvidet til 12 m, ukommittert og ikke testet. Taket manglet
+  ~60 % i geometrien, og appen sa ikke fra.
+- **Helt hus:** plan i `docs/SKANN_HELT_HUS.md` (delkart, bake bak deg, loop closure,
+  video, Neural Engine). Steg 1 (opptak uten tak, dekningsfelt som følger kameraet,
+  varsel om manglende tak) er kodet og typesjekket, men ikke bygget eller testet på telefon.
+
+## 22. oktober — SISTE ARBEID: skann-AR og raskere binding
+
+Alt står i `docs/HANDOFF_SKANN_AR_2026-10-22.md`:
+- AR «Se i rommet»
+- Vis/Rediger i skann-skjermen
+- en binding som er raskere og kaldere (§110–111)
+
+Ukommittert. Neste steg er et nytt skann og AR-test på telefonen, og så hente loggen.
+
+## 4. oktober — bestilling og tegninger: to avklaringer, én ny vei inn
+
+**Bestilling:** ingenting sendes i dag. `lib/bestilling.ts` viser til `lib/bestilling-send.ts`,
+som aldri har eksistert; «Legg i kurv» havner i et utkast som ikke går noe sted. Avklart
+retning: kurven blir en EFONELFO **B4-fil** (BH/BL/BT) + PDF; levering per grossist — sFTP der
+kunden har konto (Solar bekreftet), ellers e-post til ordrekontoret med begge vedlagt.
+«Garantert» = **C4**-ordrebekreftelse tilbake (sFTP eller svar på e-posten via Resend inbound),
+varsel til kontoret hvis den uteblir. Inngangen er stemme i bilen, ikke bilde (Tormod: AI
+leser ikke et bilde presist nok). Ikke påbegynt.
+
+**Tegninger:** Aqila har tegningene som PDF i OneDrive — prosjekt → mappe → fagmapper i flere
+nivåer. Det er det Ampex skal slå. Montøren på telefon er viktigste bruker; tegningene skal
+inn ved at kontoret **drar hele OneDrive-mappa inn**. Bygget i dag: ren planlegger
+`lib/tegning-import.ts` (`npm run verify:tegning-import`, 23 påstander) — innpakningen
+(«Torvhaugan/Tegninger») skrelles til første fagnavn, ny import av samme mappe fletter i
+stedet for å kopiere, faget gjettes av stien (brann/tele → svakstrøm, KNX → automasjon).
+Kontoret (`ProsjektPlan`): dra over siden → forhåndsvisning av mappetreet → «Legg inn»;
+fil til R2 FØR rad, tre parallelt, feil stopper ikke resten
+(`desktop/src/lib/tegning-import-lager.ts`).
+**CORS LØST 30.10:** regelen ligger i `supabase/r2-cors.json` (sett med `wrangler r2 bucket cors set ampex-tiles --file …`; `set` erstatter ALT, så legg til i fila). Før det: bucketen `ampex-tiles` hadde INGEN CORS-regel — preflight gir 403 for
+både PUT og GET fra alle origins. Kontoret kan derfor verken laste opp eller (i nettleseren)
+vise tegninger. Krever `wrangler r2 bucket cors set` med Cloudflare-innlogging.
+Telefonen kan heller ikke legge ved PDF ved «Ny tegning» («PDF-opplasting kommer»), og
+vieweren viser bare side 1 — begge er neste på telefonsiden.
+
+## 30. september — EFObasen er katalogen, Ampex er handlekurven
+
+Tormod: montøren blar i EFObasen (de har alle varedata) og bestiller gjennom oss —
+EFObasen har ingen handlefunksjon. **Inne i appen, ikke som Chrome-utvidelse**, og
+panelet nederst er selve produktet («seamless, veldig bra og god UI»). Bakgrunn og
+tekniske funn: `docs/HANDOFF_EFOBASEN_I_APPEN.md`.
+
+**Bygget (ukommittert, IKKE kjørt på telefon):**
+- `app/(app)/lager/efobasen.tsx` — EFObasen i `react-native-webview`, åpnet fra
+  varekortet (`?elnr=`) eller «Bla i EFObasen» på Lager. Docken skjules der.
+- `components/efobasen-vindu.tsx` — vinduet. Injisert lytter poster BARE
+  `location.href` ved pushState/replaceState/popstate (SPA). Lenker ut av efo.no
+  åpnes i systemnettleseren; Cloudflare-iframes slippes gjennom. Lastestrek, feilflate.
+  `.web.tsx`: «åpne i ny fane» (de nekter innbygging).
+- `components/efobasen-panel.tsx` — bunnarket, tre hvileplasser (liten / vare / liste),
+  dras med Pan + fjær (bare transform/opacity). Varen slås opp på el-nummer: kartoteket
+  først, så katalogen (`finnKatalogvare`), ellers bare «EL 1234567». Priser per grossist
+  (billigst først, BILLIGST/LISTEPRIS), trykk velger rad, antall kan skrives, én sort
+  «Legg i kurv · Solar». Kvittering «80 m lagt i Solar-lista · 3 varer» → «Vis lista».
+  Dratt opp: handlelista per grossist med antall som kan endres (0 fjerner).
+- `leggVareIHandleliste` sender nå varens enhet med (kabel ble «stk»).
+
+**Gjenstår:** `npx expo install react-native-webview` + pod install + nytt native bygg
+(ikke gjort — spør før Xcode). Slette `extension/` (untracked) og deretter linjene
+`extension/dist/` i `.gitignore` og `"extension/**"` i `tsconfig.json`. Prøve
+Cloudflare-utfordringen i WebView. Lese EFObasens brukervilkår før noen andre enn
+piloten får det.
 
 ## 27.–28. september — læretid: logg, quiz, teori og læringsprofil
 
@@ -75,6 +303,88 @@ i 6 enheter, *Neste tema* etter hver økt. Målsiden viser hver del i farge og �
   `test@ampex.no`. Testbrukeren har noen testlogger og quizsvar.
 - iOS: `NSPhotoLibraryUsageDescription` lagt i `app.json` og `ios/Ampex/Info.plist`
   — telefonen trenger nytt bygg for å hente bilder fra kamerarullen.
+
+**28.09 kveld — loggen ser bildene og spør når den må (IKKE DEPLOYET):**
+Test med ti bilder av en Autronica-sirene viste at modellen aldri så bildene (bare
+«bilde 1…10») og fant på resten: «kabel etter behov», «standard verneutstyr», «for god
+kontakt», «trange rom» fra en romtekst på tegningen — og quizen spurte om det den selv
+hadde funnet på. Anslått ~1,5–2,8 kr per logg + 3 jobb- og 3 teorispørsmål; rettingen
+(Pro) er største post. Endret:
+- `laeretid-ai` modus `se`: Flash leser hvert bilde ÉN gang fra R2 (lenken må være under
+  `laerling/<uid>/laeretid/`), lagres i `laeretid_bilde.modellbeskrivelse`, sendes som tekst
+  etterpå. Et lest bilde teller ikke som «uten notat».
+- Smarte spørsmål (Tormod: «ikke FASTE spørsmål men smarte»): når lista er tom får boten
+  malen og spør inntil `MAKS_EKSTRA` (3) ganger om det der én setning fyller mest av det
+  som mangler — aldri om det som står på bildene eller er svart på. Ferdig når malen kan
+  fylles sant.
+  Skjermen viser «Hopp over og skriv loggen» mens et slikt spørsmål står ubesvart.
+- Skriv: ingen oppdiktede grunner, romtekst er ikke arbeidsforhold, ukjent = «Ikke oppgitt.»
+- Lag: spør aldri om noe som bare står i assistentens loggtekst.
+- Alle svar har `bruk` (modell + Googles token-tall).
+- Varekortet: «Åpne i EFObasen» (`efobasenUrl`, `efobasen.efo.no/produkt/<elnr>` — deres
+  egen rute). Bare en lenke til deres side; ingenting hentes derfra.
+DEPLOYET 28.09 og kjørt på sirene-bildene: `se` leste typeskilt (Autronica BBR-230/IP,
+EN 54-3, 17–25 V DC), adresse 1009, LOOP-klemmer, Prysmian-kabeltekst og tegningen.
+Samtalen: 1 fast + 2 smarte spørsmål («Ble sirena testet mot sentralen, og gikk det som
+planlagt?», «Brukte du stigen, og hva lærte du?»), så ferdig. Eksakt pris fra Googles tall
+(3.8-flash til se/samtale, 3.1-pro til skriv/lag/vurder): ~2,5 kr per logg med 3
+quizspørsmål; tenketokens er over halve Pro-prisen. Kjent: «Kunden fornøyd: Ja» fylles
+fortsatt når ingenting er sagt (regelen «gikk som planlagt» fra malen).
+Modellvalg etter A/B samme kveld (samme samtale, 3 gode + 3 feil svar): retting 6/6 for
+Pro, Flash og Flash-Lite. Quiz: Flash = Pro, Lite bryter reglene. Logg: Pro mest tro, Flash
+pynter («fagmessig utført», «ble ikke utført»). Nå: skriv = Pro, lag/vurder/samtale/se/teori
+= Flash (~1,4 kr per logg). Halvriktige svar ikke testet. Testbrukere (@ampex.no) kan
+sende `modell` per kall for slike A/B-er.
+
+**Ti rollespilte logger mot Tormods egne (28.09 natt).** Sju ekte logger fra
+`~/Documents/Dokumentasjon` (med bildene fra docx-ene) + tre oppdiktede, spilt som kort-
+svarende lærling av agenter, fire runder. Runde 1: boten ga seg etter 2–4 spørsmål, spurte
+aldri «hvorfor», risikopunkter den ikke spurte om ble «Nei» (verneutstyr Nei i 4/10), og
+loggen tok gjenstander fra bildene («krympeforgrening», «CITEL»). Endret i `laeretid-ai`:
+smarte spørsmål i fast prioritet (HVORFOR om jobbens nøkkelvalg → RISIKO som forslag han
+bekrefter/retter → KONTROLL/tiltak → EGENVURDERING), `MAKS_EKSTRA` 5, egenvurderingen
+tvinges fram i koden hvis modellen hopper over den, assistentens forslag er aldri fakta,
+bilder gir bare typebetegnelse på det han sa han monterte + merking, AUS = Nei når
+spenningsløst, Pro får 95 s (tidsavbrudd lot Flash skrive 2 av 5 logger). Resultat:
+risikopunkter som stemmer 92/120 → 97/120 (runde 3), begrunnelser kommer inn i Utførelse,
+rettelser respekteres (runde 4), påfunn fra bilder nesten borte. Igjen: «jeg husker ikke
+hvorfor» havner fortsatt i Utførelse; planlegging og «påvirke eksisterende anlegg» blir
+ofte Nei; kjerneteknikk boten ikke spør om (laser, PEN, laststyring) mangler. Loggene og
+rapportene ligger i scratchpad (`ti/runde1..3`), ikke i repoet.
+30.09 (Tormod: «du kan godt gjøre 3 high impact spørsmål»): inntil tre HVORFOR om det
+han gjorde med egne hender, valgt som en sensor ville (PEN, moment, armering, ett lag på
+stige), aldri om andres valg; `MAKS_EKSTRA` 7; gir modellen seg før tre hvorfor, får den én
+ny sjanse i koden — men ikke etter et «husker ikke» på et hvorfor. `utenGlemtHvorfor()` i
+mal.ts vasker «husker ikke hvorfor» ut av tekstseksjonene. Runde 6: 3 hvorfor per jobb,
+alle om egne operasjoner, egenvurdering riktig 3/3, 7 spørsmål opplevd som greit på mobil.
+Begrunnelser i Utførelse: 2–3 per logg (Tormods egne har 5–9). Testskript i scratchpad for sesjonen.
+
+**13.10 — bildetekstene skrives med loggen (DEPLOYET, laeretid-ai v27):** `skriv` får alle
+bildene nummerert i tidsrekkefølge og skriver en bildetekst til hvert bilde uten notat, med
+samtalen for øye (ikke bare bildet, som `se`). Lagres i utfyllingen under `_bilder`
+(`BILDE_NOKKEL`), ingen skjemaendring. Rekkefølgen er tidspunktet, bevisst (Tormod: «metadata
+sier rekkefølgen»). Prioritet under bildet: hans notat → skrevet tekst → `se`-forslaget. Skjermen
+viser den skrevne teksten ferdig i feltet; retter han, blir det hans notat. Ikke kjørt ende til
+ende ennå — første ekte test er Tormods logger før vurderingssamtalen 14.10.
+Samme kveld, etter første ekte logg (nødlys, Gessler MLB10): Tormod syntes spørsmålene var dårlig
+formulert («Hvorfor måtte armaturene adresseres med dreiebryteren og DIP-svisjene?», risiko med
+utkobling som «risiko» og boring han aldri nevnte). EKSTRA-prompten fikk: ingen hvorfor om
+produktets konstruksjon / aldri «måtte» — spør om hans del (hva han satte, hvordan han visste) eller
+følgen av feil; høyst tre risikoer, tiltak er ikke risiko, ikke anta boring/stige; språk som en
+elektriker (DIP-bryter), ≤ ~20 ord. Deployet (v28), ikke målt.
+Etter at loggen var skrevet (v29): Tormod — bildene «ferdig produkt» sto ikke sist, notatene ble
+ikke pusset, «gamle rustne armaturer» var oppdiktet (de var NYE med rustbobler = feilproduksjon,
+aldri spurt om), stige/høyde ble «Nei», og boten spurte aldri HVOR. Nå: `skriv` skriver tekst og
+rekkefølge for ALLE bilder (notatet gjort ferdig uten nye fakta; utgangspunkt først, ferdig resultat
+sist) — loggteksten går foran notatet, notatet ligger urørt som kilde, feltet retter `_bilder`.
+EKSTRA fikk punkt 0 (HVOR + AVVIK: noe feil/returnert → hva var galt) og «montering høyt = høyde».
+SKRIV: ingen egenskaper/årsaker han ikke sa. SE: norske fagord («DIP-svisjer» kom derfra).
+Bildet 15:04 (kabler ned mot ventilasjonskanal, IKKE stigebildet) ble aldri lest av `se` i ~9 runder;
+feilen ble slukt, nå logges den. Stigebildet er 14:02 — `se` leste det, men nevnte ikke stigen.
+Til slutt skrev Claude loggen for hånd i docx-malen (Dokumentasjon/Moskenes13.10.26): Tormod vil ha
+malen 1:1 og NEK i teksten. Appens PDF gjør ingen av delene ennå.
+`react-native-webview` installert og simulatorbygg laget samme kveld (EFObasen-skjermen trengte
+det); `efobasen-vindu.tsx` har én typefeil (`scrollIndicatorInsets`).
 
 **Kryss i fagbrev.io (Tormods 28 godkjente dokumentasjoner):**
 Alle 28 + vedlegg er lastet ned og vurdert. Regelen Tormod satte: *alt som skrives

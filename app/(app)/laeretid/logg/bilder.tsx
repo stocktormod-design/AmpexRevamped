@@ -151,11 +151,6 @@ export default function Bilder() {
             {MALER.length > 1 && <Repeat size={13} color={lt.blaMork} strokeWidth={2.8} />}
           </Pressable>
         )}
-        <Text style={{ fontSize: 16, color: lt.stille, lineHeight: 22 }}>
-          Ta bildene du ellers ville tatt, og skriv én setning under hvert med en gang.
-          Har du alt tatt dem, henter du dem inn — tiden følger med.
-        </Text>
-
         <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
           <Pressable
             haptic="medium"
@@ -220,7 +215,7 @@ export default function Bilder() {
                 <TextInput
                   defaultValue={b.notat ?? ''}
                   onChangeText={t => skrivNotat(b, t)}
-                  placeholder="Hva er dette? Én setning."
+                  placeholder="Hva er dette?"
                   placeholderTextColor={lt.svak}
                   autoFocus={b.id === nyeste}
                   autoCorrect={false}
