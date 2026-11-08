@@ -132,16 +132,12 @@ export function Prisfil() {
 
   return (
     <>
-    <Sidehode
-      tittel="Prisfiler"
-      under="EFO/NELFO 4.0 fra grossisten. Fila leses her, og ingenting skrives før du har sett hva den vil gjøre."
-    />
+    <Sidehode tittel="Prisfiler" />
     <div className="flate-rull stabel">
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
       {!kanSkrive ? (
         <Beskjed stil="varsel">
-          Rollen din kan lese, men ikke skrive til varekartoteket. Prisimport krever eier eller
-          administrator.
+          Prisimport krever eier eller administrator.
         </Beskjed>
       ) : null}
 
@@ -182,7 +178,6 @@ export function Prisfil() {
                 value={grossist}
                 onChange={e => setGrossist(e.target.value)}
                 placeholder="Onninen"
-                hjelp="Navnet prisraden lagres på"
               />
             </div>
             <div style={{ width: 176 }}>
@@ -192,7 +187,6 @@ export function Prisfil() {
                 value={paslag}
                 onChange={e => setPaslag(e.target.value)}
                 placeholder="tomt = rør ikke"
-                hjelp="Utsalgspris = netto + påslag"
               />
             </div>
             <label className="rad" style={{ height: 30, marginBottom: 18 }}>
@@ -254,10 +248,6 @@ function Slippsone({
           <Upload size={22} strokeWidth={1.6} />
         </div>
         <h2>Slipp grossistfila her</h2>
-        <p className="kort-hjelp" style={{ maxWidth: '46ch' }}>
-          EFO/NELFO 4.0 varefil eller pristilbud. Fila leses på maskinen; ingenting sendes noe sted
-          før du har sett hva den vil gjøre.
-        </p>
         <input
           type="file"
           style={{ display: 'none' }}
@@ -370,16 +360,12 @@ function Fasit({ plan }: { plan: Plan }) {
       />
       {r.listepriser > 0 ? (
         <Beskjed stil="varsel">
-          {stk(r.listepriser, 'linje er', 'linjer er')} LISTEPRIS, ikke firmaets pris. Da vet vi hva
-          varen koster i katalogen, ikke hva dere betaler, og dekningsbidraget blir for lavt. Be
-          grossisten om en fil med deres egne betingelser.
+          {stk(r.listepriser, 'linje er', 'linjer er')} listepris, ikke firmaets pris.
         </Beskjed>
       ) : null}
       {r.utenElnummer > 0 ? (
         <Beskjed stil="varsel">
-          {stk(r.utenElnummer, 'linje mangler', 'linjer mangler')} el-nummer og hoppes over. Uten
-          el-nummer kan varen ikke sammenlignes mot en annen grossist, som er hele poenget med
-          kartoteket.
+          {stk(r.utenElnummer, 'linje mangler', 'linjer mangler')} el-nummer og hoppes over.
         </Beskjed>
       ) : null}
     </div>
@@ -455,10 +441,6 @@ function Forhandsvisning({ plan, fantes }: { plan: Plan; fantes: Set<string> }) 
 function Avvik({ parse }: { parse: ParseResultat }) {
   return (
     <Kort tittel={`Avvik — ${stk(parse.avvik.length, 'linje', 'linjer')} vi ikke tolket`}>
-      <p className="kort-hjelp" style={{ marginBottom: 12 }}>
-        Disse linjene ble hoppet over. Er de mange, har fila et format vi ikke har sett før, og
-        linjenummeret under kan slås opp direkte i fila.
-      </p>
       {parse.avvik.length === 0 ? (
         <Tomt>Ingen avvik</Tomt>
       ) : (

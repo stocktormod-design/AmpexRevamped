@@ -43,7 +43,7 @@ export function useOrdreTimer(orderId: string) {
     if (!orderId) return
     const sub = database.get<TimeEntry>('time_entries')
       .query(Q.where('order_id', orderId), Q.sortBy('date', Q.desc), Q.sortBy('created_at', Q.desc))
-      .observeWithColumns(['hours', 'note', 'activity_id', 'invoiced_at'])
+      .observeWithColumns(['hours', 'note', 'activity_id', 'invoiced_at', 'date'])
       .subscribe(setEntries)
     return () => sub.unsubscribe()
   }, [orderId])
@@ -195,7 +195,7 @@ export function TidForing({ orderId, onSum }: { orderId: string; onSum?: () => v
           </Pressable>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, height: 44, borderTopWidth: 1, borderTopColor: 'rgba(29,29,31,0.06)' }}>
             <Text style={[t.footnote, { width: 56, color: colors.secondaryLabel }]}>Notat</Text>
-            <TextInput value={notat} onChangeText={setNotat} placeholder="Hva ble gjort — kunden ser dette" placeholderTextColor={colors.tertiaryLabel}
+            <TextInput value={notat} onChangeText={setNotat} placeholder="Hva ble gjort" placeholderTextColor={colors.tertiaryLabel}
               style={[t.body, { flex: 1 }]} returnKeyType="done" onSubmitEditing={foer} />
           </View>
         </View>

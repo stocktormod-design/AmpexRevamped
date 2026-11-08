@@ -127,13 +127,6 @@ export default function PrisfilScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={{ paddingHorizontal: spacing.screen + spacing.lg, marginBottom: spacing.xl }}>
-          <Text style={t.footnote}>
-            EFO/NELFO 4.0 — filnavnet begynner med V4 (varefil) eller P4 (pristilbud).
-            Fila inneholder dine egne fremforhandlede priser.
-          </Text>
-        </View>
-
         {/* Ferskhet per grossist. En fersk pris sammenlignet mot en tre måneder
             gammel gir feil svar med full selvtillit. */}
         {ferskhet.length > 0 && (
@@ -181,7 +174,6 @@ export default function PrisfilScreen() {
               <Text style={t.body}>Påslag</Text>
               {/* Grossistfila vet hva varen KOSTER oss, ikke hva vi tar for den.
                   Uten påslag blir dekningsbidraget null på hver eneste linje. */}
-              <Text style={[t.footnote, { marginTop: 1 }]}>Tomt = behold prisene du alt har satt</Text>
             </View>
             <TextInput
               value={paslag}
@@ -276,20 +268,12 @@ export default function PrisfilScreen() {
                     : `${resultat.listepriser} linjer er listepris`}
                 </Text>
                 <Text style={t.footnote}>
-                  Fila oppgir bruttopris uten rabatt, altså grossistens katalogpris —
-                  ikke deres. Be om en <Text style={{ fontWeight: '700' }}>P4</Text>
-                  {' '}(pristilbud) for å få firmaets egne priser. Uten den blir
-                  dekningsbidraget for lavt, og prissammenligningen mellom grossister
-                  meningsløs — listeprisene er nesten like hos alle.
+                  Uten rabatt. Be om en <Text style={{ fontWeight: '700' }}>P4</Text>.
                 </Text>
               </View>
             )}
             {/* Sammenligning krever minst to filer. Si det, i stedet for å la
                 brukeren lure på hvorfor «billigst»-merket aldri dukker opp. */}
-            <Text style={[t.footnote, { marginHorizontal: spacing.screen, marginBottom: spacing.lg }]}>
-              Importer en fil fra én grossist til, så vises prisene side om side på hver
-              vare — og hvor det er billigst.
-            </Text>
           </>
         )}
 
@@ -308,8 +292,8 @@ export default function PrisfilScreen() {
                 </Text>
                 <Text style={t.footnote}>
                   {demoAntall > 0
-                    ? `${demoAntall} oppdiktede varer fra to grossister. Prisene er funnet på og merket som demo — de kan fjernes når som helst.`
-                    : '36 varer fra to grossister med ulik rabatt, i ekte EFO/NELFO-format. Oppdiktede priser, merket som demo. Nok til å prøve søk, varekort og prissammenligning før en ekte fil finnes.'}
+                    ? `${demoAntall} varer · oppdiktede priser`
+                    : '36 varer · oppdiktede priser'}
                 </Text>
                 <Pressable
                   haptic="medium"

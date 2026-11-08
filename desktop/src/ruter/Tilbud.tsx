@@ -249,14 +249,14 @@ function LeggTil({ disabled, placeholder, pakker, onVare, onNy, onPakke, onSlett
       gjor: () => { onVare(v); ferdig() },
     })),
     ...pakker.filter(p => p.name.toLowerCase().includes(q.toLowerCase())).map(pakkeValg),
-    { nokkel: 'vare', tittel: `«${q}» som vare`, meta: treff.length === 0 ? 'Ikke i katalogen — legges til som egen linje' : 'Uten katalog', gjor: () => { onNy('materiell', q); ferdig() } },
+    { nokkel: 'vare', tittel: `«${q}» som vare`, meta: treff.length === 0 ? 'Ikke i katalogen' : 'Uten katalog', gjor: () => { onNy('materiell', q); ferdig() } },
     { nokkel: 'arbeid', tittel: `«${q}» som arbeid`, meta: 'Timer × timepris', gjor: () => { onNy('arbeid', q); ferdig() } },
-    { nokkel: 'tekst', tittel: `«${q}» som tekst`, meta: 'Overskrift eller forbehold, uten beløp', gjor: () => { onNy('tekst', q); ferdig() } },
+    { nokkel: 'tekst', tittel: `«${q}» som tekst`, meta: 'Uten beløp', gjor: () => { onNy('tekst', q); ferdig() } },
   ] : [
     { nokkel: 'arbeid', tittel: 'Arbeid', meta: 'Ny timelinje', gjor: () => { onNy('arbeid', 'Arbeid'); ferdig() } },
-    { nokkel: 'tekst', tittel: 'Tekst', meta: 'Overskrift eller forbehold, uten beløp', gjor: () => { onNy('tekst', ''); ferdig() } },
+    { nokkel: 'tekst', tittel: 'Tekst', meta: 'Uten beløp', gjor: () => { onNy('tekst', ''); ferdig() } },
     ...pakker.map(pakkeValg),
-    { nokkel: 'katalog', tittel: 'Bla i katalogen …', meta: 'For når du ikke vet hva varen heter', gjor: () => { setApen(false); setKatalog(true) } },
+    { nokkel: 'katalog', tittel: 'Bla i katalogen …', gjor: () => { setApen(false); setKatalog(true) } },
   ]
 
   return (
@@ -406,10 +406,7 @@ function Varevelger({ apen, onLukk, onVelg }: { apen: boolean; onLukk: () => voi
             {varer === null ? (
               <div className="nedtrekk-hjelp">Henter katalogen …</div>
             ) : varer.length === 0 && !sok.trim() ? (
-              <div className="nedtrekk-hjelp">
-                Katalogen er tom. Importer en prisfil fra grossisten, eller legg inn varene én og én
-                her etter hvert som de trengs — de blir liggende i katalogen.
-              </div>
+              <div className="nedtrekk-hjelp">Katalogen er tom.</div>
             ) : varer.length === 0 ? (
               <div className="nedtrekk-hjelp">Ingen treff på «{sok.trim()}».</div>
             ) : grupper.map(([gruppe, liste]) => (
@@ -580,7 +577,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
   function oppdaterPaslag(prosent: number | null, bare?: Set<string>) {
     if (prosent === null) return
     const patcher = anvendPaslag(linjer.map(linjeSomInn), prosent, bare)
-    if (patcher.length === 0) { setFeil('Ingen linjer å oppdatere: låste linjer, tekst og linjer uten kost røres ikke.'); return }
+    if (patcher.length === 0) { setFeil('Ingen linjer å oppdatere.'); return }
     void skriv(() => skrivPriser(patcher))
   }
 
@@ -607,7 +604,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
       >
         <td className="avkryss">
           {redigerbar ? (
-            <input type="checkbox" checked={merket} title="Merk linja (shift for flere)"
+            <input type="checkbox" checked={merket} title="Merk linja (Shift for flere)"
               onClick={e => merk(l.id, e.shiftKey)} onChange={() => {}} />
           ) : null}
         </td>
@@ -636,7 +633,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
                   {l.valgfri ? (
                     <button type="button" className="tilvalg-knapp" data-valgt={l.valgt}
                       disabled={!kanVelgeTilvalg || jobber}
-                      title={kanVelgeTilvalg ? (l.valgt ? 'Kunden har valgt dette — klikk for å ta det ut' : 'Ikke medregnet — klikk når kunden sier ja') : 'Tilvalg'}
+                      title="Tilvalg"
                       onClick={() => void skriv(() => endreLinje(l.id, { is_selected: !l.valgt }))}>
                       {l.valgt ? 'Tilvalg, medregnet' : 'Tilvalg, ikke medregnet'}
                     </button>
@@ -771,7 +768,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
             <input
               className="leggtil-inn ark-nytt-omrade-inn"
               autoFocus
-              placeholder={forelderId ? 'Navn på underområdet, f.eks. «Stue»' : 'Navn på området, f.eks. «Kjøkken» eller «1. etasje»'}
+              placeholder={forelderId ? 'Stue' : 'Kjøkken'}
               onKeyDown={e => {
                 const v = e.currentTarget.value.trim()
                 if (e.key === 'Enter' && v) { lukk(); void skriv(() => nyttOmrade(hode.id, v, forelderId)) }
@@ -787,7 +784,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
             <button type="button" className="ark-nytt-omrade-knapp" disabled={jobber}
               onClick={() => { if (forelderId === null) setNyttRot(true); else setNyttUnder(forelderId) }}>
               <FolderPlus size={14} strokeWidth={1.8} />
-              {innhold.omrader.length === 0 ? 'Del opp i områder, f.eks. Kjøkken og Bad' : 'Nytt område'}
+              Nytt område
             </button>
           )}
         </td>
@@ -825,7 +822,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
         </Knapp>
         {detalj.redigerbar && kanSkrive ? (
           <Knapp stil="primar" disabled={jobber || mangler.length > 0}
-            title={mangler.length > 0 ? `Mangler ${mangler.join(', ')}` : 'Låser tilbudet som dokument og starter fristen'}
+            title={mangler.length > 0 ? `Mangler ${mangler.join(', ')}` : undefined}
             onClick={() => void skriv(() => markerSendt(hode.id))}>
             <Send size={15} strokeWidth={1.8} /> Marker som sendt
           </Knapp>
@@ -839,7 +836,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
 
       {/* Innsiden: det kunden ikke får, på én linje over arket. */}
       {seDb && sum.linjer.length > 0 ? (
-        <div className={dbTap ? 'ark-innsiden tap' : 'ark-innsiden'} title="Står aldri på arket. Kunden ser bare tallene under.">
+        <div className={dbTap ? 'ark-innsiden tap' : 'ark-innsiden'}>
           <span className="ark-innsiden-merke">Bare for deg</span>
           <span>Materiell <b>{formatKr(materiell)}</b></span>
           <span>Arbeid <b>{formatKr(arbeid)}</b></span>
@@ -853,9 +850,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
       {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
       {!detalj.redigerbar ? (
         <Beskjed stil="varsel">
-          Tilbudet er {tilbudStatusLabel[hode.visning].toLowerCase()} og kan ikke endres. Det er
-          dokumentet kunden har fått. Skal noe rettes, lag en kopi.
-          {sum.antallTilvalg > 0 && kanVelgeTilvalg ? ' Tilvalgene kan fortsatt krysses av til kunden har svart.' : ''}
+          Tilbudet er {tilbudStatusLabel[hode.visning].toLowerCase()} og kan ikke endres.
         </Beskjed>
       ) : null}
 
@@ -969,7 +964,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
               rows={2}
               defaultValue={hode.description ?? ''}
               key={`brev-${hode.id}`}
-              placeholder="Beskriv jobben: hva som skal gjøres, hva som er forutsatt og hva som ikke er med."
+              placeholder="Beskrivelse av jobben"
               onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px` }}
               onBlur={e => {
                 const v = e.target.value.trim() || null
@@ -998,7 +993,7 @@ function Ark({ detalj, kanSkrive, seDb, etterSkriving }: {
             <tbody>
               {tom && redigerbar ? (
                 <tr className="ark-tom"><td /><td colSpan={KOLONNER - 1}>
-                  Tilbudet er tomt. Skriv en vare eller et arbeid på linja under, eller del opp i områder først.
+                  Tilbudet er tomt.
                 </td></tr>
               ) : null}
               {innhold.utenOmrade.map((l, i) => linjerad(l, innhold.utenOmrade, i, 0))}
@@ -1103,7 +1098,7 @@ function Kalkylemeny({ visInnsiden, setVisInnsiden, paslag, jobber, onPaslag, on
             <input type="checkbox" checked={visInnsiden} onChange={e => setVisInnsiden(e.target.checked)} />
             Vis kost og påslag på linjene
           </label>
-          <label className="kalkylemeny-rad" title="Påslag i % av kost. Brukes på varer uten egen pris, og av «Oppdater alle priser».">
+          <label className="kalkylemeny-rad">
             Standard påslag
             <input
               className="celle-inn kalkylemeny-tall"
@@ -1116,7 +1111,6 @@ function Kalkylemeny({ visInnsiden, setVisInnsiden, paslag, jobber, onPaslag, on
             %
           </label>
           <Knapp stil="stille" disabled={jobber || paslag === null}
-            title="Setter pris = kost + påslag på alle linjer med kost som ikke er låst"
             onClick={() => { onOppdaterAlle(); setApen(false) }}>
             Oppdater alle priser med påslaget
           </Knapp>
@@ -1233,7 +1227,7 @@ export function Tilbud() {
 
           <div className="detalj">
             {!valgt ? (
-              <div className="tomt-mykt"><p>Velg et tilbud, eller lag et nytt</p></div>
+              <div className="tomt-mykt"><p>Velg et tilbud</p></div>
             ) : !detalj ? (
               <div className="tomt-mykt"><p>Henter tilbudet …</p></div>
             ) : (

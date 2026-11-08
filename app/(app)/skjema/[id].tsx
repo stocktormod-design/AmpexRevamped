@@ -20,6 +20,8 @@ import { addComment, toggleResolveComment } from '../../../lib/forms'
 import { formatSince } from '../../../lib/format'
 import { colors, spacing, radius, sizes, shadows, paperType as t } from '../../../lib/theme'
 import { usePapirStatuslinje } from '../../../components/tool-surface'
+import { useUserRole } from '../../../lib/auth-user'
+import { kan } from '../../../lib/kontor-tilgang'
 
 type Tab = 'skjema' | 'historikk' | 'diskusjon'
 
@@ -42,6 +44,10 @@ export default function SkjemaDetail() {
   const [comments, setComments] = useState<FormComment[]>([])
   const [tab, setTab] = useState<Tab>('skjema')
   const [draft, setDraft] = useState('')
+  const rolle = useUserRole()
+  // Malen er firmaets dokumentasjon: alle med `skjema.les` ser den, men bare
+  // de med `skjema.skriv` får lage ny revisjon.
+  const kanSkrive = kan(rolle, 'skjema.skriv')
 
   useEffect(() => {
     if (!id) return
@@ -93,20 +99,22 @@ export default function SkjemaDetail() {
       <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen, paddingBottom: spacing.sm, backgroundColor: colors.paperCanvas }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
-            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.paperBg, alignItems: 'center', justifyContent: 'center' }}>
+            style={{ width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.paperBg, alignItems: 'center', justifyContent: 'center' }}>
             <ChevronLeft size={sizes.icon} color={colors.paperLabel} strokeWidth={2.2} />
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={t.title3} numberOfLines={1}>{template.title}</Text>
             <Text style={t.caption}>{template.category} · v{template.currentVersion}</Text>
           </View>
-          <Pressable
-            haptic="light" pressScale={0.94}
-            onPress={() => router.push({ pathname: '/(app)/skjema/rediger', params: { id: template.id } })}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 34, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.paperFill }}>
-            <Pencil size={15} color={colors.paperLabel} strokeWidth={2.1} />
-            <Text style={[t.subhead, { fontWeight: '600' }]}>Rediger</Text>
-          </Pressable>
+          {kanSkrive && (
+            <Pressable
+              haptic="medium" pressScale={0.95}
+              onPress={() => router.push({ pathname: '/(app)/skjema/rediger', params: { id: template.id } })}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 44, paddingHorizontal: spacing.lg, borderRadius: radius.pill, backgroundColor: colors.paperLabel }}>
+              <Pencil size={15} color={colors.paperBg} strokeWidth={2.1} />
+              <Text style={[t.subhead, { color: colors.paperBg, fontWeight: '600' }]}>Rediger</Text>
+            </Pressable>
+          )}
         </View>
 
         <View style={{ marginTop: spacing.md }}>
@@ -179,7 +187,7 @@ export default function SkjemaDetail() {
             ))
           ) : (
             <View style={{ alignItems: 'center', paddingTop: spacing.xxl }}>
-              <Text style={[t.footnote]}>Tomt skjema. Trykk Rediger for å legge til felt.</Text>
+              <Text style={[t.footnote]}>Tomt skjema</Text>
             </View>
           )}
         </Animated.ScrollView>
@@ -211,7 +219,9 @@ export default function SkjemaDetail() {
                     <Text style={[t.caption, { color: colors.paperTertiary, marginLeft: 'auto' }]}>{formatSince(r.createdAt)}</Text>
                   </View>
                   <Text style={[t.subhead, { color: colors.paperSecondary, marginTop: 3 }]}>{r.changeNote || 'Endret'}</Text>
-                  <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 4 }]}>{r.items.length} felt</Text>
+                  <Text style={[t.caption, { color: colors.paperTertiary, marginTop: 4 }]}>
+                    {r.items.length === 1 ? '1 spørsmål' : `${r.items.length} spørsmål`}
+                  </Text>
                 </View>
               </View>
             )
@@ -224,7 +234,7 @@ export default function SkjemaDetail() {
             showsVerticalScrollIndicator={false}>
             {comments.length === 0 ? (
               <View style={{ alignItems: 'center', paddingTop: spacing.xxl }}>
-                <Text style={[t.footnote, { textAlign: 'center' }]}>Ingen diskusjon ennå.{'\n'}Spør om hvordan et punkt funker, eller foreslå en endring.</Text>
+                <Text style={[t.footnote, { textAlign: 'center' }]}>Ingen diskusjon</Text>
               </View>
             ) : (
               comments.map(c => (
@@ -262,7 +272,7 @@ export default function SkjemaDetail() {
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm }}>
               <TextInput
                 value={draft} onChangeText={setDraft}
-                placeholder="Spør eller foreslå endring…"
+                placeholder="Kommentar"
                 placeholderTextColor={colors.paperTertiary}
                 multiline
                 style={[t.body, { flex: 1, maxHeight: 110, minHeight: 40, backgroundColor: colors.paperFill, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingTop: 10, paddingBottom: 10 }]}

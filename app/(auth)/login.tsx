@@ -14,13 +14,32 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
 
   async function signIn(e: string = email, p: string = password) {
     setLoading(true)
     setError(null)
-    const { error } = await supabase.auth.signInWithPassword({ email: e, password: p })
-    if (error) setError('Feil e-post eller passord')
+    setInfo(null)
+    // trim: iOS-forslagslinja legger et mellomrom etter e-posten, og da avviser Supabase innloggingen
+    const { error } = await supabase.auth.signInWithPassword({ email: e.trim().toLowerCase(), password: p })
+    if (error) setError(/fetch|network/i.test(error.message) ? 'Ingen dekning. Prøv igjen når du har nett.' : 'Feil e-post eller passord')
     setLoading(false)
+  }
+
+  // Lenka går til Kontor (www.ampex.no), som har «Velg nytt passord»-skjemaet;
+  // så logger de inn her med det nye. Svaret er det samme om kontoen finnes eller
+  // ikke, så skjermen kan ikke brukes til å sjekke hvem som har konto.
+  async function glemtPassord() {
+    const e = email.trim().toLowerCase()
+    setError(null)
+    setInfo(null)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)) { setError('Skriv e-posten din over først.'); return }
+    setLoading(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(e, { redirectTo: 'https://www.ampex.no/' })
+    setLoading(false)
+    if (error && /fetch|network/i.test(error.message)) { setError('Ingen dekning. Prøv igjen når du har nett.'); return }
+    if (error && (error.status === 429 || /rate|seconds/i.test(error.message))) { setError('Vent et minutt før du ber om en ny lenke.'); return }
+    setInfo(`Hvis ${e} har en konto, kommer det en e-post nå. Trykk på lenka, velg nytt passord og logg inn her.`)
   }
 
   const inputStyle = {
@@ -79,6 +98,9 @@ export default function LoginScreen() {
           {error && (
             <Text style={[t.footnote, { color: colors.danger, marginBottom: spacing.lg }]}>{error}</Text>
           )}
+          {info && (
+            <Text style={[t.footnote, { color: colors.label, marginBottom: spacing.lg }]}>{info}</Text>
+          )}
 
           <Pressable
             onPress={() => signIn()}
@@ -93,6 +115,11 @@ export default function LoginScreen() {
               ? <ActivityIndicator color={colors.ctaLabel} />
               : <Text style={[t.headline, { color: colors.ctaLabel }]}>Logg inn</Text>
             }
+          </Pressable>
+
+          <Pressable onPress={glemtPassord} disabled={loading} haptic="light"
+            style={{ alignSelf: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, marginTop: spacing.sm }}>
+            <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>Glemt passord?</Text>
           </Pressable>
 
           {/* KUN i dev-bygg: en «Test-innlogging»-knapp i et butikkbygg er det
@@ -110,10 +137,6 @@ export default function LoginScreen() {
             <Text style={[t.caption, { color: colors.tertiaryLabel }]}>dev</Text>
           </Pressable>}
         </Animated.View>
-
-        <Text style={[t.footnote, { color: colors.tertiaryLabel, textAlign: 'center' }]}>
-          Kontakt din administrator for tilgang
-        </Text>
       </View>
     </KeyboardAvoidingView>
   )

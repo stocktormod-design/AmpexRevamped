@@ -42,7 +42,7 @@ export default function KunderScreen() {
         <TextInput
           value={sok}
           onChangeText={setSok}
-          placeholder="Søk navn, telefon, org.nr eller adresse"
+          placeholder="Søk"
           placeholderTextColor={colors.tertiaryLabel}
           style={[t.body, {
             backgroundColor: colors.fill, borderRadius: radius.md,
@@ -61,7 +61,7 @@ export default function KunderScreen() {
         {kunder.length === 0 ? (
           <View style={{ paddingHorizontal: spacing.screen + spacing.lg, paddingTop: spacing.xxl }}>
             <Text style={[t.body, { color: colors.secondaryLabel }]}>
-              {sok ? 'Ingen treff.' : 'Ingen kunder ennå. Første kunde kan opprettes rett fra en ordre.'}
+              {sok ? 'Ingen treff' : 'Ingen kunder'}
             </Text>
           </View>
         ) : (

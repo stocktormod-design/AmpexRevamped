@@ -74,8 +74,7 @@ export function VoiceCommandSheet({ outcome, onConfirm, onClose, onManualLookup 
             <Text style={t.headline}>
               {outcome.orderNumber ? `Fant ikke ordre ${outcome.orderNumber}` : 'Oppfattet ikke ordrenummeret'}
             </Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs, marginBottom: spacing.lg }]}>Skriv nummeret manuelt i stedet:</Text>
-            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
               <TextInput
                 value={manualInput}
                 onChangeText={setManualInput}
@@ -102,9 +101,6 @@ export function VoiceCommandSheet({ outcome, onConfirm, onClose, onManualLookup 
           <>
             <Text style={t.headline}>
               {outcome.kind === 'failed' ? 'Fikk ikke kontakt' : 'Oppfattet ikke kommandoen'}
-            </Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs }]}>
-              {outcome.kind === 'failed' ? 'Prøv igjen om litt.' : 'Prøv å si det litt annerledes.'}
             </Text>
             <Pressable
               haptic="light" onPress={onClose}

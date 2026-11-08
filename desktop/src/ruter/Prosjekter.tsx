@@ -4,6 +4,7 @@ import { useAuth } from '@/auth'
 import { hentProsjekter, opprettProsjekt, type Prosjekt } from '@/lib/kontor-lager'
 import { antall, Beskjed, Felt, Knapp, Kort, Merke, Sidehode, stk } from '@/ui/kit'
 import { ProsjektPlan } from '@/ruter/ProsjektPlan'
+import { ProsjektTegning } from '@/ruter/ProsjektTegning'
 
 /**
  * Prosjekter.
@@ -30,9 +31,9 @@ const STATUS: Record<string, { navn: string; stil: 'ny' | 'varsel' | 'noytral' }
   ferdig: { navn: 'Ferdig', stil: 'noytral' },
 }
 
-/** `#/prosjekt/<id>` åpner prosjektet på planen; `#/prosjekt` er lista. */
+/** `#/prosjekt/<id>` åpner prosjektet på planen, `#/prosjekt/<id>/tegn/<tegning>` tegnemodusen; `#/prosjekt` er lista. */
 function valgtFraHash(): string | null {
-  return window.location.hash.replace('#/', '').split('/')[1] || null
+  return window.location.hash.replace('#/', '').split('/').slice(1).join('/') || null
 }
 
 export function Prosjekter() {
@@ -42,7 +43,9 @@ export function Prosjekter() {
     window.addEventListener('hashchange', paa)
     return () => window.removeEventListener('hashchange', paa)
   }, [])
-  if (valgt) return <ProsjektPlan id={valgt} />
+  const [id, under, tegning] = (valgt ?? '').split('/')
+  if (id && under === 'tegn' && tegning) return <ProsjektTegning prosjektId={id} tegningId={tegning} />
+  if (id) return <ProsjektPlan id={id} />
   return <ProsjektListe />
 }
 
@@ -110,8 +113,8 @@ function ProsjektListe() {
             {laster
               ? 'Henter prosjektene …'
               : rader.length === 0
-                ? 'Ingen prosjekter ennå. De opprettes her, eller i appen sammen med tegningen de hører til.'
-                : 'Ingen prosjekter passer søket.'}
+                ? 'Ingen prosjekter.'
+                : 'Ingen treff.'}
           </p>
         ) : (
           <table className="linjer">
@@ -178,7 +181,7 @@ function ProsjektListe() {
                   setSkjemafeil(null)
                   try {
                     await opprettProsjekt({ navn, kunde, adresse })
-                    setKvittering(`${navn.trim()} er opprettet. Rom, tegninger og oppgaver legges inn fra appen.`)
+                    setKvittering(`${navn.trim()} er opprettet.`)
                     setNavn(''); setKunde(''); setAdresse(''); setApen(false)
                     last()
                   } catch (e) {
@@ -192,14 +195,12 @@ function ProsjektListe() {
                     firkant
                     autoFocus
                     etikett="Prosjektnavn"
-                    hjelp="Det navnet folk kommer til å si om jobben."
                     value={navn}
                     onChange={e => setNavn(e.target.value)}
                   />
                   <Felt
                     firkant
                     etikett="Kunde"
-                    hjelp="Fritekst her. Kunderegisteret kobles på ordrene."
                     value={kunde}
                     onChange={e => setKunde(e.target.value)}
                   />

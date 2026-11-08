@@ -95,7 +95,10 @@ enum MeshSimplify {
                          // per-hjørne-korreksjon interpoleres da lineært over en hel meter — synlig
                          // som store trekantede tonefasetter på gulvet. Kanter over dette får ikke
                          // kollapses. meshscan.simplifyedge overstyrer (meter; "off" = ingen grense).
-                         maxEdge: Float = 0.30) {
+                         maxEdge: Float = 0.30,
+                         // Rand-vertekser (åpne kanter) røres aldri: ingen kollaps der a eller b
+                         // ligger på randen. Brukes for delene i et hus, der randen er skjøten.
+                         låsRand: Bool = false) {
         let t0 = CFAbsoluteTimeGetCurrent()
         let srcTriCount = mesh.indices.count / 3
         guard srcTriCount > targetTris, srcTriCount > 0 else { return }
@@ -181,6 +184,15 @@ enum MeshSimplify {
             }
         }
 
+        var påRand = [Bool](repeating: false, count: låsRand ? vc : 0)
+        if låsRand {
+            for (fi, f) in faces.enumerated() where faceAlive[fi] {
+                for (a, b) in [(f.x, f.y), (f.y, f.z), (f.z, f.x)] where edgeFaceCount[edgeKey(a, b)] == 1 {
+                    påRand[Int(a)] = true; påRand[Int(b)] = true
+                }
+            }
+        }
+
         // ── 3) Kandidat-heap med lazy invalidering (versjonsstempel per verteks).
         var version = [Int32](repeating: 0, count: vc)
         var heap = Heap()
@@ -212,6 +224,7 @@ enum MeshSimplify {
             if c.cost > errorLimit { break }
             let a = Int(c.a), b = Int(c.b)
             guard vAlive[a], vAlive[b], version[a] == c.va, version[b] == c.vb else { continue }
+            if låsRand && (påRand[a] || påRand[b]) { continue }
 
             // Link-test (light): a og b får dele maks 2 naboverter (kantens to «vinger») —
             // flere betyr at kollapsen ville limt flak sammen non-manifold (V1-fellen).

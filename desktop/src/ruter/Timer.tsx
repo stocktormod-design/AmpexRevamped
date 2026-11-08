@@ -257,7 +257,6 @@ export function Timer() {
                         </option>
                       ))}
                     </select>
-                    <span className="felt-hjelp">Timene henger på ordren. Fakturaen finner dem der.</span>
                   </label>
                 </div>
                 <div className="inviter-felt">
@@ -317,10 +316,6 @@ export function Timer() {
                   <Knapp type="button" onClick={() => { setApen(false); setSkjemafeil(null) }}>
                     Lukk
                   </Knapp>
-                  {/* Skjemaet blir stående åpent etter lagring, med person og
-                      ordre beholdt. Kontoret fører sjelden én rad — det er en
-                      uke som skal etterregistreres. */}
-                  <span className="felt-hjelp">Skjemaet står åpent, så flere dager kan føres etter hverandre.</span>
                 </div>
               </form>
             )}

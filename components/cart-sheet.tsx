@@ -169,9 +169,6 @@ export function CartSheet({ lines, onClose }: { lines: CartLine[]; onClose: () =
             <Text style={[t.body, { color: colors.secondaryLabel, marginTop: spacing.md, textAlign: 'center' }]}>
               Uttaket er tomt
             </Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>
-              Skann en NFC-tapp eller ta ut fra lager for å starte
-            </Text>
             <Pressable
               haptic="medium" onPress={() => { onClose(); router.push('/(app)/lager') }}
               style={{

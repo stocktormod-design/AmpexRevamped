@@ -33,7 +33,7 @@ export function Historikk({
   hentRevisjoner,
   hentAudit,
   seAudit,
-  tom = 'Ingenting har skjedd ennå.',
+  tom = 'Ingen hendelser.',
 }: {
   hentRevisjoner: () => Promise<Revisjonsrad[]>
   /**

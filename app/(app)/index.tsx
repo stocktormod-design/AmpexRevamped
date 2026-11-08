@@ -27,6 +27,7 @@ import { useUserId } from '../../lib/auth-user'
 import { formatTime } from '../../lib/format'
 import { getVaerNaa, type VaerNaa, type VaerSymbol } from '../../lib/weather'
 import { colors, spacing, radius, sizes, shadows, type as t } from '../../lib/theme'
+import { TAB_BAR_HOYDE, tabBarBunn } from '../../components/glass-tab-bar'
 
 /**
  * HJEM — svarer på morgen-spørsmålet: har jeg ordrer i dag, og hva er været?
@@ -252,7 +253,6 @@ function TomPlate() {
     }}>
       <CircleCheck size={sizes.iconLg} color={colors.brand} strokeWidth={sizes.lucideStroke} />
       <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen ordrer i dag</Text>
-      <Text style={[t.footnote, { marginTop: spacing.xs }]}>Nye ordre dukker opp her.</Text>
     </View>
   )
 }
@@ -363,7 +363,7 @@ export default function HomeScreen() {
       <Animated.ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.md,
-          paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl + 24,
+          paddingBottom: TAB_BAR_HOYDE + tabBarBunn(insets.bottom) + spacing.xxl,
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -397,17 +397,20 @@ export default function HomeScreen() {
           </View>
           <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, overflow: 'hidden' }}>
             {siste.length === 0 ? (
-              <Text style={[t.footnote, { padding: spacing.lg }]}>Ingen ordre ennå.</Text>
-            ) : siste.map((o, i) => (
+              <Text style={[t.footnote, { padding: spacing.lg }]}>Ingen ordre</Text>
+            ) : siste.map((o, i) => {
+              const meta = [o.customerName, o.address].filter(Boolean).join(' · ')
+              return (
               <Pressable key={o.id} haptic="light" onPress={() => router.push(`/(app)/ordre/${o.id}`)}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.separator }}>
                 <View style={{ flex: 1 }}>
                   <Text style={t.bodyMedium} numberOfLines={1}>{o.title}</Text>
-                  <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>{[o.customerName, o.address].filter(Boolean).join(' · ') || 'Ingen kunde'}</Text>
+                  {!!meta && <Text style={[t.footnote, { marginTop: 1 }]} numberOfLines={1}>{meta}</Text>}
                 </View>
                 {o.status === 'pagaar' && (
-                  <View style={{ paddingHorizontal: spacing.sm, height: 22, borderRadius: radius.pill, backgroundColor: colors.label, justifyContent: 'center' }}>
-                    <Text style={[t.caption, { color: '#FFFFFF', fontWeight: '600' }]}>Pågår</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.label }} />
+                    <Text style={[t.caption, { color: colors.secondaryLabel, fontWeight: '600' }]}>Pågår</Text>
                   </View>
                 )}
                 {o.status === 'fakturaklar' && (
@@ -417,7 +420,8 @@ export default function HomeScreen() {
                 )}
                 <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
               </Pressable>
-            ))}
+              )
+            })}
           </View>
         </View>
 
@@ -429,9 +433,9 @@ export default function HomeScreen() {
             { label: 'Ny skann', Icon: ScanLine, to: '/(app)/skanner' },
           ] as const).map(h => (
             <Pressable key={h.label} haptic="medium" pressScale={0.97} onPress={() => router.push(h.to as never)}
-              style={{ flex: 1, height: 84, borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, alignItems: 'flex-start', justifyContent: 'space-between', padding: spacing.md }}>
-              <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.label, alignItems: 'center', justifyContent: 'center' }}>
-                <h.Icon size={16} color="#FFFFFF" strokeWidth={2.2} />
+              style={{ flex: 1, height: 78, borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, alignItems: 'flex-start', justifyContent: 'space-between', padding: spacing.md }}>
+              <View style={{ height: 26, justifyContent: 'center' }}>
+                <h.Icon size={21} color={colors.label} strokeWidth={1.9} />
               </View>
               <Text style={[t.subhead, { fontWeight: '600', color: colors.label }]} numberOfLines={1}>{h.label}</Text>
             </Pressable>

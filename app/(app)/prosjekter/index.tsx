@@ -14,6 +14,7 @@ import { Project, projectStatusLabel } from '../../../lib/db/models/project'
 import { Drawing } from '../../../lib/db/models/drawing'
 import { Task } from '../../../lib/db/models/task'
 import { ProjectMember } from '../../../lib/db/models/project-member'
+import { TAB_BAR_HOYDE, tabBarBunn } from '../../../components/glass-tab-bar'
 import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib/theme'
 
 function useProjects() {
@@ -115,7 +116,7 @@ export default function ProsjekterScreen() {
       <FlatList
         data={projects}
         keyExtractor={p => p.id}
-        contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: TAB_BAR_HOYDE + tabBarBunn(insets.bottom) + spacing.xxl }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View style={{
@@ -124,12 +125,12 @@ export default function ProsjekterScreen() {
           }}>
             <Text style={[t.display, { color: colors.label }]}>Prosjekter</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
-            <MegAvatar />
+            <MegAvatar size={44} />
             <Pressable
               haptic="medium" pressScale={0.92}
               onPress={() => router.push('/(app)/prosjekter/ny')}
               style={{
-                width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.brandSoft,
+                width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.brandSoft,
                 alignItems: 'center', justifyContent: 'center',
               }}
             >
@@ -153,9 +154,6 @@ export default function ProsjekterScreen() {
             borderWidth: 1, borderColor: colors.separator, borderStyle: 'dashed',
           }}>
             <Text style={[t.headline, { color: colors.label }]}>Ingen prosjekter</Text>
-            <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: spacing.xs, textAlign: 'center' }]}>
-              Opprett et prosjekt for å legge til tegninger.
-            </Text>
           </View>
         }
       />

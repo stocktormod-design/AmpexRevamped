@@ -28,14 +28,19 @@
 export type Punkt = { x: number; y: number }
 /** Arealpåskrift på tegningen: hvor den står, og hva den sier (m²) når det kan leses. */
 export type Etikett = Punkt & { areal?: number }
-export type Segment = { x0: number; y0: number; x1: number; y1: number; bredde?: number; lys?: number; farge?: number; fyll?: boolean }
+export type Segment = { x0: number; y0: number; x1: number; y1: number; bredde?: number; lys?: number; farge?: number; fyll?: boolean; fyllGraa?: number; fyllMetning?: number }
 // lys = metning (0 = grå/svart), farge = gråtone 0–1 (0 = svart)
-export type Rom = { polygon: Punkt[]; areal: number; senter: Punkt; etiketter: number[] }
+export type Rom = {
+  polygon: Punkt[]; areal: number; senter: Punkt; etiketter: number[]
+  /** Satt av finnRomMedPaaskrifter: rommet inneholder en arealpåskrift og arealet stemmer (±10 %).
+   *  Rom uten dette er forslag montøren må se på. */
+  bekreftet?: boolean
+}
 
 export type Innstillinger = {
   ptPerM: number       // målestokk: pt per meter (1:50 → 56.69)
   oppløsning: number   // m per piksel
-  veggMin: number      // m, minste avstand mellom strekpar
+  veggMin: number      // m, minste avstand mellom strekpar (0,08: norske/danske lettvegger er tegnet 10 cm; 0,12 kastet dem, 2026-10-25)
   veggMaks: number     // m, største
   veggOverlapp: number // m, hvor mye to streker må overlappe langs veggen
   minStrek: number     // m, korteste strek som kan være vegg
@@ -47,17 +52,21 @@ export type Innstillinger = {
   minVeggKomp: number  // m, veggklatter med mindre utstrekning kastes (møbler, symboler)
   buktMaks: number     // m, bukter (senger, benker) smalere enn dette fylles inn
   buktAndel: number    // bukt må være under denne andelen av rommets spenn i retningen
+  skravur?: boolean    // kast strekpar med streker imellom / regelmessige serier (hevet gulv). Standard på
 }
 
 export const STANDARD: Innstillinger = {
   ptPerM: 56.69, oppløsning: 0.05,
-  veggMin: 0.12, veggMaks: 0.45, veggOverlapp: 0.2, minStrek: 0.15,
+  veggMin: 0.08, veggMaks: 0.45, veggOverlapp: 0.2, minStrek: 0.15,
   doerMaks: 2.8, doerNormal: 2.0, minAreal: 1.0, maksAreal: 400, minFrø: 0.3, minVeggKomp: 1.0, buktMaks: 3.0, buktAndel: 0.35,
 }
 
 // ── 1. strekpar → vegger ────────────────────────────────────────────────────
 
 type Vegg = { a: Punkt; b: Punkt; c: Punkt; d: Punkt; tykk: number; lengde: number; bredder: [number, number]; farge?: number } // fylt firkant
+
+/** Fyll mørkere enn dette (0 = sort) regnes som veggpoché. */
+const FYLL_MORK = 0.75
 
 function finnVegger(segs: Segment[], inn: Innstillinger): Vegg[] {
   const p = inn.ptPerM
@@ -68,7 +77,11 @@ function finnVegger(segs: Segment[], inn: Innstillinger): Vegg[] {
     .filter(s => (s.bredde ?? 0) <= 2)
     // Fyll er ikke vegg (pdf.js-veien hoppet alltid over fyll; den native leseren sender
     // dem med for symbolsøket). Annotasjonenes utseende tegner kabler som fylte polygoner.
-    .filter(s => !s.fyll)
+    // Unntak: MØRKT, gråtonet fyll. Salgs- og arkitekttegninger fyller veggene sorte/grå i
+    // stedet for å trekke flatene (Sandsli, 2026-10-25) — omrisset av fyllet ER veggflatene.
+    // Lyst fyll er gulv, møbler og maskering; farget fyll er annotasjoner og kabler.
+    .filter(s => !s.fyll || (s.fyllGraa != null && s.fyllGraa < FYLL_MORK && (s.fyllMetning ?? 0) < 0.15))
+    .map(s => s.fyll ? { ...s, farge: undefined } : s)
     .map(s => {
       const dx = s.x1 - s.x0, dy = s.y1 - s.y0, len = Math.hypot(dx, dy)
       const ux = dx / len, uy = dy / len
@@ -125,13 +138,13 @@ function finnVegger(segs: Segment[], inn: Innstillinger): Vegg[] {
         // Tomt mellom flatene? (målt i a sin bøtte og nabobøtta, med 2 pt slakk fra hver flate)
         const cb = -a.uy * b.s.x0 + a.ux * b.s.y0
         const cLo = Math.min(a.c, cb) + 2, cHi = Math.max(a.c, cb) - 2
-        if (cHi > cLo && (strekerMellom(i, a, cLo, cHi, lo, hi) + strekerMellom((i + 1) % nB, a, cLo, cHi, lo, hi) + strekerMellom((i + nB - 1) % nB, a, cLo, cHi, lo, hi)) >= 2) continue
+        if (inn.skravur !== false && cHi > cLo && (strekerMellom(i, a, cLo, cHi, lo, hi) + strekerMellom((i + 1) % nB, a, cLo, cHi, lo, hi) + strekerMellom((i + nB - 1) % nB, a, cLo, cHi, lo, hi)) >= 2) continue
         // Regelmessig serie? Et rutenett med 15 cm deling gir «vegger» av naboer med
         // NØYAKTIG samme avstand videre på begge sider. En vegg har ikke en tredje flate
         // like langt utenfor. Én slik nabo på hver side → skravur, ikke vegg.
         const cA = Math.min(a.c, cb), cB = Math.max(a.c, cb)
         const utenfor = (mid: number) => [i, (i + 1) % nB, (i + nB - 1) % nB].some(bk => finnesVed(bk, a, mid - 1.5, mid + 1.5, lo, hi))
-        if (utenfor(cA - d) && utenfor(cB + d)) continue
+        if (inn.skravur !== false && utenfor(cA - d) && utenfor(cB + d)) continue
         // firkanten mellom dem over overlappet
         const fortegn = Math.sign((b.s.x0 - a.s.x0) * a.nx + (b.s.y0 - a.s.y0) * a.ny)
         const px = a.s.x0 - a.ux * a.t0, py = a.s.y0 - a.uy * a.t0 // punkt på a-linja ved t=0
@@ -736,8 +749,6 @@ function forenkle(p: Punkt[], eps: number): Punkt[] {
   return [...ut, ...ut2]
 }
 
-function signertAreal(p: Punkt[]) { let a = 0; for (let i = 0, j = p.length - 1; i < p.length; j = i++) a += (p[j].x + p[i].x) * (p[j].y - p[i].y); return a / 2 }
-
 export let sisteKjøring: { r: Raster; lab: Int32Array; dist: Float32Array; lab0?: Int32Array; spor?: Spor[] } | null = null
 
 // ── hoved ───────────────────────────────────────────────────────────────────
@@ -836,3 +847,112 @@ export function finnRomIRaster(r: Raster, inn: Innstillinger = STANDARD, etikett
 
 /** Kun for testkjøring utenfor appen. */
 export const __intern = { finnVegger, avstand, komponenter, naboskap, veggenderSpor, tegnFirkant }
+
+/**
+ * Romdelingen med tegningens egne arealpåskrifter («20,3 m²») som fasit. To grep:
+ *
+ * 1. Målestokken. Tittelfeltet lyver ofte: salgstegninger merket «1:50» er skalert ned til
+ *    A4, og mange ark har ingen (15 % treff med tittelfeltets målestokk, 2026-10-25). Prøv
+ *    `standard` først og så de vanlige, og behold den der flest påskrifter havner i et rom
+ *    med samme areal (±15 %). Stopper tidlig når de fleste stemmer, så den vanlige tegningen
+ *    koster én kjøring.
+ * 2. Varianter per rom. Ingen innstilling passer alle tegninger: skravurfilteret redder ett
+ *    ark og knekker vinduene på et annet. Rom som ikke stemmer med påskriften sin prøves med
+ *    noen få andre innstillinger, og et rom fra en variant tas inn bare når arealet stemmer
+ *    og det ikke tar plass fra et rom som allerede stemmer.
+ *
+ * Hvert rom får `bekreftet` når påskriften inni stemmer. Uten minst tre påskrifter med areal
+ * brukes `standard` som den er.
+ */
+export function finnRomMedPaaskrifter(
+  segmenter: Segment[], etiketter: Etikett[], standard: number,
+  inn: Partial<Innstillinger> = {}, kandidater = [50, 100, 75, 25, 20, 125, 150, 200, 250],
+): { rom: Rom[]; maalestokk: number; treff: number } {
+  const ptPerM = (m: number) => (1000 / m) / 25.4 * 72
+  const kjør = (m: number, v: Partial<Innstillinger> = {}) => finnRom(segmenter, { ...STANDARD, ...inn, ...v, ptPerM: ptPerM(m) }, etiketter)
+  const medAreal = etiketter.filter(e => e.areal != null && e.areal > 0)
+  if (medAreal.length < 3) return { rom: kjør(standard), maalestokk: standard, treff: 0 }
+  const stemmer = (r: Rom, e: Etikett, p2: number, tol: number) => Math.abs(r.areal / p2 - e.areal!) <= tol * e.areal!
+  const tell = (rom: Rom[], p2: number) => medAreal.filter(e => { const r = rom.find(r => punktInni(e.x, e.y, r.polygon)); return r != null && stemmer(r, e, p2, 0.15) }).length
+
+  let best = { rom: [] as Rom[], maalestokk: standard, treff: -1 }
+  for (const m of [standard, ...kandidater.filter(k => k !== standard)]) {
+    const rom = kjør(m), treff = tell(rom, ptPerM(m) ** 2)
+    if (treff > best.treff) best = { rom, maalestokk: m, treff }
+    if (treff >= 0.7 * medAreal.length) break
+  }
+  const m = best.maalestokk, p2 = ptPerM(m) ** 2
+  const bekreft = (rom: Rom[]) => { for (const r of rom) r.bekreftet = medAreal.some(e => punktInni(e.x, e.y, r.polygon) && stemmer(r, e, p2, 0.1)) }
+  let rom = best.rom
+  bekreft(rom)
+
+  const åpne = () => medAreal.filter(e => !rom.some(r => r.bekreftet && punktInni(e.x, e.y, r.polygon)))
+  // Valgt etter hvilke som reddet flest rom som standarden bommet på (2026-10-25).
+  const varianter: Partial<Innstillinger>[] = [{ minVeggKomp: 2.0 }, { skravur: false }, { minVeggKomp: 0.5 }, { veggMin: 0.05 }]
+  const steg = 0.25 * Math.sqrt(p2) // 25 cm-rutenett for overlapp
+  for (const v of varianter) {
+    if (!åpne().length) break
+    const nye = kjør(m, v)
+    for (const e of åpne()) {
+      const k = nye.find(r => punktInni(e.x, e.y, r.polygon) && stemmer(r, e, p2, 0.1))
+      if (!k) continue
+      // Hvilke rom tar kandidaten plass fra? Prøv et rutenett i kandidatens boks.
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+      for (const q of k.polygon) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y) }
+      const felles = new Map<Rom, number>(); let n = 0
+      for (let y = y0 + steg / 2; y < y1; y += steg) for (let x = x0 + steg / 2; x < x1; x += steg) {
+        if (!punktInni(x, y, k.polygon)) continue
+        n++
+        for (const r of rom) if (punktInni(x, y, r.polygon)) felles.set(r, (felles.get(r) ?? 0) + 1)
+      }
+      const cellerI = (r: Rom) => r.areal / (steg * steg)
+      // Et bekreftet rom gir ikke fra seg mer enn kanten (10 %).
+      if ([...felles].some(([r, c]) => r.bekreftet && c > 0.1 * Math.min(n, cellerI(r)))) continue
+      // Rom som for det meste ligger inni kandidaten forsvinner; resten beholdes som de er.
+      const ut = new Set([...felles].filter(([r, c]) => c > 0.5 * cellerI(r)).map(([r]) => r))
+      k.bekreftet = true
+      rom = [...rom.filter(r => !ut.has(r)), k]
+    }
+  }
+  return { rom, maalestokk: m, treff: rom.filter(r => r.bekreftet).length }
+}
+
+/** «20,3 m²» → 20.3. Mellomrom som tusenskille («1 003,5 m²»). */
+export function arealFraTekst(t: string): number | undefined {
+  const m = /(\d[\d ]*(?:[.,]\d+)?)\s*m(²|2)/i.exec(t)
+  return m ? parseFloat(m[1].replace(/ /g, '').replace(',', '.')) : undefined
+}
+
+/**
+ * Arealpåskriftene som hører til ETT rom. Tre ting er ikke det (Sandsli, 2026-10-25):
+ * - Samme påskrift to ganger tett i tett: teksten ligger i to lag, 0 eller 21 pt fra
+ *   hverandre. Ellers ser ett rom ut som to som er slått sammen.
+ * - Større skrift enn de vanlige arealpåskriftene: det er summen for leiligheten
+ *   («A205 / LEILIGHET / 51,5 m²» midt i stua), og som frø delte den stua i to.
+ * - En sum-overskrift rett over (BRA, BTA, P-ROM, LEILIGHET, SUM, TOTAL).
+ */
+export function romPaaskrifter<T extends { tekst: string; x: number; y: number; hoyde?: number }>(tekster: T[]): T[] {
+  const kand = tekster.filter(t => { const a = arealFraTekst(t.tekst); return a != null && a >= 0.5 && a < 1000 })
+  const unike: T[] = []
+  for (const t of kand) {
+    const r = Math.max(3 * (t.hoyde ?? 8), 25)
+    if (!unike.some(u => u.tekst === t.tekst && Math.abs(u.x - t.x) < r && Math.abs(u.y - t.y) < r)) unike.push(t)
+  }
+  // Vanligste skrifthøyde blant påskriftene = romskriften.
+  const telling = new Map<number, number>()
+  for (const t of unike) { const k = Math.round((t.hoyde ?? 8) * 2) / 2; telling.set(k, (telling.get(k) ?? 0) + 1) }
+  let vanlig = 0, n = -1; for (const [k, c] of telling) if (c > n || (c === n && k < vanlig)) { vanlig = k; n = c }
+  const sum = /\b(BRA|BTA|BYA|P-?ROM|S-?ROM|LEILIGHET|BOLIG|SUM|TOTAL|BRUKSAREAL)\b/i
+  return unike.filter(t => {
+    const h = t.hoyde ?? 8
+    if (unike.length >= 3 && h > vanlig * 1.15) return false
+    return !tekster.some(o => o !== t && sum.test(o.tekst) && t.y - o.y > 0 && t.y - o.y < 2.5 * h && Math.abs(o.x - t.x) < 6 * h)
+  })
+}
+
+function punktInni(x: number, y: number, P: Punkt[]): boolean {
+  let inn = false
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++)
+    if ((P[i].y > y) !== (P[j].y > y) && x < (P[j].x - P[i].x) * (y - P[i].y) / (P[j].y - P[i].y) + P[i].x) inn = !inn
+  return inn
+}

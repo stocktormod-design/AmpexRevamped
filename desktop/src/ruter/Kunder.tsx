@@ -99,8 +99,8 @@ export function Kunder() {
             {laster
               ? 'Søker …'
               : sok.trim()
-                ? 'Ingen kunder passer søket.'
-                : 'Kunderegisteret er tomt. Det fylles av appen, eller av en import fra det gamle systemet.'}
+                ? 'Ingen treff.'
+                : 'Ingen kunder.'}
           </p>
         ) : (
           <table className="linjer">
@@ -197,9 +197,6 @@ export function Kunder() {
                     etikett="Organisasjonsnummer"
                     inputMode="numeric"
                     disabled={!ny.er_firma}
-                    hjelp={ny.er_firma
-                      ? 'Den eneste harde nøkkelen mot regnskapet. Fyll den ut hvis du har den.'
-                      : 'Gjelder bare firmakunder.'}
                     value={ny.er_firma ? ny.org_nr : ''}
                     onChange={e => setNy(k => ({ ...k, org_nr: e.target.value }))}
                   />
@@ -217,7 +214,6 @@ export function Kunder() {
                     etikett="E-post"
                     type="email"
                     inputMode="email"
-                    hjelp="Dit fakturaen går."
                     value={ny.epost}
                     onChange={e => setNy(k => ({ ...k, epost: e.target.value }))}
                   />

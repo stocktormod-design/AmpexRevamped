@@ -86,7 +86,7 @@ export default function OppgaverScreen() {
 
         {synlige.length === 0 ? (
           <Text style={[t.footnote, { textAlign: 'center', marginTop: spacing.xl }]}>
-            {filter === 'ferdig' ? 'Ingenting er ferdig ennå.' : filter === 'mine' ? 'Ingen oppgaver til deg.' : 'Ingen åpne oppgaver.'}
+            {filter === 'ferdig' ? 'Ingenting ferdig' : filter === 'mine' ? 'Ingen oppgaver til deg' : 'Ingen åpne oppgaver'}
           </Text>
         ) : (
           <GlassListGroup>

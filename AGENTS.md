@@ -4,6 +4,8 @@ Inngangsdokument for enhver AI-assistent eller ny utvikler på Ampex. Verktøy-u
 Claude Code leser `CLAUDE.md`, andre leser denne. Innholdet skal ikke dupliseres mellom
 dem — `CLAUDE.md` har reglene, denne har kartet.
 
+> **Flere agenter:** les og følg `docs/AGENT_BRO.md` (låser, meldinger, logg) før hver oppgave.
+
 ## ⚠️ Expo har endret seg
 
 Les de eksakte versjonerte docsene på https://docs.expo.dev/versions/v56.0.0/ før du

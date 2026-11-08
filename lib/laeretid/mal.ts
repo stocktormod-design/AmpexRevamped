@@ -71,6 +71,16 @@ export type Utfylling = Record<string, string | string[][]>
  */
 export const NEK_NOKKEL = '_nek'
 
+/**
+ * Bildetekstene assistenten skrev sammen med loggen, som rader [bilde-id, tekst],
+ * i den rekkefølgen bildene står i loggen (arbeidsgangen: ferdig resultat sist).
+ * Teksten er notatet hans gjort ferdig — rettet og knyttet til jobben, uten nye
+ * fakta — eller, uten notat, skrevet med samtalen for øye. Notatet ligger urørt
+ * på bildet som kilde; retter han teksten i loggen, er det raden her som endres.
+ * Tormod 13.10.2026: «han customized ikke bildetekst», «ferdig produkt til slutt».
+ */
+export const BILDE_NOKKEL = '_bilder'
+
 // ── Malene ──────────────────────────────────────────────────────────────────
 //
 // Hentet ORDRETT fra «Felles dokumenter» i fagbrev.io (TENK Lofoten),
@@ -234,13 +244,29 @@ export function jaNei(verdi: string): string {
  * ikke fjerne et punkt ved å la være å svare på det. Frie tabeller mister tomme
  * rader. Ja/nei-kolonnen godtar bare Ja, Nei eller tomt.
  */
+/**
+ * Tar ut setninger om at han ikke husker HVORFOR eller ikke kan forklare det.
+ * «Jeg husker ikke kabeltypen» er et faktum og blir stående; «jeg husker ikke
+ * hvorfor jeg målte frakoblet» er ikke utførelse — forståelsen sjekkes i quizen.
+ * Modellen fikk regelen i prompten, men skrev det likevel i 3 av 10 logger
+ * (rollespill 28.09.2026), så den håndheves her.
+ */
+export function utenGlemtHvorfor(tekst: string): string {
+  const glemt = /\b(husker|vet) (ikke|ikkje)\b[^.!?\n]*\b(hvorfor|forklare|begrunn)/i
+  return tekst
+    .split('\n')
+    .map(avsnitt => avsnitt.split(/(?<=[.!?])\s+/).filter(setn => !glemt.test(setn)).join(' '))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+}
+
 export function vaskUtfylling(mal: Mal, raa: unknown): Utfylling {
   const inn = (raa && typeof raa === 'object' ? raa : {}) as Record<string, unknown>
   const ut = tomUtfylling(mal)
   for (const s of mal.seksjoner) {
     const v = inn[s.id]
     if (s.slag === 'tekst') {
-      ut[s.id] = typeof v === 'string' ? v.trim() : ''
+      ut[s.id] = typeof v === 'string' ? utenGlemtHvorfor(v).trim() : ''
       continue
     }
     if (s.slag !== 'tabell') continue
@@ -267,7 +293,18 @@ export function vaskUtfylling(mal: Mal, raa: unknown): Utfylling {
       return true
     })
     .map(r => [r[0], r[1], r[2] ?? ''])
+  const bilder = Array.isArray(inn[BILDE_NOKKEL]) ? inn[BILDE_NOKKEL] as unknown[] : []
+  ut[BILDE_NOKKEL] = bilder
+    .map(r => (Array.isArray(r) ? r : []).map(c => (typeof c === 'string' ? c.trim() : '')))
+    .filter(r => r[0] && r[1])
+    .map(r => [r[0], r[1]])
   return ut
+}
+
+/** Bildeteksten assistenten skrev til ett bilde da loggen ble skrevet, ellers tom. */
+export function skrevetBildetekst(u: Utfylling | null | undefined, bildeId: string): string {
+  const rader = u && Array.isArray(u[BILDE_NOKKEL]) ? (u[BILDE_NOKKEL] as string[][]) : []
+  return rader.find(r => r[0] === bildeId)?.[1] ?? ''
 }
 
 export type NekFelt = { punkt: string; side: number; hva: string; begrunnelse: string }
@@ -371,4 +408,55 @@ export function tilTekst(mal: Mal, u: Utfylling, notater: string[] = []): string
     }
   }
   return deler.join('\n\n')
+}
+
+// ── Bildetekst fra modellen ─────────────────────────────────────────────────
+
+/**
+ * `laeretid_bilde.modellbeskrivelse` holder to ting: første linje er en kort
+ * bildetekst (4–10 ord), resten er beskrivelsen modellen bruker som kilde.
+ * Bildeteksten brukes BARE når han ikke har skrevet notat selv — notatet hans
+ * står alltid først, og ingenting skrives inn i det.
+ */
+export function slaaSammenBeskrivelse(bildetekst: string, beskrivelse: string): string {
+  const tekst = bildetekst.replace(/\s+/g, ' ').trim()
+  return tekst ? `${tekst}\n${beskrivelse.trim()}` : `\n${beskrivelse.trim()}`
+}
+
+export function delBeskrivelse(m: string | null | undefined): { bildetekst: string; beskrivelse: string } {
+  const tekst = m ?? ''
+  const i = tekst.indexOf('\n')
+  if (i < 0) return { bildetekst: '', beskrivelse: tekst.trim() }
+  return { bildetekst: tekst.slice(0, i).trim(), beskrivelse: tekst.slice(i + 1).trim() }
+}
+
+/**
+ * Det som står under bildet i loggen: teksten skrevet sammen med loggen (som han
+ * kan rette), ellers notatet hans, ellers forslaget fra da bildet ble lest.
+ */
+export function bildeforklaring(
+  notat: string | null | undefined, modellbeskrivelse: string | null | undefined, skrevet = '',
+): string {
+  return skrevet.trim() || notat?.trim() || delBeskrivelse(modellbeskrivelse).bildetekst
+}
+
+/**
+ * Bildene i loggens rekkefølge: først de assistenten ordnet, så resten i den
+ * rekkefølgen de kom (nye bilder etter at loggen ble skrevet havner sist).
+ */
+export function ordneBilder<T extends { id: string }>(bilder: T[], u: Utfylling | null | undefined): T[] {
+  const rader = u && Array.isArray(u[BILDE_NOKKEL]) ? (u[BILDE_NOKKEL] as string[][]) : []
+  const plass = new Map(rader.map((r, i) => [r[0], i]))
+  return bilder
+    .map((b, i) => ({ b, i, p: plass.get(b.id) ?? rader.length + i }))
+    .sort((x, y) => x.p - y.p)
+    .map(x => x.b)
+}
+
+/** Ny tekst til ett bilde. Har bildet ingen rad, legges den til sist. */
+export function settBildetekst(u: Utfylling, bildeId: string, tekst: string): string[][] {
+  const rader = Array.isArray(u[BILDE_NOKKEL]) ? (u[BILDE_NOKKEL] as string[][]) : []
+  return rader.some(r => r[0] === bildeId)
+    ? rader.map(r => (r[0] === bildeId ? [bildeId, tekst] : r))
+    : [...rader, [bildeId, tekst]]
 }

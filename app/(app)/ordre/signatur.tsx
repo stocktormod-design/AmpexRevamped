@@ -142,13 +142,13 @@ export default function SignaturScreen() {
           </Text>
           <TextInput
             value={navn} onChangeText={setNavn}
-            placeholder="Navn på den som skriver under"
+            placeholder="Navn"
             placeholderTextColor={colors.paperTertiary}
             style={[t.body, { backgroundColor: colors.paperBg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
           />
           <TextInput
             value={tittel} onChangeText={setTittel}
-            placeholder="Rolle (valgfritt) — f.eks. eier, styreleder, driftsleder"
+            placeholder="Rolle (valgfritt)"
             placeholderTextColor={colors.paperTertiary}
             style={[t.body, { backgroundColor: colors.paperBg, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, marginTop: spacing.sm }]}
           />
@@ -162,7 +162,7 @@ export default function SignaturScreen() {
 
           <TextInput
             value={notat} onChangeText={setNotat} multiline
-            placeholder="Merknad (valgfritt) — forbehold eller avtale som ikke står andre steder"
+            placeholder="Merknad (valgfritt)"
             placeholderTextColor={colors.paperTertiary}
             style={[t.body, {
               backgroundColor: colors.paperBg, borderRadius: radius.lg,
@@ -179,11 +179,6 @@ export default function SignaturScreen() {
             }}>
             <Text style={[t.headline, { color: kanLagre ? colors.brandLabel : colors.paperTertiary }]}>Lagre signatur</Text>
           </Pressable>
-          {!kanLagre && !busy && (
-            <Text style={[t.footnote, { textAlign: 'center', marginTop: spacing.sm }]}>
-              {!navn.trim() ? 'Navn må fylles ut — en signatur uten navn er en strek.' : 'Signer i feltet over.'}
-            </Text>
-          )}
         </View>
 
         {/* Tidligere signaturer på ordren */}

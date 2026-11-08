@@ -70,13 +70,6 @@ export default function DeltakereScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={{ paddingHorizontal: spacing.screen + spacing.lg, marginBottom: spacing.xl }}>
-          <Text style={t.footnote}>
-            Den som er med kan føre timer på ordren og se hele innholdet. Andre i firmaet
-            ser bare nummer, tittel og hvem som er med.
-          </Text>
-        </View>
-
         {kollegaer === null ? (
           <View style={{ paddingHorizontal: spacing.screen + spacing.lg }}>
             <Text style={[t.body, { color: colors.secondaryLabel }]}>Henter kollegaer …</Text>
@@ -87,7 +80,7 @@ export default function DeltakereScreen() {
             <View style={{ flexDirection: 'row', gap: spacing.md, padding: spacing.lg }}>
               <WifiOff size={18} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
               <Text style={[t.subhead, { flex: 1, color: colors.secondaryLabel }]}>
-                Kollegalista ligger på serveren og krever nett. Timene dine kan føres uansett.
+                Krever nett
               </Text>
             </View>
           </ListCard>

@@ -123,7 +123,7 @@ export default function MineTimer() {
 
         {uke.sumTimer === 0 ? (
           <Text style={[t.footnote, { textAlign: 'center', marginTop: spacing.xxl }]}>
-            Ingen timer ført denne uken.
+            Ingen timer
           </Text>
         ) : (
           <>

@@ -12,7 +12,7 @@ import {
   type SokbarVare,
 } from '../lib/product-search'
 import { utledKategori, utledKategorier, kategoriNavn, kandidater } from '../lib/product-category'
-import { byggSokeTekst, tilVarekort, visbareEkstra } from '../lib/pricefile/varekort'
+import { byggSokeTekst, efobasenUrl, elnummerFraEfobasen, tilVarekort, visbareEkstra } from '../lib/pricefile/varekort'
 import { byggPrisbilde, erListepris, kostprisFra, type Prisrad } from '../lib/pricing'
 import { parseEfoNelfo, type Vare } from '../lib/pricefile/efo-nelfo'
 import { DEMO_BILDER, demoFiler, demovarer } from '../lib/pricefile/demo-katalog'
@@ -340,6 +340,19 @@ sjekk('alle tre grossister er billigst på noe',
     }
     return [...min.values()].some(x => x.g === g)
   }), true)
+
+// ── EFObasen-knappen ────────────────────────────────────────────────────────
+sjekk('EFObasen-lenke på el-nummer', efobasenUrl('1005610'), 'https://efobasen.efo.no/produkt/1005610')
+sjekk('mellomrom i el-nummeret tåles', efobasenUrl('10 056 10'), 'https://efobasen.efo.no/produkt/1005610')
+sjekk('ingen lenke uten el-nummer', efobasenUrl(null), null)
+sjekk('ingen lenke på noe som ikke er sju siffer', efobasenUrl('ABC123'), null)
+
+sjekk('el-nummer leses av produktsiden', elnummerFraEfobasen('https://efobasen.efo.no/produkt/1005610'), '1005610')
+sjekk('leverandørnummer foran el-nummeret tåles', elnummerFraEfobasen('https://efobasen.efo.no/produkt/12345/1005610'), '1005610')
+sjekk('spørring og skråstrek bak tåles', elnummerFraEfobasen('https://efobasen.efo.no/produkt/1005610/?fane=bilder'), '1005610')
+sjekk('søkesiden er ingen vare', elnummerFraEfobasen('https://efobasen.efo.no/produkter?q=kabel'), null)
+sjekk('annen nettside gir ingenting', elnummerFraEfobasen('https://evil.no/produkt/1005610'), null)
+sjekk('fram og tilbake er det samme', elnummerFraEfobasen(efobasenUrl('1005610')!), '1005610')
 
 console.log('')
 if (feil > 0) {

@@ -7,6 +7,9 @@ export default function OrdreLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="[id]" />
       <Stack.Screen name="ny" options={{ presentation: 'modal' }} />
+      {/* Kundevelgeren for en ny ordre hører til ORDRE-stakken, ikke kunder:
+          ellers lukker dismiss() feil stakk og valget «reagerer ikke». */}
+      <Stack.Screen name="velg-kunde" />
       <Stack.Screen name="material" options={{ presentation: 'modal' }} />
       <Stack.Screen name="faktura" />
       <Stack.Screen name="timer" />

@@ -268,7 +268,7 @@ export default function TilbudDetail() {
         <View style={[{ backgroundColor: colors.paperBg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }, shadows.card]}>
           {sum.linjer.length === 0 && innhold.omrader.length === 0 && (
             <Text style={[t.footnote, { padding: spacing.lg, textAlign: 'center' }]}>
-              Ingen linjer ennå. Legg til materiell, arbeid eller en tekst.
+              Ingen linjer
             </Text>
           )}
 
@@ -367,7 +367,7 @@ export default function TilbudDetail() {
             </Pressable>
           )}
           {status === 'utkast' && !tilbud.customerId && (
-            <Text style={[t.footnote, { textAlign: 'center' }]}>Velg kunde før tilbudet kan sendes.</Text>
+            <Text style={[t.footnote, { textAlign: 'center' }]}>Mangler kunde</Text>
           )}
 
           {(status === 'sendt' || status === 'utlopt') && (
@@ -386,7 +386,7 @@ export default function TilbudDetail() {
                 <Text style={[t.body, { color: colors.paperSecondary }]}>Kunden sa nei</Text>
               </Pressable>
               <Pressable haptic="light" onPress={() => angreSendt(tilbud)} style={{ alignItems: 'center', paddingVertical: spacing.xs }}>
-                <Text style={[t.footnote, { color: colors.paperTertiary }]}>Angre «sendt» og rediger videre</Text>
+                <Text style={[t.footnote, { color: colors.paperTertiary }]}>Angre «sendt»</Text>
               </Pressable>
             </>
           )}
@@ -406,7 +406,6 @@ export default function TilbudDetail() {
       <ChoiceSheet<BeslutningsMate>
         synlig={ark === 'mate'}
         tittel={akseptert ? 'Hvordan sa kunden ja?' : 'Hvordan sa kunden nei?'}
-        forklaring="Måten svaret kom på er det som teller hvis det senere blir uenighet."
         valg={(['muntlig', 'sms', 'epost', 'signert'] as BeslutningsMate[])
           .map<Valg<BeslutningsMate>>(m => ({ verdi: m, etikett: beslutningLabel[m] }))}
         valgt={mate ?? undefined}
@@ -417,7 +416,6 @@ export default function TilbudDetail() {
       <PromptSheet
         synlig={ark === 'hvem'}
         tittel="Hvem svarte?"
-        forklaring="Tomt er lov, men da står det ingenting i en tvist."
         plassholder="F.eks. Kari Nordmann"
         knapp="Videre"
         onSvar={v => { setHvem(v); setArk('notat') }}
@@ -427,9 +425,6 @@ export default function TilbudDetail() {
       <PromptSheet
         synlig={ark === 'notat'}
         tittel={akseptert ? 'Noe å notere?' : 'Hvorfor ble det nei?'}
-        forklaring={akseptert
-          ? 'Forbehold eller avtaler som ikke står i linjene.'
-          : 'Pris, tid, valgte en annen — det eneste som gjør tapte tilbud lærerike.'}
         plassholder={akseptert ? 'Valgfritt' : 'For dyrt, valgte konkurrent …'}
         knapp={akseptert ? 'Opprett ordre' : 'Registrer avslag'}
         onSvar={fullforSvar}

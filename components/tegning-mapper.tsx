@@ -105,12 +105,10 @@ export function MappeNySheet({ synlig, onLukk, onOpprett, forelder }: {
       <View style={{ paddingHorizontal: spacing.screen, gap: spacing.md }}>
         <View>
           <Text style={t.title3}>Ny mappe</Text>
-          <Text style={[t.footnote, { marginTop: 2 }]}>
-            {forelder ? `Inne i ${forelder}` : 'På prosjektets rot — f.eks. et bygg, eller et fag'}
-          </Text>
+          {!!forelder && <Text style={[t.footnote, { marginTop: 2 }]}>{`Inne i ${forelder}`}</Text>}
         </View>
         <TextInput
-          value={navn} onChangeText={setNavn} autoFocus placeholder="Navn (f.eks. Bygg A, Elkraft, IKT)"
+          value={navn} onChangeText={setNavn} autoFocus placeholder="Navn"
           placeholderTextColor={colors.tertiaryLabel} returnKeyType="done"
           onSubmitEditing={() => kan && onOpprett(navn.trim())}
           style={[t.body as TextStyle, { backgroundColor: colors.fill, borderRadius: radius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2 }]}
@@ -131,10 +129,10 @@ type MappeHandling = 'omdop' | 'flytt' | 'slett'
 /**
  * Innholdet på ETT nivå: undermapper som rader, tegninger som fliser.
  *
- * Rota viser normalt BARE mapper (Tormod 2026-09-06); tegninger uten mappe nås
- * via en egen «Uten mappe»-rad. Unntaket er et prosjekt UTEN mapper: da vises
- * tegningene rett på rota, så et lite prosjekt aldri må lage en mappe for å
- * få lagt til sin første tegning.
+ * Rota viser mappene først og de løse tegningene rett under, med etiketten
+ * «Løse tegninger» (Tormod 2026-11-07: den falske «Uten mappe»-mappa bort).
+ * Det gjør at en tegning uten mappe aldri er mer enn én side unna, og at
+ * «Ny mappe» på rota lager en mappe du faktisk ser.
  */
 export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, kanRedigere = true, rotTegninger = false }: {
   projectId: string
@@ -148,9 +146,8 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
 }) {
   // «Uten mappe»-skjermen viser bare de løse tegningene — rotmappene står alt på prosjektet.
   const under = useMemo(() => (rotTegninger ? [] : mapper.filter(m => m.parentId === parentId)), [mapper, parentId, rotTegninger])
-  // Rota skjuler tegningene bak «Uten mappe» bare når det faktisk finnes mapper å velge mellom.
-  const erRot = parentId === null && !rotTegninger && mapper.length > 0
-  const her = useMemo(() => (erRot ? [] : tegninger.filter(d => (d.folderId ?? null) === parentId)), [tegninger, parentId, erRot])
+  // Rota viser OGSÅ de løse tegningene, rett under mappene — ikke bak en falsk mappe.
+  const her = useMemo(() => tegninger.filter(d => (d.folderId ?? null) === parentId), [tegninger, parentId])
   const utenMappe = useMemo(() => tegninger.filter(d => !d.folderId).length, [tegninger])
   const [nyMappe, setNyMappe] = useState(false)
   const [flytter, setFlytter] = useState<Drawing | null>(null)
@@ -201,23 +198,8 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
   return (
     <View>
       {/* Mapper — ALLTID liste. */}
-      {(under.length > 0 || (erRot && utenMappe > 0)) && (
+      {under.length > 0 && (
         <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, marginBottom: spacing.md }}>
-          {erRot && utenMappe > 0 && (
-            <Pressable haptic="light"
-              onPress={() => router.push({ pathname: '/(app)/prosjekter/mappe', params: { projectId, folderId: '' } })}
-              style={[
-                { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 1 },
-                under.length > 0 && { borderBottomWidth: 1, borderBottomColor: colors.separator },
-              ]}>
-              <Folder size={sizes.icon} color={colors.secondaryLabel} strokeWidth={sizes.lucideStroke} />
-              <View style={{ flex: 1 }}>
-                <Text style={t.bodyMedium} numberOfLines={1}>Uten mappe</Text>
-                <Text style={[t.footnote, { marginTop: 1 }]}>{`${utenMappe} ${utenMappe === 1 ? 'tegning' : 'tegninger'}`}</Text>
-              </View>
-              <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-            </Pressable>
-          )}
           {under.map((m, i) => {
             const n = tellRekursivt(m.id, mapper, tegninger)
             const barn = mapper.filter(x => x.parentId === m.id).length
@@ -241,6 +223,14 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
             )
           })}
         </View>
+      )}
+
+      {/* Løse tegninger: navn, ikke en falsk mappe. Etiketten vises bare når
+          det faktisk finnes mapper ved siden av, ellers er tegningene hele rota. */}
+      {parentId === null && under.length > 0 && utenMappe > 0 && (
+        <Text style={[t.eyebrow, { textTransform: 'uppercase', marginHorizontal: spacing.screen, marginBottom: spacing.xs, color: colors.secondaryLabel }]}>
+          Løse tegninger
+        </Text>
       )}
 
       {/* Tegninger — fliser eller liste, brukerens valg. Hold inne for å flytte. */}
@@ -292,12 +282,15 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
         </View>
       )}
 
-      {under.length === 0 && her.length === 0 && !(erRot && utenMappe > 0) && (
+      {under.length === 0 && her.length === 0 && (
         <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.separator, borderStyle: 'dashed', alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.xl }}>
           <Text style={[t.footnote, { textAlign: 'center' }]}>
-            {parentId === null && !rotTegninger
-              ? 'Ingen tegninger ennå. Legg til en tegning, eller lag mapper for bygg og fag.'
-              : 'Tomt her. Legg til en tegning, eller en mappe til.'}
+            {parentId === null && !rotTegninger ? 'Ingen tegninger ennå' : 'Denne mappa er tom'}
+          </Text>
+          <Text style={[t.caption, { textAlign: 'center', marginTop: 4, color: colors.tertiaryLabel, lineHeight: 17 }]}>
+            {kanRedigere
+              ? 'Lag en undermappe eller legg til en tegning nedenfor.'
+              : 'Ingen tegninger er lagt inn her ennå.'}
           </Text>
         </View>
       )}
@@ -305,24 +298,19 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
       {/* Handlingene PÅ nivået, ikke under hvert kort. */}
       {kanRedigere && (
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.screen, marginTop: spacing.md }}>
-          <Pressable haptic="light" pressScale={0.97} onPress={() => setNyMappe(true)}
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs + 2, height: 40, borderRadius: radius.md, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator }}>
-            <FolderPlus size={16} color={colors.label} strokeWidth={2} />
-            <Text style={[t.subhead, { fontWeight: '600' }]}>Ny mappe</Text>
-          </Pressable>
+          {!rotTegninger && (
+            <Pressable haptic="light" pressScale={0.97} onPress={() => setNyMappe(true)}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs + 2, height: 40, borderRadius: radius.md, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator }}>
+              <FolderPlus size={16} color={colors.label} strokeWidth={2} />
+              <Text style={[t.subhead, { fontWeight: '600' }]}>Ny mappe</Text>
+            </Pressable>
+          )}
           <Pressable haptic="light" pressScale={0.97} onPress={leggTilTegning}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs + 2, height: 40, borderRadius: radius.md, backgroundColor: colors.label }}>
             <Plus size={16} color="#FFFFFF" strokeWidth={2.2} />
             <Text style={[t.subhead, { fontWeight: '600', color: '#FFFFFF' }]}>Legg til tegning</Text>
           </Pressable>
         </View>
-      )}
-      {kanRedigere && (under.length > 0 || her.length > 0) && (
-        <Text style={[t.caption, { marginHorizontal: spacing.screen + spacing.xs, marginTop: spacing.sm, color: colors.tertiaryLabel }]}>
-          {under.length > 0 && her.length > 0
-            ? 'Hold inne en mappe eller tegning for å flytte, gi nytt navn eller slette'
-            : under.length > 0 ? 'Hold inne en mappe for å gi nytt navn, flytte eller slette' : 'Hold inne en tegning for å flytte den'}
-        </Text>
       )}
 
       <MappeNySheet
@@ -332,7 +320,6 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
       <ChoiceSheet
         synlig={flytter !== null}
         tittel={flytter ? `Flytt «${flytter.name}»` : 'Flytt'}
-        forklaring="Velg mappa tegningen skal ligge i."
         valg={flyttValg}
         valgt={flytter?.folderId ?? ''}
         onVelg={async id => { const d = flytter; setFlytter(null); if (d) await flyttTegning(d, id || null) }}
@@ -345,7 +332,7 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
         valg={[
           { verdi: 'omdop', etikett: 'Gi nytt navn' },
           { verdi: 'flytt', etikett: 'Flytt til …', underetikett: mappeValgt ? (mappeSti(mappeValgt.parentId, mapper).join(' / ') || 'Ligger på prosjektets rot') : undefined },
-          { verdi: 'slett', etikett: 'Slett mappe', underetikett: 'Innholdet flyttes ett hakk opp' },
+          { verdi: 'slett', etikett: 'Slett mappe' },
         ]}
         onVelg={h => {
           if (h === 'slett') { const m = mappeValgt; setMappeValgt(null); if (m) bekreftSlett(m); return }
@@ -364,7 +351,6 @@ export function MappeInnhold({ projectId, parentId, mapper, tegninger, userId, k
       <ChoiceSheet
         synlig={mappeValgt !== null && mappeHandling === 'flytt'}
         tittel={mappeValgt ? `Flytt «${mappeValgt.name}»` : 'Flytt'}
-        forklaring="Velg hvor mappa skal ligge. Alt under den blir med."
         valg={mappeFlyttValg}
         valgt={mappeValgt?.parentId ?? ''}
         onVelg={async id => { const m = mappeValgt; setMappeValgt(null); setMappeHandling(null); if (m) await flyttMappe(m, id || null, mapper) }}

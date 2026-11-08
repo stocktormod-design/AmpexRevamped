@@ -4535,3 +4535,1572 @@ avgrenses til hullet det gjelder og måles på minst to rom.
 Baken kjørte med `termikk 2`, og da faller atlaset fra 8192 til **4096** og bildebudsjettet
 fra 160 til 120 — halv teksturoppløsning — selv om det var 2219 MB ledig. Terskelen er satt
 for varme, ikke for minne, og slo inn etter 80 sekunders skanning.
+
+## 104. Blanding på nytt etter §96–§97 — fortsatt dobbeltbilder, 2026-10-18
+
+Spørsmålet fra §94/§103: er grunnen til at snittet tapte borte nå som plan-justeringen og
+driftrettingen er inne? Kjørt på de to bundlene som er igjen fra 13.09 (20:52 `ampex-9ef06228…`,
+20:58 `ampex-0daef323…`, lagret i `~/AmpexFixtures`), Release-harness, `meshscan.blend` winner
+mot raw. Bake 104–115 s (winner) mot 72 s (raw). Sammenlignet med `tools/glb-veggflat.py`
+(veggen lagt flatt ut, 2 mm/px, samme plan og utsnitt for begge armene).
+
+**Svar: nei.** Blandingen gir tydelige DOBBELTBILDER — bilderammen, medaljene og panelsporene
+står to ganger, forskjøvet i størrelsesorden en til to centimeter. Det er ikke texel-uenigheten
+§94 målte (~1,5 mm), det er retur-feilen fra §103: bildene fra ulike passeringer ligger
+centimeter fra hverandre. Snittet viser feilen; vinnerveien skjuler den bak sømmer.
+
+I tillegg har raw-armen **trappetrinn i tonen**: topK velges per trekant, så nabotrekanter med
+ulikt utvalg av syn får ulik tone, og grensen følger trekantkantene. En ekte blanding må ha
+glatte vekter per texel over alle syn som ser punktet, ikke et utvalg per flate.
+
+**Rekkefølgen som følger:** loop closure (global poseløsning over passeringene) FØRST — før
+den er på plass kan ingen blanding bli skarp. Deretter blanding med glatte vekter per texel,
+strømmet bilde for bilde (minnetak 3 GB, iPhone 13 Pro). Bilder: `~/AmpexFixtures/sammenligning-2026-10-18/`.
+
+## 105. Loop closure — geometrien sitter, teksturen gjør det ikke (ennå), 2026-10-18
+
+`tools/scan-loop-closure.py`: én samlet løsning over alle dybdekart (dense.jsonl), punkt-mot-plan
+mellom kartpar med Δt ≥ 3 s (projektiv assosiasjon, Huber 1 cm), odometriledd som holder
+korreksjonen glatt langs tida, kart 0 fast. Hvert tredje par holdes UTENFOR og brukes bare til å
+måle. Tett normalligning i numpy, 2 s for ~250 kart (port til Swift/Accelerate er triviell i
+minne: 1500 ukjente).
+
+| bundle | holdt ute før | etter | Δt 10–25 s før → etter | nabokart (gulv) før → etter |
+|---|---|---|---|---|
+| 0daef323 (20:58) | 10,8 mm | 3,6 mm | 32,4 → 4,5 | 5,1 → 4,1 |
+| 9ef06228 (20:52) | 11,0 mm | 3,7 mm | 12,4 → 4,1 | 5,5 → 5,2 |
+
+Kameraposisjonene flyttes 4–10 cm, størst midt i skannet — det er retur-feilen fra §103, og den
+er borte i dybden.
+
+**Men teksturen ble IKKE bedre.** Bakt med de rettede posene (data byttet i en kopi av bundlen,
+`meshscan.driftrett off`): raw-blend får FLERE dobbeltbilder enn før, vinner-armen like god/litt
+verre. Årsak 1, bekreftet: punkt-mot-plan på flate vegger låser ikke glidning LANGS veggen —
+fotometrisk avvik på holdte par steg 16,2 → 18,2 gråtoner med bare geometri. Lagt inn fotometrisk
+ledd (nøkkelbildene henger på nærmeste dybdekart; høypass delt på lokal kontrast for å tåle
+glansen). Hjalp på 0daef323 (16,0 → 12,4 gråtoner før normaliseringen), ikke på 9ef06228, og
+baken viser fortsatt dobbeltbilder.
+
+**Det som IKKE er avklart:** om det er løsningen min eller samspillet med bakens egen
+bildejustering (rigid refine + planeAlign, §96) som lager dobbeltbildene. Planealign ble tunet på
+rå ARKit-poser. Et NCC-skiftmål mellom nøkkelbilder (vridd via dybde) ble forsøkt og FORKASTET:
+det ga 4–10 px bom også mellom nabobilder 0,2 s fra hverandre — panelsporene er periodiske og gir
+falske topper. Nytt mål må først skille armer jeg har rangert med øyet (§88).
+
+Neste: (1) bake med loop-posene og planeAlign/refine AV for å se rå loop-poser alene, (2) bake med
+loop-poser som PRIOR for refine i stedet for som erstatning, (3) først da justere fotoleddet.
+Flate: `~/AmpexFixtures/loop-*` (geometri) og `loopf-*` (geometri + foto).
+
+### 105b. Samme kveld: anker, refine av, og hvem som tar feil
+
+- **Anker mot ARKit** (`--anker=0,01/0,03`, svak prior på total korreksjon per kart): samme
+  dybdegevinst (11 → 3,9 mm holdt ute), men kameraene flyttes 1–1,6 cm i median i stedet for
+  5 cm. Det meste av den første korreksjonen var altså fri glidning langs flatene.
+- **Likevel dobbeltbilder** av bilderammen i raw-blend med ankrede poser, selv ved 1 cm flytt.
+- **Rå ARKit-poser, refine AV** (`meshscan.poserefine off`): bilderammen er REN — bildene fra de
+  to passeringene er enige der. På panelveggen viser samme bake derimot kabelen dobbelt, ~2 cm.
+- **Er returfeilen pose eller LiDAR-måling?** Residual mot avstands-/vinkelforskjell mellom
+  kartene: korrelasjon ±0,1–0,3 med MOTSATT fortegn i de to bundlene, «skalafeil» −0,8 / +0,9 %.
+  Ikke entydig. `--diag` i verktøyet.
+
+**Konklusjon så langt:** dybden og bildene er uenige om hvor ting er. Å flytte posene til dybden
+er enig gjør bildene uenige. Loop closure på DYBDE alene er derfor feil verktøy for teksturen.
+For bildene må bindingen komme fra bildene selv (trekk/korrespondanser mellom passeringer, med
+dybde bare som støtte), og blandingen må skrives om (glatte vekter per texel, ikke topK per
+trekant — trappetrinnene står uansett pose). Om dybde-loop closure likevel trengs for
+GEOMETRIEN (målbarhet, fleretasjes — Glenns borevinkel) er et eget spørsmål som må måles mot
+noe kjent, f.eks. målebånd.
+
+## §106 — blend=texel: myke vekter per texel i to bånd (NY STANDARD, 2026-10-18)
+
+Bakgrunn: §104–105b viste at topp-K-snittet gir trappetrinn (settet av syn skifter per trekant)
+og at vinnerveien gir trekantlapper og hvite flak. Begge er feil i BLANDINGEN, ikke i posene.
+
+Ny vei, `MeshBakeV2.texelBlend`:
+- Vekten regnes per texel i shaderen fra synets egen geometri: (cos/z)² · skarphet/fart
+  (samme kfQuality-straff som vinneren), myk kant mot bildekanten (8 %), myk utfasing på skrå,
+  skjuling og dybdekant mot synets EGEN LiDAR-dybde. Verteksnormaler (flippet til flatesiden),
+  så vekten glir over trekantgrensene.
+- Pass 1 tegner største q·gate per texel (max-blending, bare dybdekart). Pass 2: vekt =
+  gate · (q/wmax)^p. Gate ganges LINEÆRT: opphøyd i p krympet kantuttoningen til en skarp
+  tonekant (målt, første forsøk).
+- To bånd: detalj = foto − foto på mip 5, p = 64. Tone = foto på mip 5, p = 1, i et
+  kvart så stort atlas, dilatert og samplet bilineært. Mørkere eksponerte bilder ga ellers en
+  rektangulær mørk blokk.
+- p for detaljen: 4/8/16/32 ga like utvaskede spor på 0daef323. Påfølgende bilder har nesten lik
+  q (forhold 0,97–0,99), så de ble blandet uansett. Ved 64 tar ett syn detaljen, og sporene
+  kommer tilbake. 256 gir nesten det samme.
+
+Målt med glb-veggflat (2 mm/px) mot winner og raw på begge fixturene:
+- 9ef06228: ingen sagtenner, ingen hvite flak, kabelen er enkel, bilderammene er skarpe som i
+  vinneren (raw hadde spøkelser).
+- 0daef323: trekantlappene fra winner/raw er borte, og sporene og kabelklipsene er synlige.
+- Tid: ~72 s mot 104–115 s for winner. Farge-passet tar ~9 s per 8192-flis.
+- GPU-minne per flis: akkumulator RGBA16F (512 MB ved 8192) + maks R16F (128 MB) + 3 × tone
+  2048² (32 MB hver) + de to atlasene som fantes fra før.
+
+Igjen: lys og glans på panelet (ekte, avhengig av synsvinkel) står igjen som brede, myke felt.
+Kantene på bilderammene kan være svakt doble der posene er ~1 cm uenige. Det krever binding
+fra bildene (§105b) og løses ikke av blandingen.
+Flagg: `meshscan.blend` (texel | winner | raw | multiband | off), `meshscan.texelp` (64),
+`meshscan.texellav` (5, 0 = ett bånd), `meshscan.texelplav` (1).
+Ikke verifisert på enhet ennå: minne/termikk på iPhone 13 Pro.
+
+### 106b. Første skann på enheten (a1b507ed, iPhone 13 Pro, 18.10)
+
+- **Passeringer** (verktøy: scratchpad `passeringer.py`; keyframes som ser en 2 cm-celle, enige
+  med egen LiDAR-dybde, tidsrom delt ved > 4 s):
+  - Hovedveggen: 69 % sett i 3 passeringer, 4 % i 4. Panelspor og vinduskarm er ENKLE og skarpe
+    også i 4-passeringsfeltet.
+  - Døra: 61 % i 2 passeringer.
+- **Intercom-spøkelset** (grå kopi ~4 cm til venstre) ligger i et felt sett i ÉN passering.
+  Det kom ikke tilbake da samme bundle ble bakt i simulatoren (8192-fliser), heller ikke med
+  texelplav 4/16. Den grønne flekken er der i alle bakene og er trolig LED-refleks i glanset
+  panel. Årsaken til spøkelset på enheten er ukjent.
+- **Minne:** flisKost-anslaget var 3× for lavt for texel (465 MB anslått, 1,46 GB målt fall ved
+  6144). Det er rettet til 36 B/px + 120 MB. Enheten klarte seg bare fordi budsjettet allerede
+  hadde valgt 6144.
+- **Svakheter som står igjen:**
+  - Blokkvise flater på den svarte TV-skjermen: refleksene er ulike per syn, og overgangen ved
+    bildekanten er rett.
+  - Bladene på planten males flatt på veggen der meshen mangler planten.
+  - Vinnerveiens forarbeid (vinnervalg, ICM, plan-snitt, avskygging, ~15–20 s) kjører fortsatt og
+    kastes.
+
+### 106c. Research og optimalisering (18.10)
+
+**Research 2024–2026:** ingenting nytt slår denne pipelinen på enheten.
+- Feltet har gått over til splats eller til optimalisering på PC/i skyen: RoomRecon, IM360,
+  ConsistenTex, IIF/IDT.
+- Scaniverse 5.2 har mesh fra skyen. Polycam og KIRI viser ingenting om tekstur.
+- Verdt å ta senere, i prioritert rekkefølge:
+  1. robust konsensus per texel mot et lavbånd-referansebilde (refleks, blader på veggen)
+  2. parallaksevekt fra hvert synets LiDAR-residual (intercom-typen)
+  3. grovt warp-rutenett per bilde mot konsensusen
+
+**Optimalisert:**
+- Wireframe-lagg:
+  - Dekningspasset bygde og satte ny SCNGeometry for HVERT anker hvert sekund, og kosten vokste
+    med meshen. Med dekningsfeltet er fargene i den geometrien ubrukte, så nå regnes bare tallene.
+  - Ett delt materiale i stedet for et nytt SCNProgram per ARKit-oppdatering.
+  - Ikke målt på enhet ennå.
+- Texel-malingen: medlemslister og JPEG-dekoding i puljer på tre, på alle kjerner, med én
+  kommandobuffer per pulje. Malingen på a1b507ed i simulatoren gikk fra 146 til 77 s.
+- planAlign stopper når en runde flytter under 1,5 px i snitt (`meshscan.planalignstopp`).
+  På a1b507ed stoppet den etter runde 2, og tiden gikk fra 38 til 14 s.
+- ICM-feiingen og sømenergien hoppes over på texel-veien (8 s på enheten).
+- Kantuttoningen er økt fra 8 til 14 % (TV-skjermens rette kanter).
+- flisKost for texel er nå 30 B/px + 260 MB.
+- Totalt i simulatoren: 198 → 116 s. Kvaliteten er visuelt lik (vegg og dør sammenlignet).
+
+### 106d. Konsensus, parallakse og tonekilde (18.10, kveld)
+
+**Prøvd og slått AV, men beholdt bak flagg:**
+- **Parallaksevekt** (`meshscan.texelparallakse`), vekt 1/√(1+(|z−sz|·tanθ/tol)²): med tol
+  6 mm og 3 cm ga den prikker på TV-skjermen og ved planten. LiDAR-dybden (256×144) har mer
+  støy og kantblødning enn utstikket den skal oppdage.
+- **Konsensus** (`meshscan.texelkonsensus`): IRLS på tonen, og avviket fra tonen ganget inn i q
+  før normaliseringen. Fjernet LED-flekken og bladprikkene på a1b507ed, men ga doble rammekanter
+  på 9ef06228, også med σ 0,7 / 0,35. Referansen er uskarp, så syn med skarp kontrast ser ut
+  til å avvike.
+- Første forsøk ganget avviket på ETTER normaliseringen. Det ga svarte prikker: alle vektene i
+  texelet ble så små at RGBA16F-summen ble støy.
+
+**Beholdt:**
+- Tonen lages FØR maks-passet, fra miniatyrer (~120 px), uten wmax. Med p=1 er q^p/wmax^p en
+  konstant per texel, så resultatet er det samme som før.
+- Detaljen trekkes fra SAMME miniatyr som tonen. Først ble den trukket fra fotoets mip 5, som er
+  67 px høy mot miniatyrens 68. Skalaforskjellen ga doble rammekanter på 9ef06228. Med samme
+  kilde er kvaliteten tilbake på t4p64-nivå, og mipmap-genereringen i farge-passet faller bort.
+- Kantuttoningen er tilbake på 8 % (`meshscan.texelkant`); 14 % ga ingen synlig gevinst.
+- Verifisert mot t4p64/d-uten på alle tre fixturene: like bra eller bedre (TV-skjermen har
+  færre prikker). Installert på enhet 18.10.
+
+### 106e. Loop closure på nytt med texel-blend, 2026-10-19
+
+Spørsmål: nå som blandingen er byttet (texel), hjelper dybde-loop closure (§105) på
+gulvplanker som ikke treffer og overlapp i hjørner? Bundle a1b507ed (160 kf, enhetsskann 18.10).
+
+- `scan-loop-closure.py --anker=0,01`: holdt ute 14,1 → 6,3 mm (støygulv nabokart 6,0 mm),
+  kameraflytt median 18 mm, maks 87 mm ved 49 s. Geometrisk er returfeilen borte.
+- Bakt fire armer, sammenlignet med egen z-buffer-render fra rommet (hjørner, tak, gulv) og
+  gulvet ortografisk ovenfra (2 mm/px):
+  - `lc` (loop-poser for dybde OG bilder, refine på) og `lcnoref` (refine/planAlign av):
+    teppet på sofaen smøres ut i en mørk glorie. Samme som §105: bildene var enige med ARKit.
+  - `lcgeo` (loop-poser bare for dybden/TSDF, bildene beholder sine): hylla med bilderammene
+    blir renere, men teppet smøres fortsatt — geometrien flytter seg under bildene.
+  - `nostopp` (planalignstopp 0): ingen synlig forskjell på plankene mot standard.
+  Plankeskjøtene er like i alle armene innenfor det øyet ser i renderen.
+- Konklusjon: dybde-loop closure er fortsatt feil verktøy for teksturen. Ingenting endret.
+  Det som gjenstår er en BILDEBASERT binding mellom passeringer (trekk-korrespondanser mellom
+  nøkkelbilder fra ulike passeringer, dybde som støtte), som §105b pekte på.
+- Verktøy: scratchpad `hjorne.py` (perspektivrender av GLB med z-buffer) og `gulvflat.py`.
+
+**Rettelse til 106e (samme kveld):** teppe-glorien i `lc`/`lcnoref`/`lcgeo` kom av
+`meshscan.driftrett off`, ikke av loop-posene. Rå poser med driftrett av (`origdoff`) smører
+teppet likt. Alle loop-armene i §105 og 106e kjørte med flagget av og er derfor skjeve.
+
+## §107 — Bildebinding: SIFT + bundle adjustment mellom passeringer (PROTOTYPE, 2026-10-19)
+
+`tools/scan-bildebinding.py` (trenger opencv + scipy, venv i scratchpad). Nøkkelbildene bindes
+av bildene selv, ikke av dybden:
+- SIFT (5000/bilde) på luma-filene (1920×1080, CLAHE). Par velges ved overlapp via dybde +
+  ARKit (≥ 25 % synlig, < 50° mellom synsretningene). Treff må havne innen 30 px av der
+  ARKit + egen dybde spår (dreper periodiske panelspor-treff, §105) og overleve RANSAC-F.
+- Spor via union-find → frie landemerker. Ukjente: korreksjon per nøkkelbilde (høyre-
+  perturbasjon), landemerker, og en FELLES linsemodell (k1, k2, brennviddeskala). Ledd:
+  reprojeksjon (Huber 3σ), ARKit-anker (3 cm / 1°), odometri mellom påfølgende bilder
+  (3 mm/√s, 0,15°/√s), svak dybdeprior (5 cm + 1 %).
+- Egen Levenberg–Marquardt med Schur-komplement (landemerker 3×3 eliminert). scipy
+  least_squares var for treg (300 kall uten konvergens) og låste seg helt med x_scale='jac'.
+  Nå 7–16 s, 25–32 runder.
+- Hvert tredje kryss-par (Δt ≥ 3 s) holdes utenfor og måles med epipolar avstand (uavhengig
+  av dybde og landemerker). Dybdekartene får korreksjonen interpolert i tid; `linse.json`
+  skrives ved siden av.
+
+| bundle | kryss holdt ute før → etter (epipolar px, luma) | løft+kast før → etter | linse k1 / k2 / f |
+|---|---|---|---|
+| a1b507ed | 8,12 → 0,64 | 16,6 → 3,5 | +0,061 / −0,079 / +0,50 % |
+| 9ef06228 | 6,29 → 0,59 | 9,9 → 1,6 | +0,056 / −0,069 / +0,80 % |
+| 0daef323 | 5,30 → 0,50 | 9,2 → 1,2 | +0,050 / −0,061 / +0,82 % |
+
+**Linsa er reell:** samme parametere på tre skann. ~1,8 % radialt midt ut i bildet (10–15 px
+i luma). Baken har hele tiden regnet med en ideell linse.
+
+Bake (texel, driftrett PÅ). Armene sammenlignet med render fra rommet og glb-veggflat:
+- `bb4` (poser, ingen linse i baken): plankeskjøten med hakk blir rett (a1b), taket ved
+  vindushjørnet mer helt, bilderammen på hylla skarpere. Ellers likt.
+- `bb5` (+ linse i texel-shaderen, refine/planAlign som før): verre — bilderammene dobbelt.
+  Bakens refine/planAlign regnet med ideell linse og dro posene vekk fra bindingen.
+- `bb5nr` (linse, refine og planAlign AV): skarpeste bilderammer på 9ef, men teppet (a1b)
+  får glorie igjen. Den rigide refinen trengs der SIFT er tynn (mørkt stoff).
+- `bb6r` (linse i texel, refine og planAlign — og refine LINSERETTET, planAlign AV):
+  teppet rent OG én kant på bilderammene, hylle-bildene i a1b mye skarpere, plankeskjøten
+  rett. Kabeltrinnet på 0daef323 (vegg/tak-hjørnet) står fortsatt, ~6 px.
+  BESTE ARM. `bb6` (planAlign på, linserettet) ga litt dobbel rammekant.
+
+Kode (aktiv bare når `linse.json` finnes — ingen endring for vanlige skann):
+`MeshBakeV2.linseModell`, `CamV2.lens` + linse i `bakev2_texel_weight`, refinen retter ut
+luma-bildet til ideell linse ved innlasting, planAlign sin `proj` bruker linsa.
+
+**Ikke gjort:** port til enheten. SIFT finnes ikke i iOS; trenger egne trekk (FAST/ORB eller
+SIFT på GPU) og matching på GPU (52 s brute force på Mac-CPU for 883 par). LM/Schur-løseren
+er liten (Accelerate). Geometrien (TSDF med rettede dybdeposer) ga noen flere hull rundt
+hylla — ikke undersøkt.
+
+## §108 — Egen SIFT på GPU (2026-10-20)
+
+iOS har ingen SIFT, og bildebindingen (§107) står og faller på trekkene. `modules/ampex-splat/ios/MeshSift.swift`
+er Lowes oppskrift slik OpenCV 4 gjør den, kernel for kernel: CLAHE (8×8, klipp 2, LUT på CPU) → gausspyramide
+(3 lag, σ 1,6) → DoG → ekstremer med kvadratisk forfining, kontrast 0,02 og kantterskel 10 → 36-bøtters retning →
+5000 sterkeste → 128-byte deskriptor. Frittstående (Metal + Foundation), så den kompileres som kommandolinjeverktøy
+på Mac-en (`swiftc -O MeshSift.swift main.swift`) og mates inn i prototypen med `--trekk=<mappe>`.
+
+Første versjon droppet OpenCVs oppskalerte oktav −1 (minne). Den ga ~2200 trekk per bilde mot ~4000 og
+holdt-ute 0,77 / 0,63 / 0,59 px mot OpenCVs 0,64 / 0,59 / 0,50. Tormod: 0,5 GB RAM er greit. Med oktav −1
+(bilineær 2×, halvpikselsentre, startuskarphet 1,0) og DoG regnet i ekstrem-kernelen i stedet for lagret er
+trekkene **identiske med OpenCV**: 100 % av OpenCV-punktene innen 1 px, deskriptoravstand median 0.
+
+Holdt-ute kryss-par, epipolar median etter BA (før ≈ 5–8 px):
+
+- a1b507ed: OpenCV 0,64 px → GPU 0,66 px
+- 9ef06228: 0,59 → 0,58
+- 0daef323: 0,50 → 0,52
+
+(Små avvik fordi held-out-parene trekkes fra matchene, ikke fordi trekkene er ulike.) 50 ms per bilde på Mac-GPU-en,
+toppminne 440 MB målt med `/usr/bin/time -l` (gausspyramiden er 265 MB, oktav −1 alene 199 MB). Neste: veiledet
+matching og LM/Schur i Swift, så tid og minne på iPhone 13 Pro.
+
+## §109 — Bildebindingen i appen (2026-10-20)
+
+`MeshBildebinding.swift` er prototypen (§107) portert: par fra dybde + poser, matching, RANSAC (normalisert
+8-punkt, OpenCV-feilmål, deterministisk frø per par), union-find-spor, LM/Schur-BA med linse. `MeshBildebindingBake.swift`
+kobler den inn: kjøres én gang før TSDF-en (live, rebake og harness), lagres i `bildebinding.json`, og brukes av
+nøkkelbildene, dybdekartene i TSDF-en (korreksjonen interpolert i tid) og `linseModell`. Plan-justeringen står AV
+som standard når bindingen finnes (bb6r). `meshscan.bildebinding = off` slår alt av.
+
+To feller underveis:
+
+- **Lowes forholdstest må gå over HELE bildet.** Første port sammenlignet bare trekk innen søkevinduet (30 px fra
+  spådd posisjon). Da godtas et trekk med én kandidat uansett, også når det riktige punktet ligger utenfor. 9ef06228
+  fikk 98 000 treff mot 54 000, 1,03 px holdt ute og 37 mm medianflytt. Python-BA-en på Swift-treffene ga samme
+  kost (440 029) — løseren var riktig, matchingen ikke. Nå: alle mot alle på GPU (`MeshSift.matchAll`, ~1 s på Mac).
+- **Allokering i de innerste løkkene.** BA tok 10–20 s med `[[Double]]` per observasjon; med flate buffere og
+  parallell Jacobi 0,7–1,6 s, samme kost til siste siffer.
+
+Kommandolinja (Mac, `swiftc -O MeshSift.swift MeshBildebinding.swift main.swift`), holdt-ute epipolar median:
+
+- a1b507ed: 0,66 px (Python 0,64), totalt 14,9 s, toppminne 552 MB
+- 9ef06228: 0,59 px (0,58), 6,2 s, 510 MB
+- 0daef323: 0,52 px (0,50), 7,7 s, 520 MB
+
+Medianflytt av kameraene er lik Python (a1b507ed 33 mm mot 32, maks 74 mot 74). Bake i simulatoren (bb7, rå
+fixturer i `~/AmpexFixtures/sw-*`) er visuelt lik bb6r på alle tre: hylla, plantene, rammene og veggene.
+
+Ikke målt: tid og minne på iPhone 13 Pro. Minnetoppen er SIFT-pyramiden (oktav −1, ~200 MB) + deskriptorene
+(N × 640 kB). Feiler bindingen, skrives ingen fil og baken går videre uendret (og prøver igjen neste gang).
+
+## §110 — Relokalisering mot et ferdig skann: test på Mac (2026-10-21)
+
+Spørsmålet: når montøren kommer tilbake til et skannet rom, kan telefonen finne ut hvor den står og hvor den sikter
+fra ett kamerabilde, mot vårt eget kart (ikke ARKits `ARWorldMap`)? Da kan dybdestrømmen slås av og AR tegnes fra
+kartet, med en ny kort gjenkjenning innimellom mot glidning.
+
+`tools/scan-relokalisering.py <rå> <bundet>`: hvert tredje nøkkelbilde gjemmes sammen med alt innen ±8 s, så kartet
+bare har ANDRE passeringer av samme sted. Kart = SIFT-trekkene fra bindingen løftet med LiDAR-dybden og de bundne
+posene. Spørrebildet matches mot hele kartet (FLANN; ratio mot nærmeste treff som ligger > 10 cm unna, ellers dreper
+samme punkt sett fra ti bilder ratioen), så PnP-RANSAC + LM fra scratch. Under 30 inliers = «vet ikke».
+
+Resultat (ratio 0,8), siktefeil = hvor langt fra fasit punktet midt i bildet havner på avstanden kameraet ser (~1,7 m):
+
+- 9ef06228: 10 av 22 dekkede bilder løst, sikte median 1,8 cm, p90 3,8 cm
+- 0daef323: 15 av 32, median 0,2 cm, p90 9,4 cm
+- a1b507ed: 24 av 48, median 1,9 cm, p90 7,9 cm
+- **Ingen falske plasseringer** med inliers-grensen (uten den: ett bilde 88 cm feil på 12 inliers). ~350 ms per bilde.
+
+Halvparten per bilde holder i praksis: telefonen prøver flere bilder i sekundet, og ett treff er nok. Bildene som
+ikke løses ser stort sett stedet fra en annen vinkel enn noen passering gjorde (SIFT tåler ~40°).
+
+Tre feller:
+
+- **Linsemodellen må med.** Uten k1/k2/fs fra bindingen bommer kantene ~25 px og posen vrir seg 1–2°.
+- **Fasit er selv usikker på ~2 cm.** Der PnP-en treffer kartet på 1 px, kan den bundne posen bomme 20–40 px på
+  dybdepunkter fra en annen passering (9ef 30↔66). Det er §105b igjen: LiDAR-dybden og bildene er uenige på cm-nivå.
+  For AR er det kartet (nettet) overlegget skal passe med, så PnP-svaret er det riktige der.
+- **Finpuss med spørrebildets egen dybde gjorde det VERRE** (Kabsch mot kartpunktene) — samme grunn. Droppet.
+
+Neste: på telefonen er matchingen `MeshSift.matchAll` mot kartets deskriptorer (220–540 k × 128 B = 30–70 MB), og
+`ARWorldMap` trengs ikke. Ikke gjort: lagre kartet i bundlen, overlegg i appen, glidningsoppfølging.
+
+### §110b — Kartet fra bindingens landemerker, og AR i appen (2026-10-21)
+
+**Grensen var kartet, ikke gjenkjenningen.** Mot nabobilder i samme passering treffer PnP-en 2 mm
+(posisjon 0,4–0,6 cm, sikte 0,2 cm median på alle tre). Mellom passeringer ble det ~2 cm fordi kartpunktene var
+LiDAR-løftet: dybden og bildene er uenige på cm-nivå (§105b). Med bindingens LANDEMERKER som kart
+(`scan-bildebinding.py --kart`, `--utelat=3` for å gjemme spørrebildene fra BA-en), og fasit = posen bildet får mot
+sine egne naboer i samme kart (`--fasit=selv`, så forskjellen mellom to BA-kjøringer ikke telles):
+
+- 0daef323: sikte median **0,1 cm**, p90 0,3 cm (LiDAR-kart: 0,2 / 2,3)
+- 9ef06228: 0,5 cm median, men én falsk plassering på 39 inliers
+- a1b507ed: 2,0 cm median, p90 9,6 — noen områder bommer 8–10 cm med 100–280 inliers. Bindingen selv er dårligere
+  der (holdt ute løft+kast p90 10 px mot 3–4 på de andre). **±1 cm avhenger av at bindingen er enig med seg selv.**
+
+Flere bilder i én løsning (`--vindu=3`, én G for alle bildene i 3 s med rå ARKit-poser) ga ingenting: feilen er i
+kartet, ikke i støyen per bilde. Én deskriptor per landemerke halverte antallet løste bilder — alle observasjoner
+beholdes, og nest beste regnes blant ANDRE landemerker (`sift_match_lm`).
+
+I appen:
+
+- `MeshBildebinding` (`Valg.kart`) skriver `relok.bin` i bundlen: hver observasjon som stemmer < 3 px med
+  løsningen (landemerke, nøkkelbilde, posisjon, deskriptor). `bind()` binder på nytt når fila mangler.
+- `MeshRelok.skrivKart` (fra `bake`, etter GLB-en): flytter hver observasjon med sitt nøkkelbildes endelige pose
+  (driftretting, refine — det teksturen brukte) og skriver `<glb>.relok` VED SIDEN AV MODELLEN; bundlene for eldre
+  skann slettes, modellen blir. 0daef323: 31 659 punkter, 4,4 MB.
+- `MeshRelokLokalisator`: GPU-SIFT på halv luma, `matchAll`-varianten mot kartet, Lowe 0,8, linsa fra bindingen,
+  RANSAC med 3D–3D-hypoteser fra LiDAR-dybden (Kabsch/Horn), så LM på reprojeksjon. «Vet ikke» under 30 inliers
+  eller 15 %. Mac-test (`relokcli`, hvert 3. bilde gjemt fra BA-en): 0daef323 17/34 løst, 0,8 cm; 9ef06228 17/31,
+  0,8 cm; a1b507ed 40/54, 2,2 cm (nesten konstant — forskjellen mellom de to BA-kjøringene, ikke støy). ~100 ms.
+- `MeshArPresenter` («Se i rommet»): 4K-video som skanningen, dybde PÅ til første treff, så AV; G finpusses hvert
+  sekund (halvveis mot ny løsning). Linjer og punkter tegnes som røntgen, uten dybdetest.
+- Skjermen har to moduser (Tormod 21.10): **Vis** = se rundt i skannet som Street View, med en AR-knapp som viser
+  redigeringene på veggene i rommet; **Rediger** (knapp øverst til høyre) = sett punkter og tegn linjer (trykk langs
+  veggen, «Ferdig linje»/«Angre»). Linjene lagres i `<glb>.linjer.json`. **Ikke synket ennå** — bare på telefonen
+  som tegnet.
+
+Ikke målt: noe på telefonen. Eldre skann må bygges på nytt for å få kart.
+
+**Første test på telefonen (21.10, 123 bilder, ~4×5 m):** bindingen 37,8 s (SIFT 24 s, matching 12 s — ~5× Mac),
+0,54 px etter, hele baken 58 s, kart 125 k punkter / 18 MB. AR-visningen LAGGET og fant ikke rommet: 4K-video +
+full SIFT (oktav −1, 5000 trekk) + ett GPU-kall mot hele kartet hvert 0,25 s kvalte kamerabildet. Rettet:
+vanlig videoformat med full Y (samme pikselskala som halv 4K), ingen oppskalering og 3000 trekk i spørrebildet,
+kartet matches i biter à 16 k rader, og etter første treff bare mot kartpunktene i synsfeltet; forsøk hvert 0,5 s
+før lås, hvert 2 s etter. Mac: samme treff og presisjon, halve tiden (42–81 ms).
+
+## §111 — Raskere, bedre binding og dybde rettet mot bildene (2026-10-21)
+
+Tormod: «gjør det du klarer uten tommestokken» + få telefonen til å jobbe mindre. Fire grep, alle målt på de tre
+fixturene (holdt-ute kryss-par, `bbcli --holdute`):
+
+1. **Uten oppskalert SIFT** (`Valg.oppskaler = false`, OpenCVs oktav −1 av): halvparten av trekkene, 2,5–3× raskere
+   binding. Alene litt dårligere (0daef323 0,52 → 0,61 px, 9ef06228 0,59 → 0,67).
+2. **Andre trinn — ommatching med de bundne posene** (`kjørToTrinn`, vindu 30 → 10 px, trekkene gjenbrukes). Tar
+   igjen mer enn trinn 1 tapte. Uten oppskalering + to trinn, mot gammel standard:
+   - a1b507ed: 0,66 → **0,53 px**; løft+kast (dybde mot bilder) 3,93 → 1,94 px median, p90 13,1 → 5,9; 16,8 → 9,0 s
+   - 0daef323: 0,52 → 0,52 px; 8,1 → 3,7 s
+   - 9ef06228: 0,59 → 0,61 px; 7,3 → 3,2 s
+   Vinkel 70° i trinn 2 ga ingenting over 50°.
+3. **Dybdeskala per nøkkelbilde** (z fra landemerket / z fra LiDAR, landemerker sett ≥ 3 ganger). LiDAR er uten
+   skjevhet i snitt (median 1,0003–1,0013 på alle tre), men per bilde p10–p90 0,995–1,010 — ±1 cm på 2 m, og ekte
+   (≈ 400 obs per bilde). Lineært er den svakt sammentrykt (0,995·z + 1 cm). Med skalaen rettet: løft+kast på
+   holdt-ute par 1,19 → 1,14, 1,55 → 1,44, 1,94 → 1,76 px. Lagres i `bildebinding.json` (`dybdeSkala`), brukes på
+   dense-kartene (lineært i tid) og nøkkelbildene før JBU i TSDF-en. `meshscan.dybdeskala = off` for A/B.
+4. **SIFT under skanningen** (`forhåndsTrekk`): hvert nøkkelbilde får trekkene sine i bakgrunnen (lav prioritet,
+   hoppes over ved `thermalState` serious/critical) til `sift-<i>.bin`; bindingen bruker dem når innstillingene
+   stemmer. Identisk resultat; trinn 1 på 0daef323 0,9 s i stedet for ~3 s. Telefonen brukte 24 av 38 s på SIFT.
+
+Pluss: `environmentTexturing` AV i skanningen — refleksjonskart for virtuelle objekter, som ARKit lager løpende på
+GPU-en og som ingenting leser.
+
+Simulator (bb9, alle tre): bake OK, bindingen 3–9 s totalt (bb7: 7–15 s), veggene visuelt like eller litt bedre
+enn bb7 (`glb-veggflat`). A/B-flagg: `meshscan.bbopp = on` (oppskalering), `meshscan.bbtrinn = 1` (ett trinn).
+
+## §112 — Flere runder = mindre sloss? Målt på bindingen (2026-10-25)
+
+Spørsmål (Tormod): blir posene mer nøyaktige jo flere ganger du går over samme sted, i stedet
+for at rundene krangler? Målt uten nye skann: `scan-bildebinding.py --kryssandel=a --frø=s
+--runder` løser bindingen med bare andelen `a` av kryss-parene (par fra ulike passeringer,
+Δt ≥ 3 s). Holdt-ute-parene (hvert tredje kryss-par) er de samme i alle armene. Tre frø for
+25/50/75 %. Tall: epipolar avstand på holdt-ute kryss-par, median / p90 i px (luma 1920).
+
+| | rå ARKit | 0 % | 25 % | 50 % | 75 % | 100 % |
+|---|---|---|---|---|---|---|
+| 9ef06228 | 6,29 / 23,3 | 0,96 / 25,2 | 0,60–0,68 / 1,7–1,8 | 0,60 / 1,75 | 0,59 / 1,73 | 0,59 / 1,74 |
+| 0daef323 | 5,30 / 19,1 | **8,20** / 15,6 | 0,51–0,65 / 1,7–2,7 | 0,49–0,52 / 1,6–1,8 | 0,49–0,52 / 1,6–1,8 | 0,50 / 1,59 |
+| a1b507ed | 8,12 / 18,8 | 5,84 / 19,9 | 0,70–0,81 / 2,6–4,4 | 0,70 / 2,5–3,8 | 0,67 / 2,4–2,5 | 0,64 / 2,19 |
+
+- **Uten bånd mellom rundene krangler de.** 0 % = bare odometri og nabopar: halen står urørt
+  (p90 15–25 px), og på 0daef323 blir medianen VERRE enn rå ARKit (5,3 → 8,2). Det er
+  slosset fra §103: hver runde løses for seg og trekkes hver sin vei.
+- **De første båndene gjør nesten alt.** En firedel av kryss-parene tar medianen fra 5–8 px til
+  0,5–0,8 px.
+- **Flere bånd blir aldri verre, og retter de verste stedene.** Medianen flater ut på 0,5–0,7 px,
+  nær nabo-parene (0,44 px, støygulvet for matchingen). p90 fortsetter å falle på det største
+  skannet: a1b507ed 4,0 → 2,2 px fra 25 til 100 %. Spredningen mellom frø krymper også.
+- **Per sted (`--runder`) er tallene for få til å si noe.** På a1b507ed er steder sett i tre
+  runder litt dårligere enn steder sett i én, men de var også de verste FØR (7,1 mot 5,5 px):
+  det er der driften var størst, ikke rundene som skader.
+
+**Konklusjon:** ja — med samlet løsning gir flere runder mindre sloss, aldri mer. Gevinsten
+etter de første båndene ligger i halen. Medianen står ved matchingens støygulv, så det neste
+grepet for nøyaktighet er bedre trekk/matching (lærte trekk på Neural Engine), ikke flere runder.
+For helt hus (`SKANN_HELT_HUS.md`): en ekstra runde gjennom trappa/døra er verdt det, fordi
+mellom delkart er det de første båndene som mangler.
+
+## §113 — Bøye der ARKit var svak? Odometrien betyr ingenting inne i ett rom (2026-10-26)
+
+Idé: i stedet for konstant odometri-varians (`--odot`/`--odor`) skal løsningen bøye seg der
+ARKit faktisk drev (uskarpt, rask rotasjon, få trekk, tracking-hendelser). Målt på bindingen
+(`scan-bildebinding.py --dump=`), korreksjonen per steg mellom nabobilder med ≥ 30 treff mot
+det de kan observere:
+
+- **Svak sammenheng.** Spearman ρ mot uskarphet/rotasjonsfart/treff ligger på 0,0–0,2. Bare
+  0daef323 når 0,3–0,4 (blur i intervallet, rotasjonsfart). Tracking-hendelser finnes ikke
+  mellom nøkkelbildene i noen av de tre.
+- **Prioren betyr ingenting der bildene binder.** Odometrien 10× løsere (`--odot=0.01
+  --odor=0.5`) eller 10× stivere (`0.001 / 0.05`) flytter holdt-ute-kryss med ≤ 0,04 px i
+  median og ≤ 0,1 px i p90 på alle tre fixturene (0,50 / 0,59 / 0,64 px i grunnlinja).
+- Korreksjonen per steg (8–10 mm/√s, 0,25–0,3°/√s) er høyfrekvent støy per nøkkelbilde, ikke
+  glatt drift, så en tidsmodell for driften har lite å gripe i.
+
+**Konklusjon:** forkastet for ett rom. Inne i rommet er posene allerede ved matchingens
+støygulv (§112), og det som gjenstår der er trekk/matching, ikke løseren. Vektingen av
+odometrien blir først viktig der passeringene ikke overlapper: mellom rom og etasjer. Det
+kan ikke måles før vi har et flerromsskann (`SKANN_HELT_HUS.md` steg 1 på telefonen).
+
+## §114 Retningsdelt TSDF mot gjennomsiktig skillevegg — bygget, målt, AV (26.10)
+
+Hypotesen var at de to sidene av skilleveggen i flerromsskannet (f92f1be0) nullet hverandre
+i den felles TSDF-en. Bygget DTSDF (Splietker & Behnke 2019): seks fusjoner, én per
+flateretning ±a1/±Y/±a2 med romrettet yaw fra SDF-gradientene (fant 51,5°), pikselnormal i
+`ampex_fuse`, trekanter beholdes fra volumet som eier retningen, sveis på tvers, deretter
+felles etterbehandling (`surfaceNetsRå` + `etterbehandle` er skilt ut for dette).
+
+Målt (10 cm-ruter i veggens spenn, plan tilpasset — IKKE låst til 50°; den første målingen
+med låst vinkel og ±4 cm vindu kuttet ekte geometri i veggendene og overdrev tapet):
+
+| | A nett | A sett-men-tapt | B nett | B sett-men-tapt |
+|---|---|---|---|---|
+| original bake | 52 % | 19 % av sett | 43 % | 31 % |
+| uten struping (fler3) | 57 % | 15 % | 51 % | 21 % |
+| + DTSDF (fler4) | 53 % | 21 % | 51 % | 22 % |
+
+Rå poser: veggflatene står stabilt per bilde (A −0,9…+2,6 cm, B −2,8…+4,3 cm), veggen er
+8–13 cm tykk — kanselleringen DTSDF kurerer skjer ikke her. Det som gjør veggen
+«gjennomsiktig» er areal LiDAR aldri så fra den ene siden (36–39 %: dør, møbler, ikke gått
+nær) — da står bare den andre sidens enkeltsidige flate igjen, og den forsvinner bakfra.
+Kostnad +17 s. Av som standard, `meshscan.dtsdf = on` for å prøve igjen.
+
+## §115 M0 — ankerdrift og overlegg-sannhet: målingene bygget, tallene mangler (27.10)
+
+Første milepæl i delkart-omskrivingen (`docs/PROMPT_OPUS_SKANN_DELKART.md`). Ingen endring
+i oppførsel; to målinger som skal svare før M1 begynner.
+
+**M0a, flytter ARKit sine ankere?** `MeshScanPresenter`: ved normal sporing legges et
+`ARAnchor` (navn `ampex-m0a`) på kameraets pose hvert 30. sekund. `session(_:didUpdate:)`
+for ankere logger hver flytting fra T0 som `anker — <id> t=<s> dT=<x y z> mm dR=<°>`, men
+bare når ankeret har flyttet seg ≥ 1 mm eller ≥ 0,1° siden forrige linje (ARKit kan melde
+samme transform mange ganger). Ved Ferdig: `anker — N ankere, største flytting …, median …`
+og `<bundle>/ankere.json` med T0, siste T, største flytting underveis. Flagg
+`meshscan.ankerlogg` (på; `off` slår av). Ankrene endrer ikke noe annet: alle steder som
+leser `frame.anchors` filtrerer på `ARMeshAnchor`.
+
+**M0b, overlegg-sannhet.** `CoverageField.dumpFerdig` kjøres i `doneTapped` rett etter at
+sesjonen pauses, før baken: c for hele det skannede området (vinduet fra GPU-en via en egen
+`dekning8`-kjerne, og blokkene som er skjøvet ut til disklageret) til
+`<bundle>/dekning-ferdig.bin` (4×Int32 dims+pad, 3×Float origo, Float voxel, Float terskel
+0,40, så UInt8 c·255 per 5 cm-celle, x raskest). `tools/audit-scan-overlegg-sannhet.py
+<bundle> <glb>` gir to tall: andel dekkede celler med trekantflate innen 5 cm fra
+cellesenteret («sannhet»), og andel av meshens flate (arealvektet) i celler vist som
+udekket (også «med naboer», nærmere det normal-tappene i `coverageFrag` viser). Selvtest
+(`--selvtest`, syntetisk gulv + halv vegg + luftflekk + 8 cm forskyvning) går.
+
+Typesjekket med `swiftc -typecheck` (eneste feil er den gamle `AmpexGlbLoader` utenfor
+typesjekk-settet); `dekning8` kompilert med `metal`.
+
+**Ikke gjort:** referansetallet for f92f1be0. Fixturene på Mac har ingen dump fra
+telefonens felt, og `audit-scan-dekningsfelt.py` replikerer feltet fra nøkkelbildene med
+gamle parametre (4 cm, 90 høyt) og uten 30 Hz-vekten, så den kan ikke brukes som fasit
+før den er holdt mot en ekte dump. Plan: når treromsskannet med dumpen finnes, replikere
+feltet fra `dense-*.f32` på samme bundle, sjekke mot dumpen, og først da kjøre replikaen
+på f92f1be0.
+
+**Tall (skann 8f3b8017, 27.10 00:09–00:12, tre rom og tilbake, 2 min 45 s, 215 bilder,
+710 dybdekart; bundle i `~/AmpexFixtures/`, baken som `m0-bake.glb`):**
+
+*Ankrene.* Seks ankere. Ingen ble skjøvet merkbart (største 11 mm, median 0). Men det
+første, lagt der skannet startet, ble **rotert 1,41°** uten translasjon da Tormod kom
+tilbake (t = 134 s); resten 0,03–0,07°. ARKit retter altså ankeret, men som dreining om
+ankerets origo, og 1,4° er 7–10 cm på en vegg 3–4 m unna, samme størrelse som driften
+`audit-scan-drift.py` har målt før. Følge for M1: et delkart forankret i ett anker følger
+ARKits retting bare om ankeret ligger midt i delkartet; et anker ved kanten gir
+spaken over hele delkartet. Ett skann, seks ankere, ett av dem rettet: tynt grunnlag.
+Bekreftes på neste flerromsskann før M1 lener seg på det.
+
+*Overlegg-sannhet.* 147 591 celler vist som dekket; meshen 248 394 trekanter, 175 m².
+Andel dekkede celler med flate innen 5 cm: **67,5 %** (10 cm 88,9 %, 20 cm 96,7 %,
+40 cm 99,3 %). Udekket flate: **14,1 %** av meshen lå i celler vist som udekket (3,1 %
+med nabocellene). Tolkning: en femdel av «dekket» ligger 5–10 cm fra flaten, det er
+avstanden mellom live-posene feltet males med og posene baken bruker, ikke manglende
+flate; ~11 % har ingen flate innen 10 cm og ligger midt i høyden (median −0,37 m mot
+kameraets startnivå), altså møbler og tynne ting overlegget godkjente og TSDF-en tok bort.
+Referansen M1 skal måles mot er 67,5 / 14,1.
+
+*Samme bake, som bakgrunn for det Tormod så («noe veldig bra, noe grusomt»):* TSDF-en
+ga 931 317 trekanter, forenklet globalt til 248 394 (3,7× grovere), og atlaset ble 4 fliser
+à **4096** fordi bare 1922 MB var ledig. Det er punkt 1, 2 og 6 i vurderingen på ett
+treromsskann.
+
+## §116 M1 — delkart-TSDF live, overlegget fra W (bygget og målt på Mac 27.10, ikke testet på telefon)
+
+**Hva som er bygget.** Bak `meshscan.delkart` (på; `off` gir dagens felt og kjede uendret):
+
+- `MeshFuseKernel.swift`: `ampex_fuse`, `P` og de to bake-kjernene flyttet ut av
+  MeshTsdfBuild uten endring i kjernen; ny kaller `ampex_integrate_live` (bare blokkene ett
+  dybdekart berører, plass = blokknummer·512 + lokal). MeshTsdfBuild bygger fra samme streng.
+- `MeshDelkart.swift`: `Delkart` (12 × 5 × 12 m à 20 mm, blokkindeks 75 × 32 × 75, eget
+  ARAnchor i origo, T = A_nå · A₀⁻¹), `DelkartKart` (kart.json), `DelkartLager`
+  (`delkart/N/blokker.bin`: koordinater + Σwd + Σw for allokerte blokker).
+- `MeshDelkartFusjon.swift`: live-fusjonen. Hvert dybdekart som skrives til disk (5 Hz)
+  fusjoneres: merkekjerne per piksel (samme stråle-marsj som `allokerFra`) → CPU nummererer
+  nye blokker → `ampex_integrate_live` over merkede + allokerte 6-naboer → dekningskjerne
+  for cellene i de samme blokkene. Fart-tilliten regnes som i `loadDense` (forrige og neste
+  pose), derfor fusjoneres hvert kart 200 ms etter at det kom. Lukkeregel: kamera > 1 m
+  utenfor, 45 s, 120 bilder, 600 dybdekart, 64 M plasser. Ved lukking skrives volumet,
+  dekningsteksturen beskjæres til blokkenes boks og volumbufferne gjenbrukes.
+- Dekning: 5 cm-celle = største W blant voxlene med sentrum i cellen og |S| < én voxel,
+  delt på minWeight, klemt til 1. Overlegget (`delkartFrag` i CoverageMesh.metal) leser inntil
+  8 delkart (aktivt + 7 nærmeste lukkede), nærmeste celle (ikke trilineært: en flate har tomme
+  celler foran og bak, snittet ville aldri nå 1), tapper langs normalen som før, dekket ved
+  c ≥ 0,999. Okklusjonen mot LiDAR er beholdt.
+- Veiledningen (prosent, «snu deg», «pek mot taket/gulvet») leser W via
+  `MeshDelkartFusjon.dekket`. **Bevisst unntak:** `doneCells`/`frameNovelty` (nyhetsporten
+  og dekningstvangen) står på dagens regel. De avgjør hvilke BILDER som tas, og spør om
+  flaten er fotografert; W sier bare at LiDAR har sett den. Byttes de, slutter appen å ta
+  bilder av flater med dybde men uten foto, og teksturen taper.
+- Ferdig: siste kart fusjoneres, aktivt delkart lukkes, `dekning-ferdig.bin` skrives fra
+  delkartene (terskel 0,999), ankerflytting logges, og all GPU-minne fra delkartene slippes
+  før baken. Baken er uendret (global).
+- M0s 30 s-ankere er av når delkart er på; delkartenes egne ankere gir summen.
+
+**Ikke slettet ennå** (regel 4: gammel vei lever til ny er sett på telefon): CoverageField
+med ringbuffer og splat, CPU-dekningspasset, `TSDFFusion.swift`. Slettes når M1 er godkjent.
+
+**Målt på Mac** (`tools/verify-scan-delkart.py`, den ekte klassen mot bakens egen
+`Blokkvolum.allokerFra` + `ampex_integrate_sparse`, trukket ut av kildefilene) på M0-skannet
+8f3b8017 (710 dybdekart, 328 bilder): fire delkart, alle lukket på 45 s-regelen (193
+dybdekart hver, 64–95 bilder, 8 700–11 100 blokker, 33–43 MB på disk). Samme blokker live og
+bake i alle fire, ingen bakeblokk med flate mangler live, 0,003 % av 887 874 flatevoxler på
+ulik side (krav < 1 %), største |ΔW| 1,07 (kart fusjonert før en nabo­blokk ble allokert).
+Fusjon på Mac-GPU p50 0,6 ms / p95 1,2 ms per kart; telefonens tall kommer i loggen.
+
+*Overlegg-sannhet* mot den samme baken som ga 67,5 % i §115: **78,1 %** av dekkede celler har
+flate innen 5 cm, **94,6 %** innen 10 cm, 98,0 % innen 15 cm. Udekket flate 20,7 % (4,4 %
+med naboer) — høyere enn feltets 14,1 %, fordi baken lager flate også av nøkkelbildenes
+JBU-dybde og ARKit-tillegget, som live ikke har. Resten mellom 5 og 10 cm er
+poseforskjell: live bruker ARKits rå poser, baken bindingen (median 15 mm, maks 41 mm i
+dette skannet) og driftrettingen. M1s mål på 95 % innen 5 cm nås ikke så lenge baken er
+global og live ikke ser de rettede posene; det er M2c (re-fusjon per delkart med rettede
+poser, overlegget konvertert på nytt fra den).
+
+**Kjerneflyttingen, målt på telefonen 27.10:** 8f3b8017 ombygd med M0-appen og så med
+M1-appen (delkart på, men ombyggingen går ikke gjennom delkartet). Binærdelen av GLB-en er
+byte-identisk (geometri, UV, alle fire teksturer); de 4202 ulike bytene ligger alle i
+JSON-hodet og er nøkkelrekkefølge (Swift-ordbok). Baketid 48,8 s mot 49,9 s.
+
+**Alle seks fiksturene gjennom Mac-harnessen (27.10):** 0daef323, 9ef06228, a1b507ed,
+f92f1be0 og f97d682a i tillegg til 8f3b8017. Ingen bakeblokk med flate mangler live i noen av
+dem, og høyst 0,003 % flatevoxler skifter side. f97d682a mangler 79 av 854 dybdefiler; første
+kjøring ga 1,9 % skift fordi harnessen matet live bare kartene med fil, mens referansen tok
+fartsnaboene fra hele `dense.jsonl`. Harnessen filtrerer nå lista før begge (på telefonen får
+live alle kart før skriving, så der er naboene de samme som i `loadDense`). Harnessen leste
+også blokkoordinatene med en ujustert `load` (krasj med -Onone; `AMPEX_ONONE=1` bygger slik).
+Overlegg-sannhet mot eldre baker av samme skann (tfix/origdoff-GLB-ene, ikke dagens bake):
+0daef323 82,9 %, 9ef06228 86,3 %, a1b507ed 82,8 % innen 5 cm; udekket flate 17–20 %, 2,5–3,9 %
+med naboer.
+
+**Første telefontest 27.10 (c1794d71, tre rom + ned trappen, 3 min 17 s):**
+- Krasj i første sekund, to ganger: `SIMD3<Int32>(_:rounding:)` på et NaN-punkt i
+  `dekning` (veiledningens oppslag). Rettet med flyttallsjekk før konvertering.
+- Fem delkart (fire lukket på 45 s, det femte åpnet 1,6 m lavere i trappen). Ankrene flyttet
+  seg høyst 17 mm / 0,84°. Fusjon p50 2–3 ms i delkart 1–2, men 29 ms og 57 ms (p95 122 ms) i
+  delkart 3–4, samtidig med at CPU-passet under spiste mest og termikk 1.
+- Dekningspasset (CPU) ble 3× tregere enn før M1: snitt 67 ms etter 100 pass (før: 21 ms),
+  168 ms etter 150, med stride 3 mot slutten. Årsak: per punkt lås + løkke over alle delkart +
+  `T.inverse` per delkart, fire tapper. Rettet: `w2d` lagres når T settes, ett låst
+  øyeblikksbilde (`oppslag()`) per pass, og «dekket» huskes mellom pass (`dekketW`, W vokser
+  bare). Ikke målt på telefon ennå.
+- Overlegg-sannhet mot baken: 67,1 % innen 5 cm, udekket 35,2 % (14,0 % med naboer, 7,9 %
+  utenfor feltet). Baken flyttet posene mye: driftretting snitt 30 mm, maks 161 mm, 65 hopp
+  i ARKit-rekka; bildebinding median 15 mm, maks 47 mm. Gapet er live- mot bakeposer (M2).
+- Baken grovet TSDF-en til 31 mm voxel fordi to etasjer ga et 10,9 × 6,2 × 12,1 m volum.
+  Det er skala-tapet M2 (bake per delkart) skal fjerne.
+
+**Ikke gjort / gjenstår:** ny telefontest med det raskere dekningspasset.
+
+## 117. Grå flekker og grov geometri i trappeskannet — tre standarder endret, 2026-10-27
+
+Trappeskannet c1794d71 (tre rom og ned trappen) ga hull og grov geometri. Sett med øyet i
+24 renders fra nøkkelbildenes ståsted (headless SceneKit, rød bakgrunn = hull), målt med
+ombygging på telefonen av samme bundle.
+
+- **Veggen nede manglet helt** (kf328: 58 % rødt). LiDAR så den (dybde i kartet, median
+  2,7 m), live-delkartet hadde W > 0 på 99 % av punktene, men 0 % over minWeight 2,5:
+  15 s nede, 2,7 m unna (vekt 0,56 per kart), og fartsfilteret (0,35 m/s) demper 82 % av
+  kartene i trappa. Ikke drift (`driftrett off` ga samme hull), ikke romgrensene (1,9 % av
+  punktene nede utenfor).
+- **Tett volum grovet hele huset til 31 mm** (10,9 × 6,2 × 12,1 m > 40 M voxler). §102s
+  sparsomme lager (aldri kjørt før) gir 20 mm og 129 MB mot 206 MB.
+- **Live-baker får ofte atlas 4096** (850–1552 MB «headroom» i sju av fjorten live-baker,
+  før M1 også) fordi budsjettet leses mens TSDF og bindingen ligger i minnet; flisene males
+  25 s senere med 2037 MB ledig, der 6144 ville fått plass.
+
+Hull i snitt over de 24 renderne: standard 14,5 %, sparsomt 13,6 %, sparsomt + minWeight 1,5
+9,2 % (kf328 58 → 40 %, kf325 50 → 31 %). Med øyet: 1,5 fyller TV-veggen og dørkarmer uten
+synlige falske flater i disse utsnittene; trappa selv er like rotete i alle armene (tynne
+trinn, fart, poser — ikke terskel).
+
+**Endret standard:** `meshscan.sparse` på (`off` for tett), `minWeight` 1,5 (gjelder også
+M1-overlegget, så «dekket» følger baken), flisstørrelsen velges fra 8192 og ned etter minnet
+ved malingen, og målet for effektivt atlas følger flisen. M1-harnessen på 8f3b8017: fortsatt
+0 manglende blokker, 0,012 % skift; overlegg-sannhet mot den GAMLE m0-baken (laget med 2,5)
+70,3 % — ikke sammenlignbar før baken er laget på nytt med 1,5.
+
+**Bygget og kjørt på telefon (17:26–17:28):** 8f3b8017 (én etasje, lagt tilbake på telefonen
+fra fiksturen) mot morgenens referanse fra samme app uten endringene: hull i 20 renders fra
+nøkkelbildene 7,2 % → 4,1 % (verste utsnitt 26 → 16 %, 22 → 12 %); med øyet fyllere
+panelvegg ved TV-en og rundt lampene, ingen nye falske flater sett, vinduene fortsatt hull
+(glass). c1794d71 med standardene: 14,5 % → 9,2 %, samme som A/B-armen. Baketid 48,7 s og
+54,2 s. Flisen ble 6144 i begge; ledig minne under malingen falt til ~910 MB, så 8192 ville
+ikke fått plass.
+
+**Ikke gjort:** live-bake rett etter et skann med de nye standardene; trappegeometrien.
+
+## 118. Overlegget: dekket flate viser kamerabildet, stripene toner ut, 2026-10-27
+
+Tormod etter et godt ett-pass-rom: «Når det blir scannet ordentlig er vi bedre enn
+Scaniverse. Men tror selve scan-delen må endres på, endre wireframe … det er der Scaniverse
+gjør det bra.» Kvalitetsgrepet er altså opptaket/veiledningen, ikke baken.
+
+Før: sløret (heldekkende striper, september-ønsket «alt starter rødstripet, du maler rommet»)
+lå UNDER meshen; dekket flate ble malt opakt med 5 cm-cellens snittfarge, udekket fikk
+striper med hard terskel 0,999, oppslaget var nærmeste celle (5 cm-trapper).
+
+Nå (bare med delkart på):
+- Dekket flate er gjennomsiktig og viser det skarpe kamerabildet. Meshen skriver fortsatt
+  dybde.
+- Stripene toner ut med vekten (alfa = 1 − smoothstep(c)), så flaten «fylles» mens man står
+  der; veiledningens «dekket» er fortsatt c ≥ 0,999.
+- Oppslaget i dekningsteksturen er lineært, ikke nærmeste: myk kant i stedet for 5 cm-trapper.
+- Sløret henger 30 m bak og tegnes SIST med dybdetest, så det bare vises der det ikke finnes
+  mesh — løftet fra september holder: kamerabildet vises aldri før flaten er fanget.
+- Bak en ekte flate (LiDAR-okklusjon) er det fortsatt opake striper.
+
+Ikke målt: hvordan det ser ut og føles på telefonen; dekningspasset (CPU) vokser fortsatt med
+skannets lengde (21 → 59 ms over 80 pass i 17:30-skannet) og er ikke rørt her.
+
+## 119. Dekningspasset vokste med skannet — nå bare det som ikke er ferdig, 2026-10-27
+
+§118 lot dette ligge: CPU-dekningspasset (veiledningens prosent, «snu deg», tak/gulv og
+`doneCells` for nyhetsporten) gikk fra 21 til 59 ms over 80 pass i 17:30-skannet. Årsak: hvert
+pass gikk gjennom hver verteks i hele meshen innen 12 m og gjorde 4–5 hash-oppslag per verteks
+(memo, `laast`, `dekketW`, `alpha`-skriving), også for flater som for lenge siden var låst og
+dekket. I tillegg ble hele «ferdig»-settet sendt til main og unionert hvert pass.
+
+Nå (bare med delkart på, der begge predikatene er monotone):
+- Per anker huskes summen over vertekser som er både låst (≥ 1 okklusjonsbekreftet bilde) og
+  dekket (W), og listen over indekser som gjenstår (`CellCache.anker`). Et anker ARKit ikke har
+  endret siden forrige pass går bare gjennom resten; et endret anker får et fullt pass.
+  Tallene til veiledningen blir de samme: ferdige vertekser er dekket og ikke «mangler».
+- `done` får bare nylåste celler (låst = ferdig, og `doneCells` er bare unionen av låste).
+- Farger og alpha-toning regnes bare når geometrien faktisk bygges (gammel vei uten felt og
+  delkart); med delkart var de ubrukt.
+- AE/AWB-nullstillingen tømmer også `anker`.
+
+Typesjekket. **Ikke målt på telefon:** `dekningspass — snitt`-linjene i `pipeline.log` skal
+holde seg flate over et langt skann i stedet for å stige.
+
+## 120. M2 — bake per delkart (bygget og testet på Mac 27.10, ikke på telefon)
+
+**Hva som er bygget** (`MeshBakeArbeider.swift`): hvert delkart bakes med NØYAKTIG den samme
+kjeden som ett rom i dag (binding → TSDF med driftretting → `MeshBakeV2.bake`), men bare med
+sine egne nøkkelbilder og dybdekart. Kjeden er ikke skrevet om; et omfang (`MeshBakeArbeider.omfang`)
+settes mens én del bakes og leses tre steder: `loadDense` (fart-tilliten regnes over hele
+rekka først, så kantkartene får samme naboer som live), `loadKeyframesJBU`, og bindingens
+filer, som da ligger i `delkart/N/bildebinding.json` og `delkart/N/relok.bin` (cachen er
+nøklet på filstien). Dermed gjelder alle takene i kjeden per del: forenkling, atlas, voxel,
+binding over 450, driftrettingens 20 cm.
+
+- Delkart med under 12 nøkkelbilder eller 40 dybdekart (typisk sekundene før Ferdig) bakes
+  sammen med naboen.
+- ARKit-nettet fordeles på delene: en trekant går til hver del som har allokert blokken
+  sentroiden ligger i. **Målt:** 11,7 % av ARKit-nettet i trappeskannet c1794d71 lå utenfor
+  alle blokker (ARKit så lenger enn live-fusjonen tok med). Den første versjonen kastet dem;
+  nå går de til delen med nærmeste nøkkelbildekamera, så ingenting som den globale baken tok
+  med går tapt.
+- Enkel sveising: trekanter i en nyere del hvis sentroide har et hjørne eller en sentroide fra
+  en eldre del innen 27 nabo-celler à 2 cm, slettes før baken. Første versjon brukte bare
+  hjørnene og slapp gjennom 352 doble trekanter (store ARKit-trekanter); med sentroidene: 0.
+- Ut: `delkart/N/delkart-N.glb` + `.relok`, `hus.json` (delene, T = identitet, etasje 0 — M3
+  skriver nye T her uten ny bake), og ÉN sammenslått GLB (alle primitivene, hver del beholder
+  sine fliser) pluss ett sammenslått relok-kart (etikettene forskjøvet per del) på stien
+  kalleren ba om. Vieweren, AR og TS-siden er derfor uendret.
+- Termikk serious/critical eller under 400 MB ledig: vent 5 s om gangen (termikk høyst 5 min,
+  minne høyst 1 min), logg `bake — pause`. Ingen parameter endres.
+- Live-veien (`exportTextured`), ombyggingen fra appen og harnessen (`-meshscan.autorebake`)
+  går alle gjennom den.
+
+**Når den brukes — og hvorfor ikke alltid.** På 8f3b8017 (én etasje, Tormod gikk tilbake i
+samme rom) fikk delkart 3 klippet 227 k av 284 k trekanter, fordi delkart 0 alt hadde flaten.
+Da får veggen bare bildene fra den første runden, mens den globale baken bruker alle rundenes.
+For et vanlig rom med gjenbesøk ville bake per delkart altså vært et kvalitetstap. Derfor er
+den bare standard der den globale baken taper i dag: over 450 nøkkelbilder (`meshscan.husfra`),
+der bindingen hoppes over. `meshscan.delkartbake on` tvinger den, `off` slår den av. Dette
+snur når M3s gjenåpning finnes: går man tilbake, fusjoneres runden inn i det gamle delkartet,
+og da har én del alle rundenes bilder.
+
+**Testet på Mac** (`tools/verify-scan-hus.py <bundle> <delkartDir>`, delkartDir fra
+`verify-scan-delkart.py`): den ekte `MeshBakeArbeider` + `MeshDelkart` med stand-in for
+binding/TSDF/bake (de trenger Metal på telefonen) som skriver en GLB med den ekte
+`writeTiledGlb`. c1794d71: 5 delkart → 5 deler, 349 av 350 bilder fordelt (ett tatt før første
+delkart åpnet), ingen bilde i to deler, hele ARKit-nettet i minst én del (1,40 deler per
+trekant før klipp), 0 trekanter i to deler etter klipp, sammenslått GLB gyldig med samme
+trekanter og fliser som delene, relok 260 punkter med unike etiketter. 8f3b8017: 4 deler, 328
+av 328 bilder, 1,83 deler per trekant før klipp, samme påstander holder.
+
+**Ikke gjort i M2 ennå:** bake i bakgrunnen mens man skanner (nå bakes delene etter hverandre
+ved Ferdig, så ventetiden er summen); fast atlas per del i stedet for minnestigen; vieweren med
+`hus.json` og LOD (den sammenslåtte GLB-en laster alle flisene — for et hus på 10+ deler kan
+det sprenge GPU-minnet i vieweren, mål `currentAllocatedSize`); sletting av `frame-*.jpg` per
+del; kamera-fps under bake. Ingenting av dette er sett på telefon.
+
+## 121. Bake per delkart blir standard: hver del får alle synene på sin flate (28.10)
+
+§120 skrudde bake per delkart på bare over 450 nøkkelbilder, fordi en runde tilbake ga
+rommet bare første rundes bilder. To grep fjerner den grunnen, og sperren er borte.
+
+**Gjenåpning (M3 steg 4) var feil verktøy for dette.** Målt andel av hvert delkart som ligger
+inne i det tidligere delkart så (16 cm-celler i verden): 8f3b8017 er tre rom og tilbake;
+delkart 3 ligger 57 % inne i delkart 0–2 til sammen, men bare 22/33/26 % i hvert av dem.
+Runden tilbake går gjennom tre rom, så ingen gjenåpning av ett delkart fanger den, og parvis
+overlapp mellom delkart er 0,03–0,43 i begge skannene.
+
+**1. Bakegrupper.** Delkart som har sett det samme (felles celler / cellene i det minste ≥ 0,5,
+mest først) slås sammen så lenge gruppen er under 450 nøkkelbilder (`meshscan.gruppemaks`).
+Små rester går til gruppen de overlapper mest. Blir det én gruppe, tas den globale baken.
+I de to skannene slår ingen par sammen (overlappet er for lavt); regelen er for rom som ble
+delt av 45 s-regelen uten at kameraet gikk ut.
+
+**2. Alle syn på delens flate** (`MeshBakeArbeider.utvid`). Hver del får sine egne nøkkelbilder
+og dybdekart pluss dem fra andre delkart som ser delens flate: 10 cm-ruter av delens
+ARKit-flate innen 3,5 m, vendt mot kameraet (cos ≥ 0,35), bekreftet av bildets egen
+LiDAR-dybde (±30 cm) — veiledningens regel. Med når minst 30 ruter og minst 20 % av alt bildet
+ser. Nøkkelbilder holdes under 450 (egne først, så de som ser mest). Bindingen per del binder
+da også de lånte bildene, så TSDF-en får dybden fra alle rundene og teksturen bildene fra alle
+rundene — som den globale baken, men per rom.
+
+Målt (Mac, `verify-scan-hus.py`, 0,4 s): c1794d71 lånte 255 nøkkelbilder og 508 dybdekart
+mellom fem deler (del 1: 72 egne + 107 lånte bilder); 8f3b8017 lånte 347 bilder og 739
+dybdekart mellom fire (del 0: 95 + 99). Alle påstandene i §120 holder fortsatt (egne bilder i
+nøyaktig én gruppe, hele ARKit-nettet fordelt, 0 trekanter i to deler, gyldig sammenslått GLB).
+
+**Pris:** baketiden blir omtrent summen av delene, og et rom kan bakes med inntil 450
+nøkkelbilder. 8f3b8017 vil bake fire deler med 137–194 bilder hver i stedet for én bake med
+328, sannsynligvis 3–4 ganger så lenge. Kvaliteten per del er minst like god som den globale:
+samme syn, men forenkling (300 k mot 250 k for hele huset) og atlas per del.
+
+**Ikke målt:** baketid og resultat på telefon.
+
+## 122. M3, første del: delene i samme verden via felles bilder (28.10, Mac-testet)
+
+Hver del bindes og driftrettes for seg (§120), så delenes verdener kan skille noen cm. Det er
+akkurat det som gir sprang i skjøter og trapp. Planen (M3 steg 1–2) var en posegraf med
+SIFT-landemerker mellom delkart. Med §121 finnes en enklere og direkte måling: et lånt
+nøkkelbilde har en rettet pose i både sin egen del og delen som lånte det. Forskjellen er
+forskyvningen mellom de to verdenene.
+
+`MeshBakeArbeider.justering`: før en del klippes og bakes, regnes G = P_eldre · P_denne⁻¹ over
+alle bilder den deler med allerede bakte deler. Rotasjonen er medianen av rotasjonsvektorene,
+forflytningen medianen av c_eldre − R·c_denne. Krever 5 felles bilder; over 5° eller 0,5 m
+avvises den som urimelig. Nettet (posisjoner, normaler, dominantplan n·x = w) og delens
+nøkkelbilder flyttes med G, så delen bakes direkte i husets verden. Relok-kartet følger med,
+fordi `MeshRelok.skrivKart` regner fra nøkkelbildenes poser. `hus.json` får T = identitet, for
+flyttingen er alt gjort. Felles bilder i de to skannene: 16–168 per del, så alle deler blir
+justert.
+
+Testet på Mac (`verify-scan-hus.py`): en kjent forskyvning på 1,5° og 38 mm, med skjev støy på
+5–10 mm per bilde, finnes igjen med 0,07° og 4 mm feil ved kameraet (skjevheten i støyen). Under
+5 felles bilder gir ingen justering. Planene følger nettet. Stand-in-bindingen på Mac endrer
+ikke posene, så de ekte skannene gir 0 mm der. Hvor mye delene faktisk flyttes, viser
+telefonloggen (`hus — del N justert inn i huset`).
+
+**Ikke gjort i M3:** gulvplan per etasje som bånd, og loop closure (justeringen er sekvensiell:
+en senere del kan ikke rette en tidligere). Heller ikke sveising som lukker skjøten (bare
+klippet fra §120), gjenåpning, eller ekstrarunde i trappa i veiledningen. Gjenåpning løser ikke
+gjenbesøk på tvers av rom (§121). Den ville bare spart baketid der et rom er delt av
+45 s-regelen.
+
+## 123. M3: husets poser i ett løp — loop closure og etasjer (28.10, Mac-testet)
+
+Erstatter den sekvensielle justeringen i §122. Den kunne ikke rette en tidligere del, og
+målet (Glenns borevinkel) er nettopp at en runde opp trappa og ned igjen skal rette hele
+veien, ikke bare den siste delen.
+
+**Bakingen går nå i tre faser** (`MeshBakeArbeider.bakHus`):
+1. Per del: binding → TSDF → driftretting. Nettet skrives til `delkart/N/nett.bin` og slippes
+   fra minnet, posene og gulvhøyden beholdes.
+2. `løsHus`: alle delenes poser i ett løp.
+3. Per del: nettet leses, flyttes inn i huset, klippes mot eldre deler og bakes. `nett.bin`
+   slettes.
+
+**Løsningen.** Ukjente per del: dreining θ om loddlinjen og forflytning t. Helning er ikke med,
+fordi ARKit kjenner tyngden, og etasjene skal bli liggende vannrett. Første del ligger fast.
+Bånd: felles (lånte) bilder skal ha samme kamerasenter (σ 1 cm) og samme dreining (σ 0,2°).
+Deler med gulv innen 20 cm av hverandre står på samme gulv (σ 3 cm). Hver del har en svak
+forankring der den er, så en del uten bånd står stille. Lineært rundt dagens løsning, tre
+runder, Huber på 3σ, Cholesky på 4N ukjente. Gulvet (`gulvhøyde`) er høyden med mest
+oppovervendt flate mellom 0,8 og 2,2 m under kameraenes median. Under 2 m² gir ingen etasje,
+for eksempel i trapp.
+
+**Gulvbåndet er mykt med vilje.** På 8f3b8017 skiller gulvhøydene 40 mm mellom deler som de felles
+bildene holder helt fast (stand-in-bindingen endrer ikke posene). Det er ekte forskjell
+mellom rom eller usikkerhet i gulvhøyden, ikke drift. Med σ 1 cm ville gulvbåndet dratt rommene
+mot hverandre. Med 3 cm vinner bildene der de finnes, og gulvet tar seg av deler uten felles
+bilder.
+
+**Testet på Mac** (`verify-scan-hus.py`): fire deler i ring (hver deler 10 bilder med neste,
+den siste med den første, som en runde tilbake), drift 0,4°/27 mm mer per del, opptil
+1,2°/81 mm, og skjev støy per bilde. Før: 26–34 mm median, 76–82 mm maks mellom felles bilder.
+Etter: verste feil mot fasiten 0,017° og 1,0 mm ved kameraet. En del uten bånd blir stående.
+`nett.bin` gir bit for bit samme nett tilbake (fiksturens ARKit-normaler har NaN).
+Gulvhøyden funnet 1,33 og 1,47 m under kameraene i de to skannene.
+
+**Testen Tormod gjør (fra planen):** to etasjer via trapp, opp og NED igjen (uten runden ned
+finnes ingen loop å lukke). Merk et punkt i taket i første etasje og punktet rett over på gulvet
+(lodd og tommestokk), og mål avviket i modellen. Krav ≤ 3 cm. Loggen viser
+`hus — poseløsning … Før: … Etter: …` og hvor mye hver del ble flyttet.
+
+**Gjenstår:** lukking av skjøten (bare klipp), ekstrarunde i trappa i veiledningen,
+bake i bakgrunnen, viewer-LOD. Baketid og resultat på telefon er ikke målt.
+
+## §124 M3.3, M3.5, M4.1, M4.2 og vieweren: skjøt, trapp, vegg (bygget og Mac-testet 28.10, ikke testet på telefon)
+
+Fire grep for å ha et komplett bygg til Tormods test. Alt kan slås av for A/B.
+
+**Sveising av skjøten (M3.3)** i `MeshBakeArbeider.Overflate.klipp`. Klippet lager en ny rand
+der delen møtte eldre flate. Hver vertex på den nye randen flyttes til nærmeste eldre vertex
+innen 6 cm, men bare når normalene peker samme vei (dot ≥ 0,5). Randen som fantes fra før
+(vinduer, kanten av skannet) røres ikke. Trekanter med alle hjørnene sveiset ligger i eldre
+flate og fjernes, og det samme gjelder trekanter som klapper sammen. På Mac ble 5739 av 6428
+randvertekser sveiset i c1794d71 og 6637 av 7166 i 8f3b8017, med lengste flytt 60 mm. Det
+lengste flyttet er altså lik grensa. Fortsatt ingen trekant i to deler. Loggen viser det per
+del: `hus — delkart N: … (K klippet mot eldre, S av R randvertekser sveiset)`. Skjøten er ikke
+vanntett i streng forstand, for flyttet er til en vertex og ikke til flaten. Tone over skjøten
+er ikke gjort; det hører til M5.
+
+**Lukkeveiledning (M3.5 og M4.1)**, i `LukkeVurdering` (MeshDelkart.swift) og i presenteren.
+Når et delkart lukkes underveis, ser neste dekningspass på ARKit-nettet rundt kameraet:
+- **Trapp:** under 2 m² gulv på én høyde (innen 15 cm) innen 2 m. Da står «Trapp: gå opp og
+  ned en gang til før du går videre» i 10 s. Det er reposets ekstrarunde fra planen.
+- **Vegg mangler:** gulvruter (0,5 m) innen 4 m der en nabo er helt tom og det ikke står
+  loddrett flate på minst 1 m i ruta eller en nabo. Fire eller flere slike ruter, altså
+  ≈ 2 m kant, gir en pil dit i 10 s («En vegg mangler — snu mot høyre»).
+
+Første versjon krevde bare at naboruta ikke var gulv. Da pekte den i 18 av 35 kamerastillinger
+i c1794d71, fordi gulvet slutter ved hver sofa. Nå teller bare en tom nabo, og tallet er 4 av 35.
+8f3b8017 ga 0, og ingen av ettetasjesskannene ga trapp. Syntetisk test: et rom uten vestvegg
+peker mot vest, et helt rom gir ingen pil, og en trapp gir trapp. Om de fire i c1794d71 er ekte
+hull, er ikke sett. Loggen: `veiledning — delkart N lukket: …`.
+
+**Vegg mellom gulv og tak (M4.2)** i `MeshVeggfyll.swift`. Kalles fra MeshTsdfBuild etter
+`fillPlanarHoles` og kan slås av med `meshscan.veggfyll off`. Et dominerende loddrett plan
+fylles kolonne for kolonne (5 cm) når fire vilkår holder:
+- kolonnen har flate over minst 40 % av høyden mellom gulv og tak;
+- de øverste 30 cm har flate, slik at klesskap og reoler ikke får dikta vegg over seg;
+- hullet er høyst 1,2 m, slik at overskap ikke får vegg ned til gulvet og dører aldri fylles;
+- det finnes gulv og tak innen 60 cm foran planet.
+
+Syntetisk test: hullet bak sofaen blir fylt (3,56 av 3,6 m²), mens klesskapet og overskapet
+ikke blir det. På ARKit-nettet i 8f3b8017 fylles 3,45 m² på 7 plan, og i c1794d71 ingenting,
+fordi hele husets største gulv og tak ikke danner ett par. I baken kjøres fyllingen per del,
+og det er ikke målt. Lappene er ikke sett i en render. Loggen: `veggfyll — …`.
+
+**Vieweren:** et hus bakt per del kan ha én til fire fliser à 8192 per del. Fem rom kan da bli
+2–5 GB tekstur. Over fire fliser à 8192 til sammen dekoder `AmpexGlbLoader` hver flis
+nedskalert ved innlasting (ImageIO-miniatyr). GLB-en på disk er urørt. Ekte LOD, med full
+oppløsning i rommet du står i, mangler. Loggen: `MeshViewer: … over budsjettet — dekodes i X %`.
+
+**Ikke gjort, med begrunnelse:**
+- **Veggpar på tvers av delkart (M4.3):** to motsatte plan 8–15 cm fra hverandre som fyller
+  hverandres hull. Det venter til M4.2 er sett på telefonen.
+- **M5:** rekkefølgen er Tormods.
+- **M6, grov-til-fin relok per delkart:** det sammenslåtte relok-kartet har alle delene i
+  husets verden (T = identitet). Dagens lokalisator virker derfor uendret mot huset.
+- **Bake i bakgrunnen under skanning, gjenåpning av delkart og sletting av bilder per del:**
+  ikke gjort.
+
+## §125 M2 steg 3: vieweren gir rommet du står i full tekstur (29.10, Mac-testet, ikke telefon)
+
+§124 skalerte hele huset jevnt ned når teksturen var over budsjettet (fire fliser à 8192).
+Tre rom à 9 fliser à 6144 ga da 51 % i alle rom, også det man står i.
+
+Nå (`TeksturLod` i AmpexMeshViewerView.swift): den sammenslåtte GLB-en merker hver primitiv
+med `extras.del` (`slåSammenGlb`). For et hus over budsjettet får alle deler en nedskalert
+kopi (felles pott på én flis à 8192), og delene nærmest kameraet (avstand til delens boks)
+dekodes i full oppløsning til budsjettet er brukt. Er den nærmeste delen alene over budsjettet,
+skaleres den jevnt til budsjettet, som et enkeltrom alltid er blitt. Teksturminnet er dermed
+høyst fem fliser à 8192 uansett hus. Vieweren ber om ny vurdering når kameraet har gått 0,75 m
+(ingen løkke), dekodingen går på egen kø, og bytter ned før opp. GLB-en leses minnekartlagt, så
+JPEG-ene hentes fra fila når de trengs i stedet for å ligge i minnet.
+
+**Forkastet første versjon:** LOD per flis. Et gammelt enkeltrom (9 × 6144 = 339 Mpx) er også
+over budsjettet; per flis fikk sju fliser 100 % og to 44 %, og hvilke to byttet når man gikk
+rundt i rommet. Det ville vært et kvalitetstap mot dagens jevne 89 %. Enheten er nå delen, og
+en GLB uten `extras.del` (alle enkeltrom, alle gamle skann) går nøyaktig den gamle veien.
+
+**Målt på Mac** (den ekte loaderen kompilert for Mac Catalyst, testhus av tre ekte rom flyttet
+12 m fra hverandre, 27 fliser, 1019 Mpx): rommet kameraet står i får 5461 px (89 %, som alene),
+de to andre 1576 px (26 %); flytting til neste rom bytter alle ni flisene. Enkeltrommet 9ef06228:
+uendret, 89 % jevnt. Vieweren viser huset nedskalert etter 2,5 s og de nære delene etterpå;
+miniaturen venter på full oppløsning. `verify-scan-hus.py` sjekker nå at hver primitiv har
+`extras.del` og at antallet per del stemmer.
+
+**Logg:** `MeshViewer: LOD — del N nær av M deler (… fliser opp, … ned), … Mpx, GPU … MB`.
+Baken logger nå også fase 1 per del (`hus — delkart N fase 1: … nøkkelbilder (… lånte),
+binding … s, geometri … s`), så telefontesten viser hvor tiden etter Ferdig går.
+
+**Kjent svakhet:** delenes bokser overlapper (et rom ser gjennom døra), så i overlappet velges
+delen med lavest nummer. Avstand til nærmeste flate ville vært riktigere; ikke gjort før det er
+sett på telefonen om det synes. AmpexMeshViewerView importerer ExpoModulesCore og er typesjekket
+med en stub for Expo-typene, ikke i Xcode-bygget.
+
+## §126 Første hus-bake på telefonen: tiden ligger i teksturen, ikke i fase 1 (30.10)
+
+Ombygging av c1794d71 (tre rom og ned trappa) på 13 Pro med §120–§125, `-meshscan.delkartbake on`.
+5 delkart i 4 bakegrupper ([0,1] [2] [3] [4]), 0 termikk-/minnepauser.
+
+**Tid: 288 s.** Fase 1 (binding + geometri) 49 s til sammen: 11,1 + 7,4 / 5,0 + 6,5 / 5,8 + 5,1 /
+4,7 + 2,0 s. Fase 3 (tekstur per del) 238 s: 67, 71, 57 og 43 s. Planens krav er under 2 min
+for fem rom. **Bake i bakgrunnen av fase 1 kan altså spare høyst 49 s av 288**, og mindre fordi
+delene med lånte bilder fra senere rom må gjøres om. Det er ikke verdt omskrivingen. Gevinsten
+ligger i fase 3: enten tekstur per del i bakgrunnen i delens egne koordinater (T i hus.json,
+som planen opprinnelig sa) med klippet etterpå, eller færre og fastere fliser. Ikke besluttet.
+
+**Poseløsningen:** 4 par med felles bilder, 3 gulvpar. Felles bilder median 26 → 19 mm (maks 145
+uendret, én avviker), gulv maks 40 → 14 mm. Del 4 (nede i trappa) flyttet 0,50° og 48 mm.
+
+**Feil funnet og rettet:**
+- *Del 4 feilet* («FEIL», huset ble 3 deler): xatlas ga atlas 8508 > 8192, flisstigen valgte
+  3 × 3 à 6144, og flis 9 hadde 0 trekanter. `rasterize` returnerer nil når ingen trekant har en
+  vinner i flisen, og da feilet hele delen. Nå får en tom flis et lite nøytralt bilde.
+- *«0 av 0 randvertekser sveiset»* i hver dels logglinje var en loggfeil (telleren ble lest
+  etter klippet); summen på Mac var hele tiden 5857 av 6604. Rettet. I tillegg nøkles randen
+  nå på posisjon (0,5 mm) i stedet for indeks, fordi TSDF-nettet har doble hjørner (del 4:
+  102 k hjørner på 126 k trekanter). Mac: 6428 → 6604 randvertekser funnet.
+- *«(0 lånte)»* for del 0 som lånte 37: tellingen trakk gruppens kart-sum fra, ikke medlemskap.
+
+**Ikke sett:** resultatet i vieweren (LOD-en fra §125) og skjøtene med øyet. Del 4 (54 bilder,
+126 k trekanter) fikk 9 fliser à 6144 — langt over det en så liten del trenger; xatlas brukte
+22 s på den. Fast atlas per del (M2 1f) ville fjernet begge.
+
+## §127 Lik kvalitet per m² — målt på husbaken fra 30.10: det største rommet er 1,8× grovere (31.10)
+
+Tormods regel for hele hus: større hus skal ta lengre tid, aldri gi dårligere resultat per m².
+Ny test: `tools/verify-scan-tetthet.py <glb …>` regner teksturtetthet (√(texelareal/flateareal),
+flisstørrelse lest fra bildehodet) per del og feiler hvis en del ligger mer enn 10 % under den
+skarpeste (`--mål` gir i tillegg et absolutt gulv).
+
+Delkart-GLB-ene fra telefonbaken i §126 (c1794d71):
+
+| Del | Flate | Fliser | Texel/m | Trekanter/m² |
+|---|---|---|---|---|
+| 0 | 135,8 m² | 9 à 6144 | **976** | 1814 |
+| 2 | 68,9 m² | 9 à 6144 | 1463 | 3625 |
+| 3 | 40,5 m² | 9 à 6144 | **1758** | 4668 |
+
+Testen FEILER (del 0 44 % under, del 2 17 % under). Fire steder i koden lar husstørrelse betale
+med kvalitet:
+1. **Flisantallet** (`MeshBakeV2`, «FLERE BRIKKER») er fast 2 × atlas uansett flate. Hver del fikk
+   3 × 3 à 6144, også del 4 (54 bilder) som ikke trengte det. Fiks: fliser fra flate × måltetthet.
+2. **Forenklingen** har fast mål 250 k trekanter per del: del 0 754 k → 246 k (3,1:1), del 2
+   314 k → 250 k (1,3:1). Fiks: mål per m² eller feilgrense, ikke per del.
+3. **Budsjettet** (`MeshBakeV2` ~l. 409) velger færre bilder (200 → 120), mindre atlas og topK 4 ved
+   lite ledig minne. Fiks: vent/strøm fra disk, behold øverste trinn.
+4. **TSDF-voxelen** grovnes ×1,25 over `sparsemax`/`maxVoxels`, og **450 nøkkelbilder** er taket per
+   bakegruppe. Fiks: del opp delen i stedet. (Ikke truffet i c1794d71: 20 mm i alle deler.)
+
+Neste: 1 og 2, så ny husbake og testen grønn.
+
+## §128 Teksturpyramide som Google Maps — prototype på Mac: samme bilde, 14–60× mindre minne (31.10)
+
+§127 viste at store rom får grovere tekstur, men å gi dem flere fliser hjelper ikke: vieweren
+har budsjett 4 × 8192² (268 Mpx) per rom, og hvert rom i c1794d71 har alt 9 × 6144² (340 Mpx),
+så alt vises i 89 %. Flaskehalsen er at enheten som lastes er HELE ROMMET, mens skjermen viser
+~3 Mpx. Kart-tjenester laster bare det som synes, i oppløsningen skjermen kan vise.
+
+**Estimat** (python, 50 kamerastillinger fra skannet, 60° iPhone-skjerm, okklusjon via grov
+z-buffer): median 5 Mpx, p90 16, maks 28 Mpx per stilling.
+
+**Prototype** (scratchpad, ikke i repoet ennå):
+- *Bygger:* de tre delkart-GLB-ene → blokker à 1 m³ (sentroide), UV-øyene per blokk kopiert
+  1:1 fra kildeatlaset inn i eget blokkatlas, nivåer i 2×-trinn ned til 32 px, JPEG.
+  325 blokker, 24 s på Mac.
+- *Viewer (SceneKit, offscreen):* ID-pass i ¼ oppløsning (farge = blokk-id) avgjør hvilke
+  blokker som synes; synlige får nivå floor(log2(tetthet / (f/d))), d = avstand til blokkens
+  boks; usynlige grovest nivå.
+- *Resultat*, seks nøkkelbilder: 18–78 Mpx lastet mot 1088 Mpx med nivå 0 overalt, og
+  avvik mot full tekstur snitt ≤ 0,14/255, høyst 0,02 % av pikslene over 16/255. Altså samme
+  bilde.
+
+**Kjente svakheter i prototypen:**
+- Disk 317 MB mot 152 MB for den sammenslåtte GLB-en: øyenes rammebokser kopieres (752 Mpx
+  innhold mot 402 Mpx faktisk brukt i kildeatlaset), pluss ⅓ for nivåene. Bakt direkte
+  (trekantene rasterisert tett per blokk) skal den bli mindre, ikke større.
+- Geometrien er full i alle nivåer (650 k trekanter totalt er greit for GPU-en i ett hus).
+- Ingen strømming/hysterese ennå; ID-passet må kjøres med jevne mellomrom på telefonen,
+  ikke hver ramme.
+
+Neste: vieweren på telefonen med blokkene (ASTC når det er på plass), så baken skriver
+blokkene direkte, så kildeskala 1,0 i alle rom (§127 punkt 1–2).
+
+## §129 Blokkpyramiden i appens viewer (31.10, Mac-testet, ikke sett på telefon)
+
+`AmpexMeshViewerView.swift`, nederst: `Blokkpyramide` (bygger) og `BlokkLod` (velger nivå).
+
+- **Når:** vieweren ser etter `<glb>.blokker/blokker.json` (versjon 1, nyere enn GLB-en). Finnes
+  den, vises blokkene. Finnes den ikke, vises GLB-en NØYAKTIG som før, og pyramiden bygges i
+  bakgrunnen (utility, venter ved varme som baken) til neste åpning. `meshscan.blokker off` slår
+  begge av. Miniatyrene går fortsatt via GLB-en.
+- **Bygget:** ett kildebilde dekodet om gangen; blokkatlasene skrives via en midlertidig råfil på
+  disk (`raa.tmp`, slettes) før de kodes til JPEG-nivåer; `blokker.json` skrives sist og atomisk,
+  så en avbrutt bygging aldri blir brukt. Krever råfil + 2 GB ledig, ellers droppes den. Mac:
+  35 s for del 0 i c1794d71 (136 m²), 119 MB på disk.
+- **Valget:** ID-pass i ⅛ oppløsning (id i 6 bit per kanal med senterverdi, tåler ±1 i
+  fargekonvertering). Synlige blokker: nivå floor(log2(tetthet / (f/d))). Hysterese: finere straks,
+  grovere ved ≥ 2 nivåer eller etter 3 vurderinger usynlig; over 150 Mpx slippes usynlige straks.
+  Vurderingen bes om i `updateCamera` og slås sammen mens én pågår (ingen løkke). Mac, del 0:
+  46–95 Mpx lastet, 115–363 ms per vurdering.
+
+Ikke gjort: mykere overgang (nivået byttes hardt), ASTC, og at baken skriver blokkene direkte.
+**Testen Tormod gjør:** åpne husskannet to ganger (første gang bygges pyramiden — se
+`blokkpyramide — N blokker på X s` i pipeline.log), gå rundt, se etter skarphet på nært hold og
+om noe blinker. Loggen: `MeshViewer: blokker — … synlige, … Mpx tekstur, … ms`.
+
+## §130 Blokkpyramiden på telefonen: hele huset, minnet følger skjermen (31.10–01.11)
+
+Testet uten UI med `BlokkHarness` (launch-argumentene `-meshscan.blokktest <glb>
+-meshscan.blokkframes <bundle>`, stier under Documents): c1794d71 sin sammenslåtte hus-GLB
+(1019 Mpx tekstur), 14 nøkkelbilder (hvert 25.), iPhone 13 Pro, Release.
+
+- **Bygget:** 164,6 s på telefonen for hele huset (én gang; deretter gjenbrukt).
+- **Første kjøring avslørte en lekkasje:** GPU 1,5 → 2,4 GB mens lastet tekstur falt til 35 Mpx.
+  To grep: (1) egen `MTLTexture` via `MTKTextureLoader` (sRGB, mipmaps, privat lagring) som
+  materialinnhold i stedet for CGImage; (2) `autoreleasepool` rundt hver vurdering — én GCD-jobb
+  varer så lenge kameraet beveger seg, og den ytre puljen tømmes aldri. (2) var den egentlige
+  årsaken (Mac: 1843 MB ved 33 Mpx uten, 285 MB med).
+- **Etter fiks:** 35–194 Mpx lastet, **GPU 295–1148 MB**, vurdering 81–439 ms. GPU følger lastet
+  tekstur ned igjen (kf 125: 1111 MB → kf 150: 295 MB). Til sammenligning: den gamle veiens
+  budsjett er 268 Mpx ≈ 1,4 GB, og ga likevel bare 26–89 % oppløsning.
+- Fargene stemmer (sRGB), og tekst på esker er lesbar i rendringen.
+- Testens sammenligning med den gamle GLB-veien lastet hele huset OPPÅ blokkene, og appen ble
+  drept der (ingen `ferdig.txt`). Det er testoppsettet (to visninger i minnet samtidig), ikke
+  vieweren — men harnessen bør laste den gamle veien i en egen kjøring.
+
+Taket på 150 Mpx sjekkes før byttet, så toppen ble 194 Mpx. ~6 MB GPU per Mpx (RGBA + mipmaps +
+geometri); ASTC tar det ned ~4×. Ikke sett: gange med fingrene (overgangene er harde).
+
+## §131 Hull målt mot det LiDAR faktisk så (01.11)
+
+Nytt mål for fullstendighet: `tools/audit-scan-hull.swift` rendrer modellen (blokkpyramidens
+geometri) fra hvert nøkkelbildes pose i dybdekartets oppløsning og sammenligner med LiDAR-dybden
+fra samme øyeblikk. Hull der LiDAR målte en flate (0,2–4,5 m) = pipelinen mistet data (kan
+fikses). Hull der LiDAR ikke fikk retur = fysikk (glass, speil, svart, for langt).
+
+c1794d71 (delkart 0, 2, 3 fra telefonbaken 30.10):
+- **Hovedetasjen, 244 bilder:** hull der LiDAR så flate median **3,7 %** av bildet, p75 7,7 %,
+  p90 13 %. Ingen retur og ingen flate: median 1,8 %.
+- Unike 5 cm-voxler sett som hull i ≥ 2 bilder: vegg/møbler 31,6 m², tak 5,8 m², gulv 3,6 m².
+- Trapp/nede (43 bilder) er 100 % hull: delkart 4 FEILET i den baken (tom flis, rettet i §126).
+
+Tre typer, sett på bildene med hullene malt inn:
+1. **Mørke møbler og tynne hyllebord** (svart reol, bilde 271): LiDAR målte, modellen mangler
+   bord og topp. Svak/støyete retur + 20 mm voxel + vektterskel/komponentfilter.
+2. **Flater sett i få bilder eller på nært hold** (bordplate, bilde 32): stort hull midt på en
+   flate LiDAR så tydelig. Mistanke: dense-frames forkastet (376 av 843 i del 0) og vektterskel.
+3. **Gang/dør mot delkart 4** (bilde 169): hører til delen som feilet.
+
+Neste: ombygging av c1794d71 i harnessen (alle fem deler), så hull-målet per variant
+(`meshscan.tsdfminw`, forkastingsregelen for dense-frames, komponentfilteret).
+
+**Tillegg, aca96f6e (27.10 17:32, ett rom, anchor-v2-bake, 188 bilder):** hull der LiDAR så flate
+median 5,5 %, p75 10,8 %, p90 16,2 %; ingen retur median 2,0 %. Verste bilder: (171) en hvit vegg
+tett på kameraet og et tørkestativ/rekkverk (tynne stenger) mangler; (120) glassdør/vindu — LiDAR
+gir «gyldig» dybde gjennom glasset (ute, refleksjoner), så målet OVERTELLER ved vinduer. Bør
+filtreres (dybde langt bak modellens plan i samme retning) før tallet brukes som fasit.
+Ingen nyere skann med rådata på telefonen enn 27.10 (aca96f6e og c1794d71).
+
+## §132 Husbaken på nytt i Mac-harnessen: trappa er tilbake, rommene litt dårligere (01.11)
+
+c1794d71 bakt i simulatoren (`-meshscan.autorebake … -meshscan.delkartbake on`). Fiksturen
+manglet `delkart/` (bare telefonen har den); laget med `tools/verify-scan-delkart.py <bundle> <ut>`
+og kopiert inn. **Fallgruve:** uten `delkart/` tar harnessen den globale baken i stillhet.
+
+Grupperingen ble [0] [1] [2] [3] [4] (telefonen 30.10: [0,1] [2] [3] [4]). Alle fem ok, 379 s.
+
+**Tetthet** (`verify-scan-tetthet.py`): 1500 / 1472 / 1462 / 1749 / 1729 texel/m. Spredning 16 %
+(var 44 %, fordi 136 m²-delen nå er to deler à 65 m²). Testen feiler fortsatt på 10 %.
+
+**Hull** (`audit-scan-hull.swift`, median / p90 av bildene der LiDAR så flate, bilder per del
+fra `kart.json`):
+
+| Del | 30.10 telefon | 01.11 Mac |
+|---|---|---|
+| 0 | 2,7 / 6,7 % | 4,5 / 10,1 % |
+| 1 | 2,5 / 11,9 % | 3,5 / 10,8 % |
+| 2 | 3,5 / 10,8 % | 4,9 / 15,9 % |
+| 3 | 7,0 / 18,7 % | 5,6 / 19,5 % |
+| 4 (trapp) | 84 / 100 % | **11,9 / 30,1 %** |
+| alle | 4,7 / 54,6 % | 5,5 / 16,3 % |
+
+Del 0–2 fikk 1–1,5 prosentpoeng mer hull. Ikke forklart. Kandidater: den andre grupperingen
+(del 0 og 1 bakt hver for seg, så hver får færre syn og et klipp mellom seg), eller forskjell
+simulator/telefon. Neste: samme bake med [0,1] slått sammen, så de to kan skilles.
+Artefakt: `rebake-harness-hus0111-1793529486693.glb` i fiksturen.
+
+**Oppfølging: grupperingen er ikke årsaken.** Nytt harness-flagg `meshscan.grupper "0,1;2;3;4"`
+(MeshBakeArbeider.grupper) tvinger grupperingen. Samme bake med [0,1] sammen (304 s):
+
+| Del | telefon 30.10 [0,1] | Mac 5 grupper | Mac [0,1] |
+|---|---|---|---|
+| 0 | 2,7 / 6,7 | 4,5 / 10,1 | 4,8 / 10,5 |
+| 1 | 2,5 / 11,9 | 3,5 / 10,8 | 3,7 / 13,9 |
+| 2 | 3,5 / 10,8 | 4,9 / 15,9 | 5,0 / 16,8 |
+| 3 | 7,0 / 18,7 | 5,6 / 19,5 | 6,0 / 19,5 |
+| 4 | 84 / 100 | 11,9 / 30,1 | 11,7 / 29,4 |
+
+Hullene er de samme med og uten sammenslåing, så de 1–1,5 poengene skiller Mac-baken fra
+telefonbaken (simulator, eller kode endret etter 30.10). Spor: del [0,1] har 123,9 m² flate på Mac
+mot 135,8 m² på telefonen, altså 12 m² mindre flate. Det er der hullene er. Ikke funnet ennå.
+
+Sammenslåingen koster derimot skarphet: [0,1] i én del gir 1008 texel/m, mot 1500 og 1472 hver
+for seg. Delt i to rom koster altså ikke hull, men gir 1,5× skarpere tekstur. Det er et argument for
+å dele store grupper (eller flisantall etter flate, §127 punkt 1).
+
+**Svaret: det er simulatoren.** Samme bake på telefonen (13 Pro, dagens kode, `-meshscan.grupper
+"0,1;2;3;4"`, 259 s, alle fem ok, del [0,1] 754 k trekanter mot 705 k på Mac):
+
+| Del | telefon 30.10 | Mac i dag | telefon i dag |
+|---|---|---|---|
+| 0 | 2,7 / 6,7 | 4,8 / 10,5 | **2,7 / 6,7** |
+| 1 | 2,5 / 11,9 | 3,7 / 13,9 | **2,4 / 11,9** |
+| 2 | 3,5 / 10,8 | 5,0 / 16,8 | **3,5 / 10,8** |
+| 3 | 7,0 / 18,7 | 6,0 / 19,5 | **5,6 / 14,9** |
+| 4 | 84 / 100 | 11,7 / 29,4 | **12,0 / 28,3** |
+| alle | 4,7 / 54,6 | 5,6 / 16,7 | **4,1 / 13,6** |
+
+Dagens kode er like god eller bedre i alle deler, og trappa er med. **Regel:** hulltall fra
+simulatoren er 1–2 poeng for høye og kan bare sammenlignes med andre simulatorkjøringer, aldri med
+telefonen. Hvorfor simulatoren mister flate, er ikke funnet (kandidat: GPU-fusjonen i simulatoren).
+
+## §133 Fliser etter flaten: hver del får alle kildepikslene (01.11, Mac-testet)
+
+§127 punkt 1. `MeshBakeV2`: flismålet var fast 2 × atlas, så alle deler fikk 3×3 à 6144 uansett
+flate. Nå pakkes det først som før, og er kildeskalaen (atlaspiksler per kildepiksel) under
+`meshscan.kildeskalamål` (1,0), økes antallet fliser per side til den når målet, høyst
+`meshscan.flismaks` (8×8). Hver flis males alene, så toppminnet er uendret; det koster tid.
+`ruter`-taket i `projectiveFixtureUV` hevet fra 4 til 8. Logg: `V2 fliser — N×N à S, kildeskala …`.
+
+c1794d71, grupper [0,1] [2] [3] [4], simulator:
+
+| Del | Flate | Før | Nå | Kildeskala |
+|---|---|---|---|---|
+| 0+1 | 124 m² | 3×3, 1008 texel/m | **4×4, 1340 texel/m** | 1,00 |
+| 2 | 69 m² | 3×3, 1468 | 3×3, 1468 | 1,04 |
+| 3 | 44 m² | 3×3, 1713 | 3×3, 1713 | 1,25 |
+| 4 | 24 m² | 3×3, 1820 | 3×3, 1820 | 1,54 |
+
+Del 0+1: 90 → 140 s, hele huset 304 → 357 s.
+
+**`verify-scan-tetthet.py` feiler fortsatt (26 %), og det er nå riktig å lese den annerledes.**
+Ved kildeskala ≥ 1 har delen hver piksel fotoene har; mer texel/m er oppskalering, ikke detalj.
+Det som gjenstår av forskjellen er hvor langt unna kameraet var: i et stort rom står veggene
+lenger unna. Det avhenger av romstørrelsen, ikke av husstørrelsen. Et hus med ti rom gir hvert rom
+det samme som ett rom alene. Små deler (1,25–1,54) bærer i dag 1,6–2,4× flere texler enn
+fotoene har; færre fliser der ville spart tid og disk, men er ikke gjort.
+
+**På telefonen (13 Pro, trådløst, 01.11 14:49), med nedtrapping for små deler** (færre fliser så
+lenge kildeskalaen holder ≥ 1, minst 2×2):
+
+| Del | Flate | 13:02 (fast 3×3) | 14:49 (etter flaten) |
+|---|---|---|---|
+| 0+1 | 136 m² | 9 fliser, ~1000 texel/m | **25 fliser (5×5, skala 1,20), 1587** |
+| 2 | 69 m² | 9, 1468 | 9, 1481 |
+| 3 | 41 m² | 9, 1758 | 9, 1769 |
+| 4 | 24 m² | 9, 1729 | **4 (2×2), 1376** |
+
+Hele huset 259 → 329 s, GLB 184 → 219 MB, ingen pauser. Telefonen valgte 5×5 der Mac valgte 4×4,
+fordi telefonbaken beholder mer flate (§132). Trappa har nå bare de pikslene fotoene har (skala ≥ 1);
+de 1376 texel/m er det kameraavstanden gir. Fortsatt ikke sett med øyet i vieweren.
+**Trådløs telefon:** `devicectl copy` av den store `pipeline.log` brytes (socket stengt);
+`device info files` og GLB-ene går fint.
+
+## §134 Vieweren og forhåndsvisningen drepte appen på store modeller (01.11, telefon)
+
+Tre feil, funnet da Tormod brukte appen etter §133. Ingen ga krasjrapport (heller ikke JetsamEvent).
+1. **Viewer + pyramidebygg samtidig.** Uten pyramide lastet vieweren GLB-en med fullt budsjett
+   (4 × 8192², ~1,4 GB med mipmaps) mens `byggIBakgrunnen` dekodet kildebilder. aca96f6e (339 Mpx)
+   døde da han så seg rundt. Nå: GLB-en får 4 × 2048² mens pyramiden mangler, og bare ett bygg om
+   gangen for hele appen (`byggkø`; to samtidige holdt 1,8 GB råfiler).
+2. **Forhåndsvisningen etter «Bygg om modellen»** (`renderThumbnail`) lastet huset (1774 Mpx) med
+   viewerens budsjett og drepte appen FØR JS lagret den nye modellen; skann-kortet pekte fortsatt
+   på 27.10-modellen. Nå 2048² for et 720-bilde.
+3. **Råfila ble ikke kartlagt.** Pyramiden for huset feilet med «raa.tmp couldn't be opened»: hele
+   råfila ble lest med `.alwaysMapped`, og iOS nekter så store kartlegginger. Nå leses én blokk om
+   gangen med FileHandle.
+
+Etter alle tre: huset bakt i appen, lagret, og pyramiden bygget på 484 s (362 blokker, ledig 1966 MB
+ved start) uten at appen døde. Pyramiden bør flyttes inn i baken (den tar lengre tid enn ventet for
+huset, og da ser brukeren fremdriften i stedet for en uskarp modell).
+
+## §135 Skjøten mellom delene: sveis mot eldre FLATE, ikke eldre hjørne (01.11, Mac-testet)
+
+Tormod så røde streker i gulvet ved trappa (huset c1794d71, telefon). `Overflate` i
+MeshBakeArbeider lagret bare eldre HJØRNER, og sveisingen flyttet en ny randvertex til nærmeste
+eldre hjørne innen 6 cm. Forenklede gulv og vegger har hjørner 10–20 cm fra hverandre, så
+11–20 % av randen ble aldri sveiset. Nå: eldre TREKANTER i 2 cm-celler (flaten samples, så store
+trekanter dekker hele flaten sin både i klippet og sveisingen), og randvertexen flyttes til
+nærmeste PUNKT på eldre flate (Ericson), normal på samme linje (|dot| ≥ 0,5).
+
+Sveiset rand, [0,1] [2] [3] [4], simulator: del 2 88,9 → 94,7 %, del 3 79,8 → 88,6 %, del 4
+87,7 → 93,1 %. Hull-målet uendret (5,6 / 16,8 %), tid uendret.
+
+**Strekene er IKKE borte** (render av trappetoppen før/etter: like). Nytt mål `skjot.py` i
+scratch: randkanter per del med en annen del innen r cm. Kanter med annen del innen 1–6 cm men
+ikke 0 (sprekk): del 1 40 → 35 %, del 2 43 → 36 %. Forklaringen nå: den nye randen er
+rette, lange kanter mellom sveisede hjørner (forenklet nett), mens den eldre randen er hakkete
+i 2 cm-trinn. Endepunktene treffer, kantene imellom gjør det ikke, og sprekken er en rekke smale
+kiler. Neste: la den nye delen OVERLAPPE den eldre litt under klippet i stedet for å møte den
+kant mot kant (skjørt), eller klipp før forenklingen så begge randene er hakkete likt.
+
+**Låst rand i forenklingen** (`MeshSimplify.simplify(låsRand:)`, på for husdeler, `meshscan.låsrand off`):
+ingen synlig forskjell og samme sprekkmål — del 3 og 4 forenkles ikke engang (under 250 k). Beholdt
+fordi den er riktig i prinsippet, men den var ikke årsaken.
+
+**Årsaken var klippet.** En ny trekant ble fjernet når sentroiden hadde eldre flate i noen av de
+27 nabo-cellene (2 cm), så den nye delen sluttet 2–4 cm FØR den eldre begynte. Nå bare cellen
+selv (`meshscan.klippnabo`, standard 0, var 1): delene overlapper med inntil én celle.
+Simulator, samme bake: hull median 5,6 → 5,2 %, snitt 7,9 → 7,5 %, trapp 11,7 → 10,8 %, del 2
+5,0 → 4,4, del 3 6,0 → 5,4. Render av trappetoppen: streken langs øvre og venstre kant av
+gulvflaten er borte; sagtenner langs nedre kant er igjen, mindre. Tid 345 → 436 s (flere trekanter
+i overlappet). Ikke sett på telefon.
+
+## §136 Vektterskel 1,0 + småbit-filter, og pyramiden bygges i baken (01.11)
+
+**Vektterskel 1,5 → 1,0.** Steder sett én gang (kontoret gjennom døra) nådde aldri 1,5 og ble
+grå. Simulator, huset c1794d71, alt annet likt (grupper 0,1;2;3;4, klippnabo 0):
+
+| | hull median/snitt | trapp | flate | løse biter < 0,05 m² |
+|---|---|---|---|---|
+| 1,5 (før) | 5,2 / 7,5 % | 10,8 % | 308 m² | 7,1 m², 1824 biter |
+| 1,0 | 3,4 / 5,2 % | 6,9 % | 333 m² | 8,6 m², 2372 biter |
+| 1,0 + småbiter 0,005 | **3,5 / 5,3 %** | **6,9 %** | 330 m² | **6,6 m², 460 biter** |
+
+Enkeltrom (soverom 9ef06228, global TSDF): hull median 4,0 → 3,3 %, p90 13,9 → 12,0 %,
+løse biter 78 → 26.
+
+**Småbit-filter** (`MeshBakeV2`, før forenklingen): sammenhengende biter under
+`meshscan.småbiter` m² (standard 0,005 = 50 cm²) fjernes. Det som henger i veggen (stikk,
+list) er ikke en løs bit. `meshscan.småbiter 0` slår av.
+
+**Pyramiden i baken.** `Blokkpyramide.byggNå` kjøres etter baken, før miniatyren, i appens
+ombygging, live-skannet og harnessen, med «Klargjør visningen… N %». Rom: 23 s. Feiler den,
+bygger vieweren i bakgrunnen som før. Ikke verifisert på telefon ennå.
+
+## §137 Fartsfilteret for dybde 0,35 → 0,6 m/s (02.11)
+
+Etter §136 lå de største hullene på flater LiDAR faktisk så: hvit vegg ved reolen, salongbordet,
+den mørke kontorveggen, trappegulvet. Årsaken var fartsfilteret: 433 av 843 dybdekart ble dempet
+(vekt ned mot 0,15) fordi kameraet beveget seg over 0,35 m/s eller 30°/s, og nådde aldri
+terskelen. 0,35 ble målt i september, før driftretting og bildebinding.
+
+| simulator | hull median/snitt | trapp | flate | løse biter |
+|---|---|---|---|---|
+| hus, 0,35 (§136) | 3,5 / 5,3 % | 6,9 % | 330 m² | 6,6 m² |
+| hus, 0,6 | **2,0 / 3,4 %** | **4,5 %** | 376 m² | 8,2 m² |
+| soverom, 0,35 | 3,3 / 4,6 % | | 66,3 m² | 0,43 m² |
+| soverom, 0,6 | **2,3 / 3,4 %** | | 66,7 m² | 0,56 m² |
+
+Dobbeltvegger var risikoen. Andel flate med en parallell nabo 2,5–8 cm unna: 33,1 → 33,3 %
+(grunnivået er overlappet mellom delene, §135), og ingen dobling synlig i renderne. Huset fikk
+46 m² mer flate; soverommet nesten ingenting, så det nye er flater som manglet, ikke tykkelse.
+
+Pyramiden i baken (§136) tok 293 s for huset på Mac.
+
+## §138 Romlige fliser, og AR-visningen i kameraets takt (02.11)
+
+**Hvor tiden går.** Maling er 182 av 202 s for del 0 på huset. Ny logging per flis («N syn (M
+dekodet, cpu, gpu)») viste hvorfor: høyest-først-pakkingen la biter fra hele delen i hver flis,
+så 135 av 160 bilder rørte hver av de 25 flisene. Hvert 4K-bilde ble dekodet og lastet opp ~25
+ganger.
+
+**Romlige fliser.** Feltene sorteres langs en Morton-kurve (25 cm) og deles i like store grupper,
+én per flis, høyest-først inne i gruppen (`meshscan.romligflis off` = gammel rekkefølge). Bilder
+per flis 135 → 60–100 (et foto ser en stor del av rommet uansett, så gevinsten er mindre enn
+håpet). Simulator, huset:
+
+| | total | maling del 0 | hull | tetthet (verify-scan-tetthet) | GLB |
+|---|---|---|---|---|---|
+| før | 529 s | 182 s | 2,0 / 3,4 % | FEIL: del 1 −21 %, del 3 −33 % | 282 MB |
+| romlig | **474 s** | **130 s** | 2,0 / 3,4 % | **OK**, 1490–1646 texel/m | 306 MB |
+
+Tetthetsregelen består nå: den tettere pakkingen lot små deler nå kildeskalamålet med for få
+fliser (del 3: 4 fliser, 1154 texel/m); nå 9 fliser og 1606.
+
+Neste steg for fart, om det trengs: dekode hvert bilde én gang for alle flisene (krever enten
+alle akkumulatorene samtidig — for mye minne på telefon — eller en hurtigbuffer av dekodede bilder).
+
+**AR-visningen i 30 fps.** `preferredFramesPerSecond` = kameraformatets takt (30 for 4K) i stedet
+for SceneKits 60. Annenhver tegning var lik den forrige. Ikke målt på telefon.
+
+## §139 Overlappet dekoding og GPU — prøvd, forkastet (02.11)
+
+Pass 2 committet puljen uten å vente og dekodet neste mens GPU-en tegnet. Del 4 på huset ga
+**identiske** tider per flis (farge-pass 2,0–2,1 s, cpu 1,0 + «gpu» 0,8 s, før og etter).
+«gpu»-tida er CPU-arbeid — `replace` av 33 MB per bilde inn i teksturen, buffere, mipmaps — ikke
+venting på GPU-en, så det var ingenting å skjule. Tilbakestilt (kostet +100 MB per flis).
+Simulatoren er ikke telefonen, men uten målt gevinst beholdes ikke minnekostnaden.
+
+## §140 Lav-konfidens-dybde for svarte og blanke flater (02.11)
+
+**Hull etter §137** ligger mest på svarte/mørke og blanke flater: ARKit merker dybden der som
+`.low`, og `tightDepth` satte den til 0 ved opptak — informasjonen fantes aldri i bundelen.
+
+**Opptak:** dense-kartene (5 Hz, det TSDF-en bygger av) lagrer nå lav konfidens som **−z** i
+stedet for 0 (`meshscan.lavkonf off` = gammelt). Alle lesere av dybdekartene krever z > 0,05–0,3
+(sjekket: TSDF CPU/GPU, bildebinding, delkart-fusjonen live, synlighet i MeshBakeArbeider,
+romgrenser), så de hopper over −z akkurat som 0. Nøkkelbildenes dybde og okklusjonen er urørt.
+
+**Bake:** `ampex_fuse` leser |z| når `lavVekt` > 0, og en lav-konfidens-piksel teller med vekt
+0,25 (`meshscan.lavkonfvekt`, 0 = av). Kanttesten ser på |z|, så et hopp mot lav konfidens er
+fortsatt en kant (flygende piksler i dybdekanter forkastes som før), men en sammenhengende svart
+flate er det ikke. Med vektterskel 1,0 (§136) trengs ~4–6 slike kart før en voxel overlever —
+tilfeldige flygende piksler samler seg ikke, en svart benkeplate sett i ett sekund gjør det.
+Live-fusjonen sender `lavVekt` 0 og er uendret.
+
+Gamle skann har ingen −z og baker identisk (soverommet, se under). Effekten kan bare måles på et
+NYTT skann fra telefonen.
+
+## §141 Skjørt i skjøten — prøvd, forkastet (02.11)
+
+Ny del klippet bare der eldre flate fantes 2 cm ut til alle fire sider i trekantens plan, så
+delene overlappet ~2 cm i stedet for å møtes kant i kant. Huset: hull 2,0/3,4 → 1,8/3,2 %,
+hullpiksler −5 %, `skjot.py` nesten uendret. Men render 314 (trappa) fikk NYE sorte sikksakk-
+streker over trinnene: randen til den overlappende delen (mørke randtekseler) synes gjennom.
+Verre for øyet enn før; tilbakestilt. De røde stripene i gulvet nede til venstre i 311/314 er
+uendret og er IKKE skjøt mellom deler — hull i én del nær kameraet.
+
+## §142 Smalere kantfilter (03.11)
+
+Tormods stue (c9844981d, telefon 03.11) hadde grå bånd rundt bord, sofa og stol. `edgeRadius` 1 → 0
+(bare høyre/ned-naboen, som før §114). Ren A/B (NB: de første A/B-ene 03.11 kjørte på et simulator-
+bygg som fortsatt hadde skjørtet fra §141 — kildekoden var tilbakestilt, bygget ikke):
+
+| | hullpiksler | median / snitt | løse biter |
+|---|---|---|---|
+| stue, edge 1 | 86 195 | 1,6 / 2,7 % | 4,69 m² |
+| stue, edge 0 | 72 164 (−16 %) | 1,2 / 2,3 % | 5,01 m² |
+| hus, edge 1 (hus13) | 304 840 | 2,0 / 3,4 % | 8,24 m² |
+| hus, edge 0 (hus16) | 286 126 (−6 %) | 1,8 / 3,2 % | 8,03 m² |
+
+Lukkede små hull ble også prøvd (vifte over randløkker med hull-orientering): bare 10 hull,
+0,01 m² i stua, +70 s. Forkastet — de grå båndene er ÅPNE render, ikke hull.
+
+## §143 Randforlengelse 5 cm (03.11)
+
+TSDF-flaten slutter 2–5 cm før den virkelige kanten (kantpiksler forkastes, voxlene utenfor kanten
+får aldri vekt). `MeshBakeV2.forlengRand`: hver åpen randkant får en stripe i nabotrekantens plan,
+5 cm ut (`meshscan.randforleng` cm, 0 = av). Retning per randhjørne = snittet av de to randkantenes
+utoverpil; spisse og ikke-mangfoldige hjørner står stille. For hus kjøres den per del FØR klippet
+mot eldre deler, så stripene ved skjøtene klippes bort og ikke blir et nytt overlapp (§141).
+
+| | hullpiksler | median / snitt | flate | løse biter | tid |
+|---|---|---|---|---|---|
+| stue, uten | 72 164 | 1,2 / 2,3 % | 134 m² | 5,0 m² | |
+| stue, 3 cm | 25 465 | 0,2 / 0,8 % | 146 m² | 5,1 m² | |
+| stue, 5 cm | **14 244** | **0,0 / 0,5 %** | 158 m² | 5,6 m² | |
+| hus, uten (hus16) | 286 126 | 1,8 / 3,2 % | 379 m² | 8,0 m² | 501 s |
+| hus, 5 cm (hus17) | **120 104** | **0,3 / 1,3 %** | 465 m² | 11,2 m² | 527 s |
+
+Render: sofa-, stol- og gardinkanter lukket, stripa langs bordkanten nesten borte, ingen sorte
+sikksakk-streker (som skjørtet ga). Trappa (314): færre glipper, et par små mørke flekker. Det som
+står igjen er sett aldri (under bordkanten, mørke åpninger) og glass (peisglasset).
+
+## §144 Fri kant 2 cm, glipe 5 cm (03.11)
+
+Tormod på telefon etter §143: «bordet forsvinner litt i kanten». 5 cm forlengelse ut i luft (bordkant
+over gulv) gikk forbi den virkelige kanten, og stripa ble malt med teppet bak — kanten ble utvisket.
+Nå sjekkes hvert randhjørne: finnes annen flate foran randen innen 5 cm (2 cm-rutenett, punkt med
+positiv avstand langs pila og innen 2 cm fra prøvepunktet), er det en glipe og forlenges 5 cm; ellers
+er det en fri kant og forlenges 2 cm (`meshscan.randfri`). Stua: 40 % av randhjørnene er glipe.
+Hullpiksler 72 164 (uten) → 28 968 (glipe/fri) mot 14 244 (5 cm overalt). Render: bordkanten skarp
+igjen, sofaglipa fortsatt lukket; tynn rød stripe langs bordets side (aldri sett).
+
+## §145 Sagtenner langs bordkanten — ikke fra randforlengelsen (03.11)
+
+Tormods skjermbilde (Skann 14) viste lange tenner langs bordkanten mot sofaen og på veggsøylen.
+Render 77 av samme bake: tennene finnes LIKT i edge 1 uten forlengelse, edge 0 uten forlengelse,
+og med glipe/fri-forlengelse — og uten forenkling (`meshscan.simplify off`). De er TSDF-geometri
+der kanten bare er sett fra få, bratte vinkler. Laplace-glatting av ytterringen (8 runder) ga
+ingen synlig forskjell og flere hullpiksler (28 968 → 32 660); tilbakestilt. Mulig vei: trimme
+randen mot fotoets silhuett (fargeskille mellom bord og teppe) — større jobb.
+
+## §146 Guidet matching i bildebinding trinn 2 — bygget, AV som standard (04.11)
+
+Trinn 2 kjører alle-mot-alle SIFT-matching på GPU igjen (~11 s per del på telefonen) selv om posene
+allerede er bundet. Prøvd: hvert trekk sammenlignes bare med trekk innen 3 × vinduet rundt spådd posisjon
+(rutenett per bilde, forholdstest mot naboene, beste treff innen vinduet), valgfritt gjensidig sjekk.
+
+Stua (102 bilder, del 0 trinn 2, simulator):
+
+| variant | matching | treff | epipolar median / p90 | flytt median | hull |
+|---|---|---|---|---|---|
+| alle mot alle (i dag) | 2.3 s | 82 366 | 0.55 / 1.64 px | 4 mm | 29 181 |
+| guidet, ratio 0.8 | 0.8 s | 106 817 | 0.72 / 2.68 | 8 mm | 29 171 |
+| guidet + gjensidig | 0.8 s | 102 993 | 0.69 / 2.40 | 7 mm | 23 629 |
+| guidet + gjensidig, ratio 0.7 | 0.5 s | 93 171 | 0.63 / 1.94 | 6 mm | 26 614 |
+
+3–4× raskere matching, men p90 kommer aldri ned på dagens nivå: den lokale forholdstesten slipper gjennom
+treff som den globale (hele bildet) ville drept. Gevinst på telefon ≈ 8 s per del (~15 s av 3:18) — ikke verdt
+usikker kvalitet. Ligger bak `meshscan.bbguidet on` (+ `meshscan.bbgjensidig`, `meshscan.bbratio`).
+Større tidsposter å ta først: pyramide 54 s, maling 40 s.
+
+## §147 Blokkpyramiden — én dekoding per bilde, RAM eller mmap (04.11)
+
+Kopieringen i `Blokkpyramide.bygg` gikk fra 31,8 s til 8,3 s (disk) / 7,1 s (RAM), JPEG-nivåene fra
+8,1 til 1,2 s (stua i simulator, 40 → 10 s totalt). Hvert kildebilde dekodes én gang og kopieres inn i
+blokkene som bruker det; blokkene ligger i RAM når de får plass i 30 % av ledig minne, ellers i en
+side-justert råfil som mmap-es blokk for blokk. `meshscan.pyrdisk on/off` tvinger valget. md5 avviker
+mellom kjøringer (rekkefølgen i en Swift-ordbok), så verifisert mot GLB-render: snittavvik 1,2–1,75.
+
+## §148 Eksponering for hele modellen i baken (04.11)
+
+Første eksterne tester (iPhone 17 Pro Max, sol i vinduet) fikk et skann der ALT var for lyst. Fangsten
+låser AE etter 1,5 s på det kameraet ser da; gain-løseren fjerner den globale frihetsgraden med vilje,
+så ingenting rettet det. Målt på åtte gode skann: median luma per bilde 125–148/255, ~0 % utbrent.
+
+Nytt steg etter hvitbalansen: median luminans over alle bilder (med gains, lineært). Utenfor båndet
+115–160 skaleres hele modellen til nærmeste kant (klemt 0,4–2,5×); innenfor røres ingenting.
+A/B på stua (102 bilder) med en kunstig overeksponert kopi (×2,6 lineært, median 228, 33 % utbrent):
+
+| | Render-median (4 vinkler) | Utbrent i render |
+|---|---|---|
+| Original stue | 151–167 — «innenfor, ingen korreksjon» | 0,1–8 % |
+| Lys kopi, uten steget | 230–249 | 21–45 % |
+| Lys kopi, med steget (×0,48) | 168–183 | 0 % |
+
+Det som var utbrent i kildebildet blir en flat lysegrå flekk — informasjonen finnes ikke. Den varige
+løsningen er i fangsten (beskytt høylysene ved låsing); baksteget er sikkerhetsnettet. Flagg:
+`meshscan.eksponering off`, `meshscan.lysmaallav` / `meshscan.lysmaalhoy`.
+
+Bivirkning å følge med på: hvitbalansen fra taket (§86) ga ×1,17 blått på stua (tak R/G 1,24). I et
+rom med varmt lys gjør den skannet kaldere enn rommet — sannsynlig del av «blått» hos testeren.
+
+## §149 Lysvakt etter AE-låsen (04.11) — UTESTET PÅ ENHET
+
+§148 demper et for lyst skann i baken, men utbrente piksler kan ikke hentes tilbake. Derfor i fangsten:
+de første 2,5 s etter låsen (fra 0,3 s, mens brukeren begynner å gå) måles Y-planet hver 5. ramme
+(~1500 punkter per måling). Median over målingene utenfor 70–175, eller > 4 % utbrent, flytter låsen
+ÉN gang: ned via ISO først (lukkertiden holdes kort), opp via ISO, lengre lukker bare om ISO er i taket
+og aldri over 1/30 s. Celler som ble ferdig før åpnes igjen og tidligere bilder merkes pre-lås — samme
+mekanisme som selve låsen. Logglinje «lysvakt — …» viser hva den gjorde. `meshscan.lysvakt off` slår av.
+Kompilerer; simulatoren har ikke kamera, så første ekte måling er neste skann på telefon.
+
+## §150 Hvor UV-atlaset bruker tiden (05.11) — planidéen FORKASTET
+
+Ingebrigts skann (25 s, 249k tris) bakte på 30 s, og 18,3 s av dem var xatlas. Hypotesen var at
+plane flater (vegg/gulv/tak, 63 % av punktene snappet) kunne få UV ved ren projeksjon og hoppe over
+xatlas. **Målt og forkastet:** på det ekte nettet fra soveromsbundelen (dumpet med
+`-meshscan.uvdump <fil>`, kjørt i en ren C++-sele mot `xatlas_wrap.cpp`) ga det å fjerne alle
+56 % plan-trekantene 6,9 s → 6,7 s. Chart-veksten er billig på plane flater; tiden går i de ujevne.
+
+Fordelingen på Mac (102k tris, 3 m-blokker): charts 3,6 s, pakking 3,3 s. Pakkingen skalerer med
+atlasflaten, ikke trekanttallet: pakket ved 4096 i stedet for 8192 går den på 1,1 s (3×), men
+texel per m² faller 1,1–1,5 % (utnyttelse 77,3 → 76,1–76,4 %). Ikke innført — Tormods regel er at
+kvalitet per m² ikke skal ned. Logglinja «xatlas faser — charts …, pakking …» viser fordelingen på
+telefon, så neste skannlogg sier om den er den samme der.
+
+## §151 xatlas i halv oppløsning når flisene pakker om (06.11) — FORKASTET
+
+Kvalitetsveien (fliser, standard også live) kaster xatlas-oppsettet: `projectiveFixtureUV`
+pakker alle felt på nytt. Bare de ~5 % flatene uten gyldig fotoprojeksjon beholder sitt
+xatlas-chart, i xatlas-piksler (uvs × atlasSize). Derfor pakkes xatlas nå i atlasSize/2 og
+atlasSize dobles tilbake. Bygget, målt og tatt ut igjen: Tormod — «ikke stor nok gevinst»
+for at 5 % av flatene skal tape 1–3 %. Koden er fjernet; loggen beholder «xatlas tetthet»
+og antall projiserte flater i «V2 fliser».
+
+Målt i simulatoren, soverom-fixturen 2026-09-09 (102 832 tris), samme bake to ganger er
+bit-lik per trekant:
+- xatlas-pakking 3,4 → 1,1 s, hele baken 23,2 → 20,3 s. Chartene er identiske (67 203 vertekser begge veier).
+- Kildeskala 1,08 → 1,10. 94 % av arealet +4,2 % texel/m², 5 % av arealet (reserveflatene) −1–3 %, 0,03 % −5–10 %.
+- texelsPerUnit er eksakt halvert (1750,3 mot 875,6); tapet på reserveflatene kommer fra
+  avrunding/blockAlign og fra at flispakkingen er hylle-basert og hopper ved små endringer.
+
+Prøvd og forkastet: 5 % margin på reserve-chartene (prosjiserte flater −4 %, pakkingen er
+ikke-lineær), og retting av v-skalaen (wrapperen deler v på atlasHØYDEN, bake ganger med
+bredden; rettet ga +2,6 % / −2–3 %, dårligere enn urettet).
+
+Funn til senere: trekantene dekker bare 49 av 151 Mpx i de fire flisene (32 %). Hylle-
+pakkingen av felt-bokser er den store kvalitetsspaken, ikke tid.
+
+## §152 xatlas bare på restflatene — baken halvert (06.11)
+
+Kvalitetsveien (fliser) pakker alt på nytt i `projectiveFixtureUV`; bare flatene uten gyldig
+fotoprojeksjon (~5 %) bruker et xatlas-chart. Likevel ble hele nettet unwrappet — 18,3 av 30,3 s
+på Ingebrigts skann 05.11. Nå (`meshscan.xatlasetter`, på som standard i kvalitetsveien):
+- Baken går videre på nettet uten UV. Alt fram til flisene bruker sveisede posisjoner
+  (`wid`), ikke xatlas' vertekssplitt; dekningsandelen regnes på 3D-areal.
+- Rett før flisene unwrappes bare restflatene, med fast texelsPerUnit = (atlas + 2·padding)·√(0,75/areal)
+  — nøyaktig den skalaen full unwrap valgte (1750,2 mot 1750,3 målt). Wrapperens v deles på
+  atlashøyden; med fast skala rettes den til breddens målestokk.
+- `begrensPlanKandidater` teller nå ALLE flater på planet, ikke hver N-te: utvalget avhang av
+  trekantrekkefølgen (xatlas grupperer per 3 m-blokk) og ga ulike topp-4 og 5 % skarphets-
+  forskjell mellom to ellers like bakes. `meshscan.plantoputvalg on` gir det gamle.
+- Skalatak (`meshscan.skalatak`, 1,1): uten xatlas-reservechartene havnet kildeskalaen på 1,47.
+  Texler over kildepikselen bærer ingen detalj, men vieweren velger nivå etter texeltetthet og
+  hoppet til halv oppløsning (synlig mykere panelspor). Flisene krympes til skalaen ligger like over 1,0.
+
+Målt i simulatoren, soverom-fixturen 2026-09-09 (102 832 tris), samme simulator-tilstand:
+bake 13,2 → 9,5 s (xatlas 4,1 → 0,1 s, maling 6,2 s, pyramide 1,5 → 0,7 s, fil 16 → 15 MB).
+Kildeskala 1,063 → 1,092; lineær texeltetthet median +2,7 %, 0,3 % av arealet mer enn 2 % lavere.
+Skarphet i teksturen ved 1 mm 6,34 → 6,36; visningen fra tre kamerastillinger 4,57/3,50/3,94 →
+4,50/3,45/3,87 (~1,5 %, innen støyen fra nivåvalget); farge på vegg identisk.
+Telefon: xatlas var 60 % av baken, så forventet ~30 → ~12–13 s. Bekreftes av neste skannlogg.

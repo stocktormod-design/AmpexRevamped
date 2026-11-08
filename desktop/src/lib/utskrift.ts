@@ -1,6 +1,7 @@
 import { convertFirmSections } from '@delt/forms/firm-schema'
 import { getTemplate } from '@delt/forms/templates'
-import type { FormSection, FormTemplate } from '@delt/forms/types'
+import type { FormSection, FormTemplate, FormValues } from '@delt/forms/types'
+import { visibleSections } from '@delt/forms/visibility'
 import { byggUtskriftHtml, type Utskrift, type UtskriftSeksjon } from '@delt/dokument/utskrift'
 import { hentFirma } from '@/lib/kontor-lager'
 import { supabase } from '@/supabase'
@@ -159,7 +160,9 @@ export async function byggDokumentutskrift(ordreId: string, dokumentId: string):
       adresse: (ordre.address as string | null) ?? null,
     },
     kunde: kundenavn ? { navn: kundenavn, adresse: (ordre.address as string | null) ?? null } : null,
-    seksjoner: tilSeksjoner(mal.sections, verdier),
+    // Bare det som var synlig da det ble fylt ut: en risikovurdering uten elbillader skal ikke
+    // skrives ut med elbil-spørsmålene ubesvart.
+    seksjoner: tilSeksjoner(visibleSections(mal, verdier as FormValues), verdier),
     // Signaturene henger på ORDREN, ikke på dokumentet. Kundens underskrift
     // gjelder at arbeidet er utført — den hører derfor på arket som viser at
     // det ble kontrollert.

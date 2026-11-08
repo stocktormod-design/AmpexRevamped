@@ -134,7 +134,6 @@ function Rad({ extra }: { extra: OrderExtra }) {
       <PromptSheet
         synlig={spørNavn}
         tittel="Hvem godkjente?"
-        forklaring="Det er dette som teller hvis det blir uenighet senere."
         plassholder="Fornavn Etternavn"
         knapp="Neste"
         onSvar={navn => { setSpørNavn(false); setSpørMåte(navn) }}
@@ -143,7 +142,6 @@ function Rad({ extra }: { extra: OrderExtra }) {
       <ChoiceSheet<GodkjenningsMate>
         synlig={spørMåte !== null}
         tittel="Hvordan ble det godkjent?"
-        forklaring="Skriftlig står sterkere enn muntlig, men muntlig med navn og dato er langt bedre enn ingenting."
         valg={MATER.map(m => ({ verdi: m, etikett: godkjenningLabel[m] }))}
         onVelg={async m => {
           const navn = spørMåte
@@ -258,7 +256,7 @@ export default function TilleggScreen() {
           <Text style={t.display}>{godkjentOre > 0 ? formatKr(godkjentOre) : '—'}</Text>
           <Text style={[t.footnote, { marginTop: spacing.xs }]}>
             {ventende > 0
-              ? `${ventende} venter på godkjenning — de kan ikke faktureres før noen sier ja`
+              ? `${ventende} venter på godkjenning`
               : 'Godkjent tilleggsarbeid, eks. mva'}
           </Text>
         </View>
@@ -315,12 +313,7 @@ export default function TilleggScreen() {
         {rader.length === 0 ? (
           <View style={{ paddingHorizontal: spacing.screen + spacing.lg }}>
             <Text style={[t.body, { color: colors.secondaryLabel }]}>
-              Ingen tillegg registrert.
-            </Text>
-            <Text style={[t.footnote, { marginTop: spacing.sm }]}>
-              Arbeid kunden ikke bestilte må godkjennes før det kan faktureres.
-              Registrer det med en gang — det er navnet på den som sa ja, og når,
-              som avgjør hvis det blir uenighet senere.
+              Ingen tillegg
             </Text>
           </View>
         ) : (

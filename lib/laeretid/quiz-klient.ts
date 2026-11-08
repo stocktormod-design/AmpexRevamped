@@ -18,6 +18,7 @@ import { finnMaal, laereplan, type Kompetansemaal, type Laereplankode } from './
 import { KART } from './nek-kart'
 import { NIVAAHINT, byggProfil, fokus, nivaaFor, temaProfil, type Temanivaa } from './profil'
 import { finnTema } from './teori'
+import { delBeskrivelse } from './mal'
 import {
   isoDag, utspurtForDel, vaskForslag,
   type Fasit, type Forslag, type Runde, type Sporsmaal, type SvaktTema, type Vurdering,
@@ -84,8 +85,11 @@ export async function loggKontekst(logg: LaeretidLogg) {
     tittel: logg.tittel, arbeidsdato: logg.arbeidsdato,
     instruks: logg.instruks, innhold: logg.innhold,
     notater: bilder.filter(b => b.notat?.trim()).map(b => ({ tid: klokke(b.tattAt), notat: b.notat!.trim() })),
-    utenNotat: bilder.filter(b => !b.notat?.trim()).map(b => klokke(b.tattAt) ?? `bilde ${b.rekkefolge + 1}`),
+    utenNotat: bilder.filter(b => !b.notat?.trim() && !b.modellbeskrivelse?.trim())
+      .map(b => klokke(b.tattAt) ?? `bilde ${b.rekkefolge + 1}`),
     svar: meldinger.map(m => m.tekst),
+    bildene: bilder.filter(b => b.modellbeskrivelse?.trim())
+      .map(b => ({ tid: klokke(b.tattAt), beskrivelse: delBeskrivelse(b.modellbeskrivelse).beskrivelse })),
   }
 }
 

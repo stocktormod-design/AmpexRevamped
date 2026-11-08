@@ -14,6 +14,9 @@
         "NSCameraUsageDescription": "Ampex bruker kameraet til bilder av jobben og til å skanne rom i 3D.",
         "NSPhotoLibraryUsageDescription": "Ampex henter bilder du alt har tatt av jobben, så de kan bli med i loggen.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.kernel.increased-memory-limit": true
       }
     },
     "android": {
@@ -85,6 +88,15 @@
               "contentMarginsDisabled": false
             }
           ]
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Ampex viser hvor du er på ordrekartet, så du ser hvilke jobber som ligger nærmest. Posisjonen lagres ikke.",
+          "locationAlwaysAndWhenInUsePermission": "Ampex viser hvor du er på ordrekartet, så du ser hvilke jobber som ligger nærmest. Posisjonen lagres ikke.",
+          "locationAlwaysPermission": "Ampex viser hvor du er på ordrekartet, så du ser hvilke jobber som ligger nærmest. Posisjonen lagres ikke.",
+          "isIosBackgroundLocationEnabled": false
         }
       ],
       "expo-font",

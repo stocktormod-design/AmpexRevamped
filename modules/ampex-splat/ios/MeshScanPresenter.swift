@@ -111,13 +111,28 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     private var kfTargetWidth: CGFloat = MeshScanPresenter.keyframeTargetWidth
     // Taket styrer også hvor langt dekningsfargingen («wireframen») kan vokse — for lavt tak
     // føles som hard cap i store rom. Baken pruner uansett ned til de 50-90 skarpeste.
-    private static let maxKeyframes = 600
+    // HELT HUS (2026-10-22): taket var 600, og det var antall som stoppet et husskann, ikke
+    // minnet (KFCam er ~12 kB). Rådataene er stillas — de bakes til én GLB og slettes — så
+    // grensen er nå DISKEN (`Lagringsvakt`). Dette er bare et sikkerhetsnett.
+    private static let maxKeyframes = 20_000
     private static let keyframeMinInterval: Double = 0.2    // seconds
     private static let keyframeMinMove: Float = 0.12        // metres
     private static let keyframeMinRotateDot: Float = 0.99   // ~8° between forward vectors
     private lazy var ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private var framesDir: URL?
     private var aeLockTime: Double = .infinity // settes når AE/AWB-låsen slår inn
+    // RELÅS (2026-11-04, §149): lysmåling de første sekundene ETTER låsen. Se lysvakt(_:).
+    private var lysPrøver: [(median: Float, utbrent: Float)] = []
+    private var lysvaktFerdig = false
+    private var lysvaktTikk = 0
+    // M0a (2026-10-26, docs/PROMPT_OPUS_SKANN_DELKART.md): flytter ARKit sine egne ARAnchor-er
+    // når sporingen rettes? Ett anker hvert 30. s ved normal sporing, hver flytting logges.
+    // Ren måling — delkartene i M1 skal forankres slik om svaret er ja. Fjernes i M1.
+    private struct M0Anker { let T0: simd_float4x4; let lagt: TimeInterval; var sistLogget: simd_float4x4; var maksMm: Float = 0 }
+    private var m0Ankere: [UUID: M0Anker] = [:]
+    private var m0SisteAnker: TimeInterval = -.infinity
+    private var m0SisteTid: TimeInterval = 0
+    private let m0Ankerlogg = UserDefaults.standard.string(forKey: "meshscan.ankerlogg") != "off"
     // Encoding + disk I/O run here so the AR delegate never blocks (avoids ARFrame retention).
     private let captureQueue = DispatchQueue(label: "ampex.meshscan.capture")
     private var keyframes: [Keyframe] = []   // mutated only on captureQueue
@@ -155,12 +170,44 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     }
     // Tett dybdelogg (se maybeRecordDenseDepth): teller/takt på delegat-tråden, filhandle på captureQueue.
     private var denseCount = 0
-    /// Teller ALLE kandidat-tikk (ikke bare lagrede) — grunnlaget for uttynningen.
-    private var denseTick: UInt64 = 0
     private var lastDenseTime: Double = -1
     private var denseHandle: FileHandle?
     private var denseClosed = false // etter Ferdig: sene kart skal IKKE gjenåpne (og trunkere) indeksen
-    private static let denseMax = 600      // ~118 MB tak per bundle
+    // Var 600 (~118 MB) med uttynning ned til 1/16 — et 15-min husskann fikk nesten ingen
+    // dybde fra de siste rommene. Nå full 5 Hz til disken sier stopp (~200 kB per kart).
+    private static let denseMax = 100_000
+    /// Rådata-budsjett for ETT skann. Telefonen har plass, og alt slettes etter baken
+    /// (Tormod 2026-10-22: «om du bruker 10–20 GB for å lage en 30 MB 3D-fil gjør det ikke
+    /// noe»). Opptaket stopper uansett før ledig plass går under `lagringsGulv`.
+    private final class Lagringsvakt {
+        private let lås = NSLock()
+        private var full = false
+        private var sistSjekk: Double = -10
+        private var meldt = false
+        let budsjett: Int64 = Int64(MeshBakeV2.flaggTall("meshscan.rabudsjett", 20)) << 30
+        let gulv: Int64 = 3 << 30
+        var brukt: Int64 = 0
+        func skrevet(_ n: Int) { lås.lock(); brukt += Int64(n); lås.unlock() }
+        /// Uten disksjekk — for veiledningen, som spør hvert tikk.
+        var erFullNå: Bool { lås.lock(); defer { lås.unlock() }; return full }
+        /// Billig å kalle hver ramme: disken spørres høyst hvert 2. sekund.
+        func erFull(nå t: Double, dir: URL?) -> Bool {
+            lås.lock(); defer { lås.unlock() }
+            if full { return true }
+            if brukt > budsjett { full = true }
+            else if t - sistSjekk >= 2, let dir = dir {
+                sistSjekk = t
+                if let v = try? dir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+                   let ledig = v.volumeAvailableCapacityForImportantUsage, ledig < gulv { full = true }
+            }
+            if full && !meldt {
+                meldt = true
+                MeshLog.log("lagringsvakt — opptaket av rådata stopper: \(brukt >> 20) MB skrevet (budsjett \(budsjett >> 30) GB, gulv \(gulv >> 30) GB ledig)")
+            }
+            return full
+        }
+    }
+    private let lagring = Lagringsvakt()
     private static let denseInterval = 0.2 // 5 Hz
     private var keyframeReserved = 0          // gate/index, delegate thread only
     private var lastNoveltyForce: Double = -1 // dekningstvangens 2 Hz-takt (delegat-tråden)
@@ -180,8 +227,18 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     // Rå Int-verdi = prioritet — høyere avbryter lavere umiddelbart, lavere må vente
     // på minimum visningstid (unngår flimring mellom nesten-like tilstander).
     private enum Guide: Int {
-        case none = 0, good, turnLeft, turnRight, turnAround, floor, ceiling, tooFar, strafe, slowDown
+        case none = 0, good, turnLeft, turnRight, turnAround, floor, ceiling, tooFar, strafe, slowDown, lap
+        /// Full disk: ingen nye bilder → stripene kan aldri males bort. Øverst, for ellers
+        /// står montøren og maler i det uendelige (Henning 08.11, iPhone 15 Pro, < 3 GB ledig).
+        case lagringFull
     }
+    /// Sist lukkede delkart (id, tid), satt av fusjonen. Neste dekningspass vurderer det.
+    private var lukketDelkart: (id: Int, t: CFAbsoluteTime)?
+    /// Veiledning etter lukking, i 10 s: trapp uten gulv («en runde til»), eller et punkt der
+    /// gulvet slutter uten vegg over (pil dit).
+    private enum LukkeHint { case trapp, vegg(SIMD3<Float>) }
+    private var lukkeHint: (hint: LukkeHint, til: CFAbsoluteTime)?
+    private var guideText = ""
     private var guide: Guide = .none
     private var guideSince: CFAbsoluteTime = 0
     // Pose-historikk (~5 s) for «snurrer på stedet»-deteksjon: mye yaw, lite posisjon.
@@ -242,12 +299,26 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         var tilstand: [Int64: Tilstand] = [:]
         var laast = Set<Int64>()
         var sterke = Set<Int64>()
+        /// DELKART: celler W har sagt «dekket» om. W vokser bare, så svaret huskes mellom pass
+        /// i stedet for å slås opp på nytt hvert pass (det var det som gjorde passet tregt).
+        var dekketW = Set<Int64>()
         /// Visningsalpha per celle, eased mot 0 (dekket) / 1 (mangler) — stripene toner, popper ikke.
         var alpha: [Int64: Float] = [:]
+        /// DELKART: per anker, summen over vertekser som er låst OG dekket (begge monotone, så
+        /// svaret står seg til ARKit endrer ankeret) og indeksene som gjenstår. Passet så hver
+        /// verteks i hele meshen hvert sekund og vokste med skannet (21 → 59 ms over 80 pass,
+        /// telefon 27.10); nå ser det bare på det som ikke er ferdig og på ankre ARKit har endret.
+        struct AnkerRest { var red = 0, ceilTotal = 0, floorTotal = 0; var rest: [Int32] = [] }
+        var anker: [UUID: AnkerRest] = [:]
     }
     private let cellCache = CellCache()
     /// GPU-dekningsfeltet overlegget leser (CoverageField.swift). nil = Metal utilgjengelig.
     static let coverageField: CoverageField? = CoverageField()
+    /// Dekningsfeltet bare når delkartene er av (`meshscan.delkart off`). Med delkart på
+    /// opprettes feltet aldri — overlegget leser W fra `MeshDelkartFusjon` (M1, 2026-10-27).
+    static var felt: CoverageField? { MeshDelkartFusjon.påslått ? nil : coverageField }
+    /// Live-fusjonen i delkart for dette skannet (nil med `meshscan.delkart off`).
+    private var delkart: MeshDelkartFusjon?
     private var feltTikk = 0
     /// Det rødstripede sløret over hele viewet (CoverageVeil). Henges på kamera-noden.
     private var veil: CoverageVeil?
@@ -339,7 +410,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     func start(from presenter: UIViewController, completion: @escaping (Result<MeshScanResult, Error>) -> Void) {
         onFinish = completion
         // Statiske (dekningsfeltet deles mellom økter) — nullstill per skann.
-        MeshScanPresenter.coverageField?.nullstill()
+        MeshScanPresenter.felt?.nullstill()
         MeshScanPresenter.meshDybdeSum = 0
         MeshScanPresenter.meshDybdeN = 0
         MeshScanPresenter.meshDybdeOver4cm = 0
@@ -365,7 +436,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         } else {
             config.sceneReconstruction = .mesh
         }
-        config.environmentTexturing = .automatic
+        // Miljøteksturer AV (§111): de er refleksjonskart for virtuelle objekter, og ARKit lager dem
+        // løpende på GPU-en. Ingenting i skanningen eller baken leser dem — ren varme.
+        config.environmentTexturing = .none
         // Plan-deteksjon SAMMEN med mesh: ARKit glatter meshen der den finner plan (gratis
         // flatere vegger), og ARPlaneAnchor(.wall) driver fase C-veiledningen + auto-shutter.
         config.planeDetection = [.horizontal, .vertical]
@@ -384,6 +457,10 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             kfTargetWidth = 3840
         }
         arConfig = config
+        // Tegn i kameraets takt, ikke 60 (§138): 4K-formatet leverer 30 bilder i sekundet, så
+        // annenhver tegning av overlegget og kamerabildet var lik den forrige. Halv GPU-takt
+        // for visningen er ren varme og batteri spart; sporingen og opptaket er urørt.
+        sceneView.preferredFramesPerSecond = max(30, config.videoFormat.framesPerSecond)
         sceneView.scene.rootNode.addChildNode(ghostRoot)
         sceneView.session.run(config)
 
@@ -430,13 +507,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                     // mistror (preLock vektes 0,6 i vinnervalget) — og doneCells vokser monotont,
                     // så uten dette kan de aldri fikses ved å gå tilbake. Nullstilling her er
                     // nesten gratis: låsen slår inn 1,5 s ut i skannet, så settet er lite.
-                    if let n = self?.doneCells.count, n > 0 {
-                        self?.doneCells.removeAll(keepingCapacity: true)
-                        self?.cellCache.tilstand.removeAll(keepingCapacity: true)
-                        self?.cellCache.laast.removeAll(keepingCapacity: true)
-                        self?.cellCache.sterke.removeAll(keepingCapacity: true)
-                        self?.cellCache.alpha.removeAll(keepingCapacity: true)
-                        self?.lastSnaps.removeAll(keepingCapacity: true)
+                    if let n = self?.åpneCellerIgjen(), n > 0 {
                         MeshLog.log("AE/AWB låst — \(n) pre-lås-celler åpnet igjen")
                     } else {
                         MeshLog.log("AE/AWB låst etter innmåling")
@@ -459,6 +530,21 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         let dir = docs.appendingPathComponent("scan-frames/\(sessionId)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         framesDir = dir
+        if MeshDelkartFusjon.påslått {
+            delkart = MeshDelkartFusjon(framesDir: dir)
+            if delkart == nil { MeshLog.log("delkart — Metal-oppsettet feilet, overlegget får ingen dekning") }
+            delkart?.leggAnker = { [weak self] T in
+                let a = ARAnchor(name: "ampex-delkart", transform: T)
+                DispatchQueue.main.async { self?.sceneView?.session.add(anchor: a) }
+                return a.identifier
+            }
+            delkart?.visningEndret = { MeshScanPresenter.bindDelkartTeksturer() }
+            delkart?.delkartLukket = { [weak self] id in
+                self?.lukketDelkart = (id, CFAbsoluteTimeGetCurrent())
+            }
+            MeshDelkartFusjon.gjeldende = delkart
+            MeshScanPresenter.bindDelkartTeksturer()
+        }
         // Rydd gamle sesjoner: frames-mappene ble aldri slettet, og med 4K-keyframes vokser de
         // ~0,5-1 GB per skann. Behold de to nyeste (denne + forrige, for evt. splat-trening/debug).
         let framesRoot = docs.appendingPathComponent("scan-frames", isDirectory: true)
@@ -470,7 +556,19 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 return a > b
             }
-            for old in sorted.dropFirst(2) where old.lastPathComponent != dir.lastPathComponent {
+            // HELT HUS (2026-10-22): et husskann kan ha 10–20 GB rådata. Forrige skann beholdes
+            // bare når det er lite (rombake, «Bygg skarpere modell»); et stort er alt bakt til
+            // GLB, og rådataene er stillas (Tormod: «da trenger vi ikke bildene»).
+            func størrelse(_ u: URL) -> Int64 {
+                var sum: Int64 = 0
+                let e = FileManager.default.enumerator(at: u, includingPropertiesForKeys: [.totalFileAllocatedSizeKey])
+                while let f = e?.nextObject() as? URL {
+                    sum += Int64((try? f.resourceValues(forKeys: [.totalFileAllocatedSizeKey]).totalFileAllocatedSize) ?? 0)
+                }
+                return sum
+            }
+            let andre = sorted.filter { $0.lastPathComponent != dir.lastPathComponent }
+            for (i, old) in andre.enumerated() where i >= 1 || størrelse(old) > (3 << 30) {
                 try? FileManager.default.removeItem(at: old)
                 NSLog("[MeshScan] pruned old scan-frames session: \(old.lastPathComponent)")
             }
@@ -612,7 +710,18 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
 
     @objc private func doneTapped() {
         let anchors = (sceneView.session.currentFrame?.anchors ?? []).compactMap { $0 as? ARMeshAnchor }
+        m0AnkerSum(sceneView.session.currentFrame)
         sceneView.session.pause()
+        // Dekningen overlegget viste, slik den sto ved Ferdig — før baken rører noe (M0b).
+        // Med delkart: fusjoner det siste kartet, lukk det aktive delkartet og skriv det.
+        if let dk = delkart, let dir = framesDir {
+            dk.avslutt()
+            dk.ankerSum()
+            dk.dumpFerdig(til: dir.appendingPathComponent("dekning-ferdig.bin"))
+            slippDelkart()   // ~120 MB GPU + teksturene til de lukkede: baken skal ha dem
+        } else if let dir = framesDir {
+            MeshScanPresenter.felt?.dumpFerdig(til: dir.appendingPathComponent("dekning-ferdig.bin"))
+        }
         // Dekningsfargingen SKAL dø her, ikke i finish(). Sesjonen er pauset, men
         // `currentFrame` gir fortsatt den siste ramma, så tikken fortsatte å regne
         // på et frosset bilde gjennom hele bakingen: målt 2,4 s CPU per pass i 17
@@ -742,6 +851,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     // MARK: - Camera colour sampling
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         updateSpeedHint(frame)       // updates lastLinSpeed/lastAngSpeed first
+        lysvakt(frame)
         // Dekningsfeltet: annenhver ramme, kun ved normal sporing. Vekten er rammens
         // kvalitet (0 når den er sløret — samme dom som keyframe-porten), så feltet
         // og baken snakker om de samme bildene.
@@ -754,7 +864,17 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         // reagere, før noen terskel er nådd. Splatten er 37k tråder; det er ikke der kostnaden
         // ligger. meshscan.feltrate = n gir hver n-te ramme tilbake.
         let feltRate = max(1, Int(MeshBakeV2.flaggTall("meshscan.feltrate", 1)))
-        if feltTikk % feltRate == 0, let felt = MeshScanPresenter.coverageField, case .normal = frame.camera.trackingState,
+        if let dk = delkart, case .normal = frame.camera.trackingState,
+           let sd = frame.smoothedSceneDepth ?? frame.sceneDepth,
+           let d = MeshScanPresenter.tightDepth(sd.depthMap, confidence: sd.confidenceMap) {
+            // Delkart: fusjonen skjer i maybeRecordDenseDepth (5 Hz, samme kart som baken leser);
+            // her bare LiDAR-okklusjonen til overlegget, hver ramme som før.
+            let K = frame.camera.intrinsics, res = frame.camera.imageResolution
+            let sx = Float(d.width) / Float(res.width), sy = Float(d.height) / Float(res.height)
+            dk.oppdaterOkklusjon(depth: d.data, w: d.width, h: d.height,
+                                 fx: K[0][0] * sx, fy: K[1][1] * sy, cx: K[2][0] * sx, cy: K[2][1] * sy, c2w: frame.camera.transform)
+        }
+        if feltTikk % feltRate == 0, let felt = MeshScanPresenter.felt, case .normal = frame.camera.trackingState,
            let sd = frame.smoothedSceneDepth ?? frame.sceneDepth,
            let d = MeshScanPresenter.tightDepth(sd.depthMap, confidence: sd.confidenceMap) {
             let m = frame.camera.transform
@@ -765,16 +885,19 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             felt.splat(depth: d.data, w: d.width, h: d.height,
                        fx: K[0][0] * sx, fy: K[1][1] * sy, cx: K[2][0] * sx, cy: K[2][1] * sy,
                        c2w: m, w0: q, image: frame.capturedImage)
+            felt.oppdaterOkklusjon(depth: d.data, w: d.width, h: d.height,
+                                   fx: K[0][0] * sx, fy: K[1][1] * sy, cx: K[2][0] * sx, cy: K[2][1] * sy, c2w: m)
         }
         // SLØRET: hele skjermen er rødstripet til du har malt den bort. Oppdateres
         // HVER ramme — det er dette du styrer etter mens du skanner.
         if veil == nil, let pov = sceneView?.pointOfView {
-            veil = CoverageVeil(library: MeshScanPresenter.coverageLibrary, felt: MeshScanPresenter.coverageField)
+            veil = CoverageVeil(library: MeshScanPresenter.coverageLibrary, felt: MeshScanPresenter.felt,
+                                bak: MeshDelkartFusjon.påslått)
             if let v = veil { pov.addChildNode(v.node) }
         }
         if let v = veil, let sv = sceneView {
             let o = sv.window?.windowScene?.interfaceOrientation ?? .portrait
-            v.oppdater(frame: frame, felt: MeshScanPresenter.coverageField, viewport: sv.bounds.size, orientering: o)
+            v.oppdater(frame: frame, felt: MeshScanPresenter.felt, viewport: sv.bounds.size, orientering: o)
         }
         // Pose-historikk til veiledningen (billig; trimmes til ~5 s i deteksjonen)
         let cm = frame.camera.transform
@@ -784,6 +907,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         if poseHistory.count > 400 { poseHistory.removeFirst(poseHistory.count - 400) }
         maybeCaptureKeyframe(frame)
         maybeRecordDenseDepth(frame)
+        m0LeggAnker(frame)
         frameCounter += 1
         if frameCounter % 6 != 0 { return } // throttle — sampling is the heavy part
         let anchors = frame.anchors.compactMap { $0 as? ARMeshAnchor }
@@ -890,6 +1014,90 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         if let s = d.string(forKey: "meshscan.eksponeringstak"), let v = Float(s) { return v }
         if let n = d.object(forKey: "meshscan.eksponeringstak") as? Double { return Float(n) }
         return 8
+    }
+
+    /// Åpner celler som ble FERDIG med en annen eksponering enn den som gjelder nå, så de
+    /// kan tas på nytt. Returnerer hvor mange. Kalles ved låsen og ved relåsen.
+    @discardableResult
+    private func åpneCellerIgjen() -> Int {
+        let n = doneCells.count
+        guard n > 0 else { return 0 }
+        doneCells.removeAll(keepingCapacity: true)
+        cellCache.tilstand.removeAll(keepingCapacity: true)
+        cellCache.laast.removeAll(keepingCapacity: true)
+        cellCache.sterke.removeAll(keepingCapacity: true)
+        cellCache.alpha.removeAll(keepingCapacity: true)
+        cellCache.dekketW.removeAll(keepingCapacity: true)
+        cellCache.anker.removeAll(keepingCapacity: true)
+        lastSnaps.removeAll(keepingCapacity: true)
+        return n
+    }
+
+    // LYSVAKT (2026-11-04, §149). Låsen fryser det AE-en så i ETT øyeblikk, 1,5 s inn. Første
+    // eksterne tester (sol i vinduet) fikk et skann der alt var utbrent; baken kan dempe
+    // helheten (§148), men ikke hente tilbake hvite piksler. Så: de første 2,5 s ETTER låsen,
+    // mens brukeren begynner å gå rundt, måles Y-planet hver 5. ramme. Er medianen utenfor
+    // 70–175 eller mer enn 4 % utbrent, flyttes låsen ÉN gang — ned via ISO først (lukkertiden
+    // holdes kort, §eksponeringstak), opp via ISO. Cellene som ble ferdig før åpnes igjen og
+    // tidligere bilder merkes pre-lås, som ved selve låsen. meshscan.lysvakt = off slår av.
+    private func lysvakt(_ frame: ARFrame) {
+        guard !lysvaktFerdig, aeLockTime.isFinite else { return }
+        let siden = frame.timestamp - aeLockTime
+        guard siden > 0.3 else { return }                       // la låsen sette seg
+        if UserDefaults.standard.string(forKey: "meshscan.lysvakt") == "off" { lysvaktFerdig = true; return }
+        lysvaktTikk &+= 1
+        if siden < 2.8 {
+            guard lysvaktTikk % 5 == 0 else { return }
+            let pb = frame.capturedImage
+            CVPixelBufferLockBaseAddress(pb, .readOnly)
+            defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
+            guard let base = CVPixelBufferGetBaseAddressOfPlane(pb, 0) else { return }
+            let w = CVPixelBufferGetWidthOfPlane(pb, 0), h = CVPixelBufferGetHeightOfPlane(pb, 0)
+            let rad = CVPixelBufferGetBytesPerRowOfPlane(pb, 0)
+            let y = base.assumingMemoryBound(to: UInt8.self)
+            var hist = [Int](repeating: 0, count: 256)
+            var n = 0
+            var yy = h / 64
+            while yy < h { var xx = w / 96; while xx < w { hist[Int(y[yy * rad + xx])] += 1; n += 1; xx += w / 48 }; yy += h / 32 }
+            guard n > 0 else { return }
+            var acc = 0, med = 0
+            for v in 0..<256 { acc += hist[v]; if acc * 2 >= n { med = v; break } }
+            let ut = Float(hist[250...].reduce(0, +)) / Float(n)
+            lysPrøver.append((Float(med), ut))
+            return
+        }
+        lysvaktFerdig = true
+        guard lysPrøver.count >= 4 else { return }
+        let medianer = lysPrøver.map(\.median).sorted(), utbrent = lysPrøver.map(\.utbrent).sorted()
+        let med = medianer[medianer.count / 2], ut = utbrent[utbrent.count / 2]
+        // Ønsket lineær endring av lysmengden.
+        var f: Float = 1
+        if med > 175 { f = pow(140 / med, 2.2) }
+        else if ut > 0.04 { f = 0.7 }                            // høylys brenner selv om helheten er grei
+        else if med < 70 && ut < 0.005 { f = pow(110 / max(med, 20), 2.2) }
+        f = min(max(f, 0.25), 2.8)
+        guard abs(f - 1) > 0.15 else {
+            MeshLog.log(String(format: "lysvakt — median %.0f, utbrent %.1f %%: låsen står", med, ut * 100))
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let dev = self.captureDevice, (try? dev.lockForConfiguration()) != nil else { return }
+            defer { dev.unlockForConfiguration() }
+            let fmt = dev.activeFormat
+            let iso0 = dev.iso, dur0 = Float(CMTimeGetSeconds(dev.exposureDuration))
+            let iso = min(max(iso0 * f, fmt.minISO), fmt.maxISO)
+            let rest = f / (iso / max(iso0, 1))                      // det ISO ikke rakk
+            let minD = Float(CMTimeGetSeconds(fmt.minExposureDuration)), maxD = Float(CMTimeGetSeconds(fmt.maxExposureDuration))
+            // Lengre lukker bare om ISO er i taket og bildet er for mørkt; aldri over 1/30 s.
+            let dur = min(max(dur0 * rest, minD), min(maxD, max(dur0, 1.0 / 30)))
+            guard dev.isExposureModeSupported(.custom) else { return }
+            dev.setExposureModeCustom(duration: CMTimeMakeWithSeconds(Double(dur), preferredTimescale: 1_000_000),
+                                      iso: iso, completionHandler: nil)
+            self.aeLockTime = CACurrentMediaTime()
+            let n = self.åpneCellerIgjen()
+            MeshLog.log(String(format: "lysvakt — median %.0f, utbrent %.1f %% → lysmengde ×%.2f (%.1f ms ISO %.0f → %.1f ms ISO %.0f), %d celler åpnet igjen",
+                               med, ut * 100, f, dur0 * 1000, iso0, dur * 1000, iso, n))
+        }
     }
 
     /// Kortere lukkertid, samme lysmengde. Returnerer nil når det ikke er noe å hente
@@ -1121,21 +1329,19 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     /// (samme timestamps). Av med meshscan.densedepth = "off". Leses i dag av INGEN —
     /// dette er datainnsamlingen som gjør super-res-eksperimentet mulig på ekte bundles.
     private func maybeRecordDenseDepth(_ frame: ARFrame) {
-        // TYNN UT framfor å STOPPE (2026-08-31). Det harde taket stoppet opptaket helt etter
-        // ~600 kart, altså to minutter ved 5 Hz — nok til ett rom, men et leilighetsskann fikk
-        // da full dekning av de første to minuttene og INGENTING av resten. Nå halveres
-        // frekvensen for hver gang taket nås, så dekningen blir jevn over hele skannet og
-        // totalen holder seg innenfor omtrent samme diskbudsjett uansett lengde.
-        denseTick &+= 1
-        let stride = 1 << min(4, denseCount / max(1, MeshScanPresenter.denseMax / 2))
+        // FULL 5 Hz HELE VEIEN (2026-10-22). Først stoppet et hardt tak på 600 kart opptaket
+        // etter to minutter; så (2026-08-31) ble frekvensen halvert hver gang taket ble nådd,
+        // som ga et husskann nesten ingen dybde mot slutten. Nå er det disken som avgjør
+        // (`Lagringsvakt`) — rådataene slettes etter baken uansett.
         guard framesDir != nil,
               denseCount < MeshScanPresenter.denseMax,
-              denseTick % UInt64(stride) == 0,
+              !lagring.erFull(nå: frame.timestamp, dir: framesDir),
               frame.timestamp - lastDenseTime >= MeshScanPresenter.denseInterval,
               case .normal = frame.camera.trackingState,
               UserDefaults.standard.string(forKey: "meshscan.densedepth") != "off",
               let sd = frame.sceneDepth ?? frame.smoothedSceneDepth,
-              let depth = MeshScanPresenter.tightDepth(sd.depthMap, confidence: sd.confidenceMap)
+              let depth = MeshScanPresenter.tightDepth(sd.depthMap, confidence: sd.confidenceMap,
+                                                       lavNegativ: UserDefaults.standard.string(forKey: "meshscan.lavkonf") != "off")
         else { return }
         lastDenseTime = frame.timestamp
         let idx = denseCount
@@ -1150,6 +1356,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         let line = String(format: "{\"i\":%d,\"t\":%.4f,\"w\":%d,\"h\":%d,\"fx\":%.3f,\"fy\":%.3f,\"cx\":%.3f,\"cy\":%.3f,\"m\":[%@]}\n",
                           idx, frame.timestamp, depth.width, depth.height,
                           K[0][0] * sx, K[1][1] * sy, K[2][0] * sx, K[2][1] * sy, mStr)
+        delkart?.mottaDybde(i: idx, t: frame.timestamp, depth: depth.data, w: depth.width, h: depth.height,
+                            fx: K[0][0] * sx, fy: K[1][1] * sy, cx: K[2][0] * sx, cy: K[2][1] * sy,
+                            c2w: m, image: frame.capturedImage)
         captureQueue.async { [weak self] in
             // FUNNET 2026-09-05: bundle med 210 dense-*.f32 men dense.jsonl på ÉN linje.
             // Et kart som kom inn etter at Ferdig hadde lukket handelen fant `denseHandle
@@ -1158,6 +1367,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             // geometrien falt tilbake på ARKit-nettet uten at noen sa fra.
             guard let self = self, let dir = self.framesDir, !self.denseClosed else { return }
             try? depth.data.write(to: dir.appendingPathComponent("dense-\(idx).f32"), options: .atomic)
+            self.lagring.skrevet(depth.data.count)
             if self.denseHandle == nil {
                 let url = dir.appendingPathComponent("dense.jsonl")
                 if !FileManager.default.fileExists(atPath: url.path) {
@@ -1362,7 +1572,8 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 self.kfReplaced += 1
             } else {
                 // Nytt ståsted: taket gjelder her, mot antall LAGREDE frames.
-                guard isPlaneShot || self.keyframes.count < MeshScanPresenter.maxKeyframes else {
+                guard isPlaneShot || (self.keyframes.count < MeshScanPresenter.maxKeyframes
+                                      && !self.lagring.erFull(nå: t, dir: self.framesDir)) else {
                     self.captureDecisionAudit.record(time: t, reason: "capacity", bucket: viewKey); return
                 }
                 idx = self.nextKFIndex
@@ -1380,6 +1591,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 self.captureDecisionAudit.record(time: t, reason: "encode_failed", bucket: viewKey); return
             }
             let fname = "frame-\(idx).jpg"
+            self.lagring.skrevet(jpeg.count)
             do { try jpeg.write(to: dir.appendingPathComponent(fname), options: .atomic) } catch {
                 self.captureDecisionAudit.record(time: t, reason: "write_failed", bucket: viewKey, index: idx); return
             }
@@ -1387,6 +1599,8 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             // skrives rått (8 byte header + w·h byte, ~2 MB). Plan-justeringen i baken leser
             // den i stedet for å dekode JPEG-en: null dekodetid, null RGBA-topp i minnet.
             MeshScanPresenter.writeLumaHalf(copy, to: dir.appendingPathComponent("luma-\(idx).u8"))
+            // §111: bildebindingens SIFT for dette bildet nå, i bakgrunnen, i stedet for ved «Ferdig»
+            MeshBildebinding.forhåndsTrekk(framesDir: dir, index: idx)
 
             var depthFile: String?
             var depthW = 0, depthH = 0
@@ -1420,10 +1634,12 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             )
             if let slot = replaceSlot {
                 self.keyframes[slot] = kf // samme plass, samme filnavn — bøtta beholder én frame
+                self.delkart?.nøkkelbilde(idx)
                 self.captureDecisionAudit.record(time: t, reason: "saved_replacement", bucket: viewKey,
                     index: idx, previousTime: replacedTimestamp, score: score)
             } else {
                 self.keyframes.append(kf)
+                self.delkart?.nøkkelbilde(idx)
                 self.captureDecisionAudit.record(time: t, reason: "saved_new", bucket: viewKey, index: idx, score: score)
                 if !isPlaneShot, let b = viewKey { self.bucketSlot[b] = self.keyframes.count - 1 }
             }
@@ -1494,7 +1710,11 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     /// same dimensions as the depth map when present. Pixels at .low are zeroed — every downstream
     /// reader already treats z<=0.25 as "no sample" (TSDFFusion integration + ICP + bounds sampling),
     /// so this alone drops low-confidence depth everywhere without touching any of that code.
-    private static func tightDepth(_ pb: CVPixelBuffer, confidence: CVPixelBuffer? = nil) -> (data: Data, width: Int, height: Int)? {
+    /// `lavNegativ`: lav-konfidens-piksler lagres som −z i stedet for 0 (§140). Alle lesere
+    /// av dybdekartene krever z > 0,05–0,3, så de hopper over dem som før; bare TSDF-en i
+    /// baken kan velge å bruke dem med lav vekt (svarte og blanke flater).
+    private static func tightDepth(_ pb: CVPixelBuffer, confidence: CVPixelBuffer? = nil,
+                                   lavNegativ: Bool = false) -> (data: Data, width: Int, height: Int)? {
         CVPixelBufferLockBaseAddress(pb, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(pb) else { return nil }
@@ -1520,7 +1740,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 guard let confBase else { continue }
                 let confRow = confBase.advanced(by: row * confBpr).assumingMemoryBound(to: UInt8.self)
                 let depthRow = dstRow.assumingMemoryBound(to: Float32.self)
-                for col in 0..<w where confRow[col] == 0 { depthRow[col] = 0 } // .low → treat as unobserved
+                for col in 0..<w where confRow[col] == 0 {                      // .low → treat as unobserved
+                    depthRow[col] = lavNegativ ? -abs(depthRow[col]) : 0
+                }
             }
         }
         return (out, w, h)
@@ -1644,6 +1866,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             try ARMeshGlbExporter.export(anchors: anchors, to: url, colorProvider: makeColorProvider())
         }
         // Forhåndsvisning til skann-kortene (<glb>.jpg) — rendres fra samme ståsted som vieweren.
+        Blokkpyramide.byggNå(url.path)
         ARMeshGlbExporter.progress?("Lager forhåndsvisning…")
         AmpexGlbLoader.renderThumbnail(glbPath: url.path)
         return MeshScanResult(
@@ -1655,7 +1878,20 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         )
     }
 
+    /// Slipper live-fusjonen og alt materialet holder fra den. Volumet ligger alt på disk.
+    private func slippDelkart() {
+        guard delkart != nil else { return }
+        delkart = nil
+        MeshDelkartFusjon.gjeldende = nil
+        if let t = MeshScanPresenter.tomme {
+            let mat = MeshScanPresenter.sharedCoverageMaterial
+            for k in 0..<MeshDelkartFusjon.maksDelkartIVisning { mat.setValue(SCNMaterialProperty(contents: t.0), forKey: "d\(k)") }
+            mat.setValue(SCNMaterialProperty(contents: t.1), forKey: "lidar")
+        }
+    }
+
     private func finish(_ result: Result<MeshScanResult, Error>) {
+        slippDelkart()
         ARMeshGlbExporter.progress = nil
         coverageTimer?.invalidate()
         coverageTimer = nil
@@ -1753,6 +1989,79 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         visStatus(nil, advarsel: false)
     }
 
+    // MARK: - M0a ankerlogg
+
+    private func m0LeggAnker(_ frame: ARFrame) {
+        m0SisteTid = frame.timestamp
+        // Med delkart er hvert delkart sitt eget anker, og flyttingen summeres ved Ferdig.
+        guard m0Ankerlogg, delkart == nil, case .normal = frame.camera.trackingState,
+              frame.timestamp - m0SisteAnker >= 30, let s = sceneView?.session else { return }
+        let a = ARAnchor(name: "ampex-m0a", transform: frame.camera.transform)
+        s.add(anchor: a)
+        m0Ankere[a.identifier] = M0Anker(T0: a.transform, lagt: frame.timestamp, sistLogget: a.transform)
+        m0SisteAnker = frame.timestamp
+        MeshLog.log("anker — \(a.identifier.uuidString.prefix(8)) lagt (nr \(m0Ankere.count))")
+    }
+
+    /// Flytting fra T0 til T: translasjon i mm og rotasjonsvinkel i grader.
+    private static func m0Avvik(_ a: simd_float4x4, _ b: simd_float4x4) -> (dt: SIMD3<Float>, grader: Float) {
+        let dt = SIMD3<Float>(b.columns.3.x - a.columns.3.x, b.columns.3.y - a.columns.3.y, b.columns.3.z - a.columns.3.z) * 1000
+        let r = simd_float3x3(SIMD3(a.columns.0.x, a.columns.0.y, a.columns.0.z), SIMD3(a.columns.1.x, a.columns.1.y, a.columns.1.z),
+                              SIMD3(a.columns.2.x, a.columns.2.y, a.columns.2.z)).transpose
+            * simd_float3x3(SIMD3(b.columns.0.x, b.columns.0.y, b.columns.0.z), SIMD3(b.columns.1.x, b.columns.1.y, b.columns.1.z),
+                            SIMD3(b.columns.2.x, b.columns.2.y, b.columns.2.z))
+        let tr = r.columns.0.x + r.columns.1.y + r.columns.2.z
+        return (dt, acos(max(-1, min(1, (tr - 1) / 2))) * 180 / .pi)
+    }
+
+    func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
+        if let dk = delkart {
+            for a in anchors where !(a is ARMeshAnchor) { dk.ankerOppdatert(a.identifier, a.transform) }
+        }
+        guard !m0Ankere.isEmpty else { return }
+        for a in anchors {
+            guard var m = m0Ankere[a.identifier] else { continue }
+            // Logg bare når ankeret har flyttet seg merkbart siden forrige linje (≥ 1 mm eller
+            // ≥ 0,1°) — ARKit kan melde samme transform mange ganger.
+            let steg = MeshScanPresenter.m0Avvik(m.sistLogget, a.transform)
+            guard simd_length(steg.dt) >= 1 || steg.grader >= 0.1 else { continue }
+            let tot = MeshScanPresenter.m0Avvik(m.T0, a.transform)
+            m.sistLogget = a.transform
+            m.maksMm = max(m.maksMm, simd_length(tot.dt))
+            m0Ankere[a.identifier] = m
+            MeshLog.log(String(format: "anker — %@ t=%.0f dT=%.0f %.0f %.0f mm dR=%.2f°",
+                               String(a.identifier.uuidString.prefix(8)), m0SisteTid - m.lagt,
+                               tot.dt.x, tot.dt.y, tot.dt.z, tot.grader))
+        }
+    }
+
+    /// Summen ved Ferdig, og ankrene (T0 og siste T) til `<bundle>/ankere.json` så de kan
+    /// holdes mot `audit-scan-drift.py` på Mac.
+    private func m0AnkerSum(_ frame: ARFrame?) {
+        guard !m0Ankere.isEmpty else { return }
+        let siste = Dictionary(uniqueKeysWithValues: (frame?.anchors ?? []).map { ($0.identifier, $0.transform) })
+        var flytt: [Float] = []
+        var rader: [[String: Any]] = []
+        func arr(_ m: simd_float4x4) -> [Float] {
+            [m.columns.0.x, m.columns.0.y, m.columns.0.z, m.columns.0.w, m.columns.1.x, m.columns.1.y, m.columns.1.z, m.columns.1.w,
+             m.columns.2.x, m.columns.2.y, m.columns.2.z, m.columns.2.w, m.columns.3.x, m.columns.3.y, m.columns.3.z, m.columns.3.w]
+        }
+        for (id, m) in m0Ankere.sorted(by: { $0.value.lagt < $1.value.lagt }) {
+            let T = siste[id] ?? m.sistLogget
+            let d = MeshScanPresenter.m0Avvik(m.T0, T)
+            flytt.append(simd_length(d.dt))
+            rader.append(["id": id.uuidString, "lagt": m.lagt, "T0": arr(m.T0), "T": arr(T),
+                          "maksMm": m.maksMm, "sluttMm": simd_length(d.dt), "sluttGrader": d.grader])
+        }
+        let sortert = flytt.sorted()
+        MeshLog.log(String(format: "anker — %d ankere, største flytting %.0f mm, median %.0f mm (ved Ferdig; største underveis %.0f mm)",
+                           sortert.count, sortert.last ?? 0, sortert[sortert.count / 2],
+                           m0Ankere.values.map(\.maksMm).max() ?? 0))
+        if let dir = framesDir, let data = try? JSONSerialization.data(withJSONObject: ["ankere": rader], options: [.prettyPrinted]) {
+            try? data.write(to: dir.appendingPathComponent("ankere.json"), options: .atomic)
+        }
+    }
+
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
         switch camera.trackingState {
         case .limited(.relocalizing):
@@ -1848,6 +2157,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         var snaps: [AnchorSnap] = []
         snaps.reserveCapacity(meshAnchors.count)
         var nyeSnaps = 0
+        var skitne = Set<UUID>()
         // KRÆSJ 2026-09-07 19:46 (SIGSEGV i snapshot(_:) på main): ankerne i `currentFrame`
         // kan peke på geometribuffere ARKit alt har frigjort — også på main. Derfor leses
         // anchor.geometry ALDRI her lenger. Kopien tas i renderer(_:didAdd/didUpdate:) der
@@ -1857,7 +2167,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             let id = a.identifier
             guard let sn = lastSnaps[id] else { continue }
             snaps.append(sn)
-            if dirtyAnchors.contains(id) { nyeSnaps += 1 }
+            if dirtyAnchors.contains(id) { nyeSnaps += 1; skitne.insert(id) }
         }
         dirtyAnchors.removeAll(keepingCapacity: true)
         let nyeKameraer = cams.count - camsVedSistePass
@@ -1875,15 +2185,48 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             var purpleSum = SIMD3<Float>(0, 0, 0)
             var ceilTotal = 0, ceilPurple = 0, floorTotal = 0, floorPurple = 0
             var doneUnion = Set<Int64>()
+            // LAGG UNDER SKANNING (2026-10-18). Passet bygde og satte ny SCNGeometry for HVERT
+            // anker hvert sekund, og kosten vokste med meshen (målt 6 → 22 ms over 80 s, pluss
+            // en full buffer-opplasting per anker på main). Med dekningsfeltet er fargene i den
+            // geometrien uansett ubrukte — shaderen leser feltet. Da regnes bare tallene.
+            let byggGeo = MeshScanPresenter.felt == nil && !MeshDelkartFusjon.påslått
+            let kamera = SIMD3<Float>(cameraTx.columns.3.x, cameraTx.columns.3.y, cameraTx.columns.3.z)
             for s in snaps {
-                let (geo, red, pSum, pN, cT, cP, fT, fP) = MeshScanPresenter.coverageGeometry(snap: s, cams: cams, done: &doneUnion, cache: cache)
-                perAnchor.append((s.id, s.transform, geo))
+                let (geo, red, pSum, pN, cT, cP, fT, fP) = MeshScanPresenter.coverageGeometry(snap: s, cams: cams, done: &doneUnion, cache: cache, byggGeo: byggGeo, kamera: kamera, skitten: skitne.contains(s.id))
+                if let geo { perAnchor.append((s.id, s.transform, geo)) }
                 totalVerts += s.verts.count
                 redVerts += red; purpleSum += pSum; purpleN += pN
                 ceilTotal += cT; ceilPurple += cP; floorTotal += fT; floorPurple += fP
             }
+            // TAK SOM IKKE FINNES (2026-10-22). Andelen over ser bare på tak som allerede er
+            // mesh — et tak ingen har pekt mot har ingen hjørner, og da kunne veiledningen aldri
+            // be om det. Skannet 22.10 manglet ~60 % av taket uten et ord. Nå: gulv du har sett
+            // (0,5 m-ruter under kameraet, innen 5 m) uten tak over seg er et hull i taket.
+            let kam = SIMD3<Float>(cameraTx.columns.3.x, cameraTx.columns.3.y, cameraTx.columns.3.z)
+            var gulvRuter = Set<Int64>(), takRuter = Set<Int64>()
+            // Lukkeveiledningen (M3.5, M4.1): trapp uten gulv, vegg som mangler.
+            var lukkeV = LukkeVurdering(kamera: kam)
+            @inline(__always) func rute(_ p: SIMD3<Float>) -> Int64 {
+                (Int64((p.x * 2).rounded(.down)) & 0xFFFFFFFF) | (Int64((p.z * 2).rounded(.down)) << 32)
+            }
+            for sn in snaps {
+                var i = 0
+                while i < sn.verts.count {
+                    let p = sn.verts[i], ny = sn.norms[i].y
+                    i += 3
+                    let dx = p.x - kam.x, dz = p.z - kam.z
+                    if dx * dx + dz * dz > 25 { continue }
+                    let dy = p.y - kam.y
+                    lukkeV.legg(p, ny: ny)
+                    if ny > 0.8 && dy < -0.5 && dy > -2.2 { gulvRuter.insert(rute(p)) }
+                    else if ny < -0.8 && dy > 0 && dy < 2.0 { takRuter.insert(rute(p)) }
+                }
+            }
+            let takHull = gulvRuter.subtracting(takRuter).count   // ruter à 0,25 m²
+            let lukke = lukkeV.resultat()
             // Krever et minimum av flate før andelen betyr noe (ellers 0 → ingen veiledning)
-            let ceilFrac = ceilTotal >= 300 ? Float(ceilPurple) / Float(ceilTotal) : 0
+            let ceilFrac = takHull >= 8 ? 1                      // ≥ 2 m² gulv uten tak over
+                : (ceilTotal >= 300 ? Float(ceilPurple) / Float(ceilTotal) : 0)
             let floorFrac = floorTotal >= 300 ? Float(floorPurple) / Float(floorTotal) : 0
             let pct = totalVerts > 0 ? (redVerts * 100) / totalVerts : 0
             let purpleCentroid: SIMD3<Float>? = purpleN > 100 ? purpleSum / Float(purpleN) : nil
@@ -1893,7 +2236,8 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 for entry in perAnchor {
                     self.coverageNodes[entry.id]?.geometry = entry.geo
                 }
-                // Levende geometri er på plass igjen — de frosne kopiene kan ryddes.
+                // Levende geometri er på plass igjen — de frosne kopiene kan ryddes. (Med feltet
+                // legges den på i didAdd/didUpdate; passet er likevel tegnet på nytt nå.)
                 if !self.ghostRoot.childNodes.isEmpty {
                     self.ghostRoot.childNodes.forEach { $0.removeFromParentNode() }
                 }
@@ -1914,6 +2258,22 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 // Veiledningsmotor: én prioritert, animert instruks basert på hva brukeren
                 // faktisk gjør (fart, snurring, avstand) og hva som mangler (tak/gulv/retning).
                 let depthC = self.sceneView?.session.currentFrame.flatMap { MeshScanPresenter.centerDepth($0) }
+                if let l = self.lukketDelkart {
+                    self.lukketDelkart = nil
+                    let nå = CFAbsoluteTimeGetCurrent()
+                    if nå - l.t < 5 {
+                        if lukke.trapp {
+                            self.lukkeHint = (.trapp, nå + 10)
+                            MeshLog.log("veiledning — delkart \(l.id) lukket uten gulv (trapp?): ber om en runde til")
+                        } else if let v = lukke.vegg {
+                            self.lukkeHint = (.vegg(v), nå + 10)
+                            MeshLog.log(String(format: "veiledning — delkart %d lukket: %.1f m gulvkant uten vegg over, peker dit", l.id, lukke.veggM))
+                        } else {
+                            MeshLog.log("veiledning — delkart \(l.id) lukket: gulv og vegger ser hele ut")
+                        }
+                    }
+                }
+                if let h = self.lukkeHint, CFAbsoluteTimeGetCurrent() > h.til { self.lukkeHint = nil }
                 self.evaluateGuidance(purpleCentroid: purpleCentroid, cameraTx: cameraTx,
                                       ceilFrac: ceilFrac, floorFrac: floorFrac, depthCenter: depthC)
 
@@ -2037,10 +2397,28 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                                   ceilFrac: Float, floorFrac: Float, depthCenter: Float?) {
         var target: Guide = .good
         var text = ""
-        if wasTooFast {
+        if lagring.erFullNå {
+            target = .lagringFull; text = "Telefonen er nesten full. Frigjør minst 3 GB, ellers tas ingen bilder"
+        } else if wasTooFast {
             target = .slowDown; text = "Beveg deg saktere"
+        } else if case .trapp? = lukkeHint?.hint {
+            target = .lap; text = "Trapp: gå opp og ned en gang til før du går videre"
         } else if rotatingInPlace() {
             target = .strafe; text = "Gå sidelengs"
+        } else if case .vegg(let v)? = lukkeHint?.hint {
+            let camPos = SIMD3<Float>(cameraTx.columns.3.x, cameraTx.columns.3.y, cameraTx.columns.3.z)
+            let f = SIMD2<Float>(-cameraTx.columns.2.x, -cameraTx.columns.2.z)
+            let t = SIMD2<Float>(v.x - camPos.x, v.z - camPos.z)
+            if simd_length(f) > 0.01 && simd_length(t) > 0.5 {
+                let fn = simd_normalize(f), tn = simd_normalize(t)
+                let dot = simd_dot(fn, tn), cross = fn.x * tn.y - fn.y * tn.x
+                if dot > 0.55 { target = .tooFar; text = "Veggen her mangler — skann den fra gulv til tak" }
+                else if abs(cross) < 0.3 { target = .turnAround; text = "En vegg mangler — snu deg rundt" }
+                else if cross > 0 { target = .turnRight; text = "En vegg mangler — snu mot høyre" }
+                else { target = .turnLeft; text = "En vegg mangler — snu mot venstre" }
+            } else {
+                target = .tooFar; text = "Veggen her mangler — skann den fra gulv til tak"
+            }
         } else if let d = depthCenter, d > 2.7 {
             target = .tooFar; text = "Gå nærmere veggen"
         } else if ceilFrac > 0.6 && -cameraTx.columns.2.y < 0.3 {
@@ -2075,12 +2453,13 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     }
 
     private func setGuide(_ g: Guide, text: String) {
-        if g == guide { return }
+        if g == guide && text == guideText { return }
         let now = CFAbsoluteTimeGetCurrent()
         // Lavere prioritet må vente på minimum visningstid; høyere avbryter straks
         if g.rawValue < guide.rawValue && now - guideSince < 1.5 { return }
+        if g != guide { guideSince = now }
         guide = g
-        guideSince = now
+        guideText = text
         guideView?.show(g, text: text)
     }
 
@@ -2209,18 +2588,23 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 phone.layer.add(loop("transform.translation.x", -4, 12, 1.0), forKey: "b")
             case .turnAround:
                 phone.layer.add(loop("transform.rotation.y", 0, .pi, 1.5), forKey: "a")
-            case .good, .none:
+            case .lap:
+                // Glyfen går en runde: «gå opp og ned en gang til»
+                phone.layer.add(loop("transform.translation.y", -10, 10, 1.6), forKey: "a")
+                phone.layer.add(loop("transform.translation.x", -24, 24, 0.8), forKey: "b")
+            case .good, .none, .lagringFull:
                 break
             }
         }
     }
 
     private static func coverageGeometry(snap: AnchorSnap, cams: [KFCam],
-                                         done: inout Set<Int64>, cache: CellCache)
-        -> (SCNGeometry, Int, SIMD3<Float>, Int, Int, Int, Int, Int) {
+                                         done: inout Set<Int64>, cache: CellCache, byggGeo: Bool = true,
+                                         kamera: SIMD3<Float> = .zero, skitten: Bool = true)
+        -> (SCNGeometry?, Int, SIMD3<Float>, Int, Int, Int, Int, Int) {
         let n = snap.verts.count
-        var colors = [SIMD4<Float>](repeating: SIMD4(MeshScanPresenter.stripeRed, 1), count: n)
-        var covered = [Bool](repeating: false, count: n)
+        // Fargene brukes bare når geometrien bygges (gammel vei uten felt og uten delkart).
+        var colors = byggGeo ? [SIMD4<Float>](repeating: SIMD4(MeshScanPresenter.stripeRed, 1), count: n) : []
         var red = 0
         var purpleSum = SIMD3<Float>(0, 0, 0)
         var purpleN = 0
@@ -2232,7 +2616,26 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         // dette kutter kamera-loopen ~3-4× og vokser sublineært med meshet.
         // Celler samme pass deler svar (som før); på tvers av pass lever svaret i cachen.
         var memo = [Int64: Int](minimumCapacity: n / 2)
-        for i in 0..<n {
+        // DELKART (M1): «dekket» i visning og veiledning er W fra fusjonen, samme regel som
+        // overlegget. `count` (fotografert fra hvor mange ståsteder) styrer fortsatt doneCells,
+        // som nyhetsporten bruker til å avgjøre hvilke BILDER som tas — det er et spørsmål
+        // om foto, ikke om dybde, og skal ikke endres her.
+        let dk = MeshDelkartFusjon.gjeldende?.oppslag()
+        var memoW = [Int64: Bool]()
+        // Ferdige vertekser (låst og dekket) i et anker ARKit ikke har endret telles fra
+        // forrige pass; bare resten gås gjennom. Bare med delkart: der er begge predikatene monotone.
+        let huskRest = dk != nil && !byggGeo
+        let forrige = huskRest && !skitten ? cache.anker[snap.id] : nil
+        var ferdig = forrige.map { CellCache.AnkerRest(red: $0.red, ceilTotal: $0.ceilTotal, floorTotal: $0.floorTotal) }
+            ?? CellCache.AnkerRest()
+        if let forrige {
+            red = forrige.red; ceilTotal = forrige.ceilTotal; floorTotal = forrige.floorTotal
+        }
+        let indekser: [Int32] = forrige?.rest ?? (0..<Int32(n)).map { $0 }
+        if huskRest { ferdig.rest.reserveCapacity(indekser.count / 2) }
+        for i32 in indekser {
+            let i = Int(i32)
+            guard i < n else { continue }
             let v = snap.verts[i]; let nrm = snap.norms[i]
             let ax = abs(nrm.x), ay = abs(nrm.y), az = abs(nrm.z)
             let nb: Int64 = ax >= ay && ax >= az ? (nrm.x >= 0 ? 0 : 1) : (ay >= az ? (nrm.y >= 0 ? 2 : 3) : (nrm.z >= 0 ? 4 : 5))
@@ -2257,6 +2660,10 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 // Bare kameraer som er NYE siden cellen sist ble testet.
                 let fra = min(Int(st.kameraerTestet), cams.count)
                 for c in cams[fra...] {
+                    // Billig forsil (2026-10-22, helt hus): med tusenvis av kameraer er nesten
+                    // alle i et annet rom. Avstandskravet under (z ≤ 3,5 m) avviser dem uansett,
+                    // men først etter en matrisemultiplikasjon per kamera.
+                    if simd_distance_squared(c.camPos, v) > 12.25 { continue }
                     let pc = c.w2c * SIMD4<Float>(v.x, v.y, v.z, 1)
                     if pc.z > -0.05 { continue }
                     let z = -pc.z
@@ -2299,7 +2706,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 st.antall = UInt8(min(count, 3))
                 st.pos = countedPos
                 st.sterk = sterk
-                if count >= 1 { cache.laast.insert(mkey); cache.tilstand.removeValue(forKey: mkey) }
+                // Nylåste celler er de eneste nye i doneCells (låst = ferdig, og doneCells er
+                // bare unionen av låste) — hele settet ble før sendt til main hvert pass.
+                if count >= 1 { cache.laast.insert(mkey); cache.tilstand.removeValue(forKey: mkey); done.insert(mkey) }
                 else { cache.tilstand[mkey] = st }
                 if sterk { cache.sterke.insert(mkey) }
                 memo[mkey] = count
@@ -2312,25 +2721,48 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
             // og med bare én slapp stripene så fort at bare kanten av det skannede ble
             // igjen — Tormod 2026-09-05: «Scaniverse maler mer ut». Det er dette som får
             // brukeren til å FLYTTE seg, ikke bare snurre.
-            if count >= 1 { done.insert(mkey) }
-            let dekket = count >= 2 || cache.sterke.contains(mkey)
+            let dekket: Bool
+            if let dk {
+                if cache.dekketW.contains(mkey) { dekket = true }
+                else if let m = memoW[mkey] { dekket = m }
+                else {
+                    dekket = dk.dekket(v, normal: nrm, kamera: kamera); memoW[mkey] = dekket
+                    if dekket { cache.dekketW.insert(mkey) }
+                }
+            } else {
+                dekket = count >= 2 || cache.sterke.contains(mkey)
+            }
+            let mangler = dk != nil ? !dekket : count == 0
             if dekket {
-                covered[i] = true
                 red += 1
             } else {
                 purpleSum += v; purpleN += 1
             }
-            // Toning: alpha glir mot målet over passene (~4 Hz) i stedet for å slå av/på.
-            let maal: Float = dekket ? 0 : 1
-            let a: Float
-            if let gammel = cache.alpha[mkey] { a = gammel + (maal - gammel) * 0.35 } else { a = maal }
-            cache.alpha[mkey] = a
-            colors[i].w = MeshScanPresenter.coverageField == nil ? a : 1 // feltet styrer; CPU-alpha er reserve
-            if nrm.y < -0.7 { ceilTotal += 1; if count == 0 { ceilPurple += 1 } }
-            else if nrm.y > 0.7 { floorTotal += 1; if count == 0 { floorPurple += 1 } }
+            if byggGeo {
+                // Toning: alpha glir mot målet over passene (~4 Hz) i stedet for å slå av/på.
+                let maal: Float = dekket ? 0 : 1
+                let a: Float
+                if let gammel = cache.alpha[mkey] { a = gammel + (maal - gammel) * 0.35 } else { a = maal }
+                cache.alpha[mkey] = a
+                colors[i].w = a
+            }
+            if nrm.y < -0.7 { ceilTotal += 1; if mangler { ceilPurple += 1 } }
+            else if nrm.y > 0.7 { floorTotal += 1; if mangler { floorPurple += 1 } }
+            if huskRest {
+                if count >= 1 && dekket {
+                    ferdig.red += 1
+                    if nrm.y < -0.7 { ferdig.ceilTotal += 1 } else if nrm.y > 0.7 { ferdig.floorTotal += 1 }
+                } else {
+                    ferdig.rest.append(i32)
+                }
+            }
         }
+        if huskRest { cache.anker[snap.id] = ferdig }
         // Rå tellinger returneres (ikke andeler): per-anker-geometrier aggregeres i
         // updateCoverageTick, og andeler kan ikke summeres — tellinger kan.
+        // Med dekningsfeltet bestemmer shaderen fargen, og CPU-fargene over er alle 1: en ny
+        // geometri her er da byte-lik den quickGeometry alt har lagt på noden — bare dyrere.
+        guard byggGeo else { return (nil, red, purpleSum, purpleN, ceilTotal, ceilPurple, floorTotal, floorPurple) }
 
         let maxEdgeSq: Float = 2.25
         var displayFaces = [UInt32]()
@@ -2371,7 +2803,11 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     }
 
     /// Materialet for live-meshen: dekningsfeltet avgjør per piksel striper eller farge.
-    static func coverageMaterial() -> SCNMaterial {
+    /// ÉTT delt materiale. Før fikk hver geometri — én per ARKit-oppdatering av hvert anker,
+    /// flere i sekundet — sitt eget SCNProgram med egen bindingsblokk.
+    static func coverageMaterial() -> SCNMaterial { sharedCoverageMaterial }
+    private static let sharedCoverageMaterial: SCNMaterial = makeCoverageMaterial()
+    private static func makeCoverageMaterial() -> SCNMaterial {
         let program = SCNProgram()
         // I pod: shaderne ligger i egen coverage.metallib-ressurs — app-ens default-lib
         // har dem ikke, og uten library-oppslaget vises ikke dekningswireframen.
@@ -2384,12 +2820,41 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         mat.program = program
         mat.isDoubleSided = true
         mat.writesToDepthBuffer = true
-        if let felt = MeshScanPresenter.coverageField {
+        if MeshDelkartFusjon.påslått {
+            // DELKART (M1): dekningen fra W, inntil 8 delkart. Teksturene bindes i
+            // `bindDelkartTeksturer` (når listen endres); uniformene skrives per ramme.
+            program.fragmentFunctionName = "delkartFrag"
+            // Dekket flate er gjennomsiktig (alfa fra shaderen), men skriver fortsatt dybde,
+            // så sløret bak (CoverageVeil, tegnet sist med dybdetest) bare vises der det ikke
+            // finnes mesh.
+            program.isOpaque = false
+            mat.blendMode = .alpha
+            program.handleBinding(ofBufferNamed: "delkart", frequency: .perFrame) { stream, _, _, renderer in
+                var u = [Float](repeating: 0, count: MeshDelkartFusjon.maksDelkartIVisning * 24 + 4)
+                if let dk = MeshDelkartFusjon.gjeldende {
+                    u = dk.uniformer(kamera: renderer.pointOfView?.simdWorldPosition ?? .zero)
+                }
+                u.withUnsafeBytes { stream.writeBytes($0.baseAddress!, count: $0.count) }
+            }
+            program.handleBinding(ofBufferNamed: "okk", frequency: .perFrame) { stream, _, _, _ in
+                var o = MeshDelkartFusjon.gjeldende?.okklusjon ?? CoverageField.Okklusjon()
+                withUnsafeBytes(of: &o) { stream.writeBytes($0.baseAddress!, count: $0.count) }
+            }
+            if let t = tomme {
+                for k in 0..<MeshDelkartFusjon.maksDelkartIVisning { mat.setValue(SCNMaterialProperty(contents: t.0), forKey: "d\(k)") }
+                mat.setValue(SCNMaterialProperty(contents: t.1), forKey: "lidar")
+            }
+        } else if let felt = MeshScanPresenter.felt {
             // Teksturen bindes ved navn (SCNProgram/Metal); uniformene skrives per frame.
             mat.setValue(SCNMaterialProperty(contents: felt.texture), forKey: "coverageField")
             program.handleBinding(ofBufferNamed: "field", frequency: .perFrame) { stream, _, _, _ in
                 var u = felt.uniforms
                 withUnsafeBytes(of: &u) { stream.writeBytes($0.baseAddress!, count: $0.count) }
+            }
+            if let lt = felt.lidarTex { mat.setValue(SCNMaterialProperty(contents: lt), forKey: "lidar") }
+            program.handleBinding(ofBufferNamed: "okk", frequency: .perFrame) { stream, _, _, _ in
+                var o = felt.okklusjon
+                withUnsafeBytes(of: &o) { stream.writeBytes($0.baseAddress!, count: $0.count) }
             }
         }
         return mat
@@ -2419,6 +2884,30 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         let geometry = SCNGeometry(sources: [vSource, cSource], elements: [element])
         geometry.firstMaterial = MeshScanPresenter.coverageMaterial()
         return geometry
+    }
+
+    /// Tomme teksturer til delkart-plassene før noe er skannet (SceneKit tegner ikke med
+    /// ubundne teksturargumenter): 1×1×1 rgba8 og 1×1 r32Float.
+    private static let tomme: (MTLTexture, MTLTexture)? = {
+        guard let dev = MTLCreateSystemDefaultDevice() else { return nil }
+        let a = MTLTextureDescriptor()
+        a.textureType = .type3D; a.pixelFormat = .rgba8Unorm; a.width = 1; a.height = 1; a.depth = 1; a.usage = [.shaderRead]
+        let b = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Float, width: 1, height: 1, mipmapped: false)
+        b.usage = [.shaderRead]
+        guard let ta = dev.makeTexture(descriptor: a), let tb = dev.makeTexture(descriptor: b) else { return nil }
+        ta.replace(region: MTLRegionMake3D(0, 0, 0, 1, 1, 1), mipmapLevel: 0, slice: 0, withBytes: [UInt8](repeating: 0, count: 4), bytesPerRow: 4, bytesPerImage: 4)
+        tb.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: [Float(0)], bytesPerRow: 4)
+        return (ta, tb)
+    }()
+
+    /// Binder delkartenes dekningsteksturer (og LiDAR-teksturen) på det delte materialet.
+    /// Kalles på main når listen av synlige delkart endres og når et skann starter.
+    static func bindDelkartTeksturer() {
+        guard let dk = MeshDelkartFusjon.gjeldende else { return }
+        let mat = sharedCoverageMaterial
+        let kam = MeshDelkartFusjon.sisteKamera
+        for (k, t) in dk.teksturer(kamera: kam).enumerated() { mat.setValue(SCNMaterialProperty(contents: t), forKey: "d\(k)") }
+        if let lt = dk.lidarTex { mat.setValue(SCNMaterialProperty(contents: lt), forKey: "lidar") }
     }
 
     /// Wireframe-shaderne (coverageVert/Frag) fra podens prekompilerte metallib-ressurs.

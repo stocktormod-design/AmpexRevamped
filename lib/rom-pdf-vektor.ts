@@ -12,17 +12,14 @@
  * feiler dette, faller vi tilbake på rasteret i stedet for å stoppe.
  */
 
-import type { Segment } from './rom-detekt'
+import { strekerFraSide } from './pdf-streker'
+import type { PdfStreker } from './pdf-streker'
+export type { PdfTekst, PdfStreker } from './pdf-streker'
 // Statisk, ikke `await import(...)`: Metro lastet den late bundelen som egen
 // forespørsel og avbrøt den (2026-09-13), så løftet aldri kom tilbake — søket
 // sto på «Leser tegningen …» for alltid. Reserveveien må kunne stoles på.
 import * as pdfjsStatisk from 'pdfjs-dist/legacy/build/pdf.mjs'
 import * as pdfjsWorkerStatisk from 'pdfjs-dist/legacy/build/pdf.worker.mjs'
-
-export type PdfTekst = { tekst: string; x: number; y: number; hoyde: number }
-export type PdfStreker = { segmenter: Segment[]; tekster: PdfTekst[]; breddePt: number; hoydePt: number }
-
-type Matrise = [number, number, number, number, number, number]
 
 /**
  * Hermes mangler `Promise.withResolvers`, og Expo sin `structuredClone`-
@@ -71,13 +68,6 @@ function dypKopi(v: unknown, sett: Map<unknown, unknown>): unknown {
   return k
 }
 
-const gang = (a: Matrise, b: Matrise): Matrise => [
-  a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1],
-  a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
-  a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5],
-]
-const bruk = (m: Matrise, x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]
-
 /**
  * Leser strekene på side 1. Fyll og tekst hoppes over — bare streker er vegger.
  * Returnerer tom liste for bilde-PDF-er (skannede tegninger), som er signalet
@@ -88,7 +78,7 @@ const bruk = (m: Matrise, x: number, y: number): [number, number] => [m[0] * x +
  * Romdelingen vil ikke ha dem (fyll er ikke vegger), men symbolsøket må: prikken
  * i «!» på en detektor er en fylt sirkel, ikke en strek.
  */
-export async function strekerFraPdf(bytes: Uint8Array, valg: { medFyll?: boolean } = {}): Promise<PdfStreker> {
+export async function strekerFraPdf(bytes: Uint8Array, valg: { medFyll?: boolean; side?: number } = {}): Promise<PdfStreker> {
   const settTilbake = fyllInnManglende()
   const pdfjs = pdfjsStatisk
   const OPS = pdfjs.OPS as unknown as Record<string, number>
@@ -104,87 +94,8 @@ export async function strekerFraPdf(bytes: Uint8Array, valg: { medFyll?: boolean
   const oppgave = pdfjs.getDocument({ data: bytes, isEvalSupported: false, useWorkerFetch: false, useSystemFonts: false } as never)
   const doc = await oppgave.promise
   try {
-    const side = await doc.getPage(1)
-    const vp = side.getViewport({ scale: 1 })
-    const ops = await side.getOperatorList()
-
-    let ctm = vp.transform.slice() as Matrise
-    let farge = 0, bredde = 1, metning = 0
-    const stabel: Array<[Matrise, number, number, number]> = []
-    let sti: Array<[number, number, number, number]> = []
-    const ut: Segment[] = []
-    const graa = (c: number[]) => (c[0] + c[1] + c[2]) / 3 / 255
-    const metn = (c: number[]) => (Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2])) / 255
-
-    for (let i = 0; i < ops.fnArray.length; i++) {
-      const fn = ops.fnArray[i]
-      const a = ops.argsArray[i] as never[]
-      if (fn === OPS.save) { stabel.push([ctm.slice() as Matrise, farge, bredde, metning]); continue }
-      if (fn === OPS.restore) { const s = stabel.pop(); if (s) { ctm = s[0]; farge = s[1]; bredde = s[2]; metning = s[3] } continue }
-      if (fn === OPS.transform) { ctm = gang(ctm, a as unknown as Matrise); continue }
-      if (fn === OPS.setLineWidth) { bredde = a[0] as unknown as number; continue }
-      if (fn === OPS.setStrokeRGBColor) { const c = a as unknown as number[]; farge = graa(c); metning = metn(c); continue }
-      if (fn === OPS.constructPath) {
-        const pOps = a[0] as unknown as number[]
-        const pArgs = a[1] as unknown as number[]
-        sti = []
-        let k = 0, cx = 0, cy = 0, sx = 0, sy = 0
-        const linje = (x0: number, y0: number, x1: number, y1: number) => sti.push([x0, y0, x1, y1])
-        for (const op of pOps) {
-          if (op === OPS.moveTo) { cx = pArgs[k++]; cy = pArgs[k++]; sx = cx; sy = cy }
-          else if (op === OPS.lineTo) { const x = pArgs[k++], y = pArgs[k++]; linje(cx, cy, x, y); cx = x; cy = y }
-          else if (op === OPS.curveTo) {
-            const x1 = pArgs[k++], y1 = pArgs[k++], x2 = pArgs[k++], y2 = pArgs[k++], x3 = pArgs[k++], y3 = pArgs[k++]
-            let px = cx, py = cy
-            for (let t = 1; t <= 6; t++) {
-              const u = t / 6, m = 1 - u
-              const x = m * m * m * cx + 3 * m * m * u * x1 + 3 * m * u * u * x2 + u * u * u * x3
-              const y = m * m * m * cy + 3 * m * m * u * y1 + 3 * m * u * u * y2 + u * u * u * y3
-              linje(px, py, x, y); px = x; py = y
-            }
-            cx = x3; cy = y3
-          }
-          else if (op === OPS.curveTo2 || op === OPS.curveTo3) { k += 4 }
-          else if (op === OPS.closePath) { linje(cx, cy, sx, sy); cx = sx; cy = sy }
-          else if (op === OPS.rectangle) {
-            const x = pArgs[k++], y = pArgs[k++], w = pArgs[k++], h = pArgs[k++]
-            linje(x, y, x + w, y); linje(x + w, y, x + w, y + h); linje(x + w, y + h, x, y + h); linje(x, y + h, x, y)
-            cx = x; cy = y; sx = x; sy = y
-          }
-        }
-        continue
-      }
-      if (fn === OPS.stroke || fn === OPS.closeStroke) {
-        for (const [x0, y0, x1, y1] of sti) {
-          const p = bruk(ctm, x0, y0), q = bruk(ctm, x1, y1)
-          ut.push({ x0: p[0], y0: p[1], x1: q[0], y1: q[1], bredde, lys: metning, farge })
-        }
-        sti = []
-        continue
-      }
-      if (fn === OPS.fill || fn === OPS.eoFill || fn === OPS.fillStroke) {
-        if (valg.medFyll) {
-          for (const [x0, y0, x1, y1] of sti) {
-            const p = bruk(ctm, x0, y0), q = bruk(ctm, x1, y1)
-            ut.push({ x0: p[0], y0: p[1], x1: q[0], y1: q[1], bredde: fn === OPS.fillStroke ? bredde : 0, lys: metning, farge, fyll: true })
-          }
-        }
-        sti = []
-      }
-    }
-    // Tekstlaget: romnavn og påførte arealer. Brukes som frø i romdelingen.
-    const tekster: PdfTekst[] = []
-    try {
-      const tc = await side.getTextContent()
-      for (const it of tc.items as Array<{ str?: string; transform?: number[]; height?: number }>) {
-        const str = (it.str ?? '').trim()
-        if (!str || !it.transform) continue
-        const m = gang(vp.transform.slice() as Matrise, it.transform as unknown as Matrise)
-        tekster.push({ tekst: str, x: m[4], y: m[5], hoyde: Math.abs(it.height ?? m[3]) || 8 })
-      }
-    } catch { /* uten tekstlag går romdelingen videre uten navn */ }
-
-    return { segmenter: ut, tekster, breddePt: vp.width, hoydePt: vp.height }
+    const side = await doc.getPage(valg.side ?? 1)
+    return await strekerFraSide(side as never, OPS, valg)
   } finally {
     await doc.destroy()
     settTilbake()

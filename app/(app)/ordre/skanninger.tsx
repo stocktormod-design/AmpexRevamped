@@ -53,30 +53,34 @@ export default function SkanningerScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }} showsVerticalScrollIndicator={false}>
-        <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.lg }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Pressable onPress={() => router.back()} pressScale={0.92}
-              style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
-            </Pressable>
-            <Pressable haptic="medium" pressScale={0.95} onPress={nytt}
-              style={{ height: 38, paddingHorizontal: spacing.lg, borderRadius: radius.pill, backgroundColor: colors.label, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
-              <Text style={[t.subhead, { fontWeight: '600', color: '#FFFFFF' }]}>Nytt skann</Text>
-            </Pressable>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.lg }}>
-            <ScanLine size={14} color={colors.secondaryLabel} strokeWidth={2.2} />
-            <Text style={[t.caption, { color: colors.secondaryLabel, fontWeight: '600' }]}>Skann</Text>
-          </View>
-          <Text style={[t.title1, { marginTop: 2 }]}>{scanKindLabel[slag]}</Text>
+      {/* Hodet står fast over lista: en knapp inne i ScrollView mister trykket når fingeren
+          flytter seg en millimeter (rullingen tar det) — «reagerer bare noen ganger». */}
+      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen, paddingBottom: spacing.lg }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Pressable onPress={() => router.back()} pressScale={0.92}
+            style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+          </Pressable>
         </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.lg }}>
+          <ScanLine size={14} color={colors.secondaryLabel} strokeWidth={2.2} />
+          <Text style={[t.caption, { color: colors.secondaryLabel, fontWeight: '600' }]}>Skann</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: 2 }}>
+          <Text style={[t.title1, { flexShrink: 1 }]} numberOfLines={1}>{scanKindLabel[slag]}</Text>
+          <Pressable haptic="medium" pressScale={0.95} onPress={nytt} hitSlop={8}
+            style={{ height: 44, paddingHorizontal: spacing.lg, borderRadius: radius.pill, backgroundColor: colors.label, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
+            <Text style={[t.subhead, { fontWeight: '600', color: '#FFFFFF' }]}>Nytt skann</Text>
+          </Pressable>
+        </View>
+      </View>
 
+      <ScrollView contentContainerStyle={{ paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }} showsVerticalScrollIndicator={false}>
         {scans.length === 0 ? (
           <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.separator, borderStyle: 'dashed', alignItems: 'center', padding: spacing.xl }}>
             <Text style={[t.footnote, { textAlign: 'center' }]}>
-              {slag === 'planlegging' ? 'Ingen planleggingsskann ennå. Mål opp rommet før jobben.' : 'Ingen dokumentasjonsskann ennå. Vis hvordan det ble.'}
+              Ingen skann
             </Text>
           </View>
         ) : (
@@ -92,6 +96,7 @@ export default function SkanningerScreen() {
                   onScan={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind], title: s.title, viewPath: '' } })}
                   onOpenRevision={rev => router.push({ pathname: '/(app)/skann', params: { viewPath: rev.path, title: `${s.title} · ${new Date(rev.ts).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` } })}
                   onDelete={() => slett(s)}
+                  onRename={async n => { await database.write(async () => { await s.update(x => { x.title = n }) }); syncQuietly() }}
                   onRebuilt={async path => {
                     if (s.scanPath) await archiveRevision(s.id, s.scanPath)
                     await database.write(async () => { await s.update(x => { x.scanPath = path }) })

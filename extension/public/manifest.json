@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Ampex",
+  "version": "0.1.0",
+  "description": "Se firmaets grossistpriser på varene i EFObasen, og legg dem rett i handlelista i Ampex.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://vymgogzcicbaizjlaurr.supabase.co/*"],
+  "background": { "service_worker": "bakgrunn.js" },
+  "action": { "default_popup": "popup.html", "default_title": "Ampex" },
+  "content_scripts": [
+    {
+      "matches": ["https://efobasen.efo.no/*"],
+      "js": ["side.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

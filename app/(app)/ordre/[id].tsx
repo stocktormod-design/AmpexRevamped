@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, ScrollView, Linking, Platform, Alert, StyleSheet, Dimensions } from 'react-native'
+import { View, ScrollView, Linking, Platform, Alert, StyleSheet } from 'react-native'
 import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -9,7 +9,6 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, FilePlus2, FileText, Navigation, Package, PenLine, Phone, Plus, Receipt, ScanLine, Search, Trash2, UserPlus, Users } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { AvtaltPrisKort } from '../../../components/avtalt-pris-kort'
-import { useSignaturer } from '../../../lib/signatures'
 import { useGodkjenninger, useGrunnlag } from '../../../lib/approvals'
 import { GodkjenningKort } from '../../../components/godkjenning-kort'
 import { ArkivKort } from '../../../components/arkiv-kort'
@@ -17,7 +16,7 @@ import { Chip } from '../../../components/ui'
 import { PapirCard, usePapirFokus } from '../../../components/papir-surface'
 import { Ark, ChoiceSheet } from '../../../components/sheet'
 import { taOrdrefoto, useOrdrefoto, velgOrdrefoto } from '../../../lib/foto'
-import { TidForing, SeksjonsRad } from '../../../components/tid-foring'
+import { SeksjonsRad } from '../../../components/tid-foring'
 import { MegAvatar } from '../../../components/meg-avatar'
 import { ScanCard } from '../../../components/scan-card'
 import { deleteScanFiles, clearRevisions, archiveRevision } from '../../../lib/scan-revisions'
@@ -31,6 +30,7 @@ import { FormTemplate } from '../../../lib/db/models/form-template'
 import { OrderMaterial } from '../../../lib/db/models/order-material'
 import { OrderScan, scanKindLabel, type ScanKind } from '../../../lib/db/models/order-scan'
 import { AMPEX_TEMPLATES } from '../../../lib/forms/templates'
+import { resolveTemplate } from '../../../lib/forms/resolve'
 import { markOrderOpened } from '../../../lib/last-opened'
 import { formatDateTime } from '../../../lib/format'
 import { TimeEntry } from '../../../lib/db/models/time-entry'
@@ -279,6 +279,33 @@ function Token({ Icon, navn, under, ferdig, onPress }: {
       <View>
         <Text style={[t.subhead, { fontWeight: '600', color: colors.label }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{navn}</Text>
         <Text style={[t.caption, { marginTop: 1 }]} numberOfLines={1}>{under}</Text>
+      </View>
+    </Pressable>
+  )
+}
+
+/** Hurtighandling rett under hodet: ikon, navn, og det som står der nå. */
+function Hurtig({ Ikon, navn, verdi, onPress }: {
+  Ikon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>
+  navn: string
+  verdi: string
+  onPress: () => void
+}) {
+  return (
+    <Pressable haptic="light" pressScale={0.96} onPress={onPress}
+      style={{
+        flex: 1, minHeight: 86, borderRadius: radius.lg, backgroundColor: colors.bg,
+        borderWidth: 1, borderColor: colors.separator, padding: spacing.sm + 2,
+        justifyContent: 'space-between',
+      }}>
+      <Ikon size={19} color={colors.label} strokeWidth={2} />
+      <View>
+        <Text style={[t.caption, { fontWeight: '600', color: colors.label }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+          {navn}
+        </Text>
+        <Text style={[t.caption, { marginTop: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+          {verdi}
+        </Text>
       </View>
     </Pressable>
   )
@@ -558,9 +585,7 @@ export default function OrderDetailScreen() {
     router.push({ pathname: '/(app)/skann', params: { scanId: nyId, kind: scanKindLabel[kind], title: `${scanKindLabel[kind]} ${n}`, viewPath: '' } })
   }
   const [bildeValg, setBildeValg] = useState(false)
-  const [side, setSide] = useState(0)
   const [bekreft, setBekreft] = useState(false)
-  const kortBredde = Dimensions.get('window').width - spacing.screen * 2
   const foto = useOrdrefoto(id)
   const docs = useOrderDocuments(id ?? '')
   const materials = useOrderMaterials(id ?? '')
@@ -580,15 +605,14 @@ export default function OrderDetailScreen() {
   const doneCount = docs.filter(d => d.status === 'fullfort').length
   const grunnlag = useFakturagrunnlag(id ?? '')
   const timer = useOrderTimer(id ?? '')
-  const antallMedlemmer = useOrderMemberCount(id ?? '')
-  const tillegg = useOrderExtras(id ?? '')
-  const signaturer = useSignaturer(id ?? '')
   const godkjenninger = useGodkjenninger(id)
   const godkjenningsgrunnlag = useGrunnlag(id, grunnlag?.bruttoOre ?? 0)
-  const allDocsDone = docs.length > 0 && doneCount === docs.length
-  const docsDone = doneCount
-  // Siste linje som ble ført — flisa sier hva som er der, ikke bare hvor mange.
-  const sisteMateriell = materials.length > 0 ? materials[materials.length - 1].description : ''
+
+  // Verdiene på hurtigflisene: det som står der nå, ikke bare et ikon.
+  const timerTekst = `${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t`
+  const materiellTekst = materials.length === 0 ? 'Legg til' : `${materials.length} ${materials.length === 1 ? 'vare' : 'varer'}`
+  const skjemaTekst = docs.length === 0 ? 'Legg til' : `${doneCount}/${docs.length}`
+  const fotoTekst = foto.length === 0 ? 'Legg til' : `${foto.length} ${foto.length === 1 ? 'bilde' : 'bilder'}`
 
   useEffect(() => {
     if (!id) return
@@ -635,7 +659,7 @@ export default function OrderDetailScreen() {
     Linking.openURL(Platform.OS === 'android' ? `geo:0,0?q=${q}` : `https://maps.apple.com/?daddr=${q}&dirflg=d`)
   }
 
-  const [velgerSkjema, setVelgerSkjema] = useState(false)
+  const [valgteMaler, setValgteMaler] = useState<string[]>([])
 
   /**
    * Både Ampex-malene og firmaets EGNE — også de som nettopp ble importert fra
@@ -650,17 +674,37 @@ export default function OrderDetailScreen() {
   const startedTemplates = alleMaler.filter(tpl => docByTemplate.has(tpl.id))
   const remainingTemplates = alleMaler.filter(tpl => !docByTemplate.has(tpl.id))
 
-  // Dokumentasjon viser kun faktisk lagt-til skjema — «Legg til» velger blant de
-  // resterende. Valget står i Ampex-arket, ikke i iOS-arket: systemarket finnes
-  // ikke på Android, og der åpnet appen bare det FØRSTE skjemaet i lista uten å
-  // spørre. Malen din het ikke det du trodde du valgte.
-  function addDocumentation() {
-    if (!order || remainingTemplates.length === 0) return
-    setVelgerSkjema(true)
+  /**
+   * Flere skjema på én gang. En jobb trenger ofte SJA + sluttkontroll +
+   * samsvar; før måtte du åpne ett, gå ut, åpne arket igjen for neste. Nå
+   * krysser du av det jobben trenger og legger dem på ordren i ett trykk.
+   * Radene lages tomme (data null) — skjemaskjermen ser det og forhåndsutfyller
+   * og spør om tema første gang det åpnes, som for et helt nytt skjema.
+   */
+  async function leggTilValgte() {
+    if (!order || valgteMaler.length === 0) return
+    const maler = await Promise.all(valgteMaler.map(id => resolveTemplate(id)))
+    await database.write(async () => {
+      for (const m of maler) {
+        if (!m || docByTemplate.has(m.id)) continue
+        await database.get<OrderDocument>('order_documents').create(d => {
+          d.orderId = order.id
+          d.templateId = m.id
+          d.templateVersion = m.version
+          d.status = 'utkast'
+          d.data = null
+          d.aiFieldOrigin = null
+          d.completedBy = null
+          d.completedAt = null
+        })
+      }
+    })
+    setValgteMaler([])
+    syncQuietly()
   }
 
-  function velgSkjema(templateId: string) {
-    setVelgerSkjema(false)
+  function apneSkjema(templateId: string) {
+    setSkjemaListe(false)
     if (order) router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId } })
   }
 
@@ -672,7 +716,7 @@ export default function OrderDetailScreen() {
    * jobben er FERDIG, og den ligger der arbeidet slutter, ikke som en fast
    * knapp over alt.
    */
-  const arbeidFinnes = timer > 0 || materials.length > 0 || startedTemplates.length > 0 || scans.length > 0
+  const arbeidFinnes = timer > 0 || materials.length > 0 || docs.some(d => d.data) || scans.length > 0
   useEffect(() => {
     if (!order) return
     if ((order.status === 'mottatt' || order.status === 'planlagt') && arbeidFinnes) void setStatus('pagaar')
@@ -701,13 +745,6 @@ export default function OrderDetailScreen() {
      * det ikke finnes noe ark igjen.
      */
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <ChoiceSheet<string>
-        synlig={velgerSkjema}
-        tittel="Legg til dokumentasjon"
-        valg={remainingTemplates.map(tpl => ({ verdi: tpl.id, etikett: tpl.name }))}
-        onVelg={velgSkjema}
-        onAvbryt={() => setVelgerSkjema(false)}
-      />
       {/*
         LYS I ROMMET. En flat mørk flate ser billig ut — ekte mørke grensesnitt
         har en lyskilde. To lag, begge uten trykkflate:
@@ -754,7 +791,8 @@ export default function OrderDetailScreen() {
           Uten adresse faller den tilbake til ren mørk grunn med kobbergløden.
           Ingen tom kartboks.
         */}
-        <View style={{ height: order.address ? 250 : 180 }}>
+        {/* minHeight, ikke height: lang tittel + kundetoken presset innholdet OPP over tilbakeknappen. */}
+        <View style={{ minHeight: order.address ? 250 : 180 }}>
           {!!order.address && (
             <View style={StyleSheet.absoluteFill}>
               <AddressMap address={order.address} onPress={naviger} height={250} chrome={false} />
@@ -804,7 +842,7 @@ export default function OrderDetailScreen() {
                   Trykk åpner kundevalget — ingen egen varselrad (Tormod 2026-09-06). */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
                 <Pressable haptic="light" pressScale={0.96}
-                  onPress={() => router.push({ pathname: '/(app)/kunder/velg', params: { orderId: id } })}
+                  onPress={() => router.push({ pathname: '/(app)/ordre/velg-kunde' as never, params: { orderId: id } })}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: spacing.md, borderRadius: radius.pill,
                     backgroundColor: (order.customerId || order.customerName) ? colors.fill : colors.warningSoft }}>
                   {(order.customerId || order.customerName)
@@ -838,108 +876,102 @@ export default function OrderDetailScreen() {
         </View>
         <View style={{ height: spacing.md }} />
 
-        {/* TRE LISTERADER: Skjema · Materiell · Timeføring (Tormod 2026-09-06). */}
-        <View style={{ marginHorizontal: spacing.screen, borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, overflow: 'hidden' }}>
-          {([
-            { navn: 'Skjema', verdi: [doneCount > 0 ? `${doneCount} fullført` : null, (docs.length - doneCount) > 0 ? `${docs.length - doneCount} påbegynt` : null].filter(Boolean).join(' · '), Icon: FileText, gaa: () => setSkjemaListe(true) },
-            { navn: 'Materiell', verdi: `${materials.length} ${materials.length === 1 ? 'vare' : 'varer'}`, Icon: Package, gaa: () => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } }) },
-            { navn: 'Timeføring', verdi: `${(Number.isInteger(timer) ? timer : timer.toFixed(2).replace(/0+$/, '')).toString().replace('.', ',')} t`, Icon: Clock, gaa: () => router.push({ pathname: '/(app)/ordre/timer', params: { id } }) },
-          ] as const).map((r, i) => (
-            <Pressable key={r.navn} haptic="light" onPress={r.gaa}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, height: 50, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.separator }}>
-              <r.Icon size={19} color={colors.label} strokeWidth={sizes.lucideStroke} />
-              <Text style={[t.body, { flex: 1, color: colors.label }]}>{r.navn}</Text>
-              <Text style={[t.subhead, { color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>{r.verdi}</Text>
-              <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-            </Pressable>
-          ))}
+        {/* FIRE HURTIGHANDLINGER rett under hodet: det montøren gjør om og om
+            igjen — timer, materiell, skjema, bilder. De ligger innenfor
+            tommelen når skjermen åpnes, i stedet for bak en sveipekarusell
+            eller nederst i en liste. */}
+        <View style={{ marginHorizontal: spacing.screen, marginTop: spacing.xs, flexDirection: 'row', gap: spacing.sm }}>
+          <Hurtig Ikon={Clock} navn="Timer" verdi={timerTekst}
+            onPress={() => router.push({ pathname: '/(app)/ordre/timer', params: { id } })} />
+          <Hurtig Ikon={Package} navn="Materiell" verdi={materiellTekst}
+            onPress={() => router.push({ pathname: '/(app)/ordre/material', params: { orderId: order.id } })} />
+          <Hurtig Ikon={FileText} navn="Skjema" verdi={skjemaTekst}
+            onPress={() => setSkjemaListe(true)} />
+          <Hurtig Ikon={Camera} navn="Bilder" verdi={fotoTekst}
+            onPress={() => setBildeValg(true)} />
         </View>
 
-        {/* TRE LIKE TOKENS: Planlegging · Dokumentasjon · Bilder. Skann-tokenene
-            åpner lista over skann av det slaget (som tegningene i et prosjekt). */}
-        <View style={{ marginHorizontal: spacing.screen, marginTop: spacing.md, flexDirection: 'row', gap: spacing.sm }}>
-          {scanKinds.map(kind => {
-            const mine = scans.filter(s => s.kind === kind)
-            const klare = mine.filter(s => s.scanPath).length
-            return (
-              <Token key={kind} Icon={klare > 0 ? Check : ScanLine} ferdig={klare > 0} navn={scanKindLabel[kind]}
-                under={klare > 0 ? `${klare} skann` : 'Skann'}
-                onPress={() => router.push({ pathname: '/(app)/ordre/skanninger', params: { orderId: order.id, kind } })} />
-            )
-          })}
-          <Token Icon={Camera} navn="Bilder" under={foto.length > 0 ? `${foto.length} bilde${foto.length === 1 ? '' : 'r'}` : 'Foto'} onPress={() => setBildeValg(true)} />
-        </View>
-
-        {/* SVEIPEKORTET: Opprettet → Fakturagrunnlag → Marker som ferdig. Tre sider
-            i én rektangulær token; knappen for ferdig finnes bare på siste side. */}
-        <View style={{ marginHorizontal: spacing.screen, marginTop: spacing.md }}>
-          <ScrollView
-            horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={e => setSide(Math.round(e.nativeEvent.contentOffset.x / Math.max(1, e.nativeEvent.layoutMeasurement.width)))}
-            style={{ borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, height: 132 }}
-          >
-            {/* 1 · Opprettet */}
-            <View style={{ width: kortBredde, padding: spacing.md, paddingHorizontal: spacing.lg, gap: 4 }}>
-              <Text style={t.title3}>Opprettet</Text>
-              {[
-                ['Opprettet', formatDateTime(order.createdAt) ?? ''],
-                ['Sist endret', formatDateTime(order.updatedAt) ?? ''],
-                ['Planlagt', when || 'Ikke satt'],
-                ['Ordrenummer', order.orderNumber ? `#${order.orderNumber}` : 'Tildeles ved synk'],
-              ].map(([k, v]) => (
-                <View key={k} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md }}>
-                  <Text style={[t.subhead, { color: colors.secondaryLabel }]}>{k}</Text>
-                  <Text style={[t.subhead, { color: colors.label, fontVariant: ['tabular-nums'] }]} numberOfLines={1}>{v}</Text>
-                </View>
-              ))}
-            </View>
-            {/* 2 · Fakturagrunnlag */}
-            <View style={{ width: kortBredde, padding: spacing.md, paddingHorizontal: spacing.lg, gap: 4 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-                <Text style={t.title3}>Fakturagrunnlag</Text>
-                <Text style={[t.subhead, { fontWeight: '600', fontVariant: ['tabular-nums'] }]}>{grunnlag ? `${formatKr(grunnlag.bruttoOre)} kr` : ''}</Text>
-              </View>
-              {!grunnlag || grunnlag.linjer.length === 0 ? (
-                <Text style={t.footnote}>Ingenting å fakturere ennå. Timer og materiell havner her.</Text>
-              ) : (
-                <>
-                  {grunnlag.linjer.slice(0, 3).map((l, i) => (
-                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md }}>
-                      <Text style={[t.subhead, { flex: 1, color: colors.label }]} numberOfLines={1}>{`${l.antall} ${l.enhet} ${l.beskrivelse}`}</Text>
-                      <Text style={[t.subhead, { color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>{formatKr(l.nettoOre)}</Text>
-                    </View>
-                  ))}
-                  {grunnlag.linjer.length > 3 && <Text style={t.footnote}>{`+ ${grunnlag.linjer.length - 3} linjer til`}</Text>}
-                  <Text style={[t.footnote, { marginTop: 2 }]}>{`Netto ${formatKr(grunnlag.nettoOre)} · mva ${formatKr(grunnlag.mvaOre)}`}</Text>
-                </>
-              )}
-            </View>
-            {/* 3 · Marker som ferdig */}
-            <View style={{ width: kortBredde, padding: spacing.md, paddingHorizontal: spacing.lg, gap: spacing.sm, justifyContent: 'space-between' }}>
-              <View>
-                <Text style={t.title3}>Marker som ferdig</Text>
-                <Text style={[t.footnote, { marginTop: 4 }]}>
-                  {order.status === 'fakturaklar' ? 'Ordren er ferdig og klar til faktura.' : order.status === 'fakturert' ? 'Ordren er fakturert.' : 'Ordren går til fakturering. Du får se hele grunnlaget først.'}
-                </Text>
-              </View>
-              <Pressable haptic="medium" pressScale={0.985} disabled={order.status === 'fakturert'} onPress={() => setBekreft(true)}
-                style={{ height: 46, borderRadius: radius.md, backgroundColor: order.status === 'fakturaklar' ? colors.successSoft : colors.label, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: spacing.sm, opacity: order.status === 'fakturert' ? 0.4 : 1 }}>
-                <Check size={17} color={order.status === 'fakturaklar' ? colors.success : '#FFFFFF'} strokeWidth={2.4} />
-                <Text style={[t.headline, { color: order.status === 'fakturaklar' ? colors.success : '#FFFFFF' }]}>{order.status === 'fakturaklar' ? 'Til fakturagrunnlaget' : 'Send faktura'}</Text>
-              </Pressable>
-            </View>
-          </ScrollView>
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: spacing.sm }}>
-            {[0, 1, 2].map(i => <View key={i} style={{ width: i === side ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: i === side ? colors.label : colors.separator }} />)}
+        {/* SKANN — sjeldnere enn de fire over, og bare to slag. */}
+        <View style={{ marginTop: spacing.xl }}>
+          <Seksjonshode tekst="Skann" />
+          <View style={{ marginHorizontal: spacing.screen, flexDirection: 'row', gap: spacing.sm }}>
+            {scanKinds.map(kind => {
+              const mine = scans.filter(s => s.kind === kind)
+              const klare = mine.filter(s => s.scanPath).length
+              return (
+                <Token key={kind} Icon={klare > 0 ? Check : ScanLine} ferdig={klare > 0} navn={scanKindLabel[kind]}
+                  under={klare > 0 ? `${klare} skann` : 'Skann'}
+                  onPress={() => router.push({ pathname: '/(app)/ordre/skanninger', params: { orderId: order.id, kind } })} />
+              )
+            })}
           </View>
         </View>
+
+        {/* FAKTURA — det som skjer på slutten. Statusen skal kunne leses uten
+            å sveipe, og «Marker som ferdig» skal være synlig når jobben er
+            ferdig, ikke gjemt på tredje side i et karusellkort. */}
+        <View style={{ marginTop: spacing.xl }}>
+          <Seksjonshode tekst="Faktura" />
+          <View style={{
+            marginHorizontal: spacing.screen, borderRadius: radius.lg, backgroundColor: colors.bg,
+            borderWidth: 1, borderColor: colors.separator, overflow: 'hidden',
+          }}>
+            <Pressable haptic="light"
+              onPress={() => router.push({ pathname: '/(app)/ordre/faktura', params: { id } })}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, minHeight: 56 }}>
+              <Receipt size={19} color={colors.label} strokeWidth={sizes.lucideStroke} />
+              <View style={{ flex: 1 }}>
+                <Text style={t.headline}>Fakturagrunnlag</Text>
+                <Text style={[t.footnote, { marginTop: 1 }]}>
+                  {grunnlag ? `${grunnlag.linjer.length} ${grunnlag.linjer.length === 1 ? 'linje' : 'linjer'}` : 'Ikke beregnet'}
+                </Text>
+              </View>
+              <Text style={[t.bodyMedium, { color: colors.label, fontVariant: ['tabular-nums'] }]}>
+                {grunnlag ? `${formatKr(grunnlag.bruttoOre)} kr` : '0 kr'}
+              </Text>
+              <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
+            </Pressable>
+            <View style={{ padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.separator }}>
+              <Pressable haptic="medium" pressScale={0.985}
+                disabled={order.status === 'fakturert'}
+                onPress={() => setBekreft(true)}
+                style={{
+                  height: 46, borderRadius: radius.md,
+                  backgroundColor: order.status === 'fakturaklar' ? colors.successSoft : colors.label,
+                  alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: spacing.sm,
+                  opacity: order.status === 'fakturert' ? 0.4 : 1,
+                }}>
+                <Check size={17} color={order.status === 'fakturaklar' ? colors.success : '#FFFFFF'} strokeWidth={2.4} />
+                <Text style={[t.headline, { color: order.status === 'fakturaklar' ? colors.success : '#FFFFFF' }]}>
+                  {order.status === 'fakturaklar' ? 'Klar til faktura' : order.status === 'fakturert' ? 'Fakturert' : 'Marker som ferdig'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* STATUS — det sjeldne. Godkjenning, avtalt pris og arkiv vises bare
+            når de finnes, og står nederst: de leses, de gjøres ikke. */}
+        {(godkjenninger.length > 0 || !!order.quoteId || order.status === 'fakturert') && (
+          <View style={{ marginTop: spacing.xl }}>
+            <Seksjonshode tekst="Status" />
+            <View style={{ gap: spacing.md }}>
+              <GodkjenningKort godkjenninger={godkjenninger} grunnlag={godkjenningsgrunnlag} />
+              {!!order.quoteId && <AvtaltPrisKort quoteId={order.quoteId} />}
+              <ArkivKort order={order} />
+            </View>
+          </View>
+        )}
+
+        <Text style={[t.caption, { textAlign: 'center', marginTop: spacing.xl, color: colors.tertiaryLabel }]}>
+          {`Opprettet ${formatDateTime(order.createdAt) ?? ''}${order.orderNumber ? ` · #${order.orderNumber}` : ''}`}
+        </Text>
 
         {/* «Sikker?» — hele fakturagrunnlaget ramses opp før noe skjer. */}
         <Ark synlig={bekreft} onLukk={() => setBekreft(false)}>
           <View style={{ paddingHorizontal: spacing.screen, gap: spacing.md }}>
             <View>
               <Text style={t.title3}>Sikker?</Text>
-              <Text style={[t.footnote, { marginTop: 2 }]}>Dette er alt som faktureres på ordren.</Text>
             </View>
             <View style={{ gap: 6 }}>
               {(grunnlag?.linjer ?? []).map((l, i) => (
@@ -948,7 +980,7 @@ export default function OrderDetailScreen() {
                   <Text style={[t.subhead, { color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>{formatKr(l.nettoOre)}</Text>
                 </View>
               ))}
-              {(grunnlag?.linjer.length ?? 0) === 0 && <Text style={t.footnote}>Ingen linjer. Ordren blir ferdig uten noe å fakturere.</Text>}
+              {(grunnlag?.linjer.length ?? 0) === 0 && <Text style={t.footnote}>Ingen linjer</Text>}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.separator, paddingTop: spacing.sm, marginTop: 4 }}>
                 <Text style={[t.headline]}>Å betale</Text>
                 <Text style={[t.headline, { fontVariant: ['tabular-nums'] }]}>{grunnlag ? `${formatKr(grunnlag.bruttoOre)} kr` : '0 kr'}</Text>
@@ -965,30 +997,64 @@ export default function OrderDetailScreen() {
           </View>
         </Ark>
 
-        {/* Skjema-lista som ark: sjekkliste, trykk åpner skjemaet. */}
-        <Ark synlig={skjemaListe} onLukk={() => setSkjemaListe(false)}>
+        {/* Skjema-arket: det som ligger på ordren øverst, avkrysning for å legge til flere under. */}
+        <Ark synlig={skjemaListe} onLukk={() => { setSkjemaListe(false); setValgteMaler([]) }}>
           <View style={{ paddingHorizontal: spacing.screen }}>
             <Text style={[t.title3, { marginBottom: spacing.sm }]}>Skjema</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, height: 40, borderRadius: radius.pill, backgroundColor: colors.fill, paddingHorizontal: spacing.md, marginBottom: spacing.sm }}>
-              <Search size={16} color={colors.secondaryLabel} strokeWidth={2.1} />
-              <TextInput value={skjemaSok} onChangeText={setSkjemaSok} placeholder="Søk i skjema" placeholderTextColor={colors.tertiaryLabel} style={[t.body, { flex: 1 }]} autoCorrect={false} clearButtonMode="while-editing" />
-            </View>
-            {alleMaler.filter(tpl => tpl.name.toLowerCase().includes(skjemaSok.trim().toLowerCase())).map((tpl, i) => {
-              const doc = docByTemplate.get(tpl.id)
-              const tilstand = doc?.status === 'fullfort' ? 'ferdig' : doc ? 'utkast' : 'tom'
-              return (
-                <Pressable key={tpl.id} haptic="light"
-                  onPress={() => { setSkjemaListe(false); router.push({ pathname: '/(app)/ordre/skjema', params: { orderId: order.id, templateId: tpl.id } }) }}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, height: 48, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.separator }}>
-                  <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: tilstand === 'ferdig' ? 0 : 1.5, borderColor: tilstand === 'utkast' ? colors.label : colors.separator, backgroundColor: tilstand === 'ferdig' ? colors.success : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                    {tilstand === 'ferdig' && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
-                    {tilstand === 'utkast' && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.label }} />}
-                  </View>
-                  <Text style={[t.body, { flex: 1, color: colors.label }]} numberOfLines={1}>{tpl.name}</Text>
-                  <Text style={[t.caption, { color: tilstand === 'ferdig' ? colors.success : colors.tertiaryLabel }]}>{tilstand === 'ferdig' ? 'Fullført' : tilstand === 'utkast' ? 'Utkast' : ''}</Text>
-                </Pressable>
-              )
-            })}
+            <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
+              {startedTemplates.length > 0 && (
+                <>
+                  <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.secondaryLabel, marginTop: spacing.sm, marginBottom: spacing.xs }]}>På ordren</Text>
+                  {startedTemplates.map((tpl, i) => {
+                    const doc = docByTemplate.get(tpl.id)
+                    const ferdig = doc?.status === 'fullfort'
+                    const påbegynt = !!doc?.data
+                    return (
+                      <Pressable key={tpl.id} haptic="light" onPress={() => apneSkjema(tpl.id)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, height: 48, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.separator }}>
+                        <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: ferdig ? 0 : 1.5, borderColor: påbegynt ? colors.label : colors.separator, backgroundColor: ferdig ? colors.success : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                          {ferdig && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
+                          {!ferdig && påbegynt && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.label }} />}
+                        </View>
+                        <Text style={[t.body, { flex: 1, color: colors.label }]} numberOfLines={1}>{tpl.name}</Text>
+                        <Text style={[t.caption, { color: ferdig ? colors.success : colors.tertiaryLabel }]}>{ferdig ? 'Fullført' : påbegynt ? 'Utkast' : 'Ikke startet'}</Text>
+                        <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={2.1} />
+                      </Pressable>
+                    )
+                  })}
+                </>
+              )}
+              {remainingTemplates.length > 0 && (
+                <>
+                  <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.secondaryLabel, marginTop: spacing.lg, marginBottom: spacing.xs }]}>Legg til</Text>
+                  {remainingTemplates.length > 6 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, height: 40, borderRadius: radius.pill, backgroundColor: colors.fill, paddingHorizontal: spacing.md, marginBottom: spacing.sm }}>
+                      <Search size={16} color={colors.secondaryLabel} strokeWidth={2.1} />
+                      <TextInput value={skjemaSok} onChangeText={setSkjemaSok} placeholder="Søk i skjema" placeholderTextColor={colors.tertiaryLabel} style={[t.body, { flex: 1 }]} autoCorrect={false} clearButtonMode="while-editing" />
+                    </View>
+                  )}
+                  {remainingTemplates.filter(tpl => tpl.name.toLowerCase().includes(skjemaSok.trim().toLowerCase())).map((tpl, i) => {
+                    const valgt = valgteMaler.includes(tpl.id)
+                    return (
+                      <Pressable key={tpl.id} haptic="light"
+                        onPress={() => setValgteMaler(v => valgt ? v.filter(x => x !== tpl.id) : [...v, tpl.id])}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, height: 48, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.separator }}>
+                        <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: valgt ? 0 : 1.5, borderColor: colors.separator, backgroundColor: valgt ? colors.label : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                          {valgt && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+                        </View>
+                        <Text style={[t.body, { flex: 1, color: colors.label }]} numberOfLines={1}>{tpl.name}</Text>
+                      </Pressable>
+                    )
+                  })}
+                </>
+              )}
+            </ScrollView>
+            {valgteMaler.length > 0 && (
+              <Pressable haptic="medium" onPress={leggTilValgte}
+                style={{ marginTop: spacing.md, height: 50, borderRadius: radius.pill, backgroundColor: colors.cta, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={[t.headline, { color: '#FFFFFF' }]}>{`Legg til ${valgteMaler.length} skjema`}</Text>
+              </Pressable>
+            )}
           </View>
         </Ark>
         <ChoiceSheet<'kamera' | 'galleri'>

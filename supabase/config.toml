@@ -441,6 +441,12 @@ verify_jwt = true
 import_map = "./functions/r2-sign/deno.json"
 entrypoint = "./functions/r2-sign/index.ts"
 
+[functions.delt-ordre]
+enabled = true
+# Delingslenka: kunden har ingen økt. Tilgangen er nøkkelen i lenka (32 tilfeldige byte),
+# slått opp med service-rollen i index.ts.
+verify_jwt = false
+
 [functions.ai-voice]
 enabled = true
 # auth: 'user' i index.ts krever gyldig JWT — la plattformens sjekk stå på (standard).

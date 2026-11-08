@@ -79,9 +79,6 @@ export default function Teori() {
         <Text style={{ fontSize: 16, fontWeight: '600', color: lt.stille }}>Læretid</Text>
       </Pressable>
       <Tittel>Teori</Tittel>
-      <Text style={{ fontSize: 16, color: lt.stille, marginTop: 4 }}>
-        Trykk på en sirkel. Tre korte spørsmål, tilpasset nivået ditt.
-      </Text>
       <Text style={{ fontSize: 14, fontWeight: '700', color: lt.gulMork, marginTop: 8 }}>
         {sterke} av {TEMAER.length} temaer sitter
       </Text>

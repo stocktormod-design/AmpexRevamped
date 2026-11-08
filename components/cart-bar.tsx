@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { TAB_BAR_HOYDE, tabBarBunn } from './glass-tab-bar'
 import { View } from 'react-native'
 import { Text } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -41,7 +42,7 @@ export function CartBar() {
       <View
         style={{
           position: 'absolute', left: spacing.sm, right: spacing.sm,
-          bottom: (sizes.tabBar + insets.bottom + spacing.sm) + 36 /* over det hevede Ampex-merket i docken */,
+          bottom: tabBarBunn(insets.bottom) + TAB_BAR_HOYDE + spacing.sm /* over fanelinja */,
         }}
         pointerEvents="box-none"
       >
@@ -116,7 +117,6 @@ export function CartBar() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[t.bodyMedium, { color: colors.secondaryLabel }]}>Materielluttak</Text>
-                  <Text style={[t.caption, { marginTop: 1 }]}>Klar når du er. Trykk for å starte</Text>
                 </View>
               </Pressable>
             )}

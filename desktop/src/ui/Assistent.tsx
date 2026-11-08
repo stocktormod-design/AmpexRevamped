@@ -114,14 +114,6 @@ export function Assistent({
           )}
         </div>
 
-        {/* Ærlig om hva som mangler. Å late som modellen er her ville vært verre
-            enn å ikke ha knappen. */}
-        <footer className="skuff-bunn">
-          <p className="felt-hjelp">
-            Den talende assistenten fra appen er ikke koblet på kontoret ennå. Når den kobles på, er
-            det her den kommer — samme inngang, samme vane.
-          </p>
-        </footer>
       </aside>
     </div>
   )

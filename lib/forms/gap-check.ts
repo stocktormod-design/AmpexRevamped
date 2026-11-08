@@ -5,7 +5,9 @@ import { Order } from '../db/models/order'
 import { OrderDocument } from '../db/models/order-document'
 import { resolveTemplate } from './resolve'
 import type { FormField, FormTemplate, FormValues } from './types'
-import { isFieldVisible, visibleFields } from './visibility'
+import { findUnfilledRequired, isFieldVisible, visibleFields } from './visibility'
+
+export { findUnfilledRequired } from './visibility'
 import { aiKanFylle } from './ai-fill-rules'
 import { callAiVoice } from '../ai/gemini-client'
 import { audioSegmentPath, saveDraftMeta, type VoiceDraftSession } from '../ai/voice-drafts'
@@ -29,19 +31,6 @@ export type GapCheckExtraction = {
  * være «manglende»: da ville AI-en spurt montøren om avviksbeskrivelsen på et
  * avvik som ikke finnes.
  */
-export function findUnfilledRequired(template: FormTemplate, values: FormValues): FormField[] {
-  const out: FormField[] = []
-  for (const section of template.sections) {
-    for (const field of section.fields) {
-      if (field.type === 'info' || !field.required) continue
-      if (!isFieldVisible(field, values)) continue
-      const v = values[field.key]
-      const isEmpty = v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
-      if (isEmpty) out.push(field)
-    }
-  }
-  return out
-}
 
 /** Avviser choice-verdier som ikke er et eksakt match — se plan: "Kritisk forsvar". */
 function isValidExtractedField(template: FormTemplate, e: GapCheckExtractedField, after: FormValues): boolean {

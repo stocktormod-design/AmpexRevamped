@@ -139,6 +139,44 @@ export const EKSTRA_ETIKETT: Record<string, string> = {
   UNSPSC: 'UNSPSC',
 }
 
+/**
+ * EFObasen inne i appen (WebView + prispanel). AV til vi har avtale med EFO:
+ * vilkårene §2/§7 forbyr innbygging uten. Av betyr at «Bla i EFObasen» er
+ * borte og at EFObasen-lenka på varekortet åpnes i nettleseren i stedet.
+ */
+export const EFOBASEN_I_APPEN = false
+
+/**
+ * Varens offentlige side i EFObasen, slått opp på el-nummer. Vi henter ingenting
+ * derfra — knappen åpner deres egen side i nettleseren, med deres navn på, så
+ * montøren ser ETIM-data, bilder og FDV der de eies. Formen er deres egen rute:
+ * `produkt/:elnr` (og `produkt/:levnr/:elnr` sendes dit), lest av SPA-rutene
+ * 28.09.2026. Null når el-nummeret ikke er sju siffer — da finnes ingen side.
+ */
+export function efobasenUrl(elnummer: string | null | undefined): string | null {
+  const nr = (elnummer ?? '').replace(/\s/g, '')
+  return /^\d{7}$/.test(nr) ? `https://efobasen.efo.no/produkt/${nr}` : null
+}
+
+/**
+ * El-nummeret på en EFObasen-produktside, lest av adressen — det motsatte av
+ * `efobasenUrl`. EFObasen-skjermen i appen bruker det for å vise firmaets priser
+ * i panelet under varen. Vi leser BARE adressen, aldri innholdet på siden deres.
+ * `produkt/<elnr>` og `produkt/<levnr>/<elnr>` (som EFObasen selv sender videre).
+ */
+export function elnummerFraEfobasen(url: string): string | null {
+  let sti: string
+  try {
+    const u = new URL(url)
+    if (!/(^|\.)efobasen\.efo\.no$/.test(u.hostname)) return null
+    sti = u.pathname
+  } catch {
+    return null
+  }
+  const m = sti.match(/^\/produkt\/(?:[^/]+\/)?(\d{7})\/?$/)
+  return m ? m[1] : null
+}
+
 /** Ekstrafelt som ikke allerede vises som lenke eller egen rad. */
 export function visbareEkstra(ekstra: Record<string, string>): { etikett: string; verdi: string }[] {
   const skjult = new Set([BILDE, FDV, HMS, EFOBASE])

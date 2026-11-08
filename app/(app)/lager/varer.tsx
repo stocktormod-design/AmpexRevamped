@@ -290,7 +290,7 @@ export default function Varekartotek() {
         <Text style={[t.display, { marginTop: spacing.md }]}>Varer</Text>
         <Text style={[t.footnote, { marginTop: 2 }]}>
           {antall === 0
-            ? 'Kartoteket er tomt — importer en prisfil fra grossisten.'
+            ? 'Kartoteket er tomt'
             : blar
               ? `${antall} varer i ${kategorier.length} grupper${grossister.length > 0 ? ` · ${grossister.join(', ')}` : ''}`
               : `${antall} varer${grossister.length > 0 ? ` · ${grossister.join(', ')}` : ''}`}
@@ -298,7 +298,7 @@ export default function Varekartotek() {
 
         <TextInput
           value={sok} onChangeText={setSok}
-          placeholder="El-nummer, navn, produsent eller strekkode"
+          placeholder="Søk"
           placeholderTextColor={colors.tertiaryLabel}
           autoCorrect={false} clearButtonMode="while-editing"
           style={[t.body, {
@@ -395,11 +395,6 @@ export default function Varekartotek() {
           backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.lg,
         }}>
           <Text style={t.bodyMedium}>{`EL ${ukjentElnummer} er ikke i kartoteket`}</Text>
-          <Text style={[t.footnote, { marginTop: spacing.xs }]}>
-            Varekartoteket fylles av en prisfil fra grossisten — den har de ekte
-            el-numrene, navnene og bildene. Til den er importert kan du legge inn
-            varen selv; nummeret følger med, så prisfila kobler seg på den senere.
-          </Text>
           <Pressable
             haptic="medium"
             onPress={() => setNyVare(true)}
@@ -559,12 +554,12 @@ export default function Varekartotek() {
         ListEmptyComponent={
           <Text style={[t.footnote, { textAlign: 'center', paddingHorizontal: spacing.screen, marginTop: spacing.xl }]}>
             {antall === 0
-              ? 'Last inn en V4- eller P4-fil fra grossisten, så fylles kartoteket med navn, produsent, bilder og priser.'
+              ? null
               : sok.trim()
                 ? katalogTreff.length > 0
-                  ? 'Ikke i kartoteket ditt ennå. Velg fra katalogen under, så legges varen inn.'
-                  : 'Ingen treff. Prøv el-nummer, produsent eller færre ord.'
-                : 'Ingen varer passer filteret.'}
+                  ? 'Ikke i kartoteket'
+                  : 'Ingen treff'
+                : 'Ingen varer passer filteret'}
           </Text>
         }
       />
@@ -573,8 +568,7 @@ export default function Varekartotek() {
       <PromptSheet
         synlig={nyVare}
         tittel={`Ny vare · EL ${ukjentElnummer ?? ''}`}
-        forklaring="Prisfila retter navnet senere hvis den har et annet."
-        plassholder="F.eks. Jordfeilautomat 16A"
+        plassholder="Jordfeilautomat 16A"
         knapp="Legg inn"
         onSvar={async navn => {
           setNyVare(false)

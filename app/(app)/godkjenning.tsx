@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import * as Haptics from 'expo-haptics'
-import { ChevronLeft, Check, X, ShieldCheck, AlertTriangle, ChevronRight } from 'lucide-react-native'
+import { ChevronLeft, Check, X, AlertTriangle, ChevronRight } from 'lucide-react-native'
 import { Pressable } from '../../components/pressable'
 import { SectionHeader } from '../../components/ui'
 import { ToolGlow } from '../../components/tool-surface'
@@ -169,24 +169,12 @@ export default function Godkjenning() {
           <Text style={[t.display, { marginTop: spacing.lg }]}>Til godkjenning</Text>
           <Text style={[t.footnote, { marginTop: spacing.xs }]}>
             {ordre.length === 0
-              ? 'Ingenting venter.'
-              : `${ordre.length} ${ordre.length === 1 ? 'ordre venter' : 'ordrer venter'} på faglig ansvarlig.`}
+              ? 'Ingenting venter'
+              : `${ordre.length} ${ordre.length === 1 ? 'ordre venter' : 'ordrer venter'}`}
           </Text>
         </View>
 
-        {ordre.length === 0 ? (
-          <View style={{ alignItems: 'center', marginTop: spacing.xxl }}>
-            <View style={{
-              width: sizes.iconChip + 12, height: sizes.iconChip + 12, borderRadius: radius.pill,
-              backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center',
-            }}>
-              <ShieldCheck size={sizes.iconLg} color={colors.success} strokeWidth={sizes.lucideStroke} />
-            </View>
-            <Text style={[t.footnote, { marginTop: spacing.md, textAlign: 'center', paddingHorizontal: spacing.xxl }]}>
-              Alt fakturaklart arbeid er gjennomgått.
-            </Text>
-          </View>
-        ) : (
+        {ordre.length === 0 ? null : (
           <>
             <SectionHeader>Venter</SectionHeader>
             {ordre.map((o, i) => (
@@ -195,18 +183,12 @@ export default function Godkjenning() {
           </>
         )}
 
-        {!kanGodkjenne && ordre.length > 0 && (
-          <Text style={[t.footnote, { marginHorizontal: spacing.screen, marginTop: spacing.md }]}>
-            Du kan se listen, men bare faglig ansvarlig kan godkjenne. Settes under Meg.
-          </Text>
-        )}
       </ScrollView>
 
       <PromptSheet
         synlig={!!avvis}
         tittel="Hvorfor sendes den tilbake?"
-        forklaring="Ordren settes tilbake til pågår."
-        plassholder="F.eks. mangler sluttkontroll på kurs 4"
+        plassholder="Mangler sluttkontroll på kurs 4"
         knapp="Send tilbake"
         onSvar={async grunn => {
           const valgt = avvis

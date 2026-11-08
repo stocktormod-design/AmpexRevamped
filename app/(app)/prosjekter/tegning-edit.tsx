@@ -300,7 +300,7 @@ export default function TegningEdit() {
       try {
         const forslag = await finnRomPaaTegning(localUri, { sidebreddePt: page.w, maalestokk })
         if (!forslag.length) {
-          Alert.alert('Fant ingen rom', 'Sjekk at målestokken stemmer med tegningen.')
+          Alert.alert('Fant ingen rom')
           return
         }
         forslag.sort((a, b) => b.areal - a.areal)
@@ -311,7 +311,7 @@ export default function TegningEdit() {
               r.drawingId = drawing.id
               r.plan = drawing.plan
               r.name = f.navn ?? `Rom ${i + 1}`
-              r.shape = JSON.stringify({ points: f.punkter })
+              r.shape = JSON.stringify({ points: f.punkter, ...(f.bekreftet === false ? { usikker: true } : {}) })
             })),
           )
         })
@@ -323,7 +323,7 @@ export default function TegningEdit() {
       }
     }
     if (rooms.length) {
-      Alert.alert('Tegningen har rom fra før', `${rooms.length} rom finnes. Forslagene legges til på toppen.`, [
+      Alert.alert('Tegningen har rom fra før', `${rooms.length} rom finnes`, [
         { text: 'Avbryt', style: 'cancel' },
         { text: 'Legg til', onPress: () => void start() },
       ])
@@ -731,7 +731,7 @@ export default function TegningEdit() {
             valgtRomObj ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                 <Text numberOfLines={2} style={[t.subhead, { flex: 1, color: colors.paperSecondary }]}>
-                  Dra i hjørnene for å endre {valgtRomObj.name} · trykk rommet igjen for å låse
+                  {valgtRomObj.name}
                 </Text>
                 <Pressable haptic="medium" pressScale={0.9} onPress={slettValgtRom}
                   style={{ width: 38, height: 38, borderRadius: radius.lg, backgroundColor: colors.paperFill, alignItems: 'center', justifyContent: 'center' }}>
@@ -759,14 +759,11 @@ export default function TegningEdit() {
                     </Pressable>
                   )}
                 </View>
-                <Text style={[t.footnote, { color: colors.paperTertiary, textAlign: 'center' }]}>
-                  Dra en firkant for å lage et rom selv · trykk et rom for å endre form
-                </Text>
               </View>
             )
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={[t.footnote, { color: colors.paperTertiary }]}>To fingre for å zoome og panorere</Text>
+              <View />
               <Pressable pressScale={0.95} haptic="light" onPress={resetView}>
                 <Text style={[t.subhead, { color: colors.paperSecondary, fontWeight: '600' }]}>Nullstill zoom</Text>
               </Pressable>

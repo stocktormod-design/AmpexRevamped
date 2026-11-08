@@ -126,10 +126,7 @@ export default function Logger() {
 
       {synlige.length === 0 ? (
         <Kort style={{ marginTop: 18, alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: lt.tekst }}>Ingen logger ennå</Text>
-          <Text style={{ fontSize: 14, color: lt.stille, textAlign: 'center' }}>
-            Ta bilder mens du jobber, så lager assistenten loggen.
-          </Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: lt.tekst }}>Ingen logger</Text>
         </Kort>
       ) : (
         <View style={{ gap: 10, marginTop: 18 }}>

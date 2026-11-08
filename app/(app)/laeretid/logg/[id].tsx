@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { View, ScrollView, Image } from 'react-native'
+import { View, ScrollView, Image, Alert } from 'react-native'
 import { Text, TextInput } from '../../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
@@ -16,10 +16,10 @@ import { finnMaal, type Laereplankode } from '../../../../lib/laeretid/laereplan
 import { varselForLogg, vurderBelegg } from '../../../../lib/laeretid/dekning'
 import { kanBeOmEndring } from '../../../../lib/laeretid/abonnement'
 import { lagRunde1 } from '../../../../lib/laeretid/quiz-klient'
-import { advarslerFor } from '../../../../lib/laeretid/samtale-klient'
+import { advarslerFor, startSamtalenPaaNytt } from '../../../../lib/laeretid/samtale-klient'
 import { bildeDataUri, bildeUri } from '../../../../lib/laeretid/bilder'
 import {
-  NEK_NOKKEL, finnMal, fyllResten, lesUtfylling, mangler, nekFelter, nekHenvisningstekst, tilTekst,
+  BILDE_NOKKEL, NEK_NOKKEL, bildeforklaring, delBeskrivelse, ordneBilder, settBildetekst, skrevetBildetekst, finnMal, fyllResten, lesUtfylling, mangler, nekFelter, nekHenvisningstekst, tilTekst,
   type Seksjon, type TabellSeksjon, type Utfylling,
 } from '../../../../lib/laeretid/mal'
 import { loggPdfHtml } from '../../../../lib/pdf/logg'
@@ -349,9 +349,10 @@ export default function LoggDetalj() {
         arbeidsdato: logg.arbeidsdato,
         mal,
         utfylling: utf,
-        bilder: await Promise.all(sortert.map(async b => ({
+        bilder: await Promise.all(ordneBilder(sortert, utf).map(async b => ({
           tid: b.tattAt ? klokke(b.tattAt) : null,
-          notat: b.notat?.trim() ?? '',
+          // Hans notat; uten notat, bildeteksten modellen foreslo.
+          notat: bildeforklaring(b.notat, b.modellbeskrivelse, skrevetBildetekst(utf, b.id)),
           // Bildet bakes inn i PDF-en: den skal kunne lastes opp alene.
           src: await bildeDataUri(b),
         }))),
@@ -377,9 +378,14 @@ export default function LoggDetalj() {
           {sortert.length === 0 ? (
             <View style={{ alignItems: 'center', gap: 6, paddingVertical: 8 }}>
               <BildeIkon size={24} color={lt.svak} strokeWidth={2} />
-              <Text style={{ fontSize: 14, color: lt.stille, textAlign: 'center' }}>Ingen bilder ennå.</Text>
+              <Text style={{ fontSize: 14, color: lt.stille, textAlign: 'center' }}>Ingen bilder</Text>
             </View>
-          ) : sortert.map(b => (
+          ) : ordneBilder(sortert, utf).map(b => {
+            // Etter at loggen er skrevet, står bildeteksten fra loggen i feltet og
+            // det er DEN han retter. Notatet hans ligger urørt som kilde.
+            const skrevet = skrevetBildetekst(utf, b.id)
+            const skrevetLogg = Array.isArray(utf?.[BILDE_NOKKEL]) && (utf[BILDE_NOKKEL] as string[][]).length > 0
+            return (
             <View key={b.id} style={{ flexDirection: 'row', gap: 10 }}>
               <LoggMiniatyr bilde={b} />
               <View style={{ flex: 1, gap: 4 }}>
@@ -389,9 +395,16 @@ export default function LoggDetalj() {
                 {/* Lagres ordrett. Ingen modell pusser på dette ved fangst. */}
                 {/* Ukontrollert: raske tastetrykk skal ikke vente på databasen. */}
                 <TextInput
-                  defaultValue={b.notat ?? ''}
-                  onChangeText={v => { void database.write(async () => { await b.update(r => { r.notat = v }) }) }}
-                  placeholder="Hva er dette?"
+                  key={skrevetLogg ? 'logg' : 'notat'}
+                  defaultValue={skrevetLogg ? bildeforklaring(b.notat, b.modellbeskrivelse, skrevet) : b.notat ?? ''}
+                  onChangeText={v => {
+                    const naa = utfRef.current
+                    if (skrevetLogg && naa) endreSeksjon(BILDE_NOKKEL, settBildetekst(naa, b.id, v))
+                    else void database.write(async () => { await b.update(r => { r.notat = v }) })
+                  }}
+                  // Uten notat står modellens forslag som hint — det er det som havner
+                  // i PDF-en. Skriver han selv, er det hans ord som gjelder.
+                  placeholder={delBeskrivelse(b.modellbeskrivelse).bildetekst || 'Hva er dette?'}
                   placeholderTextColor={lt.svak}
                   editable={erKladd}
                   autoCorrect={false}
@@ -400,7 +413,8 @@ export default function LoggDetalj() {
                 />
               </View>
             </View>
-          ))}
+            )
+          })}
           {erKladd && (
             <Knapp tekst={sortert.length ? 'Flere bilder' : 'Ta eller hent bilder'} kontur farge="bla"
               onPress={() => router.push(`/(app)/laeretid/logg/bilder?id=${logg.id}` as never)} />
@@ -445,7 +459,7 @@ export default function LoggDetalj() {
                   value={f.begrunnelse}
                   editable={erKladd}
                   onChangeText={v => endreSeksjon(NEK_NOKKEL, rader.map((r, j) => (j === i ? [r[0], r[1], v] : r)))}
-                  placeholder="Forklar gjerne med egne ord (valgfritt). Henvisningen holder."
+                  placeholder="Egne ord (valgfritt)"
                   placeholderTextColor={lt.svak}
                   multiline
                   style={[feltStil, { minHeight: 60, backgroundColor: lt.hvit }]}
@@ -498,9 +512,6 @@ export default function LoggDetalj() {
           <Knapp tekst="Lag loggen" style={{ marginTop: 20 }}
             ikon={<MessageCircle size={20} color={lt.hvit} strokeWidth={2.8} />}
             onPress={() => router.push(`/(app)/laeretid/logg/samtale?id=${logg.id}` as never)} />
-          <Text style={{ fontSize: 13, color: lt.stille, textAlign: 'center', marginTop: 8 }}>
-            To korte spørsmål, så fyller assistenten ut hele «{mal.navn}».
-          </Text>
         </>
       )}
 
@@ -536,6 +547,17 @@ export default function LoggDetalj() {
           )}
           <Knapp tekst={visDetaljer ? 'Skjul loggen' : 'Se og rett loggen'} kontur farge="bla"
             onPress={() => setVisDetaljer(v => !v)} />
+          <Pressable haptic="light" style={{ alignSelf: 'center', paddingVertical: 6 }} onPress={() => {
+            Alert.alert('Start samtalen på nytt?', 'Svarene slettes.', [
+              { text: 'Avbryt', style: 'cancel' },
+              { text: 'Start på nytt', style: 'destructive', onPress: async () => {
+                await startSamtalenPaaNytt(logg)
+                router.push(`/(app)/laeretid/logg/samtale?id=${logg.id}` as never)
+              } },
+            ])
+          }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: lt.stille }}>Start samtalen på nytt</Text>
+          </Pressable>
         </Kort>
       )}
 
@@ -548,7 +570,7 @@ export default function LoggDetalj() {
               <Text style={{ fontSize: 18, fontWeight: '700', color: lt.tekst }}>Quiz om jobben</Text>
               <Text style={{ fontSize: 14, color: lt.stille, marginTop: 2 }}>
                 {sporsmaal.length === 0
-                  ? 'Tre korte spørsmål. De samme sensor stiller.'
+                  ? '3 spørsmål'
                   : aapne > 0
                     ? `${aapne} ${aapne === 1 ? 'spørsmål venter' : 'spørsmål venter'}${besvarte > 0 ? `, ${besvarte} besvart` : ''}.`
                     : `Alle ${besvarte} spørsmål er besvart.`}
@@ -611,7 +633,7 @@ export default function LoggDetalj() {
           {erKladd && (
             <Text style={{ fontSize: 13, color: lt.stille, marginTop: 8, textAlign: 'center' }}>
               {endring.kan
-                ? `${endring.igjen} ${endring.igjen === 1 ? 'omskriving' : 'omskrivinger'} igjen. Du kan alltid rette i feltene selv.`
+                ? `${endring.igjen} ${endring.igjen === 1 ? 'omskriving' : 'omskrivinger'} igjen`
                 : endring.grunn}
             </Text>
           )}

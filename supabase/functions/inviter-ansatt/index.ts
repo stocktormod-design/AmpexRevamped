@@ -74,13 +74,24 @@ type Rolle = (typeof ROLLER)[number]
 /**
  * Hvem får invitere.
  *
- * Eier og administrator, og ingen andre. De to er likestilte i denne modellen
- * — `MATRISE` i lib/kontor-tilgang.ts gir dem samme liste, og `profiles_vern`
- * lar begge endre roller — så det finnes ingen grunn til å finne opp et skille
- * akkurat her. Et halvt skille er verre enn ingen: det leser som en sperre uten
- * å være det.
+ * Eier, administrator, installatør og bas — hver bare til roller på eller under
+ * sitt eget nivå (Tormod 08.11: «admins, installatør osv må kunne invitere»). De som leder
+// folk ute får også invitere — men bare til roller under seg selv. En bas kan ikke
+// gjøre noen til administrator; da ville invitasjonen vært en vei rundt rollestyringen.
+const KAN_TILDELE: Partial<Record<Rolle, readonly Rolle[]>> = {
+  owner: ROLLER,
+  admin: ['admin', 'bas', 'installator', 'montor', 'laerling', 'regnskapsforer'],
+  installator: ['installator', 'bas', 'montor', 'laerling'],
+  bas: ['montor', 'laerling'],
+}
+const KAN_INVITERE: readonly string[] = Object.keys(KAN_TILDELE)
+
+/**
+ * Roller som gir innsyn i hele firmaet (lønn, priser, alle ordre). Bare de krever
+ * fersk tofaktorkode. En montør eller lærling kan inviteres rett fra telefonen ute
+ * på jobb uten autentiseringsapp — det er det som gjør at folk faktisk blir invitert.
  */
-const KAN_INVITERE: readonly string[] = ['owner', 'admin']
+const KREVER_TOTP: readonly Rolle[] = ['owner', 'admin', 'regnskapsforer']
 
 type Rad = { epost?: string; navn?: string; rolle?: string }
 type Utfall = {
@@ -169,15 +180,19 @@ export default {
     if (megFeil) return svar({ ok: false, error: megFeil.message })
     if (!meg?.company_id) return svar({ ok: false, error: 'Du hører ikke til et firma.' })
     if (!KAN_INVITERE.includes(meg.role)) {
-      return svar({ ok: false, error: 'Bare eier og administrator kan invitere.' })
+      return svar({ ok: false, error: 'Rollen din kan ikke invitere. Spør eier, administrator eller installatør.' })
     }
 
     // ── Fersk kode? ────────────────────────────────────────────────────────
     //
     // Sjekkes ETTER rollen, med vilje: den som ikke har lov til å invitere i
     // det hele tatt skal få vite dét, ikke sendes på jakt etter telefonen sin.
-    const mangler = toFaktorMangler(req)
-    if (mangler) return svar({ ok: false, error: mangler })
+    const medTotp = rader.some(r => KREVER_TOTP.includes((r.rolle ?? '') as Rolle))
+    if (medTotp) {
+      const mangler = toFaktorMangler(req)
+      if (mangler) return svar({ ok: false, error: mangler })
+    }
+    const lov = KAN_TILDELE[meg.role as Rolle] ?? []
 
     const firma = meg.company_id as string
     const resultat: Utfall[] = []
@@ -193,6 +208,7 @@ export default {
       if (!gyldigEpost(epost)) { avvis('ugyldig e-postadresse'); continue }
       if (!navn) { avvis('mangler navn'); continue }
       if (!ROLLER.includes(rolle)) { avvis('ukjent rolle'); continue }
+      if (!lov.includes(rolle)) { avvis('du kan ikke gi den rollen'); continue }
       if (sett.has(epost)) { avvis('står to ganger i lista'); continue }
       sett.add(epost)
 
@@ -263,7 +279,7 @@ export default {
       p_hendelse: 'bruker.invitert',
       p_detaljer: {
         antall: resultat.length,
-        med_totp: true,
+        med_totp: medTotp,
         folk: resultat.map(u => ({ epost: u.epost, status: u.status })),
       },
     })

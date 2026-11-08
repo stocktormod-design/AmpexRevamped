@@ -1,15 +1,15 @@
-import { View, ScrollView, Image, Linking } from 'react-native'
+import { View, ScrollView, Image, Linking, Platform } from 'react-native'
 import { Text } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import {
   ChevronLeft, Package, FileText, ShieldAlert,
-  TrendingDown, AlertTriangle,
+  TrendingDown, AlertTriangle, ExternalLink,
 } from 'lucide-react-native'
 import { Pressable } from '../../../components/pressable'
 import { PapirSectionHeader, usePapirFokus } from '../../../components/papir-surface'
 import { useVare } from '../../../lib/products'
-import { visbareEkstra } from '../../../lib/pricefile/varekort'
+import { efobasenUrl, visbareEkstra, EFOBASEN_I_APPEN } from '../../../lib/pricefile/varekort'
 import { formatKr, tilOre } from '../../../lib/invoicing'
 import { formatSince } from '../../../lib/format'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
@@ -28,10 +28,12 @@ function Rad({ etikett, verdi, sist }: { etikett: string; verdi: string | null |
   )
 }
 
-function Lenke({ ikon: Ikon, tittel, url }: { ikon: typeof FileText; tittel: string; url: string | null }) {
+function Lenke({ ikon: Ikon, tittel, url, onPress }: {
+  ikon: typeof FileText; tittel: string; url: string | null; onPress?: () => void
+}) {
   if (!url) return null
   return (
-    <Pressable haptic="light" onPress={() => Linking.openURL(url)}
+    <Pressable haptic="light" onPress={onPress ?? (() => Linking.openURL(url))}
       style={{
         flex: 1, alignItems: 'center', gap: spacing.xs,
         backgroundColor: colors.bg, borderRadius: radius.lg, paddingVertical: spacing.md,
@@ -66,6 +68,7 @@ export default function Varekort() {
   const dyreste = priser.filter(x => !x.erListepris).slice(-1)[0] ?? null
   const ekstra = visbareEkstra(p.ekstraFelt)
   const utgaatt = priser.length > 0 && priser.every(x => x.utgaatt)
+  const efobasen = efobasenUrl(p.elnummer)
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
@@ -98,7 +101,7 @@ export default function Varekort() {
 
           <Text style={[t.display, { marginTop: spacing.lg }]}>{p.name}</Text>
           <Text style={[t.footnote, { marginTop: spacing.sm }]}>
-            {[p.fabrikat, p.typeBetegnelse].filter(Boolean).join(' · ') || 'Produsent ikke oppgitt i prisfila'}
+            {[p.fabrikat, p.typeBetegnelse].filter(Boolean).join(' · ') || 'Ukjent produsent'}
           </Text>
         </View>
 
@@ -112,20 +115,23 @@ export default function Varekort() {
             <AlertTriangle size={17} color={colors.warning} strokeWidth={2.2} />
             <Text style={[t.footnote, { flex: 1 }]}>
               {p.replacedBy
-                ? `Utgått hos grossisten. Erstattes av EL ${p.replacedBy}.`
-                : 'Utgått hos grossisten. Ingen erstatningsvare oppgitt.'}
+                ? `Utgått · erstattes av EL ${p.replacedBy}`
+                : 'Utgått'}
             </Text>
           </View>
         )}
 
         {/* Dokumentene montøren faktisk trenger, uten å ringe kontoret. */}
-        {/* Kun lenker fila FAKTISK ga oss. EFObasen-id-en vises som tekst under
-            Identifikasjon, ikke som knapp — vi kjenner ikke URL-formen deres, og
-            en lenke som kanskje 404-er er verre enn ingen lenke. */}
-        {(p.fdvUrl || p.hmsUrl) && (
+        {/* FDV og HMS bare når fila ga lenken. EFObasen åpnes på el-nummeret inne
+            i appen, med prispanelet under (lager/efobasen). I nettleseren kan den
+            ikke bygges inn, så der åpnes den i en ny fane. */}
+        {(p.fdvUrl || p.hmsUrl || efobasen) && (
           <View style={{ flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.screen, marginTop: spacing.lg }}>
             <Lenke ikon={FileText} tittel="FDV" url={p.fdvUrl} />
             <Lenke ikon={ShieldAlert} tittel="HMS" url={p.hmsUrl} />
+            <Lenke ikon={ExternalLink} tittel="EFObasen" url={efobasen}
+              onPress={Platform.OS === 'web' || !EFOBASEN_I_APPEN ? undefined
+                : () => router.push({ pathname: '/(app)/lager/efobasen', params: { elnr: p.elnummer ?? '' } })} />
           </View>
         )}
 
@@ -137,7 +143,7 @@ export default function Varekort() {
           }}>
             <Text style={[t.caption, { color: colors.warning, fontWeight: '700' }]}>DEMO</Text>
             <Text style={[t.footnote, { flex: 1 }]}>
-              Oppdiktet vare. Prisene er funnet på og skal ikke brukes på en ordre.
+              Oppdiktede priser
             </Text>
           </View>
         )}
@@ -147,7 +153,7 @@ export default function Varekort() {
         <View style={{ backgroundColor: colors.bg, borderRadius: radius.lg, marginHorizontal: spacing.screen, overflow: 'hidden' }}>
           {priser.length === 0 ? (
             <Text style={[t.footnote, { padding: spacing.lg }]}>
-              Ingen prisfil importert for denne varen ennå.
+              Ingen pris
             </Text>
           ) : priser.map((x, i) => {
             // Bare den prisbildet faktisk peker på, og bare når det er noe å
@@ -213,19 +219,11 @@ export default function Varekort() {
           }}>
             <AlertTriangle size={17} color={colors.warning} strokeWidth={2.2} />
             <Text style={[t.footnote, { flex: 1 }]}>
-              Dette er grossistens listepris, ikke deres pris. Importer en
-              P4-fil — pristilbudet med firmaets egen rabatt — for å se hva varen
-              faktisk koster, og for at dekningsbidraget skal bli riktig.
+              Listepris, ikke deres pris
             </Text>
           </View>
         )}
 
-        {pris.blandet && (
-          <Text style={[t.footnote, { marginHorizontal: spacing.screen, marginTop: spacing.sm }]}>
-            Én av prisene over er en listepris og sammenlignes ikke — listepris og
-            avtalt pris er ikke samme størrelse.
-          </Text>
-        )}
 
         {besparelse !== null && besparelse > 0 && billigste && dyreste && (
           <View style={{

@@ -1,13 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronRight, FileText, Folder, MapPin, Search, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { ArrowLeft, ChevronRight, FileText, Folder, FolderUp, MapPin, Pencil, PenTool, Plus, Search, Trash2, X } from 'lucide-react'
 import { kan } from '@delt/kontor-tilgang'
 import { fremdrift, aapneTekst } from '@delt/prosjekt-fremdrift'
 import { mappeSti, tellRekursivt, type MappeNode } from '@delt/tegning-tre'
 import { useAuth } from '@/auth'
 import { supabase } from '@/supabase'
-import { hentProsjektPlan, tegningUrl, type PlanEnhet, type PlanOppgave, type PlanTegning, type ProsjektPlan as Data } from '@/lib/plan-lager'
+import {
+  flyttMappe, flyttTegning, hentProsjektPlan, omdopMappe, opprettMappe, slettMappe,
+  tegningUrl, type PlanEnhet, type PlanMappe, type PlanOppgave, type PlanTegning, type ProsjektPlan as Data,
+} from '@/lib/plan-lager'
+
+/** Drag-typen vi bruker internt i treet (filer bruker «Files»). */
+const TRE_TYPE = 'application/x-ampex-tre'
 import { Beskjed, Knapp } from '@/ui/kit'
 import { Planvisning, type Markor } from '@/ui/Planvisning'
+import type { ImportPlan } from '@delt/tegning-import'
+import { filerFraSlipp, filerFraVelger, kjorImport, planlegg, type Fremdrift, type Resultat, type SluppetFil } from '@/lib/tegning-import-lager'
 
 /**
  * Ett prosjekt på kontoret — TRE + DOKUMENT (Tormod 2026-09-24: «det er
@@ -60,9 +68,116 @@ export function ProsjektPlan({ id }: { id: string }) {
   const { profil } = useAuth()
   const kanSkrive = kan(profil?.role, 'prosjekt.skriv')
 
-  useEffect(() => {
-    hentProsjektPlan(id).then(setData).catch(e => setFeil(e instanceof Error ? e.message : String(e)))
-  }, [id])
+  // Hierarki: ny mappe / nytt navn / intern drag. Skrivingene ligger i plan-lager.
+  const [nyMappe, setNyMappe] = useState<{ parentId: string | null; under: string } | null>(null)
+  const [redigerer, setRedigerer] = useState<{ id: string; navn: string } | null>(null)
+  const [treNavn, setTreNavn] = useState('')
+  const [draTre, setDraTre] = useState<{ type: 'mappe' | 'tegning'; id: string } | null>(null)
+  const [slippPaa, setSlippPaa] = useState<string | null | 'rot'>(null)
+
+  const last = () => hentProsjektPlan(id).then(setData).catch(e => setFeil(e instanceof Error ? e.message : String(e)))
+
+  function startNyMappe(parentId: string | null, under: string) {
+    setRedigerer(null); setNyMappe({ parentId, under }); setTreNavn('')
+  }
+  function startOmdop(m: { id: string; navn: string }) {
+    setNyMappe(null); setRedigerer({ id: m.id, navn: m.navn }); setTreNavn(m.navn)
+  }
+  function avbrytTre() { setNyMappe(null); setRedigerer(null); setTreNavn('') }
+
+  async function lagreTre() {
+    const navn = treNavn.trim()
+    if (!navn) return
+    try {
+      if (redigerer) await omdopMappe(redigerer.id, navn)
+      else if (nyMappe) await opprettMappe(id, nyMappe.parentId, navn, profil?.id ?? null, profil?.company_id ?? null)
+      avbrytTre()
+      await last()
+    } catch (x) {
+      setFeil(x instanceof Error ? x.message : String(x))
+    }
+  }
+
+  async function slettMappeMedInnhold(m: PlanMappe) {
+    if (!data) return
+    const innhold = m.parent_id ? data.mapper.find(x => x.id === m.parent_id)?.name ?? 'forelderen' : 'prosjektets rot'
+    const n = tellRekursivt(m.id, mapper, tegninger)
+    const sporsmal = n > 0
+      ? `Slette «${m.name}»? ${n} ${n === 1 ? 'tegning' : 'tegninger'} og alle undermapper flyttes til ${innhold}.`
+      : `Slette «${m.name}»?`
+    if (!window.confirm(sporsmal)) return
+    try {
+      await slettMappe(m, data.mapper, data.tegninger)
+      await last()
+    } catch (x) {
+      setFeil(x instanceof Error ? x.message : String(x))
+    }
+  }
+
+  function treDragStart(e: DragEvent, v: { type: 'mappe' | 'tegning'; id: string }) {
+    if (!kanSkrive) return
+    e.dataTransfer.setData(TRE_TYPE, JSON.stringify(v))
+    e.dataTransfer.effectAllowed = 'move'
+    setDraTre(v)
+  }
+  function treDragOver(e: DragEvent, mal: string | 'rot') {
+    if (!kanSkrive || !Array.from(e.dataTransfer.types).includes(TRE_TYPE)) return
+    e.preventDefault(); e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    setSlippPaa(mal)
+  }
+  async function treSlipp(e: DragEvent, forelder: string | null) {
+    if (!kanSkrive || !Array.from(e.dataTransfer.types).includes(TRE_TYPE)) return
+    e.preventDefault(); e.stopPropagation()
+    const raa = e.dataTransfer.getData(TRE_TYPE)
+    setDraTre(null); setSlippPaa(null)
+    if (!raa || !data) return
+    try {
+      const v = JSON.parse(raa) as { type: 'mappe' | 'tegning'; id: string }
+      if (v.type === 'mappe') await flyttMappe(v.id, forelder, data.mapper)
+      else await flyttTegning(v.id, forelder)
+      await last()
+    } catch (x) {
+      setFeil(x instanceof Error ? x.message : String(x))
+    }
+  }
+  useEffect(() => { void last() }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── OneDrive-mappa inn: dra over siden, se hva som skjer, så skrives det ──
+  const [dra, setDra] = useState(false)
+  const [slipp, setSlipp] = useState<{ plan: ImportPlan; filer: SluppetFil[] } | null>(null)
+  const [opplasting, setOpplasting] = useState<Fremdrift | null>(null)
+  const [resultat, setResultat] = useState<Resultat | null>(null)
+  const velger = useRef<HTMLInputElement>(null)
+  const harFiler = (e: DragEvent) => kanSkrive && !opplasting && Array.from(e.dataTransfer.types).includes('Files')
+  function forbered(filer: SluppetFil[]) {
+    if (!data) return
+    setResultat(null)
+    const plan = planlegg(filer, data.mapper.map(m => ({ id: m.id, name: m.name, parentId: m.parent_id })),
+      data.tegninger.map(t => ({ folderId: t.folder_id, name: t.name })))
+    setSlipp({ plan, filer })
+  }
+  async function slippet(e: DragEvent) {
+    e.preventDefault()
+    setDra(false)
+    if (!harFiler(e)) return
+    try { forbered(await filerFraSlipp(e.dataTransfer)) } catch (x) { setFeil(`Kunne ikke lese mappa: ${x instanceof Error ? x.message : String(x)}`) }
+  }
+  async function leggInn() {
+    if (!slipp) return
+    const { plan, filer } = slipp
+    setSlipp(null)
+    try {
+      const r = await kjorImport(id, plan, filer, setOpplasting)
+      setResultat(r)
+      if (r.lagtInn && !aktivId) setAktivId(plan.tegninger[0]?.id ?? null)
+    } catch (x) {
+      setFeil(x instanceof Error ? x.message : String(x))
+    } finally {
+      setOpplasting(null)
+      await last()
+    }
+  }
 
   const mapper: MappeNode[] = useMemo(() => (data?.mapper ?? []).map(m => ({ id: m.id, name: m.name, parentId: m.parent_id })), [data])
   const tegninger = useMemo(() => (data?.tegninger ?? []).map(t => ({ ...t, folderId: t.folder_id })), [data])
@@ -198,6 +313,9 @@ export function ProsjektPlan({ id }: { id: string }) {
     const m = e.filter(x => x.placed_at).length
     return (
       <button key={t.id} type="button" className="tre-rad" aria-current={t.id === aktivId ? 'true' : undefined}
+        draggable={kanSkrive}
+        onDragStart={e => treDragStart(e, { type: 'tegning', id: t.id })}
+        onDragEnd={() => { setDraTre(null); setSlippPaa(null) }}
         style={{ paddingLeft: 10 + dybde * 16 }} onClick={() => velgTegning(t.id)}>
         <FileText size={15} strokeWidth={1.8} className="tre-ikon" />
         <span className="tre-tekst">
@@ -211,7 +329,21 @@ export function ProsjektPlan({ id }: { id: string }) {
 
   const p = data.prosjekt
   return (
-    <div className="prosjekt-side">
+    <div className="prosjekt-side"
+      onDragOver={e => { if (harFiler(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDra(true) } }}
+      onDrop={slippet}>
+      {dra ? (
+        <div className="slipp-flate" onDragLeave={e => { if (e.currentTarget === e.target) setDra(false) }}>
+          <div className="slipp-tekst">
+            <FolderUp size={28} strokeWidth={1.6} />
+            <strong>Slipp mappa her</strong>
+          </div>
+        </div>
+      ) : null}
+      {slipp ? <ImportArk plan={slipp.plan} mapper={data.mapper} onAvbryt={() => setSlipp(null)} onLeggInn={leggInn} /> : null}
+      <input ref={velger} type="file" hidden multiple
+        {...{ webkitdirectory: '' }}
+        onChange={e => { if (e.target.files?.length) forbered(filerFraVelger(e.target.files)); e.target.value = '' }} />
       <aside className="tre">
         <a className="plan-tilbake" href="#/prosjekt"><ArrowLeft size={15} strokeWidth={2} /> Prosjekter</a>
         <div>
@@ -230,6 +362,17 @@ export function ProsjektPlan({ id }: { id: string }) {
         ) : null}
 
         {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+        {opplasting ? (
+          <div className="import-fremdrift">
+            <span>Legger inn tegninger … {opplasting.ferdig} av {opplasting.totalt}</span>
+            <div className="plan-stolpe"><div style={{ width: `${opplasting.totalt ? (opplasting.ferdig / opplasting.totalt) * 100 : 0}%` }} /></div>
+          </div>
+        ) : resultat ? (
+          <Beskjed stil={resultat.feilet.length ? 'varsel' : 'ok'}>
+            {resultat.lagtInn} {resultat.lagtInn === 1 ? 'tegning' : 'tegninger'} lagt inn.
+            {resultat.feilet.length ? ` ${resultat.feilet.length} feilet: ${resultat.feilet.slice(0, 3).map(f => `${f.navn} (${f.grunn})`).join(', ')}${resultat.feilet.length > 3 ? ' …' : ''}.` : ''}
+          </Beskjed>
+        ) : null}
 
         <div className="tre-faner" role="tablist">
           <button type="button" role="tab" aria-selected={fane === 'tegninger'} onClick={() => setFane('tegninger')}>
@@ -257,22 +400,91 @@ export function ProsjektPlan({ id }: { id: string }) {
               </div>
             ) : null}
 
-            <nav className="tre-liste">
+            {kanSkrive && (nyMappe || redigerer) ? (
+              <form className="tre-ny" onSubmit={e => { e.preventDefault(); void lagreTre() }}>
+                <label>
+                  {redigerer ? `Nytt navn på «${redigerer.navn}»` : `Ny mappe i «${nyMappe?.under ?? 'prosjektet'}»`}
+                </label>
+                <input
+                  autoFocus
+                  value={treNavn}
+                  onChange={e => setTreNavn(e.target.value)}
+                  placeholder="Mappenavn"
+                  onKeyDown={e => { if (e.key === 'Escape') avbrytTre() }}
+                />
+                <div className="tre-ny-knapper">
+                  <Knapp type="submit" stil="merke" disabled={!treNavn.trim()}>Lagre</Knapp>
+                  <button type="button" onClick={avbrytTre}>Avbryt</button>
+                </div>
+              </form>
+            ) : null}
+
+            <nav
+              className={`tre-liste${slippPaa === 'rot' ? ' tre-rot-slipp' : ''}`}
+              onDragOver={e => treDragOver(e, 'rot')}
+              onDragLeave={() => setSlippPaa(p => (p === 'rot' ? null : p))}
+              onDrop={e => void treSlipp(e, null)}
+            >
               {treff ? (
                 treff.length ? treff.map(t => tegningRad(t, 0, true))
-                  : <p className="dempet tre-tom">Ingen tegning passer. Esc tømmer søket.</p>
+                  : <p className="dempet tre-tom">Ingen treff.</p>
               ) : linjer.length === 0 ? (
-                <p className="dempet tre-tom">Ingen tegninger ennå. De legges til fra appen.</p>
-              ) : linjer.map(l => l.type === 'mappe' ? (
-                <button key={l.id} type="button" className="tre-rad tre-mappe" style={{ paddingLeft: 10 + l.dybde * 16 }}
-                  onClick={() => setLukket(s => { const n = new Set(s); if (n.has(l.id)) n.delete(l.id); else n.add(l.id); return n })}>
-                  <ChevronRight size={14} strokeWidth={2.2} className={`tre-pil${l.apen ? ' apen' : ''}`} />
-                  <Folder size={15} strokeWidth={1.8} className="tre-ikon" />
-                  <span className="tre-tekst">{l.navn}</span>
-                  <span className="tre-tall">{l.antall}</span>
+                <button type="button" className="import-tom" disabled={!kanSkrive} onClick={() => velger.current?.click()}>
+                  <FolderUp size={22} strokeWidth={1.6} />
+                  <strong>{kanSkrive ? 'Legg inn tegninger' : 'Ingen tegninger'}</strong>
                 </button>
+              ) : linjer.map(l => l.type === 'mappe' ? (
+                <div
+                  key={l.id}
+                  className={`tre-skal${slippPaa === l.id ? ' slipp' : ''}`}
+                  draggable={kanSkrive}
+                  onDragStart={e => treDragStart(e, { type: 'mappe', id: l.id })}
+                  onDragEnd={() => { setDraTre(null); setSlippPaa(null) }}
+                  onDragOver={e => treDragOver(e, l.id)}
+                  onDragLeave={() => setSlippPaa(p => (p === l.id ? null : p))}
+                  onDrop={e => void treSlipp(e, l.id)}
+                >
+                  <button type="button" className="tre-rad tre-mappe" style={{ paddingLeft: 10 + l.dybde * 16 }}
+                    onClick={() => setLukket(s => { const n = new Set(s); if (n.has(l.id)) n.delete(l.id); else n.add(l.id); return n })}>
+                    <ChevronRight size={14} strokeWidth={2.2} className={`tre-pil${l.apen ? ' apen' : ''}`} />
+                    <Folder size={15} strokeWidth={1.8} className="tre-ikon" />
+                    <span className="tre-tekst">{l.navn}</span>
+                    <span className="tre-tall">{l.antall}</span>
+                  </button>
+                  {kanSkrive ? (
+                    <span className="tre-handling">
+                      <button type="button" title="Ny undermappe" aria-label="Ny undermappe" onClick={() => startNyMappe(l.id, l.navn)}>
+                        <Plus size={13} strokeWidth={2.2} />
+                      </button>
+                      <button type="button" title="Gi nytt navn" aria-label="Gi nytt navn" onClick={() => startOmdop({ id: l.id, navn: l.navn })}>
+                        <Pencil size={13} strokeWidth={2} />
+                      </button>
+                      <button type="button" title="Slett mappa" aria-label="Slett mappa" onClick={() => {
+                        const m = data.mapper.find(x => x.id === l.id)
+                        if (m) void slettMappeMedInnhold(m)
+                      }}>
+                        <Trash2 size={13} strokeWidth={2} />
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
               ) : tegningRad(l.t, l.dybde + (mapper.length ? 1 : 0), false))}
             </nav>
+            {draTre ? (
+              <p className="tre-slipp-hint">Slipp på en mappe — eller her for prosjektets rot.</p>
+            ) : null}
+            {kanSkrive ? (
+              <div className="tre-bunn">
+                <button type="button" className="import-lenke" onClick={() => startNyMappe(null, 'prosjektet')}>
+                  <Plus size={14} strokeWidth={2} /> Ny mappe
+                </button>
+                {linjer.length ? (
+                  <button type="button" className="import-lenke" onClick={() => velger.current?.click()}>
+                    <FolderUp size={14} strokeWidth={2} /> Legg inn flere tegninger
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </>
         ) : (
           <div className="tre-liste">
@@ -291,7 +503,7 @@ export function ProsjektPlan({ id }: { id: string }) {
             <section>
               <h2 className="plan-seksjon">Oppgaver</h2>
               {data.oppgaver.length === 0 ? (
-                <p className="dempet">Ingen oppgaver. De deles ut fra appen — hold på tegningen der jobben skal gjøres.</p>
+                <p className="dempet">Ingen oppgaver.</p>
               ) : [...data.oppgaver].sort((a, b) => Number(!apen(a)) - Number(!apen(b))).map(o => (
                 <button key={o.id} type="button" className={`tre-rad${apen(o) ? '' : ' ferdig'}`}
                   aria-current={valgt === o.id ? 'true' : undefined} onClick={() => velgOppgave(o)}>
@@ -316,6 +528,11 @@ export function ProsjektPlan({ id }: { id: string }) {
               <span className="dok-sti">{[sti(aktiv) || null, FAG[aktiv.discipline ?? ''] ?? null, aktiv.plan].filter(Boolean).join(' · ')}</span>
               <strong>{aktiv.name}</strong>
             </div>
+            {kanSkrive && aktiv.file_path ? (
+              <a className="knapp knapp-primar dok-tegn" href={`#/prosjekt/${id}/tegn/${aktiv.id}`}>
+                <PenTool size={14} strokeWidth={2} /> Tegn
+              </a>
+            ) : null}
             {enheterPaa(aktiv.id).length ? (
               <div className="dok-forklaring">
                 <span><i className="fk-montert" /> Montert</span>
@@ -328,7 +545,7 @@ export function ProsjektPlan({ id }: { id: string }) {
         {aktiv?.file_path ? (
           <Planvisning url={url} markorer={markorer} valgt={valgt} fokus={fokus} onVelg={setValgt} />
         ) : (
-          <div className="plan"><div className="plan-tom">{aktiv ? 'Tegningen har ingen PDF ennå. Den lastes opp fra appen.' : 'Velg en tegning til venstre.'}</div></div>
+          <div className="plan"><div className="plan-tom">{aktiv ? 'Tegningen har ingen PDF.' : 'Velg en tegning'}</div></div>
         )}
 
         {valgtEnhet ? (
@@ -352,6 +569,64 @@ export function ProsjektPlan({ id }: { id: string }) {
           </div>
         ) : null}
       </section>
+    </div>
+  )
+}
+
+/**
+ * Hva slippet blir til, før noe skrives. Mappetreet vises slik det blir — da
+ * ser du med én gang om innpakningen ble skrelt riktig.
+ */
+function ImportArk({ plan, mapper, onAvbryt, onLeggInn }: {
+  plan: ImportPlan
+  mapper: { id: string; name: string }[]
+  onAvbryt: () => void
+  onLeggInn: () => void
+}) {
+  useEffect(() => {
+    const tast = (e: KeyboardEvent) => { if (e.key === 'Escape') onAvbryt(); if (e.key === 'Enter' && plan.tegninger.length) onLeggInn() }
+    window.addEventListener('keydown', tast)
+    return () => window.removeEventListener('keydown', tast)
+  }, [plan, onAvbryt, onLeggInn])
+
+  const navn = new Map([...mapper.map(m => [m.id, m.name] as const), ...plan.mapper.map(m => [m.id, m.name] as const)])
+  const nye = new Set(plan.mapper.map(m => m.id))
+  // Gruppér per mappe tegningen havner i, i den rekkefølgen planen har.
+  const grupper = new Map<string, number>()
+  for (const t of plan.tegninger) grupper.set(t.folderId ?? '', (grupper.get(t.folderId ?? '') ?? 0) + 1)
+  const forelder = new Map(plan.mapper.map(m => [m.id, m.parentId] as const))
+  const sti = (id: string) => { const ut: string[] = []; for (let x: string | null | undefined = id; x; x = forelder.get(x)) ut.unshift(navn.get(x) ?? '?'); return ut.join(' / ') }
+  const ikkePdf = plan.hoppetOver.filter(h => h.grunn === 'ikke-pdf').length
+  const finnes = plan.hoppetOver.filter(h => h.grunn !== 'ikke-pdf').length
+
+  return (
+    <div className="import-slor" onClick={onAvbryt}>
+      <div className="import-ark" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+        <h2>{plan.tegninger.length ? `Legg inn ${plan.tegninger.length} ${plan.tegninger.length === 1 ? 'tegning' : 'tegninger'}` : 'Ingenting nytt å legge inn'}</h2>
+        <p className="dempet">
+          {[
+            plan.mapper.length ? `${plan.mapper.length} nye mapper` : null,
+            plan.gjenbrukteMapper ? `${plan.gjenbrukteMapper} som finnes fra før` : null,
+            finnes ? `${finnes} tegninger finnes allerede og hoppes over` : null,
+            ikkePdf ? `${ikkePdf} filer er ikke PDF` : null,
+          ].filter(Boolean).join(' · ') || 'Alt havner på rota av prosjektet.'}
+        </p>
+        {grupper.size ? (
+          <ul className="import-mapper">
+            {[...grupper].map(([fid, n]) => (
+              <li key={fid || 'rot'}>
+                <Folder size={14} strokeWidth={1.8} />
+                <span>{fid ? sti(fid) : 'Rota av prosjektet'}{fid && nye.has(fid) ? <em>ny</em> : null}</span>
+                <span className="tre-tall">{n}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="import-knapper">
+          <Knapp stil="naken" onClick={onAvbryt}>Avbryt</Knapp>
+          <Knapp stil="primar" disabled={!plan.tegninger.length} onClick={onLeggInn}>Legg inn</Knapp>
+        </div>
+      </div>
     </div>
   )
 }

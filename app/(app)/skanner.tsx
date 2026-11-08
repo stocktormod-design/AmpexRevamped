@@ -57,29 +57,32 @@ export default function SkannerScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }} showsVerticalScrollIndicator={false}>
-        <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.lg }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Pressable onPress={() => router.back()} pressScale={0.92}
-              style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
-            </Pressable>
-            <Pressable haptic="medium" pressScale={0.95} onPress={nytt}
-              style={{ height: 38, paddingHorizontal: spacing.lg, borderRadius: radius.pill, backgroundColor: colors.label, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
-              <Text style={[t.subhead, { fontWeight: '600', color: '#FFFFFF' }]}>Nytt skann</Text>
-            </Pressable>
-          </View>
-          <Text style={[t.display, { marginTop: spacing.lg }]}>Skann</Text>
+      {/* Hodet står fast over lista: en knapp inne i ScrollView mister trykket når fingeren
+          flytter seg en millimeter (rullingen tar det) — «reagerer bare noen ganger». */}
+      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.screen, paddingBottom: spacing.lg }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Pressable onPress={() => router.back()} pressScale={0.92}
+            style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
+          </Pressable>
         </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.lg }}>
+          <Text style={t.display}>Skann</Text>
+          <Pressable haptic="medium" pressScale={0.95} onPress={nytt} hitSlop={8}
+            style={{ height: 44, paddingHorizontal: spacing.lg, borderRadius: radius.pill, backgroundColor: colors.label, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
+            <Text style={[t.subhead, { fontWeight: '600', color: '#FFFFFF' }]}>Nytt skann</Text>
+          </Pressable>
+        </View>
+      </View>
 
+      <ScrollView contentContainerStyle={{ paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }} showsVerticalScrollIndicator={false}>
         {scans.length === 0 ? (
           <View style={{ marginHorizontal: spacing.screen, alignItems: 'center', paddingVertical: spacing.xxl }}>
             <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
               <ScanLine size={24} color={colors.secondaryLabel} strokeWidth={1.8} />
             </View>
             <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen skann ennå</Text>
-            <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center' }]}>Trykk Nytt skann for å måle opp et rom.</Text>
           </View>
         ) : (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm + 2, marginHorizontal: spacing.screen }}>
@@ -94,6 +97,7 @@ export default function SkannerScreen() {
                   onScan={() => router.push({ pathname: '/(app)/skann', params: { scanId: s.id, kind: scanKindLabel[s.kind] ?? 'Skann', title: s.title, viewPath: '' } })}
                   onOpenRevision={rev => router.push({ pathname: '/(app)/skann', params: { viewPath: rev.path, title: `${s.title} · ${new Date(rev.ts).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` } })}
                   onDelete={() => slett(s)}
+                  onRename={async n => { await database.write(async () => { await s.update(x => { x.title = n }) }); syncQuietly() }}
                   onRebuilt={async path => {
                     if (s.scanPath) await archiveRevision(s.id, s.scanPath)
                     await database.write(async () => { await s.update(x => { x.scanPath = path }) })

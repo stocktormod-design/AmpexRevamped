@@ -26,7 +26,7 @@ Pod::Spec.new do |s|
   # Offentlig C-header → synlig for podens Swift via umbrella (ingen bridging header i pods)
   s.public_header_files = 'xatlas_wrap.h'
 
-  s.frameworks = 'Metal', 'MetalKit', 'MetalPerformanceShaders', 'Foundation', 'ImageIO', 'CoreGraphics', 'ARKit', 'SceneKit', 'UIKit', 'CoreImage'
+  s.frameworks = 'Metal', 'MetalKit', 'MetalPerformanceShaders', 'Foundation', 'ImageIO', 'CoreGraphics', 'ARKit', 'SceneKit', 'UIKit', 'CoreImage', 'Accelerate'
   s.libraries  = 'c++'
 
   s.pod_target_xcconfig = {

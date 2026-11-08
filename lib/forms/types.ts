@@ -43,6 +43,13 @@ export type FormField = {
 export type FormSection = {
   title: string
   fields: FormField[]
+  /**
+   * Seksjonen er et VALG av hva skjemaet skal inneholde (dynamisk risikovurdering, 30.10:
+   * «når du trykker risikovurdering velger du hva den skal inneholde»). Feltene er Ja/Nei-valg
+   * som andre seksjoner viser seg på via `showIf`. Appen viser den som et eget første steg før
+   * skjemaet, og som avkryssing øverst etterpå. `match` er ord i ordren som krysser av på forhånd.
+   */
+  velger?: { match: Record<string, RegExp> }
 }
 
 export type FormTemplate = {

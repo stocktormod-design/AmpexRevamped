@@ -100,7 +100,7 @@ export default function AktiviteterScreen() {
       <PromptSheet
         synlig={nyttNavn != null}
         tittel={`Timepris for ${nyttNavn ?? ''}`}
-        forklaring="Kroner per time eks. mva. Skriv 0 for interne timer som ikke faktureres."
+        forklaring="Kr per time eks. mva."
         plassholder="850"
         knapp="Opprett"
         onSvar={async verdi => {
@@ -123,12 +123,6 @@ export default function AktiviteterScreen() {
             <Rad key={a.id} aktivitet={a} sist={i === aktiviteter.length - 1} />
           ))}
         </ListCard>
-        <View style={{ paddingHorizontal: spacing.screen + spacing.lg, marginTop: spacing.md }}>
-          <Text style={t.footnote}>
-            Prisen låses på fakturagrunnlaget når ordren markeres fakturert. Endrer du satsen
-            i dag, gjelder den nye ordrer — ikke ordre som allerede er fakturert.
-          </Text>
-        </View>
       </ScrollView>
     </View>
   )

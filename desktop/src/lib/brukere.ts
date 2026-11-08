@@ -57,6 +57,21 @@ export type AmpexFirma = {
   deleted_at: string | null
   ansatte: number
   aktive: number
+  /** Aktive eiere. Mangler på et svar fra en eldre ampex-admin. */
+  eiere?: number
+  // Oversikten (ampex_oversikt, 08.11). Valgfri: feiler den på serveren, kommer lista uten.
+  prosjekter?: number
+  tegninger?: number
+  ordre?: number
+  skann?: number
+  timer_7d?: number
+  markering_7d?: number
+  aktive_7d?: number
+  aktive_30d?: number
+  tilbakemeldinger_apne?: number
+  stemme_min_30d?: number
+  ai_tier?: string | null
+  sist_aktiv?: string | null
 }
 
 export async function hentFirmaer() {
@@ -99,6 +114,14 @@ export type AmpexPerson = {
   bekreftet_at: string | null
   sist_innlogget_at: string | null
   deleted_at: string | null
+  // Aktiviteten (ampex_folk_aktivitet, 08.11): sist personen SKREV noe, og hvilken telefon.
+  sist_aktiv?: string | null
+  rader_30d?: number
+  skann?: number
+  app_versjon?: string | null
+  bygg?: string | null
+  modell?: string | null
+  os?: string | null
 }
 
 /**

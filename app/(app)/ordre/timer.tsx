@@ -5,11 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable'
-import { ChevronLeft, Trash2, Lock } from 'lucide-react-native'
+import { ChevronLeft, Trash2, Lock, Minus, Plus } from 'lucide-react-native'
 import { TidForing } from '../../../components/tid-foring'
 import { Pressable } from '../../../components/pressable'
 import { ListCard, SectionHeader } from '../../../components/ui'
-import { ChoiceSheet } from '../../../components/sheet'
+import { Ark } from '../../../components/sheet'
 import { database } from '../../../lib/db'
 import { syncQuietly } from '../../../lib/db/sync'
 import { Activity } from '../../../lib/db/models/activity'
@@ -33,8 +33,8 @@ function datoTekst(d: Date): string {
   return dag.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'short' })
 }
 
-function Foering({ entry, aktivitet, kanSlette }: {
-  entry: TimeEntry; aktivitet: Activity | undefined; kanSlette: boolean
+function Foering({ entry, aktivitet, kanSlette, onRediger }: {
+  entry: TimeEntry; aktivitet: Activity | undefined; kanSlette: boolean; onRediger: () => void
 }) {
   const laast = !!entry.invoicedAt
 
@@ -45,7 +45,7 @@ function Foering({ entry, aktivitet, kanSlette }: {
   }
 
   const rad = (
-    <View style={{
+    <Pressable haptic="light" disabled={laast || !kanSlette} onPress={onRediger} style={{
       flexDirection: 'row', alignItems: 'center', gap: spacing.md,
       paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
       backgroundColor: colors.bg,
@@ -66,7 +66,7 @@ function Foering({ entry, aktivitet, kanSlette }: {
         </Text>
       </View>
       {laast && <Lock size={15} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />}
-    </View>
+    </Pressable>
   )
 
   // Fakturerte føringer kan ikke slettes — beløpet er allerede sendt videre.
@@ -93,12 +93,110 @@ function Foering({ entry, aktivitet, kanSlette }: {
   )
 }
 
+/**
+ * Endre en føring (Tormod 04.11: «kan ikke endre timer»). Trykk på raden. Bare egne,
+ * ufakturerte føringer — samme regel som sveip-for-å-slette. Valgene ligger i arket
+ * selv (ikke et ark over arket: to Modal-er samtidig henger på iOS).
+ */
+function RedigerFoering({ entry, aktiviteter, onLukk }: {
+  entry: TimeEntry | null; aktiviteter: Activity[]; onLukk: () => void
+}) {
+  const [timer, setTimer] = useState('')
+  const [aktivitet, setAktivitet] = useState<string | null>(null)
+  const [dato, setDato] = useState(0)
+  const [notat, setNotat] = useState('')
+  const [lagrer, setLagrer] = useState(false)
+  useEffect(() => {
+    if (!entry) return
+    setTimer(timerTekst(entry.hours)); setAktivitet(entry.activityId ?? null)
+    setDato(new Date(entry.date).setHours(0, 0, 0, 0)); setNotat(entry.note ?? '')
+  }, [entry])
+
+  const tall = parseFloat(timer.replace(',', '.'))
+  const gyldig = Number.isFinite(tall) && tall > 0 && tall <= 24
+  const datoer = useMemo(() => {
+    const ds = Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); return d.getTime() })
+    if (dato && !ds.includes(dato)) ds.push(dato)
+    return ds.sort((a, b) => b - a)
+  }, [dato])
+
+  async function lagre() {
+    if (!entry || !gyldig) return
+    setLagrer(true)
+    try {
+      await database.write(async () => {
+        await entry.update(e => {
+          e.hours = tall
+          e.activityId = aktivitet
+          e.date = new Date(dato)
+          e.note = notat.trim() || null
+        })
+      })
+      syncQuietly()
+      onLukk()
+    } finally { setLagrer(false) }
+  }
+
+  const chip = (aktiv: boolean) => ({
+    height: 36, paddingHorizontal: spacing.md, borderRadius: radius.pill, justifyContent: 'center' as const,
+    backgroundColor: aktiv ? colors.label : colors.fill,
+  })
+  const chipTekst = (aktiv: boolean) => [t.subhead, { fontWeight: '600' as const, color: aktiv ? colors.bg : colors.label }]
+
+  return (
+    <Ark synlig={!!entry} onLukk={onLukk}>
+      <View style={{ paddingHorizontal: spacing.screen, gap: spacing.lg }}>
+        <Text style={t.title3}>Endre føring</Text>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: 48, borderRadius: radius.md, backgroundColor: colors.fill }}>
+          <Pressable haptic="light" onPress={() => setTimer(timerTekst(Math.max(0.5, (Number.isFinite(tall) ? tall : 0) - 0.5)))}
+            style={{ width: 52, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+            <Minus size={18} color={colors.label} strokeWidth={2.2} />
+          </Pressable>
+          <TextInput value={timer} onChangeText={setTimer} keyboardType="decimal-pad" selectTextOnFocus
+            style={[t.title3, { flex: 1, textAlign: 'center', fontVariant: ['tabular-nums'] }]} />
+          <Text style={[t.body, { color: colors.secondaryLabel }]}>t</Text>
+          <Pressable haptic="light" onPress={() => setTimer(timerTekst(Math.min(24, (Number.isFinite(tall) ? tall : 0) + 0.5)))}
+            style={{ width: 52, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+            <Plus size={18} color={colors.label} strokeWidth={2.2} />
+          </Pressable>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.xs }}>
+          {aktiviteter.map(a => (
+            <Pressable key={a.id} haptic="light" onPress={() => setAktivitet(a.id)} style={chip(aktivitet === a.id)}>
+              <Text style={chipTekst(aktivitet === a.id)}>{a.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.xs }}>
+          {datoer.map(d => (
+            <Pressable key={d} haptic="light" onPress={() => setDato(d)} style={chip(dato === d)}>
+              <Text style={chipTekst(dato === d)}>{datoTekst(new Date(d))}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        <TextInput value={notat} onChangeText={setNotat} placeholder="Notat"
+          style={[t.body, { height: 44, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.fill }]} />
+
+        <Pressable haptic="medium" disabled={!gyldig || lagrer} onPress={lagre}
+          style={{ height: 50, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: gyldig ? colors.brand : colors.fill }}>
+          <Text style={[t.headline, { color: gyldig ? colors.brandLabel : colors.tertiaryLabel }]}>{lagrer ? 'Lagrer …' : 'Lagre'}</Text>
+        </Pressable>
+      </View>
+    </Ark>
+  )
+}
+
 export default function TimerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const insets = useSafeAreaInsets()
   const aktiviteter = useAktiviteter()
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [meg, setMeg] = useState<{ id: string; name: string } | null>(null)
+  const [redigerer, setRedigerer] = useState<TimeEntry | null>(null)
 
   useEffect(() => { getCurrentUser().then(u => u && setMeg({ id: u.id, name: u.name })) }, [])
 
@@ -106,7 +204,7 @@ export default function TimerScreen() {
     if (!id) return
     const sub = database.get<TimeEntry>('time_entries')
       .query(Q.where('order_id', id), Q.sortBy('date', Q.desc), Q.sortBy('created_at', Q.desc))
-      .observeWithColumns(['hours', 'note', 'activity_id', 'invoiced_at'])
+      .observeWithColumns(['hours', 'note', 'activity_id', 'invoiced_at', 'date'])
       .subscribe(setEntries)
     return () => sub.unsubscribe()
   }, [id])
@@ -163,7 +261,7 @@ export default function TimerScreen() {
         {dager.length === 0 ? (
           <View style={{ paddingHorizontal: spacing.screen + spacing.lg }}>
             <Text style={[t.body, { color: colors.secondaryLabel }]}>
-              Ingen timer ført ennå.
+              Ingen timer
             </Text>
           </View>
         ) : (
@@ -181,6 +279,7 @@ export default function TimerScreen() {
                       entry={e}
                       aktivitet={e.activityId ? aMap.get(e.activityId) : undefined}
                       kanSlette={e.userId === meg?.id}
+                      onRediger={() => setRedigerer(e)}
                     />
                   </View>
                 ))}
@@ -189,6 +288,7 @@ export default function TimerScreen() {
           ))
         )}
       </ScrollView>
+      <RedigerFoering entry={redigerer} aktiviteter={aktiviteter} onLukk={() => setRedigerer(null)} />
     </View>
   )
 }

@@ -4,6 +4,8 @@
 > åpne tråder) og oppdateres hyppig. `docs/STATUS.md` er fra august og tar feil om flere
 > ting — se `docs/GJENNOMGANG_2026-09-08.md`.
 
+> **Flere agenter:** les og følg `docs/AGENT_BRO.md` (låser, meldinger, logg) før hver oppgave.
+
 ## Prosjekt i én setning
 Ampex er en cross-platform elektriker-app (iOS, Android, web) bygget med Expo + Supabase. Offline-først via WatermelonDB (valgt over PowerSync 2026-07-03: null løpende kostnad — kun Supabase + R2 tillatt som utgifter).
 
@@ -44,6 +46,7 @@ finnes** — se `desktop/README.md`.
 ```
 npm run typecheck         tsc --noEmit
 npm run verify:pricefile  selvtest av EFO/NELFO-parseren mot fixture
+npm run verify:b4         selvtest av B4-bestillingsfila (E-NBestilling 4.0: feltposisjoner, CP1252, avvisninger)
 npm run verify:invoicing  selvtest av fakturagrunnlaget (øre, MVA, gruppering)
 npm run verify:forms      selvtest av skjemaformatet (v1-lesevei, betinget visning)
 npm run verify:quoting    selvtest av tilbudsregningen (rabatt, DB, gyldighet)
@@ -63,6 +66,7 @@ npm run verify:ik-tilstand  selvtest av «i orden»-svaret og neste-køen på IK
 npm run verify:egenskaper  selvtest av egenskaper ut av varenavn (farge, IP, leder, kurve — og det den skal la være)
 npm run verify:laeretid   selvtest av læretid (læreplan ordrett, avkryssingsregelen)
 npm run verify:tegning-tre selvtest av tegningsmappene (telling, sti, syklusvern ved flytt, sletteplan)
+npm run verify:tegning-import selvtest av mappeimporten (OneDrive-mappa inn: innpakning skrelles, fletting ved ny import, fag av stien)
 npm run verify:symbol-detekt selvtest av symbolsøket (forklaring → maler → komponenter på planen; skala, rotasjon, kabler)
 npm run verify:rom-detekt  selvtest av romdelingen (åpen stripe over skillevegg deles på vegglinja, påskriftene fordeler)
 npm run verify:fiken-offline selvtest av Fiken-adapteren mot falsk fetch (ingen token, ingen nett)
@@ -111,9 +115,14 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=
 - `docs/STATUS.md` — hvor vi står nå og hva som er neste steg (LES DENNE FØRST)
 - `docs/ROADMAP_2026-08.md` — full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering
 - `docs/GROSSIST_INTEGRASJON.md` — prisfiler, prissammenligning, autobestilling
+- `docs/GROSSIST_AVTALE.md` — «Be om avtale»: ett trykk sender forespørsel til én/alle grossister, levering til Ampex (design)
+- `docs/KRYPTERING.md` — firmanøkkel: innholdet uleselig selv om Supabase og R2 lekker (design)
 - `docs/DESKTOP_OG_IMPORT.md` — Ampex Kontor (`desktop/`), SpeedyCraft-import og merge
 - `docs/REGNSKAPSINTEGRASJON.md` — Fiken, Tripletex, PowerOffice Go
 - `docs/LAERLING.md` — læretid: dokumentasjon, verifisering, kontorflate (planlagt, ikke kodet)
+- `docs/SMARTHUS.md` — smarthus: billige moduler + vår app, montøroppsett mot tegningen (idé, ikke kodet)
+- `docs/DUKKEHUS_OG_ODM.md` — dukkehuset (RoomPlan + farger fra skannet) og egne ODM-moduler med alt Plejd har (plan 30.10)
+- `docs/VERONA_PLANLEGGING.md` — Verona fra inntak til ferdigmelding med begrunnelse (læremateriale: inntak, kurser, komfyrvakt, elbil/DC)
 - `docs/TILBUD_KONKURRENTER.md` — tilbud/kalkyle mot Cordel, Jobber, simPRO m.fl.: hva vi tok, hva vi lot ligge (akkord, kundeportal)
 - `docs/SKANN_BESLUTNINGER.md` — skann-pipelinen: forkastede veier, målinger, Mac-harnessen
 - `AGENTS.md` — inngangsdokument for andre AI-verktøy (kart over docs, arbeidsregler)

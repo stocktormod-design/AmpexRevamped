@@ -1,4 +1,5 @@
 import { supabase } from '@/supabase'
+import { kanFlyttesTil, slettePlan } from '@delt/tegning-tre'
 
 /**
  * Ett prosjekt på kontoret: mappetreet, tegningene, brannkomponentene på dem og
@@ -53,4 +54,62 @@ export async function tegningUrl(filePath: string): Promise<string> {
   if (error) throw new Error(`Fikk ikke hentet tegningen: ${error.message}`)
   if (!data?.url) throw new Error(data?.error ?? 'Fikk ikke hentet tegningen')
   return data.url as string
+}
+
+
+// ── Hierarkiet: mapper i mapper, som i en OneDrive-mappe ────────────────────
+// Alle skrivinger er myke (deleted_at, regel 5) og auditeres av databasetriggeren
+// `audit_row`. Slettp lanen flytter innholdet ett hakk opp i SAMME operasjon, så
+// en tegning aldri blir foreldreløs og usynlig.
+
+function krev(error: { message: string } | null, hva: string) {
+  if (error) throw new Error(`${hva}: ${error.message}`)
+}
+
+export async function opprettMappe(
+  projectId: string, parentId: string | null, name: string, createdBy: string | null, companyId: string | null,
+): Promise<string> {
+  if (!companyId) throw new Error('Du hører ikke til et firma.')
+  // `drawing_folders.id` har ingen database-default (i motsetning til de fleste
+  // tabellene), så kontoret må lage uuid-en selv — samme form som appen.
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('drawing_folders').insert({
+    id, company_id: companyId, project_id: projectId, parent_id: parentId,
+    name: name.trim(), sort_order: 0, created_by: createdBy,
+  })
+  krev(error, 'Kunne ikke opprette mappa')
+  return id
+}
+
+export async function omdopMappe(id: string, name: string): Promise<void> {
+  const nytt = name.trim()
+  if (!nytt) return
+  krev((await supabase.from('drawing_folders').update({ name: nytt }).eq('id', id)).error, 'Kunne ikke gi nytt navn')
+}
+
+export async function flyttMappe(id: string, nyForelder: string | null, mapper: PlanMappe[]): Promise<void> {
+  const noder = mapper.map(m => ({ id: m.id, parentId: m.parent_id, name: m.name }))
+  if (!kanFlyttesTil(id, nyForelder, noder)) throw new Error('Ei mappe kan ikke flyttes inn i seg selv eller en undermappe.')
+  krev((await supabase.from('drawing_folders').update({ parent_id: nyForelder }).eq('id', id)).error, 'Kunne ikke flytte mappa')
+}
+
+export async function flyttTegning(id: string, folderId: string | null): Promise<void> {
+  krev((await supabase.from('drawings').update({ folder_id: folderId }).eq('id', id)).error, 'Kunne ikke flytte tegningen')
+}
+
+export async function slettMappe(mappe: PlanMappe, mapper: PlanMappe[], tegninger: PlanTegning[]): Promise<void> {
+  const plan = slettePlan(
+    { id: mappe.id, parentId: mappe.parent_id, name: mappe.name },
+    mapper.map(m => ({ id: m.id, parentId: m.parent_id, name: m.name })),
+    tegninger.map(t => ({ ...t, folderId: t.folder_id })),
+  )
+  const barn = plan.barn.map(b => b.id)
+  const teg = plan.tegninger.map(t => t.id)
+  if (barn.length) {
+    krev((await supabase.from('drawing_folders').update({ parent_id: plan.nyForelder }).in('id', barn)).error, 'Kunne ikke flytte undermappene opp')
+  }
+  if (teg.length) {
+    krev((await supabase.from('drawings').update({ folder_id: plan.nyForelder }).in('id', teg)).error, 'Kunne ikke flytte tegningene opp')
+  }
+  krev((await supabase.from('drawing_folders').update({ deleted_at: new Date().toISOString() }).eq('id', mappe.id)).error, 'Kunne ikke slette mappa')
 }

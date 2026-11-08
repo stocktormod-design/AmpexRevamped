@@ -109,11 +109,6 @@ export default function ImporterSkjema() {
               <View style={{ width: 72, height: 72, borderRadius: radius.pill, backgroundColor: colors.brandWash, alignItems: 'center', justifyContent: 'center' }}>
                 <FileUp size={32} color={colors.brand} strokeWidth={1.7} />
               </View>
-              <Text style={[t.title2, { marginTop: spacing.lg, textAlign: 'center' }]}>Ta med skjemaet dere alt bruker</Text>
-              <Text style={[t.footnote, { marginTop: spacing.sm, textAlign: 'center', lineHeight: 20, maxWidth: 330 }]}>
-                PDF eller bilde. Sluttkontroll, SJA, måleprotokoll, egenkontroll — fra SpeedyCraft, Cordel, NELFO eller
-                deres eget Word-dokument. Klikklister, tabeller og «hvis ja, beskriv» blir med.
-              </Text>
             </View>
 
             {feil && (
@@ -132,11 +127,6 @@ export default function ImporterSkjema() {
               <FileText size={sizes.icon} color={colors.brandLabel} strokeWidth={2.2} />
               <Text style={[t.headline, { color: colors.brandLabel }]}>Velg fil</Text>
             </Pressable>
-
-            <Text style={[t.caption, { color: colors.paperSecondary, marginTop: spacing.md, textAlign: 'center', lineHeight: 17 }]}>
-              Du går gjennom og retter alt før det lagres.{'\n'}
-              Ingenting publiseres automatisk.
-            </Text>
           </Animated.View>
         </ScrollView>
       )}
@@ -147,9 +137,6 @@ export default function ImporterSkjema() {
           <Text style={[t.headline, { marginTop: spacing.lg, textAlign: 'center' }]}>Leser {fil?.navn}</Text>
           {/* Ærlig om ventetiden. Et framdriftsmål vi ikke har ville vært en løgn
               med animasjon på — og da trykker folk på nytt midt i kallet. */}
-          <Text style={[t.footnote, { marginTop: spacing.xs, textAlign: 'center', lineHeight: 20, maxWidth: 300 }]}>
-            Punkt, klikklister, tabeller og betingelser hentes ut. Et skjema på flere sider kan ta et minutt eller to.
-          </Text>
         </View>
       )}
 
@@ -176,8 +163,7 @@ export default function ImporterSkjema() {
             <View style={{ flexDirection: 'row', gap: spacing.sm, backgroundColor: colors.warningSoft, borderRadius: radius.lg, padding: spacing.md, marginTop: spacing.md }}>
               <AlertTriangle size={15} color={colors.warning} strokeWidth={2.2} style={{ marginTop: 1 }} />
               <Text style={[t.footnote, { flex: 1, lineHeight: 19 }]}>
-                {sum!.usikre === 1 ? 'Ett punkt er' : `${sum!.usikre} punkt er`} markert usikre lenger nede — de har gul ramme.
-                Sammenlign dem med skjemaet før du lagrer.
+                {sum!.usikre === 1 ? 'Ett punkt er usikkert' : `${sum!.usikre} punkt er usikre`}
               </Text>
             </View>
           )}
@@ -225,7 +211,7 @@ export default function ImporterSkjema() {
 
           <View style={{ marginTop: spacing.xl }}>
             <FormProblems problems={problemer} />
-            <SectionsEditor sections={seksjoner} flagg={flagg} onChange={setSeksjoner} />
+            <SectionsEditor sections={seksjoner} tittel={tittel} flagg={flagg} onChange={setSeksjoner} />
           </View>
         </ScrollView>
       )}

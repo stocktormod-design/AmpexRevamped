@@ -28,6 +28,28 @@ export function visibleFields(template: FormTemplate, values: FormValues): FormF
 }
 
 /**
+ * Påkrevde felt som ikke er besvart — bare de som faktisk vises nå.
+ *
+ * Et skjult påkrevd punkt er ikke «manglende»: spørsmålet er ikke stilt.
+ * Regelen er den samme i framdriften, i AI-ens gap-sjekk og i porten som
+ * avgjør om dokumentet kan fullføres. Ligger her (og ikke i gap-check) fordi
+ * den er ren logikk uten database — den skal kunne selvtestes alene.
+ */
+export function findUnfilledRequired(template: FormTemplate, values: FormValues): FormField[] {
+  const out: FormField[] = []
+  for (const section of template.sections) {
+    for (const field of section.fields) {
+      if (field.type === 'info' || !field.required) continue
+      if (!isFieldVisible(field, values)) continue
+      const v = values[field.key]
+      const isEmpty = v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
+      if (isEmpty) out.push(field)
+    }
+  }
+  return out
+}
+
+/**
  * Verdier for lagring: felt som er skjult NÅ tas ut.
  *
  * Uten dette blir «Avvik: Nei» sittende igjen med en avviksbeskrivelse fra da
@@ -45,4 +67,22 @@ export function pruneHidden(template: FormTemplate, values: FormValues): FormVal
     out[key] = value
   }
   return out
+}
+
+/**
+ * Temavalget i en `velger`-seksjon: hvilke temaer ordren nevner, som forhåndsavkryssing.
+ * Bare et forslag — montøren krysser av og fra før skjemaet lages.
+ */
+export function foreslatteTemaer(template: FormTemplate, ordretekst: string): string[] {
+  const tekst = ordretekst.toLowerCase()
+  return template.sections.flatMap(s => s.velger
+    ? s.fields.filter(f => s.velger!.match[f.key]?.test(tekst)).map(f => f.key)
+    : [])
+}
+
+/** Verdiene temavalget skriver: «Ja» på det som er valgt, «Nei» på resten — så valget står i dokumentet. */
+export function temaVerdier(template: FormTemplate, valgt: string[]): FormValues {
+  const ut: FormValues = {}
+  for (const s of template.sections) if (s.velger) for (const f of s.fields) ut[f.key] = valgt.includes(f.key) ? 'Ja' : 'Nei'
+  return ut
 }

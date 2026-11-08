@@ -114,7 +114,7 @@ export function Skann() {
             rader={bolker.venter}
             nokkel={j => j.id}
             kolonner={koloVenter}
-            tomTekst="Ingenting ligger og venter."
+            tomTekst="Ingen."
           />
         </Kort>
       ) : null}
@@ -142,17 +142,13 @@ export function Skann() {
 
       <Kort merkelapp="Bakepool" tittel={stk(data.noder.length, 'maskin', 'maskiner')}>
         {data.noder.length === 0 ? (
-          <p className="dempet-mer">
-            Ingen maskiner er meldt inn. Uten en egen PC må skannene bakes i Ampex-poolen,
-            og det krever at firmaet har slått den på under Firma.
-          </p>
+          <p className="dempet-mer">Ingen maskiner.</p>
         ) : (
           <Tabell rader={data.noder} nokkel={n => n.id} kolonner={koloNoder} />
         )}
         {andel > 0.8 ? (
           <Beskjed stil="varsel">
-            {Math.round(andel * 100)} % av kvoten er brukt siste 30 dager. Over taket
-            blir nye skann avvist ved opplasting, ikke ved baking.
+            {Math.round(andel * 100)} % av kvoten er brukt siste 30 dager.
           </Beskjed>
         ) : null}
       </Kort>

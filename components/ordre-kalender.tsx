@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { View } from 'react-native'
 import { Text } from './text'
-import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react-native'
+import { ChevronLeft, ChevronRight } from 'lucide-react-native'
 import { Pressable } from './pressable'
 import { PapirCard, PapirSectionHeader } from './papir-surface'
 import type { Order } from '../lib/db/models/order'
@@ -49,7 +49,7 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
         borderWidth: 1, borderColor: colors.separator,
       }}>
         <Pressable haptic="light" pressScale={0.92} onPress={() => bytt(-1)}
-          style={{ width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }}>
+          style={{ width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }}>
           <ChevronLeft size={18} color={colors.label} strokeWidth={2.2} />
         </Pressable>
         <View style={{ alignItems: 'center' }}>
@@ -59,7 +59,7 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
           </Text>
         </View>
         <Pressable haptic="light" pressScale={0.92} onPress={() => bytt(1)}
-          style={{ width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }}>
+          style={{ width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }}>
           <ChevronRight size={18} color={colors.label} strokeWidth={2.2} />
         </Pressable>
       </View>
@@ -67,18 +67,24 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
       {/* Sum + søyler */}
       <PapirCard style={{ padding: spacing.lg }}>
         <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.tertiaryLabel }]}>Avtalt denne uken</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 2 }}>
-          <Text style={[t.display, { color: colors.label }]}>{plan.sumJobber}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+          <Text style={[t.title1, { color: colors.label, fontVariant: ['tabular-nums'] }]}>{plan.sumJobber}</Text>
           <Text style={[t.footnote, { color: colors.secondaryLabel }]}>
             {plan.sumJobber === 1 ? 'jobb' : 'jobber'}
           </Text>
         </View>
+        {plan.sumJobber === 0 && (
+          <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 2 }]}>
+            Ingen avtalte jobber denne uken
+          </Text>
+        )}
         {plan.utenDato.length > 0 && (
           <Text style={[t.footnote, { color: colors.warning, marginTop: 2 }]}>
             {`${plan.utenDato.length} ${plan.utenDato.length === 1 ? 'jobb er' : 'jobber er'} ikke satt opp`}
           </Text>
         )}
 
+        {plan.sumJobber > 0 && (
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginTop: spacing.lg }}>
           {plan.dager.map((d, i) => {
             const erIdag = d.dato.getTime() === idag
@@ -128,19 +134,14 @@ export function OrdreKalender({ orders, onVelg }: { orders: Order[]; onVelg: (or
             )
           })}
         </View>
+        )}
       </PapirCard>
 
       {/* Uken dag for dag (Tormod 13.09: «dato-basert»). Alle dager med jobber
           står under grafen i rekkefølge, ikke bare den du trykket på — søylen
           du trykker løfter fram dagen sin i lista. «I dag» og «I morgen» sies
           rett ut; resten får ukedag og dato. */}
-      {plan.sumJobber === 0 ? (
-        <View style={{ marginTop: spacing.xl }}>
-          <PapirCard style={{ padding: spacing.lg, alignItems: 'center' }}>
-            <Text style={[t.footnote, { color: colors.secondaryLabel }]}>Ingen jobber satt opp denne uken.</Text>
-          </PapirCard>
-        </View>
-      ) : plan.dager.map((d, i) => d.jobber.length === 0 ? null : (
+      {plan.dager.map((d, i) => d.jobber.length === 0 ? null : (
         <View key={i} style={{ marginTop: spacing.xl }}>
           <Text style={[t.eyebrow, {
             textTransform: 'uppercase',
@@ -194,23 +195,26 @@ function DagRad({ order, last, onPress }: { order: Order; last: boolean; onPress
         !last && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
       ]}
     >
-      <View style={{ width: 46 }}>
-        {tid ? (
-          <Text style={[t.footnote, { color: colors.brand, fontWeight: '600', fontVariant: ['tabular-nums'] }]}>{tid}</Text>
-        ) : (
-          <CalendarOff size={15} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />
-        )}
-      </View>
-      {/* Samme kobberstrek som i ordrelista: pågår er den ene statusen som
-          betyr noe når du ser på dagen. */}
-      <View style={{
-        width: 3, height: 28, borderRadius: 2, marginRight: spacing.md,
-        backgroundColor: order.status === 'pagaar' ? colors.brand : colors.separator,
-      }} />
+      {/* Klokkeslettet er radens data når det finnes. Uten tid (dette er
+          «ikke satt opp»-lista) fantes det bare et kalender-ikon og en strek
+          ingen kunne lese — begge er borte. Seksjonshodet sier allerede at
+          jobben ikke er satt opp. */}
+      {!!tid && (
+        <Text style={[t.footnote, { width: 46, color: colors.brand, fontWeight: '600', fontVariant: ['tabular-nums'], marginRight: spacing.sm }]}>{tid}</Text>
+      )}
       <View style={{ flex: 1, marginRight: spacing.sm }}>
         <Text style={[t.bodyMedium, { color: colors.label }]} numberOfLines={1}>{order.title}</Text>
         {!!under && (
           <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 2 }]} numberOfLines={1}>{under}</Text>
+        )}
+        {order.status === 'pagaar' && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.label }} />
+            <Text style={[t.caption, { color: colors.secondaryLabel, fontWeight: '600' }]}>Pågår</Text>
+          </View>
+        )}
+        {order.status === 'fakturaklar' && (
+          <Text style={[t.caption, { color: colors.success, fontWeight: '600', marginTop: 2 }]}>Klar til faktura</Text>
         )}
       </View>
       <ChevronRight size={16} color={colors.tertiaryLabel} strokeWidth={sizes.lucideStroke} />

@@ -11,7 +11,6 @@ import { LaeretidLaerling, LaeretidLogg, LaeretidSporsmaal } from '../../../lib/
 import { useUserId } from '../../../lib/auth-user'
 import { finnMaal, type Laereplankode } from '../../../lib/laeretid/laereplan'
 import {
-  DAGER_TIL_REPETISJON, DAGER_TIL_RUNDE_2,
   etterprovLinje, forTidlig, isoDag, repetisjonerAaLage,
 } from '../../../lib/laeretid/quiz'
 import {
@@ -204,13 +203,9 @@ export default function Quiz() {
           <Text style={{ fontSize: 17, color: lt.stille, textAlign: 'center', lineHeight: 24 }}>
             {okt.length === 0
               ? 'Du er à jour.'
-              : temaId
-                ? bommet > 0
-                  ? `${bommet} av ${okt.length} satt ikke helt. Temaet kommer tilbake til det sitter.`
-                  : 'Alt satt. Neste gang i dette temaet blir det litt vanskeligere.'
-                : bommet > 0
-                  ? `${bommet} av ${okt.length} satt ikke helt. De kommer tilbake om ${DAGER_TIL_REPETISJON / 7} uker — det er repetisjonen som gjør at det sitter på fagprøven.`
-                  : `Om ${DAGER_TIL_RUNDE_2} dager kommer ett spørsmål til om det samme. Det er da det setter seg.`}
+              : bommet > 0
+                ? `${bommet} av ${okt.length} satt ikke helt`
+                : 'Alt satt'}
           </Text>
           {/* Duolingo-flyten: rett videre til neste tema, ett trykk. */}
           {nesteId && (
@@ -246,7 +241,7 @@ export default function Quiz() {
             <TextInput
               value={dom ? (sp.svar ?? svar) : svar}
               onChangeText={setSvar}
-              placeholder="Svar som om du forklarer det til en ny lærling."
+              placeholder="Svaret ditt"
               // Fagord er ikke i ordboka: autokorrektur gjorde «varerør» til «varmerør»
               // og «avmantler» til «semantiker» (27.09.2026). Feil ord blir feil fakta i loggen.
               autoCorrect={false}
@@ -287,17 +282,9 @@ export default function Quiz() {
               {!!dom.tilbakemelding && (
                 <Text style={{ fontSize: 15, lineHeight: 21, color: bestatt ? lt.gronnMork : lt.rodMork }}>{dom.tilbakemelding}</Text>
               )}
-              <Text style={{ fontSize: 13, color: bestatt ? lt.gronnMork : lt.rodMork, fontWeight: '600' }}>
-                {sp.tema
-                  ? bestatt
-                    ? 'Neste spørsmål i temaet blir litt vanskeligere.'
-                    : 'Temaet kommer tilbake til det sitter.'
-                  : bestatt
-                  ? sp.runde === 1 ? 'Svaret ditt står bak krysset.' : 'Krysset står, og nå sitter det.'
-                  : sp.runde === 1
-                    ? 'Denne delen krysses ikke av på denne loggen før du har forklart den.'
-                    : `Krysset står, du gjorde jobben. Temaet kommer tilbake om ${DAGER_TIL_REPETISJON / 7} uker.`}
-              </Text>
+              {!sp.tema && !bestatt && sp.runde === 1 && (
+                <Text style={{ fontSize: 13, color: lt.rodMork, fontWeight: '600' }}>Ikke krysset av</Text>
+              )}
               {!!dom.fasit.tekst && (
                 <View style={{ backgroundColor: lt.hvit, borderRadius: 14, padding: 12, gap: 6, maxHeight: 220 }}>
                   <ScrollView>

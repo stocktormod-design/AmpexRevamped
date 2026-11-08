@@ -1,4 +1,5 @@
-import { JA_NEI_IA, type FormTemplate } from './types'
+import { RISIKO_ORD } from '../risiko-katalog'
+import { JA_NEI_IA, type FormField, type FormSection, type FormTemplate } from './types'
 
 /**
  * De 5 sikre — Ampex-maler v1.
@@ -15,9 +16,77 @@ import { JA_NEI_IA, type FormTemplate } from './types'
 
 const REVIEW = 'Ampex-mal (utkast). Faglig ansvarlig i firmaet må vurdere om malen passer arbeidet.'
 
+/** Et tema i risikovurderingen: Ja/Nei-valget og seksjonen det slår på. */
+function tema(key: string, label: string, title: string, fields: FormField[]): { valg: FormField; seksjon: FormSection } {
+  const felt = `tema_${key}`
+  return {
+    valg: { key: felt, label, type: 'choice', choices: ['Ja', 'Nei'] },
+    seksjon: { title, fields: fields.map(f => ({ ...f, showIf: { field: felt, equals: ['Ja'] } })) },
+  }
+}
+const jn = (key: string, label: string, help?: string): FormField => ({ key, label, type: 'choice', choices: JA_NEI_IA, help })
+
+/**
+ * Temaene. Rekkefølgen er rekkefølgen i valget og i skjemaet. Ordene i `RISIKO_ORD`
+ * (lib/risiko-katalog.ts) krysser av på forhånd når ordren nevner dem — montøren retter.
+ */
+const TEMAER = [
+  tema('tavle', 'Arbeid i tavle eller sikringsskap', 'Tavle og sikringsskap', [
+    jn('tavle_frakoblet', 'Er tavla frakoblet, sikret mot innkobling (lås og skilt) og prøvd spenningsløs?', 'FSE §§ 12–14'),
+    jn('tavle_skjerm', 'Er deler som må stå på skjermet mot berøring?'),
+    jn('tavle_vern', 'Er vern dimensjonert etter kabel og forlegning?', 'NEK 400-4-43, 5-52'),
+  ]),
+  tema('inntak', 'Inntak eller hovedsikring', 'Inntak', [
+    jn('inntak_nettselskap', 'Er arbeidet avtalt med nettselskapet (plombering, frakobling)?'),
+    jn('inntak_overspenning', 'Er overspenningsvern vurdert?', 'NEK 400-4-44, 5-534'),
+    jn('inntak_last', 'Er lastberegning gjort for hovedsikringen?'),
+  ]),
+  tema('bad', 'Bad eller våtrom', 'Bad og våtrom', [
+    jn('bad_soner', 'Er utstyret plassert etter sonene med riktig IP-grad?', 'NEK 400-7-701'),
+    jn('bad_jordfeil', 'Har alle kurser i rommet jordfeilvern 30 mA?', 'NEK 400-7-701'),
+    jn('bad_utjevning', 'Er tilleggsutjevning vurdert?', 'NEK 400-7-701'),
+  ]),
+  tema('varmekabel', 'Varmekabel eller gulvvarme', 'Varmekabel', [
+    jn('varme_effekt', 'Passer W/m² for gulvet, og ligger kabelen ikke under faste innretninger?', 'NEK 400-7-753'),
+    jn('varme_maling', 'Er isolasjonsmåling gjort før og etter støp/flislegging?'),
+    jn('varme_dok', 'Er plasseringen dokumentert med bilde og tegning?'),
+  ]),
+  tema('elbil', 'Elbillader', 'Elbillading', [
+    jn('elbil_rcd', 'Er jordfeilvernet type B, eller type A med 6 mA DC-deteksjon i laderen?', 'NEK 400-7-722, 5-53'),
+    jn('elbil_kurs', 'Har hvert ladepunkt egen kurs?', 'NEK 400-7-722'),
+    jn('elbil_last', 'Er lastberegning eller lastbalansering på plass?'),
+  ]),
+  tema('varmepumpe', 'Varmepumpe', 'Varmepumpe', [
+    jn('vp_vern', 'Er kurs og vern etter produsentens krav?'),
+    jn('vp_bryter', 'Er det sikkerhetsbryter ved utedelen?'),
+    jn('vp_ip', 'Har utstyret ute riktig IP-grad?', 'NEK 400-5-51'),
+  ]),
+  tema('kjokken', 'Kjøkken eller komfyr', 'Kjøkken', [
+    jn('kjokken_komfyrvakt', 'Er komfyrvakt montert?', 'NEK 400-4-42'),
+    jn('kjokken_kurs', 'Har komfyren egen kurs dimensjonert etter effekten?'),
+  ]),
+  tema('ute', 'Utendørs', 'Utendørs', [
+    jn('ute_ip', 'Har utstyret IP44 eller bedre, og tåler det kystklima?', 'NEK 400-5-51 (AD, AF)'),
+    jn('ute_jordfeil', 'Har uttak ute jordfeilvern 30 mA?'),
+  ]),
+  tema('styring', 'Lysstyring, dimmer eller smarthus', 'Lysstyring', [
+    jn('styring_last', 'Passer dimmeren lasten (LED-driver), med nedregulering ved flere i samme boks?'),
+  ]),
+  tema('hoyde', 'Arbeid i høyden', 'Arbeid i høyden', [
+    jn('hoyde_utstyr', 'Er stige eller plattform kontrollert og riktig for jobben?'),
+    jn('hoyde_to', 'Er det to personer ved tunge løft i høyden?'),
+  ]),
+  tema('eldre', 'Eldre bygg eller rehabilitering', 'Eldre bygg', [
+    jn('eldre_asbest', 'Er byggeår og materialer avklart (mulig asbest)?'),
+    jn('eldre_kabelsok', 'Er det søkt etter skjulte kabler og rør før boring?'),
+  ]),
+]
+
 export const risikovurdering: FormTemplate = {
   id: 'ampex.risikovurdering',
-  version: 1,
+  // v2 (30.10): temavalg øverst, seksjoner per tema. v1-nøklene står uendret, og temaseksjonene
+  // er skjult uten valg, så et v1-dokument leses akkurat som før.
+  version: 2,
   name: 'Risikovurdering',
   source: 'Basert på DSB «Rapport fra risikovurdering» (fel § 16, fse)',
   reviewNote: REVIEW,
@@ -33,6 +102,11 @@ export const risikovurdering: FormTemplate = {
       ],
     },
     {
+      title: 'Jobben inneholder',
+      fields: TEMAER.map(x => x.valg),
+      velger: { match: Object.fromEntries(TEMAER.map(x => [x.valg.key, RISIKO_ORD[x.valg.key.slice(5) as keyof typeof RISIKO_ORD]])) },
+    },
+    {
       title: 'Farevurdering',
       fields: [
         { key: 'spenningslost', label: 'Kan arbeidet utføres spenningsløst (AUS unngås)?', type: 'choice', choices: JA_NEI_IA },
@@ -43,6 +117,7 @@ export const risikovurdering: FormTemplate = {
         { key: 'verneutstyr', label: 'Er nødvendig verneutstyr tilgjengelig og vurdert?', type: 'choice', choices: JA_NEI_IA },
       ],
     },
+    ...TEMAER.map(x => x.seksjon),
     {
       title: 'Tiltak og konklusjon',
       fields: [
@@ -173,9 +248,140 @@ export const utstyrsdokumentasjon: FormTemplate = {
   ],
 }
 
+/**
+ * «SJA – elbillader og tavle» (04.11.2026).
+ *
+ * Tormod: «når du gjør en risikovurdering skal du få noen spørsmål først, så
+ * resten er tilpasset — hvis det ikke er elbillader får du ingen spørsmål om
+ * laderen.»
+ *
+ * Inntaket er formens FØRSTE DEL, ikke et eget flagg i formatet. Betingelser
+ * kan bare peke oppover (`validateFirmSections`), så det som står først er per
+ * definisjon det som styrer resten. Det holder lagringsformatet uendret og
+ * gjør regelen synlig i byggeren: «Innledende spørsmål» er del 1, og alt
+ * nedenfor kan henvise til svarene der.
+ *
+ * Bare Ja/Nei i inntaket: et «Ikke aktuelt» ville gjort hvert eneste
+ * oppfølgingsspørsmål betinget av en tredje verdi ingen husker å krysse av.
+ */
+const JN: string[] = ['Ja', 'Nei']
+
+export const sjaElbilTavle: FormTemplate = {
+  id: 'ampex.sja-elbil-tavle',
+  version: 1,
+  name: 'SJA – elbillader og tavle',
+  source: 'Ampex-mal · inntak først, resten tilpasses svarene',
+  reviewNote: REVIEW,
+  sections: [
+    {
+      title: 'Innledende spørsmål',
+      fields: [
+        { key: 'sja_elbil', label: 'Skal det monteres elbillader?', type: 'choice', choices: JN },
+        { key: 'sja_spenning', label: 'Skal du arbeide i tavle under spenning?', type: 'choice', choices: JN },
+        { key: 'sja_hoyde', label: 'Skal du arbeide i høyden?', type: 'choice', choices: JN },
+        { key: 'sja_bad', label: 'Er arbeidet i bad eller våtrom?', type: 'choice', choices: JN },
+      ],
+    },
+    {
+      title: 'Elbillader',
+      fields: [
+        {
+          key: 'sja_elbil_vern',
+          label: 'Er vernet type B, eller type A med 6 mA DC-deteksjon?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_elbil', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_elbil_kurs',
+          label: 'Har ladepunktet egen kurs?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_elbil', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_elbil_last',
+          label: 'Er lastberegning eller lastbalansering gjort?',
+          type: 'choice', choices: JN,
+          showIf: { field: 'sja_elbil', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_elbil_kabel',
+          label: 'Kabeltype og tverrsnitt til ladepunktet',
+          type: 'text',
+          showIf: { field: 'sja_elbil', equals: ['Ja'] },
+        },
+      ],
+    },
+    {
+      title: 'Tavle under spenning',
+      fields: [
+        {
+          key: 'sja_tavle_frakobling',
+          label: 'Er anlegget gjort spenningsløst, låst og prøvd?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_spenning', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_tavle_verneutstyr',
+          label: 'Er verneutstyr og verktøy kontrollert?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_spenning', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_tavle_tiltak',
+          label: 'Tiltak før arbeidet starter',
+          type: 'multiline',
+          showIf: { field: 'sja_spenning', equals: ['Ja'] },
+        },
+      ],
+    },
+    {
+      title: 'Arbeid i høyden',
+      fields: [
+        {
+          key: 'sja_hoyde_utstyr',
+          label: 'Er stige eller stillas kontrollert?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_hoyde', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_hoyde_sikring',
+          label: 'Er området under sikret?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_hoyde', equals: ['Ja'] },
+        },
+      ],
+    },
+    {
+      title: 'Bad og våtrom',
+      fields: [
+        {
+          key: 'sja_bad_soner',
+          label: 'Er utstyret plassert etter sonene med riktig IP-grad?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_bad', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_bad_jordfeil',
+          label: 'Har alle kurser i rommet jordfeilvern 30 mA?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_bad', equals: ['Ja'] },
+        },
+      ],
+    },
+    {
+      title: 'Vurdering',
+      fields: [
+        { key: 'sja_konklusjon', label: 'Oppsummering av risiko og tiltak', type: 'multiline', required: true },
+        { key: 'sja_utfort_av', label: 'Utført av', type: 'text', required: true },
+      ],
+    },
+  ],
+}
+
 /** De 5 sikre i visningsrekkefølge (samme som gamleappen) */
 export const AMPEX_TEMPLATES: FormTemplate[] = [
   risikovurdering,
+  sjaElbilTavle,
   samsvarserklaering,
   sluttkontroll,
   kursfortegnelse,

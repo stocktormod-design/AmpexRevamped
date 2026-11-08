@@ -702,7 +702,8 @@ async function callGemini(apiKey: string, spec: GeminiSpec, body: AiVoiceRequest
     : [GEMINI_MODEL]
 
   let sisteFeil: unknown = null
-  for (const modell of modeller) {
+  for (let i = 0; i < modeller.length; i++) {
+    const modell = modeller[i]
     try {
       return await enGeminiRunde(apiKey, spec, parts, modell, erImport ? GEMINI_IMPORT_TIMEOUT_MS : GEMINI_TIMEOUT_MS)
     } catch (err) {
@@ -713,9 +714,43 @@ async function callGemini(apiKey: string, spec: GeminiSpec, body: AiVoiceRequest
       const melding = err instanceof Error ? err.message : String(err)
       if (!/ 404:|NOT_FOUND|is not found|not supported/i.test(melding)) throw err
       console.warn(`[ai-voice] modell ${modell} utilgjengelig — faller tilbake:`, melding)
+      // Alle faste navn er pensjonert (gemini-2.5-flash ga 404 fra 04.11.2026):
+      // spør nøkkelen hva som finnes i stedet for å vente på en ny deploy.
+      if (i === modeller.length - 1) {
+        const ny = await nyesteModell(apiKey, erImport ? 'pro' : 'flash').catch(() => null)
+        if (ny && !modeller.includes(ny)) modeller.push(ny)
+      }
     }
   }
   throw sisteFeil
+}
+
+const oppdaget: Record<'pro' | 'flash', string | null> = { pro: null, flash: null }
+
+/**
+ * Nyeste stabile modell av ønsket slag på nøkkelen (samme regel som
+ * `velgModell` i laeretid-ai). Lyd-, live-, bilde- og lite-varianter hoppes over.
+ */
+async function nyesteModell(apiKey: string, slag: 'pro' | 'flash'): Promise<string | null> {
+  if (oppdaget[slag]) return oppdaget[slag]
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000', {
+    headers: { 'x-goog-api-key': apiKey },
+  })
+  if (!res.ok) return null
+  const json = await res.json()
+  const versjon = (n: string) => Number(n.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0)
+  const navn: string[] = (json.models ?? [])
+    .filter((m: { supportedGenerationMethods?: string[] }) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
+    .map((m: { name: string }) => String(m.name).replace(/^models\//, ''))
+    .filter((n: string) => /^gemini-\d/.test(n))
+    .filter((n: string) => !/lite|live|audio|tts|image|vision|embed|thinking-exp|computer/i.test(n))
+  const beste = (s: string) => navn
+    .filter(n => n.includes(`-${s}`))
+    .sort((a, b) => versjon(b) - versjon(a) || Number(/preview|exp/.test(a)) - Number(/preview|exp/.test(b)))[0] ?? null
+  const funnet = slag === 'pro' ? beste('pro') ?? beste('flash') : beste('flash') ?? beste('pro')
+  if (funnet) console.log(`[ai-voice] oppdaget ${slag}: ${funnet}`)
+  oppdaget[slag] = funnet
+  return funnet
 }
 
 async function enGeminiRunde(

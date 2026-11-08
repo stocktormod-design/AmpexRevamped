@@ -78,7 +78,7 @@ export default function Detektorliste() {
         ))}
         {devices.length === 0 && (
           <Text style={[t.body, { color: colors.paperSecondary, textAlign: 'center', marginTop: spacing.xxl }]}>
-            Ingen brannkomponenter plassert ennå.{'\n'}Bruk brann-verktøyet i tegningseditoren.
+            Ingen brannkomponenter
           </Text>
         )}
       </ScrollView>

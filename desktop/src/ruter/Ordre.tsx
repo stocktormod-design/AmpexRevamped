@@ -1,9 +1,11 @@
 import { formatKr, mvaLabel, somMvaType, type Fakturagrunnlag } from '@delt/invoicing'
-import { getTemplate } from '@delt/forms/templates'
+import { AMPEX_TEMPLATES, getTemplate } from '@delt/forms/templates'
 import { kan } from '@delt/kontor-tilgang'
 import { BOLKNAVN, BOLKREKKEFOLGE, grupper, type Bolk } from '@delt/ordrebolk'
 import { finnAvvik, type Snapshot } from '@delt/approvals-calc'
-import { CheckCircle2, CircleAlert, Download, FileText, Printer, Snowflake, Users } from 'lucide-react'
+import { CheckCircle2, CircleAlert, Download, FileText, Link2, Map as Kart, PenLine, Plus, Printer, ShieldAlert, Snowflake, Upload, Users } from 'lucide-react'
+import { mangler, niva, risikotall, tomProsjektering } from '@delt/prosjektering'
+import { forslag, somFare } from '@delt/risiko-katalog'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/auth'
 import { hentKunder, type Kunde } from '@/lib/kontor-lager'
@@ -13,17 +15,22 @@ import { skrivUtDokument } from '@/lib/utskrift'
 import {
   grunnlagFra,
   hentArkiv,
+  hentFirmamaler,
   hentOrdredetalj,
   hentOrdrer,
   kanFryses,
   kanGodkjenneFaglig,
   markerFakturert,
   opprettOrdre,
+  opprettSkjema,
   STATUS_NAVN,
   type Arkivrad,
+  type Mal,
   type Ordredetalj,
   type Ordrerad,
 } from '@/lib/ordre-lager'
+import { hentTegning, lagreTegning, lastOppPlan, type Lagret as LagretTegning } from '@/lib/tegningslag-lager'
+import { OrdreTegning } from '@/ruter/OrdreTegning'
 import { Delt, paaTelefon } from '@/ui/Delt'
 import { antall, Beskjed, Felt, Knapp, Merke, Sidehode, stk } from '@/ui/kit'
 
@@ -78,7 +85,27 @@ function kr(ore: number): string {
   return `${formatKr(ore)} kr`
 }
 
+/**
+ * `#/ordre/<id>` velger ordren; `#/ordre/<id>/tegning` åpner tegningen på den over hele
+ * flata. Tegningen er en del av ordren, ikke et eget dokument ved siden av (30.10).
+ */
+function fraHash(): { id: string | null; under: string | null } {
+  const [, id, under] = window.location.hash.replace('#/', '').split('/')
+  return { id: id || null, under: under || null }
+}
+
 export function Ordre() {
+  const [rute, setRute] = useState(fraHash)
+  useEffect(() => {
+    const paa = () => setRute(fraHash())
+    window.addEventListener('hashchange', paa)
+    return () => window.removeEventListener('hashchange', paa)
+  }, [])
+  if (rute.id && rute.under === 'tegning') return <OrdreTegning ordreId={rute.id} />
+  return <Ordreliste start={rute.id} />
+}
+
+function Ordreliste({ start }: { start: string | null }) {
   const { profil } = useAuth()
   const rolle = profil?.role
   const seAlle = kan(rolle, 'ordre.alle')
@@ -97,7 +124,7 @@ export function Ordre() {
   const [eksportkvittering, setEksportkvittering] = useState<string | null>(null)
   const [bolker, setBolker] = useState<Bolk[]>([])
   const [rader, setRader] = useState<Ordrerad[]>([])
-  const [valgt, setValgt] = useState<string | null>(null)
+  const [valgt, setValgt] = useState<string | null>(start)
   const [detalj, setDetalj] = useState<Ordredetalj | null>(null)
   const [feil, setFeil] = useState<string | null>(null)
   const [laster, setLaster] = useState(true)
@@ -243,7 +270,6 @@ export function Ordre() {
     <>
       <Sidehode
         tittel="Ordre"
-        under={seAlle ? 'Hele firmaets portefølje' : 'Ordrene du er med på'}
         handling={
           <>
             {!seAlle ? <Merke stil="noytral">Mine ordrer</Merke> : null}
@@ -317,7 +343,6 @@ export function Ordre() {
                 firkant
                 autoFocus
                 etikett="Tittel"
-                hjelp="Det navnet ordren skal gå under."
                 value={ny.tittel}
                 onChange={e => setNy(n => ({ ...n, tittel: e.target.value }))}
               />
@@ -338,7 +363,6 @@ export function Ordre() {
             <Felt
               firkant
               etikett="Adresse"
-              hjelp="Der jobben skal utføres — ikke nødvendigvis kundens fakturaadresse."
               value={ny.adresse}
               onChange={e => setNy(n => ({ ...n, adresse: e.target.value }))}
             />
@@ -358,9 +382,6 @@ export function Ordre() {
               <Knapp type="button" onClick={() => { setApen(false); setSkjemafeil(null) }}>
                 Avbryt
               </Knapp>
-              <span className="felt-hjelp">
-                Tildeling, tidspunkt og materiell settes på ordren etter at den er opprettet.
-              </span>
             </div>
           </form>
         </div>
@@ -509,8 +530,7 @@ function Detalj({
     try {
       const r = await sendTilRegnskap(o.id)
       setRegnskapskvittering(
-        `Utkast ${r.utkastId} ligger nå i ${r.system} på ${kr(r.bruttoOre)}. `
-        + 'Det blir en faktura først når noen godkjenner det der.',
+        `Utkast ${r.utkastId} ligger nå i ${r.system} på ${kr(r.bruttoOre)}.`,
       )
       await etterSkriving()
     } catch (e) {
@@ -584,7 +604,7 @@ function Detalj({
           ) : null}
 
           {o.status === 'fakturert' && !arkiv ? (
-            <Knapp stil="stille" disabled title="Frysingen må flyttes fra appen først">
+            <Knapp stil="stille" disabled>
               <Snowflake size={15} strokeWidth={1.8} />
               Arkiver
             </Knapp>
@@ -640,30 +660,7 @@ function Detalj({
           </Boks>
         ) : null}
 
-        {detalj.dokumenter.length > 0 ? (
-          <Boks tittel="Dokumentasjon" merkelapp={stk(detalj.dokumenter.length, 'dokument', 'dokumenter')}>
-            {detalj.dokumenter.map(d => (
-              <div key={d.id} className="rad" style={{ padding: '7px 0' }}>
-                <FileText size={15} strokeWidth={1.8} className="dempet-mer" />
-                <span className="strekk">{malnavn(d.template_id)}</span>
-                {d.status === 'fullfort' ? (
-                  <>
-                    <CheckCircle2 size={14} strokeWidth={1.8} style={{ color: 'var(--gronn)' }} />
-                    <span className="dempet-mer">{dato(d.completed_at, true)}</span>
-                  </>
-                ) : (
-                  <Merke stil="varsel">Utkast</Merke>
-                )}
-                {/* Ogsaa pa utkast: den som skal se hva som mangler, trenger
-                    arket i handa. Utskriften merker seg selv som utkast. */}
-                <Knapp stil="stille" disabled={jobber != null} onClick={() => void skrivUt(d.id)}>
-                  <Printer size={14} strokeWidth={1.8} />
-                  {jobber === `utskrift-${d.id}` ? 'Apner …' : 'Skriv ut'}
-                </Knapp>
-              </div>
-            ))}
-          </Boks>
-        ) : null}
+        <Dokumentasjon detalj={detalj} etterSkriving={etterSkriving} skrivUt={skrivUt} jobber={jobber} />
 
         {grunnlag && (grunnlag.linjer.length > 0 || grunnlag.utelatt.length > 0) ? (
           <Boks tittel="Fakturagrunnlag" merkelapp={kr(grunnlag.bruttoOre)}>
@@ -686,24 +683,184 @@ function Detalj({
               </div>
             ) : (
               <p className="kort-hjelp">
-                Ordren er fakturert og kan fryses til et uforanderlig arkiv i R2.{' '}
+                Ikke arkivert.{' '}
                 {kanArkivere && !kanArkivere.ok && kanArkivere.grunn
-                  ? <span className="dempet-mer">Databasen sier nei: {kanArkivere.grunn}</span>
+                  ? <span className="dempet-mer">{kanArkivere.grunn}</span>
                   : null}
               </p>
             )}
-            {!arkiv ? (
-              <p className="felt-hjelp" style={{ marginTop: 12 }}>
-                Frysingen kjøres foreløpig fra montørappen, fordi R2-kanalen (`r2-sign`) ligger der.
-                `lib/archive/freeze.ts` sier selv at den skal flyttes hit uendret når kontoret finnes
-                — pakkebyggingen (`byggPakke`) er allerede ren. Det står igjen å hente radene fra
-                Supabase i stedet for WatermelonDB.
-              </p>
-            ) : null}
           </Boks>
         ) : null}
       </div>
     </>
+  )
+}
+
+/**
+ * Dokumentasjonen på ordren: tegningen, risikovurderingen og skjemaene. Det er HER skjema
+ * opprettes og tegningen lages eller lastes opp — ingen andre steder på ordren.
+ *
+ * Risikovurderingen er levende: forslagene regnes av ordreteksten, materiellet og tegningen
+ * hver gang boksen tegnes (`forslag` i lib/risiko-katalog.ts), så en ny linje i materiellet
+ * kan gi en ny fare uten at noen åpner tegningen.
+ */
+function Dokumentasjon({
+  detalj,
+  etterSkriving,
+  skrivUt,
+  jobber,
+}: {
+  detalj: Ordredetalj
+  etterSkriving: () => Promise<void>
+  skrivUt: (id: string) => Promise<void>
+  jobber: string | null
+}) {
+  const o = detalj.ordre
+  const { profil } = useAuth()
+  const [t, setT] = useState<LagretTegning | null | undefined>(undefined)
+  const [firmamaler, setFirmamaler] = useState<Mal[]>([])
+  const [meny, setMeny] = useState(false)
+  const [holder, setHolder] = useState<string | null>(null)
+  const [feil, setFeil] = useState<string | null>(null)
+  const menyboks = useRef<HTMLDivElement>(null)
+  const fil = useRef<HTMLInputElement>(null)
+  const apne = `#/ordre/${o.id}/tegning`
+
+  useEffect(() => {
+    let levende = true
+    setT(undefined)
+    hentTegning({ ordre: o.id }).then(r => { if (levende) setT(r) }).catch(() => { if (levende) setT(null) })
+    return () => { levende = false }
+  }, [o.id])
+  useEffect(() => { hentFirmamaler().then(setFirmamaler).catch(() => setFirmamaler([])) }, [])
+  useEffect(() => {
+    if (!meny) return
+    const lukk = (e: MouseEvent) => { if (!menyboks.current?.contains(e.target as Node)) setMeny(false) }
+    document.addEventListener('mousedown', lukk)
+    return () => document.removeEventListener('mousedown', lukk)
+  }, [meny])
+
+  const maler: Mal[] = useMemo(() => [
+    ...AMPEX_TEMPLATES.map(m => ({ id: m.id, navn: m.name, versjon: m.version })),
+    ...firmamaler,
+  ], [firmamaler])
+  const navn = (id: string) => maler.find(m => m.id === id)?.navn ?? malnavn(id)
+
+  const d = t?.data ?? null
+  const nye = useMemo(() => forslag({
+    tekst: [o.title, o.description, ...detalj.materiell.map(m => m.description)].filter(Boolean).join('\n'),
+    tegning: d ?? tomProsjektering(),
+  }), [o.title, o.description, detalj.materiell, d])
+  const verst = d?.farer.reduce<(typeof d.farer)[number] | null>(
+    (v, f) => (!v || risikotall(f.restS, f.restK) > risikotall(v.restS, v.restK) ? f : v), null) ?? null
+  const farge = verst ? { lav: 'var(--gronn)', middels: 'var(--gul)', hoy: 'var(--rod)' }[niva(verst.restS, verst.restK)] : undefined
+  const mangel = d ? mangler(d) : []
+
+  async function gjor(hva: string, f: () => Promise<void>) {
+    setHolder(hva); setFeil(null)
+    try { await f() } catch (e) { setFeil(e instanceof Error ? e.message : String(e)) } finally { setHolder(null) }
+  }
+
+  const nyttSkjema = (mal: Mal) => gjor('skjema', async () => {
+    setMeny(false)
+    if (!profil?.company_id) throw new Error('Du hører ikke til et firma.')
+    await opprettSkjema(o.id, profil.company_id, mal)
+    await etterSkriving()
+  })
+
+  const lastOpp = (f: File) => gjor('plan', async () => {
+    const plan = await lastOppPlan(f)
+    const naa = await hentTegning({ ordre: o.id })
+    const grunn = naa?.data ?? tomProsjektering()
+    await lagreTegning({ ordre: o.id }, naa?.id ?? null, { ...grunn, plan: { key: plan.key, type: plan.type, malestokk: null } })
+    location.hash = apne
+  })
+
+  const leggInn = () => gjor('risiko', async () => {
+    const naa = await hentTegning({ ordre: o.id })
+    const grunn = naa?.data ?? tomProsjektering()
+    const lagt = { ...grunn, farer: [...grunn.farer, ...nye.map(f => somFare(f, crypto.randomUUID()))] }
+    await lagreTegning({ ordre: o.id }, naa?.id ?? null, lagt)
+    setT(await hentTegning({ ordre: o.id }))
+  })
+
+  const antallDok = detalj.dokumenter.length + (d ? 1 : 0)
+  return (
+    <section className="seksjon">
+      <div className="seksjon-hode">
+        <div className="seksjon-tittel">Dokumentasjon</div>
+        {antallDok ? <span className="dempet-mer" style={{ fontSize: 12 }}>{antallDok}</span> : null}
+        <div className="rad dok-handlinger">
+          <div className="radmeny" ref={menyboks}>
+            <Knapp stil="stille" disabled={holder != null} onClick={() => setMeny(m => !m)}>
+              <Plus size={14} strokeWidth={1.8} /> {holder === 'skjema' ? 'Legger til …' : 'Skjema'}
+            </Knapp>
+            {meny ? (
+              <div className="nedtrekk radmeny-liste">
+                {maler.map(m => (
+                  <button key={m.id} type="button" className="nedtrekk-rad" onClick={() => void nyttSkjema(m)}>
+                    <span className="nedtrekk-navn">{m.navn}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <input ref={fil} type="file" accept="application/pdf,image/*" hidden
+            onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void lastOpp(f) }} />
+          <Knapp stil="stille" disabled={holder != null} onClick={() => fil.current?.click()}>
+            <Upload size={14} strokeWidth={1.8} /> {holder === 'plan' ? 'Laster opp …' : d?.plan.key ? 'Ny plan' : 'Last opp tegning'}
+          </Knapp>
+          <a className="knapp knapp-stille" href={apne}><PenLine size={14} strokeWidth={1.8} /> {d ? 'Åpne tegning' : 'Tegn'}</a>
+        </div>
+      </div>
+
+      {feil ? <Beskjed stil="feil">{feil}</Beskjed> : null}
+
+      <div className="dok-rad">
+        <Kart size={15} strokeWidth={1.8} className="dempet-mer" />
+        <a className="strekk dok-navn" href={apne}>Tegning</a>
+        {t === undefined ? null : d ? (
+          <>
+            <span className="dok-tall">{d.rom.length} rom · {d.punkter.length} punkter · {d.kurser.length} kurser</span>
+            {t?.del_token ? <Merke stil="noytral"><Link2 size={12} strokeWidth={1.8} /> Delt</Merke> : null}
+            {mangel.length ? <Merke stil="varsel">{mangel.length} mangler</Merke> : <CheckCircle2 size={14} strokeWidth={1.8} style={{ color: 'var(--gronn)' }} />}
+          </>
+        ) : <span className="dempet-mer">Ingen</span>}
+      </div>
+
+      <div className="dok-rad">
+        <ShieldAlert size={15} strokeWidth={1.8} className="dempet-mer" />
+        <a className="strekk dok-navn" href={apne}>Risikovurdering</a>
+        <span className="dok-tall">
+          {d?.farer.length ? `${d.farer.length} farer` : 'Ingen farer'}
+          {verst ? <> · <span style={{ color: farge }}>{risikotall(verst.restS, verst.restK)} {verst.tittel}</span></> : null}
+        </span>
+        {nye.length ? (
+          <Knapp stil="stille" disabled={holder != null} onClick={() => void leggInn()} title={nye.map(f => f.tittel).join('\n')}>
+            {holder === 'risiko' ? 'Legger inn …' : `+ ${nye.length} nye`}
+          </Knapp>
+        ) : null}
+      </div>
+
+      {detalj.dokumenter.map(dok => (
+        <div key={dok.id} className="dok-rad">
+          <FileText size={15} strokeWidth={1.8} className="dempet-mer" />
+          <span className="strekk dok-navn">{navn(dok.template_id)}</span>
+          {dok.status === 'fullfort' ? (
+            <>
+              <CheckCircle2 size={14} strokeWidth={1.8} style={{ color: 'var(--gronn)' }} />
+              <span className="dok-tall">{dato(dok.completed_at, true)}</span>
+            </>
+          ) : (
+            <Merke stil="varsel">Utkast</Merke>
+          )}
+          <Knapp stil="stille" disabled={jobber != null} onClick={() => void skrivUt(dok.id)}>
+            <Printer size={14} strokeWidth={1.8} />
+            {jobber === `utskrift-${dok.id}` ? 'Åpner …' : 'Skriv ut'}
+          </Knapp>
+        </div>
+      ))}
+    </section>
   )
 }
 
@@ -794,8 +951,7 @@ function Godkjenning({ detalj }: { detalj: Ordredetalj }) {
   if (!siste) {
     return (
       <p className="dempet-mer">
-        Ingen beslutning ennå. Ordren kan ikke faktureres før faglig ansvarlig har godkjent den —
-        databasen sperrer for det.
+        Ikke godkjent ennå.
       </p>
     )
   }
