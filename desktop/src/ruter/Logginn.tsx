@@ -2,7 +2,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { InputHTMLAttributes, ReactNode, RefObject } from 'react'
 import { useAuth } from '@/auth'
-import { lenke, lenkeType, supabase, tilbakeUrl } from '@/supabase'
+import { passordlenke, supabase, tilbakeUrl } from '@/supabase'
 import { AmpexLogo } from '@/ui/AmpexLogo'
 import { Beskjed, Felt, Knapp } from '@/ui/kit'
 
@@ -316,7 +316,7 @@ export function Logginn() {
  */
 export function NyttPassord() {
   const { ferdigGjenopprettet, loggUt, sesjon, profil } = useAuth()
-  const invitert = lenkeType === 'invite' || lenke?.type === 'invite'
+  const invitert = passordlenke === 'invite'
   const [passord, setPassord] = useState('')
   const [igjen, setIgjen] = useState('')
   const [feil, setFeil] = useState<string | null>(null)

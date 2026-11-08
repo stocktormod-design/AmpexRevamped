@@ -111,6 +111,34 @@ function lesLenke(): Lenke | null {
 
 export const lenke = lesLenke()
 
+/**
+ * Kom vi fra en invitasjon eller «glemt passord» — i DENNE fanen?
+ *
+ * Både hash-en og `?token_hash` er borte fra adressen så snart de er lest, så en
+ * omlasting glemmer hvor vi kom fra. Og omlastingen kommer: på første besøk tar
+ * service workeren over og laster sida på nytt (`controllerchange` i main.tsx).
+ * Da var økta alt opprettet av lenka, passordskjermen forsvant, og den som
+ * klikket sto inne på Oversikt uten å ha valgt passord (iser@live.no, 04.11).
+ * Huskes derfor i sessionStorage — samme fane, borte når fanen lukkes — til
+ * passordet er satt eller brukeren logger ut.
+ */
+const PASSORDLENKE = 'ampex.passordlenke'
+function lesPassordlenke(): 'invite' | 'recovery' | null {
+  if (!iNettleser) return null
+  const ny = lenkeType ?? (lenke?.type === 'invite' || lenke?.type === 'recovery' ? lenke.type : null)
+  try {
+    if (ny) sessionStorage.setItem(PASSORDLENKE, ny)
+    const t = sessionStorage.getItem(PASSORDLENKE)
+    return t === 'invite' || t === 'recovery' ? t : null
+  } catch {
+    return ny
+  }
+}
+export const passordlenke = lesPassordlenke()
+export function glemPassordlenke() {
+  try { sessionStorage.removeItem(PASSORDLENKE) } catch { /* privat vindu */ }
+}
+
 export const supabase = createClient(url ?? 'http://localhost', anonKey ?? 'ugyldig', {
   auth: {
     autoRefreshToken: true,
