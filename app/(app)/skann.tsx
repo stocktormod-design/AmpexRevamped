@@ -17,6 +17,7 @@ import { MeshMarker } from '../../lib/db/models/mesh-marker'
 import { SYMBOLS, getSymbol, symbolSvg } from '../../lib/symbols'
 import { useUserId } from '../../lib/auth-user'
 import * as FileSystem from 'expo-file-system/legacy'
+import { sendSkannloggStille } from '../../lib/skannlogg'
 import { NativeMeshViewer, nativeSplatAvailable, presentMeshScan, resolveScanPath, type MeshScanResult, type PlanLine } from '../../lib/splat'
 import { ensureScanLocal, ensureScanUploaded } from '../../lib/scan-storage'
 import { supabase } from '../../lib/supabase'
@@ -180,8 +181,10 @@ export default function SkannScreen() {
       setScanPath(path)
       setMesh(r)
       setStage('done')
+      sendSkannloggStille('ferdig', `${r.geometryPath}, ${r.keyframes} bilder, fylt ${r.filledFraction ?? '–'}`)
     } catch (e: any) {
       const message = typeof e?.message === 'string' ? e.message : 'Ukjent feil'
+      sendSkannloggStille(message === 'Skann avbrutt' ? 'avbrutt' : 'feilet', message)
       if (message !== 'Skann avbrutt') Alert.alert('Skann feilet', message)
       // avbrutt eller feilet → tilbake til intro
       setStage('intro')

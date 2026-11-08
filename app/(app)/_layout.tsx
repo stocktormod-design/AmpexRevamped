@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { CartBar } from '../../components/cart-bar'
 import { GlassTabBar } from '../../components/glass-tab-bar'
 import { registrerRute, tømKø } from '../../lib/tilbakemelding'
+import { sendUsendtSkannlogg } from '../../lib/skannlogg'
 
 // Fanelinja tegnes av GlassTabBar (Apple-formen fra iOS 26, samme på Android).
 // Rekkefølgen og ikonene står der; her står bare rutene og når linja skjules.
@@ -21,10 +22,12 @@ export default function AppLayout() {
   // Sporet tilbakemeldingen legger ved: hvilke skjermer brukeren var innom.
   const sti = usePathname()
   useEffect(() => { registrerRute(sti) }, [sti])
-  // Tilbakemeldinger skrevet uten nett sendes når appen kommer fram igjen.
+  // Tilbakemeldinger skrevet uten nett sendes når appen kommer fram igjen — og siste
+  // skannlogg, hvis den aldri kom fram (krasj under baken eller uten nett).
   useEffect(() => {
     void tømKø()
-    const sub = AppState.addEventListener('change', s => { if (s === 'active') void tømKø() })
+    void sendUsendtSkannlogg()
+    const sub = AppState.addEventListener('change', s => { if (s === 'active') { void tømKø(); void sendUsendtSkannlogg() } })
     return () => sub.remove()
   }, [])
 
@@ -56,6 +59,7 @@ export default function AppLayout() {
       <Tabs.Screen name="lager" options={{ title: 'Lager' }} />
       {/* Meg nås fra avataren øverst på hver hovedskjerm (som Apples App Store). */}
       <Tabs.Screen name="meg" options={{ href: null }} />
+      <Tabs.Screen name="inviter" options={{ href: null }} />
       {/* Assistenten er glasssirkelen ved siden av linja; ruta finnes bare for deep links. */}
       <Tabs.Screen name="ai" options={{ href: null }} />
       {/* Skjult fra tab-baren, navigerbar via snarveier (handlekurv er nå overlay, se CartBar) */}

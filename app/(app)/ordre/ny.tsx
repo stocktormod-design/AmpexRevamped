@@ -121,7 +121,7 @@ export default function NyOrdreScreen() {
           <Field value={title} onChange={setTitle} placeholder="Tittel (påkrevd)" autoFocus returnKeyType="next" />
           <Pressable
             haptic="light"
-            onPress={() => router.push('/(app)/kunder/velg')}
+            onPress={() => router.push('/(app)/ordre/velg-kunde' as never)}
             style={{
               flexDirection: 'row', alignItems: 'center', gap: spacing.md,
               paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2,

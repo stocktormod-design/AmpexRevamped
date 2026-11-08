@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { View, ScrollView, TextStyle } from 'react-native'
+import { View, ScrollView, TextStyle, Alert } from 'react-native'
 import { Text, TextInput } from '../../../components/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -226,6 +226,30 @@ export default function LocationDetailScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
   }
 
+  /**
+   * Slett bilen (Henning 08.11: «ingen måte å slette biler på»). Soft delete via
+   * markAsDeleted (regel 5). Står det varer i bilen, må de ut først — ellers ville
+   * beholdningen forsvunnet fra oversikten uten at noen flyttet den.
+   */
+  function slettBil() {
+    if (!location) return
+    if (stock.length > 0) {
+      Alert.alert('Bilen har varer', `Flytt eller tøm de ${stock.length} varene i ${location.name} før du sletter bilen.`)
+      return
+    }
+    Alert.alert(`Slette ${location.name}?`, 'Bilen fjernes fra lageret ditt.', [
+      { text: 'Avbryt', style: 'cancel' },
+      {
+        text: 'Slett', style: 'destructive', onPress: async () => {
+          await database.write(async () => { await location.markAsDeleted() })
+          syncQuietly()
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+          router.back()
+        },
+      },
+    ])
+  }
+
   if (!location) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />
 
   return (
@@ -316,6 +340,13 @@ export default function LocationDetailScreen() {
           <Text style={[t.caption, { marginHorizontal: spacing.screen + spacing.lg, marginTop: spacing.sm }]}>
             Ingen beholdning
           </Text>
+        )}
+
+        {location.type === 'bil' && (
+          <Pressable haptic="light" onPress={slettBil}
+            style={{ marginHorizontal: spacing.screen, marginTop: spacing.xl, height: 48, borderRadius: radius.lg, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={[t.body, { color: colors.danger }]}>Slett bil</Text>
+          </Pressable>
         )}
       </ScrollView>
 

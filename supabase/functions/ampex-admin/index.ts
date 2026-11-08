@@ -46,6 +46,34 @@ type Firmarad = {
   deleted_at: string | null
   ansatte: number
   aktive: number
+  eiere: number
+} & Partial<Oversikt>
+
+/** Fra `ampex_oversikt()` (migrasjonen 20261108200000): bruker de den, og hvor mye. */
+type Oversikt = {
+  prosjekter: number
+  tegninger: number
+  ordre: number
+  skann: number
+  timer_7d: number
+  markering_7d: number
+  aktive_7d: number
+  aktive_30d: number
+  tilbakemeldinger_apne: number
+  stemme_min_30d: number
+  ai_tier: string | null
+  sist_aktiv: string | null
+}
+
+/** Fra `ampex_folk_aktivitet(firma)`: sist personen skrev noe, og hvilken telefon/app. */
+type Aktivitet = {
+  sist_aktiv: string | null
+  rader_30d: number
+  skann: number
+  app_versjon: string | null
+  bygg: string | null
+  modell: string | null
+  os: string | null
 }
 
 /**
@@ -65,7 +93,7 @@ type Folkerad = {
   bekreftet_at: string | null
   sist_innlogget_at: string | null
   deleted_at: string | null
-}
+} & Partial<Aktivitet>
 
 /** Hva som faktisk gikk ut. Se `sendPaaNytt` under. */
 type Slag = 'invitasjon' | 'passord'
@@ -136,15 +164,25 @@ export default {
 
       const { data: profiler, error: pFeil } = await ctx.supabaseAdmin
         .from('profiles')
-        .select('company_id,deleted_at')
+        .select('company_id,deleted_at,role')
       if (pFeil) return svar({ ok: false, error: pFeil.message })
 
-      const tell = new Map<string, { ansatte: number; aktive: number }>()
+      // Oversikten er et tillegg: feiler den, vises lista som før, bare uten tallene.
+      const { data: oversikt, error: oFeil } = await ctx.supabaseAdmin.rpc('ampex_oversikt')
+      if (oFeil) console.error('[ampex-admin] oversikt feilet:', oFeil)
+      const perFirma = new Map<string, Oversikt>(
+        ((oversikt ?? []) as (Oversikt & { company_id: string })[]).map(({ company_id, ...o }) => [company_id, o]),
+      )
+
+      // `eiere` og ikke `aktive === 0`: et firma med ansatte men uten eier kan ikke
+      // invitere noen, og var usynlig for den gamle «Uten eier»-regelen.
+      const tell = new Map<string, { ansatte: number; aktive: number; eiere: number }>()
       for (const p of profiler ?? []) {
         if (!p.company_id) continue
-        const t = tell.get(p.company_id) ?? { ansatte: 0, aktive: 0 }
+        const t = tell.get(p.company_id) ?? { ansatte: 0, aktive: 0, eiere: 0 }
         t.ansatte++
         if (!p.deleted_at) t.aktive++
+        if (!p.deleted_at && p.role === 'owner') t.eiere++
         tell.set(p.company_id, t)
       }
 
@@ -154,6 +192,8 @@ export default {
           ...f,
           ansatte: tell.get(f.id)?.ansatte ?? 0,
           aktive: tell.get(f.id)?.aktive ?? 0,
+          eiere: tell.get(f.id)?.eiere ?? 0,
+          ...perFirma.get(f.id),
         })) as Firmarad[],
       })
     }
@@ -173,7 +213,14 @@ export default {
         .rpc('ampex_firmaets_folk', { p_firma: firmaId })
       if (error) return svar({ ok: false, error: error.message })
 
-      return svar({ ok: true, folk: (data ?? []) as Folkerad[] })
+      const { data: akt, error: aFeil } = await ctx.supabaseAdmin
+        .rpc('ampex_folk_aktivitet', { p_firma: firmaId })
+      if (aFeil) console.error('[ampex-admin] aktivitet feilet:', aFeil)
+      const perPerson = new Map<string, Aktivitet>(
+        ((akt ?? []) as (Aktivitet & { user_id: string })[]).map(({ user_id, ...a }) => [user_id, a]),
+      )
+
+      return svar({ ok: true, folk: ((data ?? []) as Folkerad[]).map(p => ({ ...p, ...perPerson.get(p.id) })) })
     }
 
     // ── Send lenken en gang til ───────────────────────────────────────────

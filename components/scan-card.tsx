@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { sendSkannlogg } from '../lib/skannlogg'
+import { sendSkannlogg, sendSkannloggStille } from '../lib/skannlogg'
 import { View, Image, ActionSheetIOS, Alert, Platform, ActivityIndicator } from 'react-native'
 import { Text } from './text'
 import { Box, Ellipsis } from 'lucide-react-native'
@@ -99,8 +99,10 @@ export function ScanCard({ title, meta, scanPath, revisionKey, onOpen, onScan, o
       // viser kortet boks-ikonet til neste skann.
       await FileSystem.moveAsync({ from: 'file://' + r.glbPath + '.jpg', to: store + name + '.jpg' }).catch(() => {})
       setThumbFailed(false)
+      sendSkannloggStille('ombygging', `${Math.round(r.ms / 1000)} s, fylt ${r.filledFraction ?? '–'}`)
       await onRebuilt?.('room-scans/' + name)
     } catch (e: any) {
+      sendSkannloggStille('ombygging feilet', typeof e?.message === 'string' ? e.message : undefined)
       Alert.alert('Bygging feilet', typeof e?.message === 'string' ? e.message : 'Ukjent feil')
     } finally {
       unsubscribe()

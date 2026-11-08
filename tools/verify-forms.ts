@@ -22,7 +22,9 @@ import {
 import { convertFirmField, convertFirmSections, validateFirmSections } from '../lib/forms/firm-schema'
 import { aiKanFylle, avvisningsgrunn } from '../lib/forms/ai-fill-rules'
 import { foreslatteTemaer, isFieldVisible, pruneHidden, temaVerdier, visibleFields, visibleSections } from '../lib/forms/visibility'
-import { risikovurdering } from '../lib/forms/templates'
+import { risikovurdering, AMPEX_TEMPLATES } from '../lib/forms/templates'
+import { findUnfilledRequired } from '../lib/forms/visibility'
+import { ANSWER_TYPES } from '../lib/forms/answer-types'
 import type { FormTemplate, FormValues } from '../lib/forms/types'
 
 let feil = 0
@@ -224,6 +226,56 @@ sjekk('alle temaseksjoner peker på et valg som finnes',
   rv.sections.flatMap(s => s.fields).filter(f => f.showIf).every(f => rv.sections.some(s => s.fields.some(x => x.key === f.showIf!.field))), true)
 sjekk('feltnøklene er unike', new Set(rv.sections.flatMap(s => s.fields.map(f => f.key))).size, rv.sections.flatMap(s => s.fields).length)
 sjekk('hvert tema har ord som krysser av', rv.sections.find(s => s.velger)!.fields.every(f => rv.sections.find(s => s.velger)!.velger!.match[f.key] instanceof RegExp), true)
+
+// ── Dynamiske skjema: inntak først, resten tilpasses ──────────────────────
+// «Hvis det ikke er elbillader får du ingen spørsmål om laderen.» Regelen er
+// rekkefølge + showIf, ikke et eget flagg — testen holder begge deler fast.
+const sja = AMPEX_TEMPLATES.find(t => t.id === 'ampex.sja-elbil-tavle')
+sjekk('SJA-malen er med blant de bundlede malene', !!sja, true)
+if (sja) {
+  sjekk('inntaket er første del', sja.sections[0].title, 'Innledende spørsmål')
+
+  const rekkefolge = sja.sections.flatMap(s => s.fields.map(f => f.key))
+  sjekk('alle betingelser peker oppover',
+    sja.sections.flatMap(s => s.fields).filter(f => f.showIf).every(f =>
+      rekkefolge.indexOf(f.showIf!.field) >= 0 &&
+      rekkefolge.indexOf(f.showIf!.field) < rekkefolge.indexOf(f.key)), true)
+  sjekk('hvert inntaksspørsmål har et Ja-svar å betinge på',
+    sja.sections[0].fields.every(f => (f.choices ?? []).includes('Ja')), true)
+
+  // Alt Nei: ingen oppfølging. Ingenting er stilt, ingenting er påkrevd.
+  const altNei = { sja_elbil: 'Nei', sja_spenning: 'Nei', sja_hoyde: 'Nei', sja_bad: 'Nei' }
+  sjekk('skjult felt er ikke synlig',
+    isFieldVisible(sja.sections.find(s => s.title === 'Elbillader')!.fields[0], altNei), false)
+  sjekk('skjult påkrevd felt meldes ikke som manglende',
+    findUnfilledRequired(sja, altNei).some(f => f.key === 'sja_elbil_vern'), false)
+  sjekk('skjult felt telles ikke i framdriften',
+    visibleFields(sja, altNei).some(f => f.key === 'sja_elbil_vern'), false)
+  const oppfolging = sja.sections.slice(1, -1).flatMap(s => s.fields).map(f => f.key)
+  sjekk('ingen oppfølgingsspørsmål vises når alt er Nei',
+    visibleFields(sja, altNei).some(f => oppfolging.includes(f.key)), false)
+
+  // Svar som blir skjult skal forsvinne ut av dokumentet, ikke bli liggende.
+  const medElbil = { ...altNei, sja_elbil: 'Ja', sja_elbil_vern: 'Ja' }
+  sjekk('svaret finnes mens feltet vises', pruneHidden(sja, medElbil).sja_elbil_vern, 'Ja')
+  sjekk('endret svar fjerner det skjulte svaret',
+    'sja_elbil_vern' in pruneHidden(sja, { ...medElbil, sja_elbil: 'Nei' }), false)
+  sjekk('PDF-grunnlaget viser bare stillede spørsmål',
+    visibleSections(sja, { ...medElbil, sja_elbil: 'Nei' }).some(s => s.title === 'Elbillader'), false)
+}
+
+// ── Én ordliste for svartypene ────────────────────────────────────────────
+// Telefonen og kontoret tegner hver sin bygger, men må ikke finne på hvert
+// sitt språk. Uten denne lista ville «Tekst» hett «Kort tekst» på den ene
+// flaten, og et skjema laget på kontoret sett annerledes ut i felt. Testen
+// holder ordene, rekkefølgen og ikonnøklene på plass.
+const svartyper = ANSWER_TYPES.map(t => t.id)
+sjekk('alle åtte svartypene har en oppføring', ANSWER_TYPES.length, 8)
+sjekk('ingen svartype er med to ganger', new Set(svartyper).size, 8)
+sjekk('rekkefølgen er vanligst først', svartyper.slice(0, 3), ['check', 'text', 'multiline'])
+sjekk('hver type har navn, forklaring og eksempel',
+  ANSWER_TYPES.every(t => t.label.trim() && t.description.trim() && t.example.trim()), true)
+sjekk('hver type har en ikonnøkkel', ANSWER_TYPES.every(t => t.icon.trim().length > 0), true)
 
 if (feil > 0) {
   console.error(`${feil} sjekk(er) feilet.`)

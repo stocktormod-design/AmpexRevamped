@@ -860,7 +860,35 @@ enum MeshBakeV2 {
             return CFAbsoluteTimeGetCurrent() - lastChange < 180
         }
         xatlasProgressHandler = uiHandler
+        // Måleverktøy (harness): skriv nettet slik xatlas får det, for Mac-målinger av unwrappen.
+        if let sti = UserDefaults.standard.string(forKey: "meshscan.uvdump") {
+            var d = Data()
+            func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+            u32(UInt32(mesh.positions.count / 3)); u32(UInt32(mesh.indices.count / 3)); u32(UInt32(mesh.planes.count))
+            mesh.positions.withUnsafeBufferPointer { d.append(Data(buffer: $0)) }
+            mesh.indices.withUnsafeBufferPointer { d.append(Data(buffer: $0)) }
+            (mesh.triAnchor.count == mesh.indices.count / 3 ? mesh.triAnchor : [UInt32](repeating: 0, count: mesh.indices.count / 3))
+                .withUnsafeBufferPointer { d.append(Data(buffer: $0)) }
+            for pl in mesh.planes { [pl.x, pl.y, pl.z, pl.w].withUnsafeBufferPointer { d.append(Data(buffer: $0)) } }
+            try? d.write(to: URL(fileURLWithPath: sti), options: .atomic)
+        }
         var unwrapped: ARMeshGlbExporter.UVUnwrapResult?
+        // XATLAS ETTERPÅ, BARE FOR RESTEN (06.11, §152). Kvalitetsveien (fliser) kaster hele
+        // xatlas-atlaset: projectiveFixtureUV legger hver flate med gyldig fotoprojeksjon rett i
+        // fotoets piksler. Bare de ~5 % uten projeksjon bruker et xatlas-chart. Likevel ble alle
+        // 249k trekanter unwrappet (18,3 s av 30 på telefon). Nå går baken videre på nettet slik
+        // det er — alt mellom her og flisene bruker sveisede posisjoner, ikke xatlas' vertekssplitt
+        // — og xatlas kjøres på restflatene rett før flisene, med SAMME texelsPerUnit som full
+        // unwrap ville valgt: (atlas + 2·padding)·√(0,75 / areal). meshscan.xatlasetter = "off" gir det gamle.
+        let kvalitetFørUV = UserDefaults.standard.string(forKey: "meshscan.kvalitet") != "standard"
+        let xatlasEtter = kvalitetFørUV && UserDefaults.standard.string(forKey: "meshscan.xatlasetter") != "off"
+        if xatlasEtter {
+            unwrapped = ARMeshGlbExporter.UVUnwrapResult(
+                positions: mesh.positions, normals: mesh.normals,
+                uvs: [Float](repeating: 0, count: mesh.positions.count / 3 * 2),
+                indices: mesh.indices, chartCount: 0, atlasSize: atlasSize)
+            MeshLog.log("xatlas utsatt — kvalitetsveien unwrapper bare flatene uten fotoprojeksjon")
+        }
         // MÅLT 2026-09-05: u-chunket xatlas på 96k tris tok 110 s av en bake på 151 s;
         // chunket på 390k tris tok 18 s samme kveld. Færre sømmer er ikke verdt 30× tiden
         // — sømmene repareres nedstrøms (nivellering/fjæring), tiden får ingen tilbake.
@@ -868,15 +896,27 @@ enum MeshBakeV2 {
         // 45 s-fristen), mens chunket 50k = 29,1 s og chunket 75k = 32,8 s. U-chunket er
         // altså bare raskere for SMÅ nett — terskelen sto for høyt og kostet ~20 s på et
         // vanlig rom. 12k tris ≈ 10 s u-chunket; over det går vi rett på chunket.
-        if mesh.indices.count / 3 <= 12_000 {
+        if !xatlasEtter && mesh.indices.count / 3 <= 12_000 {
             unwrapped = xatlasUnwrapUVs(positions: mesh.positions, normals: mesh.normals, indices: mesh.indices,
                                         triAnchor: [], resolution: UInt32(atlasSize), timeout: 15)
         }
-        if unwrapped == nil {
+        if !xatlasEtter && unwrapped == nil {
             lastChange = CFAbsoluteTimeGetCurrent(); lastTick = (-1, -1)
             xatlasProgressHandler = uiHandler // timeout-veien nuller handleren — må re-settes
             unwrapped = xatlasUnwrapUVs(positions: mesh.positions, normals: mesh.normals, indices: mesh.indices,
                                         triAnchor: mesh.triAnchor, resolution: UInt32(atlasSize))
+        }
+        if !xatlasEtter, let u = unwrapped {
+            // Texel per meter i xatlas-piksler (uvs × atlasSize) — skalaen reserve-chartene tar med inn i flisene.
+            var uvA = 0.0, verdA = 0.0
+            for t in 0..<(u.indices.count / 3) {
+                let i0 = Int(u.indices[t * 3]), i1 = Int(u.indices[t * 3 + 1]), i2 = Int(u.indices[t * 3 + 2])
+                let a = SIMD2(u.uvs[i0 * 2], u.uvs[i0 * 2 + 1]), b = SIMD2(u.uvs[i1 * 2], u.uvs[i1 * 2 + 1]), c = SIMD2(u.uvs[i2 * 2], u.uvs[i2 * 2 + 1])
+                uvA += Double(abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y))) / 2
+                func p(_ i: Int) -> SIMD3<Float> { SIMD3(u.positions[i * 3], u.positions[i * 3 + 1], u.positions[i * 3 + 2]) }
+                verdA += Double(simd_length(simd_cross(p(i1) - p(i0), p(i2) - p(i0)))) / 2
+            }
+            MeshLog.log(String(format: "xatlas tetthet — %.0f texel/m (atlas %d)", sqrt(uvA / max(verdA, 1e-9)) * Double(u.atlasSize), u.atlasSize))
         }
         let uv = unwrapped ?? ARMeshGlbExporter.boxUnwrapUVs(positions: mesh.positions, normals: mesh.normals, indices: mesh.indices)
         xatlasProgressHandler = nil
@@ -1396,7 +1436,11 @@ enum MeshBakeV2 {
                 let frie = faces.filter { !locked[Int($0)] }
                 let planeArea = frie.reduce(Float(0)) { $0 + fArea[Int($1)] }
                 guard planeArea >= 1.0, frie.count > 50 else { continue }
-                let stride = max(1, frie.count / 3000)
+                // ALLE flater, ikke hver N-te (06.11, §152). Med utvalg avhang topp-N av flate-
+                // REKKEFØLGEN: xatlas leverer trianglene gruppert per 3 m-blokk, nettet uten xatlas
+                // i opprinnelig orden, og samme skann fikk ulike topp-4 og 5 % skarphetsforskjell.
+                // meshscan.plantoputvalg = "on" gir det gamle utvalget (≈ 3000 per plan).
+                let stride = UserDefaults.standard.string(forKey: "meshscan.plantoputvalg") == "on" ? max(1, frie.count / 3000) : 1
                 var cov = [Float](repeating: 0, count: cands.count)
                 var i = 0
                 while i < frie.count {
@@ -2395,7 +2439,12 @@ enum MeshBakeV2 {
         for t in 0..<triCount {
             let ia = Int(uv.indices[t * 3]) * 2, ib = Int(uv.indices[t * 3 + 1]) * 2, ic = Int(uv.indices[t * 3 + 2]) * 2
             let a = SIMD2(uv.uvs[ia], uv.uvs[ia + 1]), b = SIMD2(uv.uvs[ib], uv.uvs[ib + 1]), c = SIMD2(uv.uvs[ic], uv.uvs[ic + 1])
-            let area = Double(abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)))
+            var area = Double(abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)))
+            if xatlasEtter {
+                // Ingen UV ennå: 3D-areal (xatlas har én skala, så andelen blir den samme).
+                func p(_ k: Int) -> SIMD3<Float> { let i = Int(uv.indices[t * 3 + k]) * 3; return SIMD3(uv.positions[i], uv.positions[i + 1], uv.positions[i + 2]) }
+                area = Double(simd_length(simd_cross(p(1) - p(0), p(2) - p(0))))
+            }
             totalUVArea += area
             if winner[t] >= 0 { wonUVArea += area }
         }
@@ -2483,6 +2532,44 @@ enum MeshBakeV2 {
             for i in 0..<gains.count { gains[i] *= wb }
             MeshLog.log(String(format: "V2 hvitbalanse — tak-hvitpunkt R/G %.3f B/G %.3f fra %d flater (mål %.3f / %.3f) → gain ×(%.3f, %.3f, %.3f)",
                                rg, bg, prøver.count, målRG, målBG, wb.x, wb.y, wb.z))
+        }
+
+        // ── EKSPONERING FOR HELE MODELLEN (2026-11-04, §148). Fangsten låser AE etter 1,5 s på
+        // det kameraet tilfeldigvis ser da. Pekte det inn i et mørkt hjørne, ble HELE skannet for
+        // lyst (første eksterne tester, iPhone 17 Pro Max, sol i vinduet: «very bright»), og ingenting
+        // i baken rettet det — gain-løseren fjerner den globale frihetsgraden med vilje.
+        // MÅLT på åtte gode skann (fixtures): median luma per bilde 125–148 av 255, nesten null
+        // utbrent. Det er båndet. Ligger hele settet innenfor, røres ingenting (samme form som
+        // hvitbalansen: bare overskuddet tas). Medianen er over alle bildene MED gains, i lineært
+        // rom, så vinduer og lamper ikke drar den. meshscan.eksponering = off slår det av.
+        eksponering: if UserDefaults.standard.string(forKey: "meshscan.eksponering") != "off" {
+            var lys = [Float]()
+            lys.reserveCapacity(cands.count * 600)
+            for (fi, c) in cands.enumerated() where c.tw > 0 && c.th > 0 {
+                let g = gains.indices.contains(fi) ? gains[fi] : SIMD3<Float>(1, 1, 1)
+                var px = 0
+                while px < c.tw * c.th {
+                    let o = px * 4
+                    let s = SIMD3(Float(c.thumb[o]), Float(c.thumb[o + 1]), Float(c.thumb[o + 2])) / 255
+                    let lin = SIMD3(pow(s.x, 2.2), pow(s.y, 2.2), pow(s.z, 2.2)) * g
+                    lys.append(0.2126 * lin.x + 0.7152 * lin.y + 0.0722 * lin.z)
+                    px += 7
+                }
+            }
+            guard lys.count >= 1000 else { break eksponering }
+            lys.sort()
+            let median = lys[lys.count / 2]
+            let medianSRGB = pow(max(median, 1e-6), 1 / 2.2) * 255
+            let lav = flaggTall("meshscan.lysmaallav", 115), høy = flaggTall("meshscan.lysmaalhoy", 160)
+            let mål = medianSRGB > høy ? høy : (medianSRGB < lav ? lav : medianSRGB)
+            guard abs(mål - medianSRGB) > 1 else {
+                MeshLog.log(String(format: "V2 eksponering — median %.0f/255 er innenfor %.0f–%.0f, ingen korreksjon", medianSRGB, lav, høy))
+                break eksponering
+            }
+            // Gainene er lineære: sRGB-forholdet opphøyd i 2,2.
+            let k = min(max(pow(mål / medianSRGB, 2.2), 0.4), 2.5)
+            for i in 0..<gains.count { gains[i] *= k }
+            MeshLog.log(String(format: "V2 eksponering — median %.0f/255 utenfor %.0f–%.0f → hele modellen ×%.2f (lineært)", medianSRGB, lav, høy, k))
         }
 
         // ── Skjøt-bånd (kun blend=raw): flater innen K naboskritt fra en vinnergrense (to ulike
@@ -3411,7 +3498,59 @@ enum MeshBakeV2 {
                 fliser = (1...4).contains(bedt) ? bedt : (kvalitetFliser ? 2 : 1)
             }
             let kollaps = UserDefaults.standard.string(forKey: "meshscan.projektivkollaps") == "on"
-            guard var alternative = projectiveFixtureUV(uv: uv, region: feltKey, projected: projected,
+            var uvProj = uv
+            if xatlasEtter {
+                // Samme gyldighetsregel som projectiveFixtureUV: felt-nøkkel + endelig projeksjon.
+                let rest = (0..<triCount).filter { t in
+                    !(feltKey[t] >= 0 && (0..<3).allSatisfy { projected[t * 3 + $0].x.isFinite && projected[t * 3 + $0].y.isFinite })
+                }
+                if !rest.isEmpty {
+                    var totalA: Float = 0
+                    for t in 0..<triCount {
+                        func p(_ k: Int) -> SIMD3<Float> { let i = Int(uv.indices[t * 3 + k]) * 3; return SIMD3(uv.positions[i], uv.positions[i + 1], uv.positions[i + 2]) }
+                        totalA += simd_length(simd_cross(p(1) - p(0), p(2) - p(0))) / 2
+                    }
+                    let tpu = Float(atlasSize + 2 * 2) * (0.75 / max(totalA, 1e-6)).squareRoot()
+                    var lokal = [Int32](repeating: -1, count: uv.positions.count / 3)
+                    var sPos: [Float] = [], sNor: [Float] = [], sIdx: [UInt32] = [], sAnk: [UInt32] = []
+                    for t in rest {
+                        for j in 0..<3 {
+                            let vi = Int(uv.indices[t * 3 + j])
+                            if lokal[vi] < 0 {
+                                lokal[vi] = Int32(sPos.count / 3)
+                                sPos += uv.positions[vi * 3..<vi * 3 + 3]; sNor += uv.normals[vi * 3..<vi * 3 + 3]
+                            }
+                            sIdx.append(UInt32(lokal[vi]))
+                        }
+                        if mesh.triAnchor.count == triCount { sAnk.append(mesh.triAnchor[t]) }
+                    }
+                    let tR = CFAbsoluteTimeGetCurrent()
+                    ARMeshGlbExporter.progress?("Pakker resten av flatene…")
+                    if let sub = xatlasUnwrapUVs(positions: sPos, normals: sNor, indices: sIdx, triAnchor: sAnk,
+                                                 resolution: UInt32(atlasSize), texelsPerUnit: tpu),
+                       sub.indices.count == sIdx.count {
+                        // Restflatene får egne vertekser bakerst; uvs × atlasSize = xatlas-piksler.
+                        let base = UInt32(uvProj.positions.count / 3)
+                        uvProj.positions += sub.positions; uvProj.normals += sub.normals
+                        let k = Float(sub.atlasSize) / Float(uvProj.atlasSize)
+                        uvProj.uvs += sub.uvs.map { $0 * k }
+                        for (n, t) in rest.enumerated() {
+                            for j in 0..<3 { uvProj.indices[t * 3 + j] = base + sub.indices[n * 3 + j] }
+                        }
+                        MeshLog.log(String(format: "xatlas rest — %d av %d flater (%.1f %%), texelsPerUnit %.1f, %.1f s",
+                                           rest.count, triCount, 100 * Float(rest.count) / Float(triCount), tpu, CFAbsoluteTimeGetCurrent() - tR))
+                    } else {
+                        MeshLog.log("xatlas rest — FEILET på \(rest.count) flater, boks-unwrap i stedet")
+                        let box = ARMeshGlbExporter.boxUnwrapUVs(positions: sPos, normals: sNor, indices: sIdx)
+                        let base = UInt32(uvProj.positions.count / 3)
+                        uvProj.positions += box.positions; uvProj.normals += box.normals; uvProj.uvs += box.uvs
+                        for (n, t) in rest.enumerated() {
+                            for j in 0..<3 { uvProj.indices[t * 3 + j] = base + box.indices[n * 3 + j] }
+                        }
+                    }
+                }
+            }
+            guard var alternative = projectiveFixtureUV(uv: uvProj, region: feltKey, projected: projected,
                                                         atlasSize: flisStr, fliser: fliser,
                                                         kollapsRest: kollaps) else { return failG }
             // ── FLISER ETTER FLATEN (§133, 01.11). Målet over er fast (2 × atlas), så en del på
@@ -3428,7 +3567,7 @@ enum MeshBakeV2 {
                     // Skalaen følger sidelengden: n fliser per side gir n/s større skala.
                     let trengs = Int(ceil(Float(fliser) * mål / max(alternative.scale, 0.01)))
                     let neste = min(maksRuter, max(fliser + 1, trengs))
-                    guard let større = projectiveFixtureUV(uv: uv, region: feltKey, projected: projected,
+                    guard let større = projectiveFixtureUV(uv: uvProj, region: feltKey, projected: projected,
                                                            atlasSize: flisStr, fliser: neste,
                                                            kollapsRest: kollaps) else { break }
                     alternative = større; fliser = neste
@@ -3436,13 +3575,35 @@ enum MeshBakeV2 {
                 // Og ned: en liten del (trapp, bad) bar 1,5× flere texler enn fotoene har.
                 // Færre fliser så lenge skalaen holder målet — samme detalj, mindre tid og disk.
                 while fliser > 2 {
-                    guard let mindre = projectiveFixtureUV(uv: uv, region: feltKey, projected: projected,
+                    guard let mindre = projectiveFixtureUV(uv: uvProj, region: feltKey, projected: projected,
                                                            atlasSize: flisStr, fliser: fliser - 1,
                                                            kollapsRest: kollaps), mindre.scale >= mål else { break }
                     alternative = mindre; fliser -= 1
                 }
-                MeshLog.log(String(format: "V2 fliser — %d×%d à %d, kildeskala %.2f (mål %.2f)",
-                                   fliser, fliser, flisStr, alternative.scale, mål))
+                // TAK PÅ OVERSKUDDET (06.11, §152). Uten full xatlas tar reservechartene langt mindre
+                // plass, og skalaen havner godt over fotoets (1,47 målt). Texler utover kilde-
+                // pikselen bærer ingen detalj, men vieweren velger nivå etter texeltetthet og hopper
+                // da til halv oppløsning der den før sto på full (synlig mykere panelspor).
+                // Flisene krympes derfor til skalaen ligger like over målet — samme detalj, mindre
+                // maling og disk. meshscan.skalatak = "off" lar overskuddet stå.
+                let tak = flaggTall("meshscan.skalatak", 1.1)
+                if xatlasEtter, UserDefaults.standard.string(forKey: "meshscan.skalatak") != "off",
+                   alternative.scale > tak {
+                    let fra = (flisStr, alternative.scale)
+                    var str = max(1024, Int((Float(flisStr) * (mål + tak) / 2 / alternative.scale / 256).rounded(.up)) * 256)
+                    while str < flisStr {
+                        if let a = projectiveFixtureUV(uv: uvProj, region: feltKey, projected: projected,
+                                                       atlasSize: str, fliser: fliser, kollapsRest: kollaps),
+                           a.scale >= mål {
+                            alternative = a; flisStr = str; break
+                        }
+                        str += 256
+                    }
+                    MeshLog.log(String(format: "V2 fliser — skalatak %.2f: %d → %d px per flis, kildeskala %.3f → %.3f",
+                                       tak, fra.0, flisStr, fra.1, alternative.scale))
+                }
+                MeshLog.log(String(format: "V2 fliser — %d×%d à %d, kildeskala %.4f (mål %.2f), %d/%d flater projisert",
+                                   fliser, fliser, flisStr, alternative.scale, mål, alternative.projectedTriangles, triCount))
             }
             if fliser > 1 {
                 // Én rasterisering per flis: UV-ene kroppes til flisens eget [0,1], og

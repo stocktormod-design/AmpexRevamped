@@ -82,3 +82,6 @@ worker/build.log
 
 # Ampex-utvidelsen bygges med npm run utvidelse:bygg
 extension/dist/
+
+# Lokal agent-bro: tokenet ligger her (se docs/AGENT_BRO.md)
+tools/agent-bro/cordis.patch.yml

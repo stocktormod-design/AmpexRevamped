@@ -109,6 +109,15 @@ const IDLE_MS = 3 * 60_000
 // og romklangen ga hale av hennes egen stemme over TALE_RMS → activityStart → hun
 // svarte «ja» på seg selv i det uendelige (2026-11-04, simulator).
 const ETTERKLANG_MS = 900
+// Med AEC er halen kortere, men ikke null: de siste ~200 ms etter avspilling slapp
+// rest-ekko og romstøy over 0,02 → tom tur → «Ja.» hver gang (Tormod 2026-11-04).
+const ETTERKLANG_AEK_MS = 250
+// Tale må vare to biter (200 ms) på rad før vi åpner en tur — ett klikk, et
+// dørsmell eller en hostelyd er ikke en setning.
+const ONSET_BITER = 2
+// Støygulvet følger rommet: terskelen er 3× bakgrunnen, aldri under TALE_RMS.
+// En bil, en vifte eller en byggeplass ligger over 0,02 hele tiden.
+const GULV_FAKTOR = 3
 
 const LIVE_WS_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained'
 
@@ -274,6 +283,8 @@ export class LiveSession {
   private sistLydMs = 0
   private avbrytStartetMs = 0
   private forbuffer: Uint8Array[] = []
+  private stoyGulv = 0.01
+  private taleBiter = 0
   private aktivitetAapen = false
   private harAek = false
   private idleTimer: ReturnType<typeof setTimeout> | null = null
@@ -769,20 +780,31 @@ export class LiveSession {
    */
   private port(bytes: Uint8Array, rms: number): void {
     const na = Date.now()
-    const modellSnakker = na < this.playbackEndsAtMs + (this.harAek ? 0 : ETTERKLANG_MS)
+    const modellSnakker = na < this.playbackEndsAtMs + (this.harAek ? ETTERKLANG_AEK_MS : ETTERKLANG_MS)
     emitVoiceLevel({ level: rms, modelSpeaking: modellSnakker })
 
-    if (modellSnakker && !this.aktivitetAapen) {
-      this.vurderAvbrytelse(bytes, rms, na)
-      return
+    const terskel = Math.max(TALE_RMS, this.stoyGulv * GULV_FAKTOR)
+    const erTale = rms > terskel
+    // Gulvet faller fort og stiger sakte (~1,5 s til konstant støy): korte ord
+    // flytter det knapt, en vifte som går hele tiden løfter det. Læres ikke mens
+    // hun snakker eller en tur er åpen — da ville det lært stemmer og døvnet brukeren.
+    if (!modellSnakker && !this.aktivitetAapen) {
+      const a = rms < this.stoyGulv ? 0.3 : 0.02
+      this.stoyGulv += (rms - this.stoyGulv) * a
     }
 
-    const erTale = rms > TALE_RMS
+    if (modellSnakker && !this.aktivitetAapen) {
+      this.taleBiter = 0
+      this.vurderAvbrytelse(bytes, rms, na, terskel)
+      return
+    }
 
     if (!this.aktivitetAapen) {
       this.forbuffer.push(bytes)
       if (this.forbuffer.length > FORBUFFER_BITER) this.forbuffer.shift()
-      if (!erTale) return
+      this.taleBiter = erTale ? this.taleBiter + 1 : 0
+      if (this.taleBiter < ONSET_BITER) return
+      this.taleBiter = 0
       this.aapneAktivitet(na)
       for (const b of this.forbuffer) this.sendLyd(b)
       this.forbuffer = []
@@ -797,11 +819,11 @@ export class LiveSession {
     if ((forLenge || stille) && na - this.taleStartetMs >= MIN_TALE_MS) this.sendAktivitetSlutt()
   }
 
-  private vurderAvbrytelse(bytes: Uint8Array, rms: number, na: number): void {
+  private vurderAvbrytelse(bytes: Uint8Array, rms: number, na: number, terskel: number): void {
     // Uten AEC er lyd fra mikrofonen stort sett vår egen høyttaler — da tolkes
     // ingenting som avbrytelse, ellers avbryter hun seg selv hver gang.
     if (!this.harAek) return
-    if (rms <= TALE_RMS) {
+    if (rms <= terskel) {
       this.avbrytStartetMs = 0
       this.forbuffer = []
       return

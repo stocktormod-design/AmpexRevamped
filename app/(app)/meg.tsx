@@ -10,13 +10,16 @@ import { BilKort } from '../../components/bil-kort'
 import { useTilGodkjenning, useKanGodkjenne } from '../../lib/approvals'
 import { useApneAvvik } from '../../lib/avvik'
 import { useSynkStatus } from '../../lib/db/sync'
-import { useUserId } from '../../lib/auth-user'
+import { useUserId, useUserRole } from '../../lib/auth-user'
+import { kan } from '../../lib/kontor-tilgang'
+import { kanInvitere } from '../../lib/invitasjon'
 import { Q } from '@nozbe/watermelondb'
 import { database } from '../../lib/db'
 import { LaeretidLaerling } from '../../lib/db/models/laeretid'
 import { supabase } from '../../lib/supabase'
 import { getPreferredVoice, setPreferredVoice, VOICE_OPTIONS } from '../../lib/ai/voice-prefs'
 import { trykkProve, nullstillTrykk, type TrykkProve } from '../../lib/perf'
+import { TAB_BAR_HOYDE, tabBarBunn } from '../../components/glass-tab-bar'
 import { colors, spacing, radius, sizes, type as t } from '../../lib/theme'
 
 /** Avlesning av trykk-køen. Ett trykk = oppdater, langt trykk = nullstill. */
@@ -50,6 +53,9 @@ export default function Screen() {
     return () => setVelgerStemme(false)
   }, []))
   const userId = useUserId()
+  // Rollestyrt navigasjon (regel 4): malene er firmaets dokumentasjon, og
+  // bare de som får skrive dem ser inngangen her.
+  const rolle = useUserRole()
   const tilGodkjenning = useTilGodkjenning()
   const synk = useSynkStatus()
   const kanGodkjenne = useKanGodkjenne()
@@ -92,7 +98,7 @@ export default function Screen() {
       style={{ flex: 1, backgroundColor: colors.canvas }}
       contentContainerStyle={{
         paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.screen,
-        paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl,
+        paddingBottom: TAB_BAR_HOYDE + tabBarBunn(insets.bottom) + spacing.xxl,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xl }}>
@@ -173,6 +179,21 @@ export default function Screen() {
             <Text style={[t.body]}>Gamle jobber</Text>
           </View>
         </Pressable>
+        {kanInvitere(rolle) && (
+          <Pressable
+            haptic="light"
+            onPress={() => router.push('/(app)/inviter' as never)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+              paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
+              borderTopWidth: 1, borderTopColor: colors.separator,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[t.body]}>Inviter kollega</Text>
+            </View>
+          </Pressable>
+        )}
         <Pressable
           haptic="light"
           onPress={() => router.push('/(app)/skanner')}
@@ -237,6 +258,24 @@ export default function Screen() {
         >
           <Text style={[t.body, { flex: 1, color: colors.label }]}>Kunder</Text>
         </Pressable>
+        {/* Skjemaene lages på kontoret, men de leses og rettes herfra òg —
+            montøren står ofte i det han skal dokumentere. */}
+        {kan(rolle, 'skjema.les') && (
+          <Pressable
+            haptic="light"
+            onPress={() => router.push('/(app)/skjema')}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+              paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 6,
+              borderTopWidth: 1, borderTopColor: colors.separator,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[t.body, { color: colors.label }]}>Skjema</Text>
+              <Text style={[t.footnote, { marginTop: 1 }]}>Sjekklistene dere fyller ut på jobb</Text>
+            </View>
+          </Pressable>
+        )}
         {/* Aktiviteter og timepriser er tatt ut herfra (13.09): assistenten
             oppretter timetyper på forespørsel, og kontoret eier prisene. */}
       </View>

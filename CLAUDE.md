@@ -46,6 +46,7 @@ finnes** — se `desktop/README.md`.
 ```
 npm run typecheck         tsc --noEmit
 npm run verify:pricefile  selvtest av EFO/NELFO-parseren mot fixture
+npm run verify:b4         selvtest av B4-bestillingsfila (E-NBestilling 4.0: feltposisjoner, CP1252, avvisninger)
 npm run verify:invoicing  selvtest av fakturagrunnlaget (øre, MVA, gruppering)
 npm run verify:forms      selvtest av skjemaformatet (v1-lesevei, betinget visning)
 npm run verify:quoting    selvtest av tilbudsregningen (rabatt, DB, gyldighet)
@@ -114,6 +115,8 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=
 - `docs/STATUS.md` — hvor vi står nå og hva som er neste steg (LES DENNE FØRST)
 - `docs/ROADMAP_2026-08.md` — full roadmap, AI-hull, tegningsspec, LiDAR-kalibrering
 - `docs/GROSSIST_INTEGRASJON.md` — prisfiler, prissammenligning, autobestilling
+- `docs/GROSSIST_AVTALE.md` — «Be om avtale»: ett trykk sender forespørsel til én/alle grossister, levering til Ampex (design)
+- `docs/KRYPTERING.md` — firmanøkkel: innholdet uleselig selv om Supabase og R2 lekker (design)
 - `docs/DESKTOP_OG_IMPORT.md` — Ampex Kontor (`desktop/`), SpeedyCraft-import og merge
 - `docs/REGNSKAPSINTEGRASJON.md` — Fiken, Tripletex, PowerOffice Go
 - `docs/LAERLING.md` — læretid: dokumentasjon, verifisering, kontorflate (planlagt, ikke kodet)

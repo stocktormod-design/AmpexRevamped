@@ -1,6 +1,6 @@
 # Hvor vi står nå
 
-**Sist oppdatert: 2026-10-30 (Verona: tegnemodus, Dokumentasjon på ordren, R2-CORS, planleggingsgjennomgang).**
+**Sist oppdatert: 2026-11-07 (AI oppe igjen, B4-skriver, grossistplanen). Forrige: 2026-10-30 (Verona: tegnemodus, Dokumentasjon på ordren, R2-CORS, planleggingsgjennomgang).**
 
 Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 `docs/GJENNOMGANG_2026-09-08.md`), så les denne først.
@@ -16,6 +16,28 @@ Kort nå-bilde. `docs/STATUS.md` er fra august og tar feil om flere ting (se
 - `npm run typecheck` er grønn. `npm run verify:laeretid` er grønn (~200 sjekker).
 - Supabase-endringene 27.–28. september er KJØRT mot live-basen og edge-funksjonene
   er deployet (se læretid under). Repo-migrasjonene er skrevet i tillegg.
+
+## 7. november — AI oppe igjen, B4-skriver, grossistplanen skrevet ned
+
+- **AI-en virker igjen.** Skjemasiden (gap-sjekk, import, ordreoppslag) brukte `gemini-2.5-flash`,
+  som Google har slått av for nye brukere (404). `ai-voice` faller nå tilbake til nyeste modell på
+  nøkkelen ved 404, og secret `GEMINI_MODEL=gemini-3.8-flash` er satt. Deployet og testet herfra.
+- **Stemmeassistenten** går på `gemini-3.8-live` (secret `GEMINI_LIVE_MODEL`). Alle Live-modeller
+  koster det samme for lyd ($3 inn / $12 ut per 1M), så modellvalget er kvalitet, ikke pris.
+  Oppsett 1,5 s, første lyd 1,9 s, stemme Charon. **Ikke hørt på norsk eller prøvd på telefon.**
+- **B4-bestillingsfil:** `lib/pricefile/b4.ts` + `npm run verify:b4` (45 påstander, grønn) mot
+  E-NBestilling 4.0. Ikke koblet til appen; ingen grossist har fått en fil.
+- **Planer skrevet (design, ikke kodet):** `docs/GROSSIST_AVTALE.md` («Be om avtale»-knappen,
+  pitchen mot grossistene, rørledning-prinsippet, prisene og bestillingsløkka, leveringen) og
+  `docs/KRYPTERING.md` (firmanøkkel: innhold uleselig selv om Supabase og R2 lekker).
+- **Levering besluttet:** B4 rett inn i grossistens ordresystem via deres fil-server (Solar:
+  FTPS, `b2bs.solar.eu`), ikke e-post — «de sitter ikke og leser e-post». E-post er siste utvei.
+- **Venter på Tormod:** Solar-innloggingen i `.env.local` (`SOLAR_FTP_USER`/`SOLAR_FTP_PASS`) og
+  spørsmålene til Jørn om ordremappe og prøveordre (se GROSSIST_AVTALE.md «Leveringen»).
+- **Glenn** (Aqila) har aldri logget inn — begge øktene på kontoen var Tormod. Ingen nye
+  skannlogger eller tilbakemeldinger siden 5. november.
+- Hullet i profiles (bytte firma) er tettet i prod (`profiles_vern`), sjekket i dag.
+- Alt er ukommittert.
 
 ## 4. november — første eksterne tester (Ingebrigt, iPhone 17 Pro Max)
 

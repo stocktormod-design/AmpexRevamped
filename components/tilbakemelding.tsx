@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, KeyboardAvoidingView, Platform, View } from 'react-native'
+import { Alert, View } from 'react-native'
 import { Bug, Lightbulb, Heart, Star } from 'lucide-react-native'
 import { Text, TextInput } from './text'
 import { Pressable } from './pressable'
@@ -40,7 +40,6 @@ export function TilbakemeldingArk({ synlig, onLukk }: { synlig: boolean; onLukk:
   const valgt = TYPER.find(x => x.id === type)!
   return (
     <Ark synlig={synlig} onLukk={onLukk}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={{ paddingHorizontal: spacing.screen, gap: spacing.lg }}>
           <Text style={t.title3}>Tilbakemelding</Text>
 
@@ -88,7 +87,6 @@ export function TilbakemeldingArk({ synlig, onLukk }: { synlig: boolean; onLukk:
             <Text style={[t.headline, { color: gyldig ? colors.brandLabel : colors.tertiaryLabel }]}>{sender ? 'Sender …' : 'Send'}</Text>
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
     </Ark>
   )
 }

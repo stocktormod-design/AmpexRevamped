@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Modal, View, Pressable as RNPressable } from 'react-native'
+import { KeyboardAvoidingView, Modal, Platform, View, Pressable as RNPressable } from 'react-native'
 import { Text, TextInput } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated'
@@ -34,6 +34,9 @@ export function Ark({ synlig, onLukk, children }: {
 
   return (
     <Modal visible={synlig} transparent animationType="fade" onRequestClose={onLukk}>
+      {/* Tastaturet løfter hele arket. Må ligge her, på Modal-roten: en
+          KeyboardAvoidingView inne i arket måler feil ramme og blir liggende bak tastaturet. */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Animated.View style={[{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' }, bakStil]}>
         {/* Trykk utenfor lukker. RNPressable uten haptikk — det er en avbrytelse,
             ikke en handling. */}
@@ -47,6 +50,7 @@ export function Ark({ synlig, onLukk, children }: {
           {children}
         </Animated.View>
       </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   )
 }

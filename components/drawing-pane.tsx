@@ -155,7 +155,7 @@ function RomHandtak({ x, y, farge, onFlytt, onSlutt }: {
   )
 }
 
-export function DrawingPane({ drawing, width, height, transform, pins, edit, rooms, roomEdit, maalestokk = 50, onRoomLongPress, onRoomShape, onNavigate, onActivate, onGestureEnd, onLongPress, onTapPin }: {
+export function DrawingPane({ drawing, width, height, transform, pins, edit, rooms, roomEdit, maalestokk = 50, rasterTak, lag, onRoomLongPress, onRoomShape, onNavigate, onActivate, onGestureEnd, onLongPress, onTapPin }: {
   drawing: Drawing
   width: number
   height: number
@@ -168,6 +168,11 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
       usynlige treffområder for langtrykk. */
   rooms?: PaneRoom[]
   roomEdit?: boolean
+  /** Høyeste rasternivå ruta får. Firedelt visning: rutene er halve, så 2048 holder, og
+   *  fire samtidige 4096-render ved knip ga minnefare på iPad (DeepSeek 07.11, funn 7). */
+  rasterTak?: number
+  /** Lag-menyen i toppen: skjul sløyfer, komponenter eller markering. Utelatt = alt vises. */
+  lag?: { sloyfer?: boolean; komponenter?: boolean; markering?: boolean }
   /** Tegningens målestokk (1:N) — måleverktøyet regner meter av den. */
   maalestokk?: number
   /** Langtrykk (1 s) inne i et rom → forelderen åpner rompanelet. */
@@ -231,7 +236,8 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
   /** Etter en gest: trenger vi et skarpere raster for zoomnivået vi endte på? */
   const vurderOpplosning = () => {
     const ønsket = NIVAAER.find(n => n >= 2048 * Math.min(scale.value, 4)) ?? NIVAAER[NIVAAER.length - 1]
-    if (ønsket > nivaa) setNivaa(ønsket)
+    const tak = Math.min(ønsket, rasterTak ?? Infinity)
+    if (tak > nivaa) setNivaa(tak)
   }
 
   // Markup: ALLE rader for tegningen — leser både gammel blob-form (én rad) og
@@ -360,18 +366,41 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
   }
 
   // ── Visnings-gester ──
+  // Panorering og knip skriver ENDRINGER (ikke absolutte verdier) til tx/ty, så de kan
+  // gå samtidig: knipet zoomer om punktet mellom fingrene mens fingrene også flytter
+  // arket (DeepSeeks gjennomgang 07.11, funn 1 — før zoomet det om rutas midte).
+  const forrigeX = useSharedValue(0)
+  const forrigeY = useSharedValue(0)
+  const forrigeX2 = useSharedValue(0)
+  const forrigeY2 = useSharedValue(0)
+  const forrigeS = useSharedValue(1)
+  const fw = fitted?.w ?? width, fh = fitted?.h ?? height
+  /** Arket skal aldri kunne dras helt ut av ruta (funn 4): minst 30 % av ruta har ark. */
+  const klem = () => {
+    'worklet'
+    const s = scale.value
+    const maxX = Math.max(0, (s * fw - width) / 2) + width * 0.3
+    const maxY = Math.max(0, (s * fh - height) / 2) + height * 0.3
+    const x = Math.min(Math.max(tx.value, -maxX), maxX)
+    const y = Math.min(Math.max(ty.value, -maxY), maxY)
+    if (x !== tx.value) tx.value = withTiming(x, { duration: 180 })
+    if (y !== ty.value) ty.value = withTiming(y, { duration: 180 })
+  }
   const panGesture = Gesture.Pan()
     .enabled(!editing || tool === 'ingen' || tool === 'pan')
     .onStart(() => {
       savedTx.value = tx.value
       savedTy.value = ty.value
+      forrigeX.value = 0; forrigeY.value = 0
       runOnJS(activate)()
     })
     .onUpdate(e => {
-      tx.value = savedTx.value + e.translationX
-      ty.value = savedTy.value + e.translationY
+      tx.value += e.translationX - forrigeX.value
+      ty.value += e.translationY - forrigeY.value
+      forrigeX.value = e.translationX; forrigeY.value = e.translationY
     })
     .onEnd(() => {
+      klem()
       runOnJS(ended)(1, tx.value - savedTx.value, ty.value - savedTy.value)
     })
 
@@ -381,23 +410,35 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
     .enabled(editing)
     .onStart(() => {
       savedTx.value = tx.value; savedTy.value = ty.value
+      forrigeX2.value = 0; forrigeY2.value = 0
       if (onNavigate) runOnJS(onNavigate)()
     })
     .onUpdate(e => {
-      tx.value = savedTx.value + e.translationX
-      ty.value = savedTy.value + e.translationY
+      tx.value += e.translationX - forrigeX2.value
+      ty.value += e.translationY - forrigeY2.value
+      forrigeX2.value = e.translationX; forrigeY2.value = e.translationY
     })
+    .onEnd(() => { klem() })
 
   const pinchGesture = Gesture.Pinch()
     .onStart(() => {
       savedScale.value = scale.value
+      forrigeS.value = scale.value
       runOnJS(activate)()
       if (onNavigate) runOnJS(onNavigate)()
     })
     .onUpdate(e => {
-      scale.value = Math.min(Math.max(savedScale.value * e.scale, 1), 8)
+      const sNy = Math.min(Math.max(savedScale.value * e.scale, 1), 8)
+      const ds = sNy / Math.max(forrigeS.value, 0.001)
+      // Punktet under fingrene blir liggende: t' = f − C − ds·(f − C − t).
+      const cx = width / 2, cy = height / 2
+      tx.value = e.focalX - cx - ds * (e.focalX - cx - tx.value)
+      ty.value = e.focalY - cy - ds * (e.focalY - cy - ty.value)
+      scale.value = sNy
+      forrigeS.value = sNy
     })
     .onEnd(() => {
+      klem()
       runOnJS(ended)(scale.value / Math.max(savedScale.value, 0.001), 0, 0)
     })
 
@@ -757,7 +798,7 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
           <Group transform={userTransform} origin={center}>
             <Group transform={[{ translateX: ox }, { translateY: oy }]}>
               {img && <SkiaImage image={img} x={0} y={0} width={W} height={H} fit="fill" />}
-              {loops.map(l => {
+              {lag?.sloyfer !== false && loops.map(l => {
                 const nodes = l.nodeList.map((n, i) => {
                   const drag = selection?.type === 'node' && selection.loopId === l.id && selection.index === i && dragNode
                   return [(drag ? dragNode![0] : n.x) * W, (drag ? dragNode![1] : n.y) * H] as [number, number]
@@ -782,7 +823,7 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
                   </Group>
                 )
               })}
-              {strokes.map((s, i) => (
+              {lag?.markering !== false && strokes.map((s, i) => (
                 <Path key={i}
                   path={smoothFrom(s.points.map(([x, y]) => [x * W, y * H]))}
                   style="stroke" color={s.color} strokeWidth={s.width}
@@ -791,7 +832,7 @@ export function DrawingPane({ drawing, width, height, transform, pins, edit, roo
               {/* Brannkomponenter — røde symboler (O-plan-konvensjonen), skalerer med tegningen */}
               {/* Funnet i tegningens forklaring (source 'tegning'): symbolet står der alt.
                   Tegnes ikke oppå — komponenten er en usynlig knapp, som rommene (Tormod 2026-09-13). */}
-              {devices.filter(dv => dv.source !== 'tegning').map(dv => {
+              {lag?.komponenter !== false && devices.filter(dv => dv.source !== 'tegning').map(dv => {
                 const svg = deviceSvgs[dv.kind] ?? deviceSvgs.royk
                 const S = 22
                 return (

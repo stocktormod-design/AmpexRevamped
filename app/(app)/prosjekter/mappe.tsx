@@ -10,8 +10,10 @@ import { usePapirFokus } from '../../../components/papir-surface'
 import { MappeInnhold, useMapper, mappeSti } from '../../../components/tegning-mapper'
 import { database } from '../../../lib/db'
 import { DrawingFolder } from '../../../lib/db/models/drawing-folder'
+import { Project } from '../../../lib/db/models/project'
 import { useUserId } from '../../../lib/auth-user'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { TAB_BAR_HOYDE, tabBarBunn } from '../../../components/glass-tab-bar'
 
 /** Én mappe: undermapper som rader, tegninger som fliser. Samme hode som prosjektet. */
 export default function MappeScreen() {
@@ -19,7 +21,14 @@ export default function MappeScreen() {
   const insets = useSafeAreaInsets()
   const { folderId, projectId: pid } = useLocalSearchParams<{ folderId?: string; projectId?: string }>()
   const [mappe, setMappe] = useState<DrawingFolder | null>(null)
+  const [prosjekt, setProsjekt] = useState<Project | null>(null)
   const userId = useUserId()
+  const prosjektId = pid ?? mappe?.projectId ?? ''
+  useEffect(() => {
+    if (!prosjektId) return
+    const sub = database.get<Project>('projects').findAndObserve(prosjektId).subscribe({ next: setProsjekt, error: () => {} })
+    return () => sub.unsubscribe()
+  }, [prosjektId])
   useEffect(() => {
     if (!folderId) return
     const sub = database.get<DrawingFolder>('drawing_folders').findAndObserve(folderId).subscribe({
@@ -33,13 +42,16 @@ export default function MappeScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: colors.canvas }}>
         <ToolGlow height={300} />
-        <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: TAB_BAR_HOYDE + tabBarBunn(insets.bottom) + spacing.xxl }} showsVerticalScrollIndicator={false}>
           <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.lg }}>
             <Pressable onPress={() => router.back()} pressScale={0.92}
-              style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.cardGlassStrong, borderWidth: 0.5, borderColor: colors.glassEdge, alignItems: 'center', justifyContent: 'center' }}>
+              style={{ width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, alignItems: 'center', justifyContent: 'center' }}>
               <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
             </Pressable>
-            <Text style={[t.title1, { marginTop: spacing.lg }]}>Uten mappe</Text>
+            {!!prosjekt?.name && (
+              <Text style={[t.eyebrow, { textTransform: 'uppercase', marginTop: spacing.lg }]} numberOfLines={1}>{prosjekt.name}</Text>
+            )}
+            <Text style={[t.title1, { marginTop: spacing.lg }]}>Løse tegninger</Text>
           </View>
           <MappeInnhold projectId={pid} parentId={null} rotTegninger mapper={mapper} tegninger={tegninger} userId={userId} />
         </ScrollView>
@@ -52,21 +64,58 @@ export default function MappeScreen() {
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <ToolGlow height={300} />
       <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: TAB_BAR_HOYDE + tabBarBunn(insets.bottom) + spacing.xxl }}
         showsVerticalScrollIndicator={false}
       >
         <View style={{ paddingHorizontal: spacing.screen, marginBottom: spacing.lg }}>
           <Pressable onPress={() => router.back()} pressScale={0.92}
             style={{
-              width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.cardGlassStrong,
-              borderWidth: 0.5, borderColor: colors.glassEdge, alignItems: 'center', justifyContent: 'center',
+              width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.bg,
+              borderWidth: 1, borderColor: colors.separator, alignItems: 'center', justifyContent: 'center',
             }}>
             <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
           </Pressable>
-          {sti.length > 0 && (
-            <Text style={[t.eyebrow, { textTransform: 'uppercase', marginTop: spacing.lg }]} numberOfLines={1}>{sti.join(' / ')}</Text>
-          )}
-          <Text style={[t.title1, { marginTop: sti.length > 0 ? spacing.xs : spacing.lg }]}>{mappe.name}</Text>
+          {/* Brødsmule: prosjektet og mappene over. Mappa du står i er tittelen.
+              Hvert ledd kan trykkes — en lang sti er en vei tilbake, ikke pynt. */}
+          {(() => {
+            const kjede: { id: string | null; navn: string }[] = []
+            let opp = mappe.parentId
+            let vakt = 0
+            while (opp && vakt++ < 20) {
+              const m = mapper.find(x => x.id === opp)
+              if (!m) break
+              kjede.unshift({ id: m.id, navn: m.name })
+              opp = m.parentId
+            }
+            const ledd = [
+              ...(prosjekt ? [{ id: null as string | null, navn: prosjekt.name }] : []),
+              ...kjede,
+            ]
+            if (ledd.length === 0) return null
+            return (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: spacing.lg }}>
+                {ledd.map((l, i) => (
+                  <View key={l.id ?? 'prosjekt'} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    {i > 0 && <Text style={[t.caption, { color: colors.tertiaryLabel }]}>›</Text>}
+                    <Pressable
+                      haptic="light"
+                      hitSlop={6}
+                      onPress={() => {
+                        if (!l.id) {
+                          if (prosjekt) router.dismissTo({ pathname: '/(app)/prosjekter/[id]', params: { id: prosjekt.id } })
+                        } else {
+                          router.dismissTo({ pathname: '/(app)/prosjekter/mappe', params: { projectId: mappe.projectId, folderId: l.id } })
+                        }
+                      }}
+                    >
+                      <Text style={[t.eyebrow, { textTransform: 'uppercase', color: colors.secondaryLabel }]} numberOfLines={1}>{l.navn}</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )
+          })()}
+          <Text style={[t.title1, { marginTop: spacing.sm }]}>{mappe.name}</Text>
         </View>
         <MappeInnhold projectId={mappe.projectId} parentId={mappe.id} mapper={mapper} tegninger={tegninger} userId={userId} />
       </ScrollView>

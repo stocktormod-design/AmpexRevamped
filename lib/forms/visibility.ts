@@ -28,6 +28,28 @@ export function visibleFields(template: FormTemplate, values: FormValues): FormF
 }
 
 /**
+ * Påkrevde felt som ikke er besvart — bare de som faktisk vises nå.
+ *
+ * Et skjult påkrevd punkt er ikke «manglende»: spørsmålet er ikke stilt.
+ * Regelen er den samme i framdriften, i AI-ens gap-sjekk og i porten som
+ * avgjør om dokumentet kan fullføres. Ligger her (og ikke i gap-check) fordi
+ * den er ren logikk uten database — den skal kunne selvtestes alene.
+ */
+export function findUnfilledRequired(template: FormTemplate, values: FormValues): FormField[] {
+  const out: FormField[] = []
+  for (const section of template.sections) {
+    for (const field of section.fields) {
+      if (field.type === 'info' || !field.required) continue
+      if (!isFieldVisible(field, values)) continue
+      const v = values[field.key]
+      const isEmpty = v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
+      if (isEmpty) out.push(field)
+    }
+  }
+  return out
+}
+
+/**
  * Verdier for lagring: felt som er skjult NÅ tas ut.
  *
  * Uten dette blir «Avvik: Nei» sittende igjen med en avviksbeskrivelse fra da

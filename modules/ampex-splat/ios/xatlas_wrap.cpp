@@ -9,6 +9,9 @@ static XatlasProgressFn g_progressFn = nullptr;
 
 extern "C" void xatlas_set_progress(XatlasProgressFn fn) { g_progressFn = fn; }
 
+static float g_texelsPerUnit = 0.0f;
+extern "C" void xatlas_set_texels_per_unit(float tpu) { g_texelsPerUnit = tpu; }
+
 static bool progressTrampoline(xatlas::ProgressCategory category, int progress, void*) {
     if (g_progressFn) return g_progressFn((int)category, progress) != 0;
     return true;
@@ -111,6 +114,8 @@ extern "C" XatlasResult xatlas_unwrap(const float* positions, uint32_t inVertexC
     chartOptions.normalSeamWeight = 1.5f;  // default 4.0
     xatlas::PackOptions packOptions;
     packOptions.resolution = resolution;
+    if (g_texelsPerUnit > 0.0f) { packOptions.texelsPerUnit = g_texelsPerUnit; packOptions.resolution = 0; }
+    g_texelsPerUnit = 0.0f;
     packOptions.padding = 2;
     packOptions.blockAlign = true;
     xatlas::Generate(atlas, chartOptions, packOptions);

@@ -3,6 +3,7 @@ import { InteractionManager, View } from 'react-native'
 import { Q } from '@nozbe/watermelondb'
 import { router } from 'expo-router'
 import { Text } from './text'
+import { Skilt } from './skilt'
 import { Pressable } from './pressable'
 import { Bil3D } from './bil-3d'
 import { ChoiceSheet, type Valg } from './sheet'
@@ -60,25 +61,6 @@ function karosseriform(karosseri: string | null | undefined): Karosseriform {
   return 'varebil'
 }
 
-/** Skiltet — hvit plate, blå EU-stripe, tabulære tegn. */
-function Skilt({ regNr }: { regNr: string }) {
-  return (
-    <View style={{
-      flexDirection: 'row', alignSelf: 'flex-start', marginTop: spacing.xs,
-      borderWidth: 1, borderColor: colors.separator, borderRadius: 4, overflow: 'hidden',
-      backgroundColor: '#FFFFFF',
-    }}>
-      <View style={{ width: 6, backgroundColor: '#2A5CAA' }} />
-      <Text style={{
-        paddingHorizontal: 7, paddingVertical: 2,
-        fontSize: 12, fontWeight: '600', letterSpacing: 1.2,
-        color: colors.label, fontVariant: ['tabular-nums'],
-      }}>
-        {regNr.replace(/\s+/g, '').toUpperCase().replace(/^([A-ZÆØÅ]{2})/, '$1 ')}
-      </Text>
-    </View>
-  )
-}
 
 export function BilKort({ userId }: { userId: string | null }) {
   const biler = useBiler()
@@ -129,7 +111,7 @@ export function BilKort({ userId }: { userId: string | null }) {
     return (
       <Pressable
         haptic="light"
-        onPress={() => router.push({ pathname: '/(app)/lager/ny-lokasjon', params: { type: 'bil' } })}
+        onPress={() => router.push({ pathname: '/(app)/lager/ny-lokasjon', params: { type: 'bil' } }, { withAnchor: true })}
         style={{
           backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.separator, borderRadius: radius.lg,
           padding: spacing.lg, marginBottom: spacing.xl,
@@ -166,10 +148,11 @@ export function BilKort({ userId }: { userId: string | null }) {
     }}>
       {min ? (
         vis3d ? (
-          // Feltet står tomt til bilen faktisk er der: ingen silhuett, ingen
-          // karosseri-plassholder mens biblioteket slås opp (13.09).
-          <View style={{ height: 150, justifyContent: 'center' }}>
-            <View style={{ opacity: klar3d ? 1 : 0 }}>
+          // Ingen tom boks: kassen har null høyde til modellen faktisk er
+          // klar. Bil3D monteres likevel i full størrelse (absolutt, klippet),
+          // så den kan bli klar; først da får kortet bildet.
+          <View style={{ height: klar3d ? 150 : 0, overflow: 'hidden' }}>
+            <View style={{ position: klar3d ? 'relative' : 'absolute', top: 0, left: 0, right: 0, height: 150, justifyContent: 'center', opacity: klar3d ? 1 : 0 }}>
               {tegn3d && oppslagFerdig && <Bil3D
                 key={modellUri ?? 'karosseri'}
                 modell={karosseriform(info?.karosseri)}
@@ -180,10 +163,7 @@ export function BilKort({ userId }: { userId: string | null }) {
               />}
             </View>
           </View>
-        ) : (
-          // GL feilet: ingen bil, bare navn og skilt under.
-          <View style={{ height: spacing.md }} />
-        )
+        ) : null
       ) : (
         <Text style={[t.footnote, { textAlign: 'center', paddingVertical: spacing.xl }]}>
           Ingen bil
@@ -194,10 +174,12 @@ export function BilKort({ userId }: { userId: string | null }) {
         flexDirection: 'row', alignItems: 'center', gap: spacing.md,
         paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, paddingTop: spacing.xs,
       }}>
-        <View style={{ flex: 1 }}>
+        {/* Trykk på bilen = bilens side (beholdning, reg.nr, slett). */}
+        <Pressable haptic="light" disabled={!min} style={{ flex: 1 }}
+          onPress={() => min && router.push({ pathname: '/(app)/lager/[id]', params: { id: min.id } }, { withAnchor: true })}>
           <Text style={[t.headline]} numberOfLines={1}>{navn}</Text>
           {!!regNr && <Skilt regNr={regNr} />}
-        </View>
+        </Pressable>
         <Pressable
           haptic="light"
           pressScale={0.95}

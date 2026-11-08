@@ -248,9 +248,140 @@ export const utstyrsdokumentasjon: FormTemplate = {
   ],
 }
 
+/**
+ * «SJA – elbillader og tavle» (04.11.2026).
+ *
+ * Tormod: «når du gjør en risikovurdering skal du få noen spørsmål først, så
+ * resten er tilpasset — hvis det ikke er elbillader får du ingen spørsmål om
+ * laderen.»
+ *
+ * Inntaket er formens FØRSTE DEL, ikke et eget flagg i formatet. Betingelser
+ * kan bare peke oppover (`validateFirmSections`), så det som står først er per
+ * definisjon det som styrer resten. Det holder lagringsformatet uendret og
+ * gjør regelen synlig i byggeren: «Innledende spørsmål» er del 1, og alt
+ * nedenfor kan henvise til svarene der.
+ *
+ * Bare Ja/Nei i inntaket: et «Ikke aktuelt» ville gjort hvert eneste
+ * oppfølgingsspørsmål betinget av en tredje verdi ingen husker å krysse av.
+ */
+const JN: string[] = ['Ja', 'Nei']
+
+export const sjaElbilTavle: FormTemplate = {
+  id: 'ampex.sja-elbil-tavle',
+  version: 1,
+  name: 'SJA – elbillader og tavle',
+  source: 'Ampex-mal · inntak først, resten tilpasses svarene',
+  reviewNote: REVIEW,
+  sections: [
+    {
+      title: 'Innledende spørsmål',
+      fields: [
+        { key: 'sja_elbil', label: 'Skal det monteres elbillader?', type: 'choice', choices: JN },
+        { key: 'sja_spenning', label: 'Skal du arbeide i tavle under spenning?', type: 'choice', choices: JN },
+        { key: 'sja_hoyde', label: 'Skal du arbeide i høyden?', type: 'choice', choices: JN },
+        { key: 'sja_bad', label: 'Er arbeidet i bad eller våtrom?', type: 'choice', choices: JN },
+      ],
+    },
+    {
+      title: 'Elbillader',
+      fields: [
+        {
+          key: 'sja_elbil_vern',
+          label: 'Er vernet type B, eller type A med 6 mA DC-deteksjon?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_elbil', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_elbil_kurs',
+          label: 'Har ladepunktet egen kurs?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_elbil', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_elbil_last',
+          label: 'Er lastberegning eller lastbalansering gjort?',
+          type: 'choice', choices: JN,
+          showIf: { field: 'sja_elbil', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_elbil_kabel',
+          label: 'Kabeltype og tverrsnitt til ladepunktet',
+          type: 'text',
+          showIf: { field: 'sja_elbil', equals: ['Ja'] },
+        },
+      ],
+    },
+    {
+      title: 'Tavle under spenning',
+      fields: [
+        {
+          key: 'sja_tavle_frakobling',
+          label: 'Er anlegget gjort spenningsløst, låst og prøvd?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_spenning', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_tavle_verneutstyr',
+          label: 'Er verneutstyr og verktøy kontrollert?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_spenning', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_tavle_tiltak',
+          label: 'Tiltak før arbeidet starter',
+          type: 'multiline',
+          showIf: { field: 'sja_spenning', equals: ['Ja'] },
+        },
+      ],
+    },
+    {
+      title: 'Arbeid i høyden',
+      fields: [
+        {
+          key: 'sja_hoyde_utstyr',
+          label: 'Er stige eller stillas kontrollert?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_hoyde', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_hoyde_sikring',
+          label: 'Er området under sikret?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_hoyde', equals: ['Ja'] },
+        },
+      ],
+    },
+    {
+      title: 'Bad og våtrom',
+      fields: [
+        {
+          key: 'sja_bad_soner',
+          label: 'Er utstyret plassert etter sonene med riktig IP-grad?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_bad', equals: ['Ja'] },
+        },
+        {
+          key: 'sja_bad_jordfeil',
+          label: 'Har alle kurser i rommet jordfeilvern 30 mA?',
+          type: 'choice', choices: JN, required: true,
+          showIf: { field: 'sja_bad', equals: ['Ja'] },
+        },
+      ],
+    },
+    {
+      title: 'Vurdering',
+      fields: [
+        { key: 'sja_konklusjon', label: 'Oppsummering av risiko og tiltak', type: 'multiline', required: true },
+        { key: 'sja_utfort_av', label: 'Utført av', type: 'text', required: true },
+      ],
+    },
+  ],
+}
+
 /** De 5 sikre i visningsrekkefølge (samme som gamleappen) */
 export const AMPEX_TEMPLATES: FormTemplate[] = [
   risikovurdering,
+  sjaElbilTavle,
   samsvarserklaering,
   sluttkontroll,
   kursfortegnelse,

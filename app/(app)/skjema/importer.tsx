@@ -211,7 +211,7 @@ export default function ImporterSkjema() {
 
           <View style={{ marginTop: spacing.xl }}>
             <FormProblems problems={problemer} />
-            <SectionsEditor sections={seksjoner} flagg={flagg} onChange={setSeksjoner} />
+            <SectionsEditor sections={seksjoner} tittel={tittel} flagg={flagg} onChange={setSeksjoner} />
           </View>
         </ScrollView>
       )}

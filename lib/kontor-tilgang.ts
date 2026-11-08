@@ -170,6 +170,10 @@ export type Rettighet =
    * den — og rollen hun ville satt er den samme rollen som avgjør hvem som ser
    * lønnsgrunnlaget hennes.
    *
+   * Installatør og bas inviterer fra APPEN (Meg → Inviter kollega, 08.11), og
+   * bare montør/lærling/bas/installatør — se `lib/invitasjon.ts`. De har ikke
+   * firmaflata her, og skal ikke få den bakveien inn.
+   *
    * Rettigheten er kun for GRENSESNITTET. Den ekte sperren står i
    * `supabase/functions/inviter-ansatt`, som slår opp kallerens egen rolle i
    * basen og aldri stoler på klienten. Se kommentaren over `MATRISE`.

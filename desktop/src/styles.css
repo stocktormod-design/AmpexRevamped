@@ -1069,10 +1069,20 @@ textarea.skrivefelt-lav { height: 110px; }
 /* Ett spørsmål = to linjer: SPØRSMÅLET stort øverst, og under det hva det
    svares med. Nummeret til venstre er det samme montøren ser. */
 .mal-punkt {
-  display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px 10px; align-items: start;
-  padding: 12px 8px 12px 14px; border-bottom: 1px solid var(--kant);
+  display: grid; grid-template-columns: 18px 28px minmax(0, 1fr) auto; gap: 8px 10px; align-items: start;
+  padding: 12px 8px 12px 10px; border-bottom: 1px solid var(--kant);
 }
 .mal-punkt:last-of-type { border-bottom: none; }
+/* Håndtaket: her kan du ta. Dra punktet dit det skal stå — pilene i verktøyet
+   gjør det samme uten mus. */
+.mal-grip {
+  margin-top: 7px; display: grid; place-items: center;
+  width: 18px; height: 22px; border-radius: 4px;
+  color: var(--blekk-4); cursor: grab; user-select: none;
+}
+.mal-grip:hover { background: var(--fyll); color: var(--blekk-2); }
+.mal-grip:active { cursor: grabbing; }
+.mal-punkt-dras { opacity: 0.45; background: var(--dis); }
 .mal-nr {
   margin-top: 6px; width: 24px; height: 24px; display: grid; place-items: center;
   border-radius: var(--r-pille); background: var(--fyll); color: var(--blekk-2);
@@ -1085,12 +1095,52 @@ textarea.skrivefelt-lav { height: 110px; }
 }
 .mal-sporsmal::placeholder { color: var(--blekk-4); font-weight: 400; }
 .mal-sporsmal:focus { border-bottom-color: var(--blekk); }
-.mal-svar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mal-svar { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .mal-svar-etikett { color: var(--blekk-3); font-size: 12px; white-space: nowrap; }
-.mal-type { height: 32px; font-size: 13px; }
+/* Åtte piller, alle synlige: ett klikk bytter svartype. */
+.mal-svar-piller { display: flex; flex-wrap: wrap; gap: 4px; }
+.mal-type-pille {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 9px; border-radius: var(--r-pille);
+  border: 1px solid var(--kant); background: var(--papir);
+  color: var(--blekk-2); font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+.mal-type-pille:hover { border-color: var(--kant-sterk); color: var(--blekk); }
+.mal-type-pille[aria-pressed='true'] {
+  background: var(--blekk); border-color: var(--blekk); color: var(--papir);
+}
+.mal-svar-ekstra { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mal-type-hjelp { display: block; font-size: 12px; color: var(--blekk-3); margin-top: -4px; }
+/* Inntaket: del 1 er det som styrer resten. Merket er en påminnelse, ikke et
+   eget lagringsflagg — rekkefølgen ER regelen. */
+.mal-hint { margin: -4px 0 0; font-size: 12px; color: var(--blekk-3); line-height: 1.5; }
+.mal-merke {
+  padding: 3px 8px; border-radius: var(--r-pille);
+  background: var(--fyll); color: var(--blekk-2);
+  font-size: 11px; font-weight: 500; white-space: nowrap;
+}
+/* «Vis bare hvis»: én nedtrekksliste for spørsmålet, piller for svarene. */
+.mal-betingelse { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mal-betingelse-velger { height: 32px; font-size: 13px; max-width: 280px; }
+.mal-betingelse-valg { margin-left: 0; }
+.mal-betingelse-svar { font-size: 12px; color: var(--blekk-3); }
+/* Tom del: ett eksempel, ikke en forklaring på hva et spørsmål er. */
+.mal-tomt-punkt {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 14px 16px; border-bottom: 1px solid var(--kant);
+  font-size: 13px; color: var(--blekk-3);
+}
+.mal-tomt-punkt strong { font-weight: 500; color: var(--blekk-2); }
+.mal-tomt-punkt span { font-size: 12px; }
+.mal-bryter {
+  margin-left: auto; padding: 5px 10px; border-radius: var(--r-pille);
+  border: 1px solid var(--kant); background: var(--papir);
+  font-size: 12px; font-weight: 500; color: var(--blekk-3); white-space: nowrap;
+}
+.mal-bryter:hover { border-color: var(--kant-sterk); color: var(--blekk); }
+.mal-bryter[aria-pressed='true'] { background: var(--blekk); border-color: var(--blekk); color: var(--papir); }
 .mal-ekstra { height: 32px; font-size: 13px; flex: 1; min-width: 180px; }
-.mal-enhet { flex: 0 1 120px; min-width: 100px; }
-.mal-pakrevd { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--blekk-3); white-space: nowrap; margin-left: auto; }
+.mal-enhet { flex: 0 1 140px; min-width: 110px; }
 .mal-verktoy { display: inline-flex; gap: 2px; margin-top: 2px; }
 .mal-fjern {
   width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--r-input);
@@ -2182,6 +2232,38 @@ tr.klikkbar:hover td { background: var(--dis); }
 .tre-tekst small { color: var(--blekk-3); font-size: 12px; font-weight: 400; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tre-tall { flex: none; font-size: 12px; color: var(--blekk-3); font-variant-numeric: tabular-nums; font-weight: 400; }
 .tre-tall.ferdig { color: var(--gronn); }
+
+/* Hierarki i treet: hover-handlinger, intern drag og det lille skjemaet. */
+.tre-skal { position: relative; }
+.tre-skal.slipp > .tre-rad { background: var(--dis); box-shadow: inset 0 0 0 1px var(--blekk); }
+.tre-mappe { padding-right: 88px; }
+.tre-handling {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: flex; gap: 2px; opacity: 0; transition: opacity 120ms ease;
+}
+.tre-skal:hover .tre-handling, .tre-skal:focus-within .tre-handling { opacity: 1; }
+.tre-handling button {
+  width: 26px; height: 26px; display: grid; place-items: center;
+  border: none; border-radius: 6px; background: transparent; color: var(--blekk-3); cursor: pointer;
+}
+.tre-handling button:hover { background: var(--fyll); color: var(--blekk); }
+.tre-ny {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px;
+  border: 1px solid var(--kant); border-radius: var(--r-kort); background: var(--papir); margin-bottom: 8px;
+}
+.tre-ny label { font-size: 12px; color: var(--blekk-3); }
+.tre-ny input {
+  height: 32px; border: 1px solid var(--kant-sterk); border-radius: var(--r-input);
+  padding: 0 10px; font: inherit; font-size: 13px; color: var(--blekk); background: var(--papir); outline: none;
+}
+.tre-ny input:focus { border-color: var(--blekk); box-shadow: var(--skygge-ring); }
+.tre-ny-knapper { display: flex; align-items: center; gap: 6px; }
+.tre-ny-knapper > button:not(.knapp) {
+  border: none; background: none; color: var(--blekk-3); font: inherit; font-size: 13px; cursor: pointer; padding: 6px 8px;
+}
+.tre-slipp-hint { font-size: 12px; color: var(--blekk-3); padding: 4px 6px 8px; }
+.tre-rot-slipp { box-shadow: inset 0 0 0 1px var(--blekk); border-radius: var(--r-kort); }
+.tre-bunn { display: flex; flex-direction: column; gap: 2px; }
 
 .dok { position: relative; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .dok-hode { display: flex; align-items: flex-end; gap: 16px; flex: none; }

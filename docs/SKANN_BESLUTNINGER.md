@@ -6002,3 +6002,105 @@ Stua (102 bilder, del 0 trinn 2, simulator):
 treff som den globale (hele bildet) ville drept. Gevinst på telefon ≈ 8 s per del (~15 s av 3:18) — ikke verdt
 usikker kvalitet. Ligger bak `meshscan.bbguidet on` (+ `meshscan.bbgjensidig`, `meshscan.bbratio`).
 Større tidsposter å ta først: pyramide 54 s, maling 40 s.
+
+## §147 Blokkpyramiden — én dekoding per bilde, RAM eller mmap (04.11)
+
+Kopieringen i `Blokkpyramide.bygg` gikk fra 31,8 s til 8,3 s (disk) / 7,1 s (RAM), JPEG-nivåene fra
+8,1 til 1,2 s (stua i simulator, 40 → 10 s totalt). Hvert kildebilde dekodes én gang og kopieres inn i
+blokkene som bruker det; blokkene ligger i RAM når de får plass i 30 % av ledig minne, ellers i en
+side-justert råfil som mmap-es blokk for blokk. `meshscan.pyrdisk on/off` tvinger valget. md5 avviker
+mellom kjøringer (rekkefølgen i en Swift-ordbok), så verifisert mot GLB-render: snittavvik 1,2–1,75.
+
+## §148 Eksponering for hele modellen i baken (04.11)
+
+Første eksterne tester (iPhone 17 Pro Max, sol i vinduet) fikk et skann der ALT var for lyst. Fangsten
+låser AE etter 1,5 s på det kameraet ser da; gain-løseren fjerner den globale frihetsgraden med vilje,
+så ingenting rettet det. Målt på åtte gode skann: median luma per bilde 125–148/255, ~0 % utbrent.
+
+Nytt steg etter hvitbalansen: median luminans over alle bilder (med gains, lineært). Utenfor båndet
+115–160 skaleres hele modellen til nærmeste kant (klemt 0,4–2,5×); innenfor røres ingenting.
+A/B på stua (102 bilder) med en kunstig overeksponert kopi (×2,6 lineært, median 228, 33 % utbrent):
+
+| | Render-median (4 vinkler) | Utbrent i render |
+|---|---|---|
+| Original stue | 151–167 — «innenfor, ingen korreksjon» | 0,1–8 % |
+| Lys kopi, uten steget | 230–249 | 21–45 % |
+| Lys kopi, med steget (×0,48) | 168–183 | 0 % |
+
+Det som var utbrent i kildebildet blir en flat lysegrå flekk — informasjonen finnes ikke. Den varige
+løsningen er i fangsten (beskytt høylysene ved låsing); baksteget er sikkerhetsnettet. Flagg:
+`meshscan.eksponering off`, `meshscan.lysmaallav` / `meshscan.lysmaalhoy`.
+
+Bivirkning å følge med på: hvitbalansen fra taket (§86) ga ×1,17 blått på stua (tak R/G 1,24). I et
+rom med varmt lys gjør den skannet kaldere enn rommet — sannsynlig del av «blått» hos testeren.
+
+## §149 Lysvakt etter AE-låsen (04.11) — UTESTET PÅ ENHET
+
+§148 demper et for lyst skann i baken, men utbrente piksler kan ikke hentes tilbake. Derfor i fangsten:
+de første 2,5 s etter låsen (fra 0,3 s, mens brukeren begynner å gå) måles Y-planet hver 5. ramme
+(~1500 punkter per måling). Median over målingene utenfor 70–175, eller > 4 % utbrent, flytter låsen
+ÉN gang: ned via ISO først (lukkertiden holdes kort), opp via ISO, lengre lukker bare om ISO er i taket
+og aldri over 1/30 s. Celler som ble ferdig før åpnes igjen og tidligere bilder merkes pre-lås — samme
+mekanisme som selve låsen. Logglinje «lysvakt — …» viser hva den gjorde. `meshscan.lysvakt off` slår av.
+Kompilerer; simulatoren har ikke kamera, så første ekte måling er neste skann på telefon.
+
+## §150 Hvor UV-atlaset bruker tiden (05.11) — planidéen FORKASTET
+
+Ingebrigts skann (25 s, 249k tris) bakte på 30 s, og 18,3 s av dem var xatlas. Hypotesen var at
+plane flater (vegg/gulv/tak, 63 % av punktene snappet) kunne få UV ved ren projeksjon og hoppe over
+xatlas. **Målt og forkastet:** på det ekte nettet fra soveromsbundelen (dumpet med
+`-meshscan.uvdump <fil>`, kjørt i en ren C++-sele mot `xatlas_wrap.cpp`) ga det å fjerne alle
+56 % plan-trekantene 6,9 s → 6,7 s. Chart-veksten er billig på plane flater; tiden går i de ujevne.
+
+Fordelingen på Mac (102k tris, 3 m-blokker): charts 3,6 s, pakking 3,3 s. Pakkingen skalerer med
+atlasflaten, ikke trekanttallet: pakket ved 4096 i stedet for 8192 går den på 1,1 s (3×), men
+texel per m² faller 1,1–1,5 % (utnyttelse 77,3 → 76,1–76,4 %). Ikke innført — Tormods regel er at
+kvalitet per m² ikke skal ned. Logglinja «xatlas faser — charts …, pakking …» viser fordelingen på
+telefon, så neste skannlogg sier om den er den samme der.
+
+## §151 xatlas i halv oppløsning når flisene pakker om (06.11) — FORKASTET
+
+Kvalitetsveien (fliser, standard også live) kaster xatlas-oppsettet: `projectiveFixtureUV`
+pakker alle felt på nytt. Bare de ~5 % flatene uten gyldig fotoprojeksjon beholder sitt
+xatlas-chart, i xatlas-piksler (uvs × atlasSize). Derfor pakkes xatlas nå i atlasSize/2 og
+atlasSize dobles tilbake. Bygget, målt og tatt ut igjen: Tormod — «ikke stor nok gevinst»
+for at 5 % av flatene skal tape 1–3 %. Koden er fjernet; loggen beholder «xatlas tetthet»
+og antall projiserte flater i «V2 fliser».
+
+Målt i simulatoren, soverom-fixturen 2026-09-09 (102 832 tris), samme bake to ganger er
+bit-lik per trekant:
+- xatlas-pakking 3,4 → 1,1 s, hele baken 23,2 → 20,3 s. Chartene er identiske (67 203 vertekser begge veier).
+- Kildeskala 1,08 → 1,10. 94 % av arealet +4,2 % texel/m², 5 % av arealet (reserveflatene) −1–3 %, 0,03 % −5–10 %.
+- texelsPerUnit er eksakt halvert (1750,3 mot 875,6); tapet på reserveflatene kommer fra
+  avrunding/blockAlign og fra at flispakkingen er hylle-basert og hopper ved små endringer.
+
+Prøvd og forkastet: 5 % margin på reserve-chartene (prosjiserte flater −4 %, pakkingen er
+ikke-lineær), og retting av v-skalaen (wrapperen deler v på atlasHØYDEN, bake ganger med
+bredden; rettet ga +2,6 % / −2–3 %, dårligere enn urettet).
+
+Funn til senere: trekantene dekker bare 49 av 151 Mpx i de fire flisene (32 %). Hylle-
+pakkingen av felt-bokser er den store kvalitetsspaken, ikke tid.
+
+## §152 xatlas bare på restflatene — baken halvert (06.11)
+
+Kvalitetsveien (fliser) pakker alt på nytt i `projectiveFixtureUV`; bare flatene uten gyldig
+fotoprojeksjon (~5 %) bruker et xatlas-chart. Likevel ble hele nettet unwrappet — 18,3 av 30,3 s
+på Ingebrigts skann 05.11. Nå (`meshscan.xatlasetter`, på som standard i kvalitetsveien):
+- Baken går videre på nettet uten UV. Alt fram til flisene bruker sveisede posisjoner
+  (`wid`), ikke xatlas' vertekssplitt; dekningsandelen regnes på 3D-areal.
+- Rett før flisene unwrappes bare restflatene, med fast texelsPerUnit = (atlas + 2·padding)·√(0,75/areal)
+  — nøyaktig den skalaen full unwrap valgte (1750,2 mot 1750,3 målt). Wrapperens v deles på
+  atlashøyden; med fast skala rettes den til breddens målestokk.
+- `begrensPlanKandidater` teller nå ALLE flater på planet, ikke hver N-te: utvalget avhang av
+  trekantrekkefølgen (xatlas grupperer per 3 m-blokk) og ga ulike topp-4 og 5 % skarphets-
+  forskjell mellom to ellers like bakes. `meshscan.plantoputvalg on` gir det gamle.
+- Skalatak (`meshscan.skalatak`, 1,1): uten xatlas-reservechartene havnet kildeskalaen på 1,47.
+  Texler over kildepikselen bærer ingen detalj, men vieweren velger nivå etter texeltetthet og
+  hoppet til halv oppløsning (synlig mykere panelspor). Flisene krympes til skalaen ligger like over 1,0.
+
+Målt i simulatoren, soverom-fixturen 2026-09-09 (102 832 tris), samme simulator-tilstand:
+bake 13,2 → 9,5 s (xatlas 4,1 → 0,1 s, maling 6,2 s, pyramide 1,5 → 0,7 s, fil 16 → 15 MB).
+Kildeskala 1,063 → 1,092; lineær texeltetthet median +2,7 %, 0,3 % av arealet mer enn 2 % lavere.
+Skarphet i teksturen ved 1 mm 6,34 → 6,36; visningen fra tre kamerastillinger 4,57/3,50/3,94 →
+4,50/3,45/3,87 (~1,5 %, innen støyen fra nivåvalget); farge på vegg identisk.
+Telefon: xatlas var 60 % av baken, så forventet ~30 → ~12–13 s. Bekreftes av neste skannlogg.

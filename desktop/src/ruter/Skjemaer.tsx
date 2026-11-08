@@ -113,7 +113,7 @@ export function Skjemaer() {
   const nyMalKnapp = kanSkrive ? (
     <Knapp stil="merke" onClick={() => setNyMal(true)} disabled={nyMal}>
       <Plus size={15} strokeWidth={2} />
-      Ny mal
+      Nytt skjema
     </Knapp>
   ) : null
 
@@ -193,14 +193,14 @@ export function Skjemaer() {
             {nyMal ? (
               <>
                 <div className="hero">
-                  <div className="hero-topp"><span className="hero-nr">Ny mal</span></div>
+                  <div className="hero-topp"><span className="hero-nr">Nytt skjema</span></div>
                   <h1 className="hero-tittel">Nytt skjema</h1>
                 </div>
                 <div className="detalj-kropp">
                   <Malbygger
                     start={{ tittel: '', kategori: '', seksjoner: [tomSeksjon()] }}
                     kategorier={kategorier}
-                    lagreTekst="Lagre malen"
+                    lagreTekst="Lagre skjema"
                     onLagre={opprett}
                     onAvbryt={() => { if (!tom) setNyMal(false) }}
                   />
@@ -304,7 +304,7 @@ function Mal({
             <Malbygger
               start={utkast}
               kategorier={kategorier}
-              lagreTekst={`Lagre som versjon ${mal.current_version + 1}`}
+              lagreTekst={`Lagre som v${mal.current_version + 1}`}
               krevNotat
               onLagre={lagre}
               onAvbryt={() => setUtkast(null)}

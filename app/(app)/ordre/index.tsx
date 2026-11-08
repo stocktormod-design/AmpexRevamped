@@ -14,6 +14,7 @@ import { Order } from '../../../lib/db/models/order'
 import { OrderArchive } from '../../../lib/db/models/order-archive'
 import { formatTime } from '../../../lib/format'
 import { colors, spacing, radius, sizes, type as t } from '../../../lib/theme'
+import { TAB_BAR_HOYDE, tabBarBunn } from '../../../components/glass-tab-bar'
 
 /**
  * ORDRE (lagt om 2026-09-06, Tormod: «ordre er ikke oversiktlig. tesla hadde
@@ -82,9 +83,12 @@ function OrderRow({ order, first, last }: { order: Order; first: boolean; last: 
   const tid = order.scheduledAt
     ? `${order.scheduledAt.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })} ${formatTime(order.scheduledAt)}`
     : ''
+  // «Pågår» er arbeid som skjer nå — en prikk og et ord, ikke en sort pille
+  // som konkurrerer med radens tittel. Fakturaklar er ekte status og beholder
+  // den ene semantiske fargen.
   const avvik =
-    order.status === 'pagaar' ? { tekst: 'Pågår', farge: '#FFFFFF', bg: colors.label } :
-    order.status === 'fakturaklar' ? { tekst: 'Klar til faktura', farge: colors.success, bg: colors.successSoft } :
+    order.status === 'pagaar' ? { tekst: 'Pågår', farge: colors.secondaryLabel, bg: 'transparent', prikk: true } :
+    order.status === 'fakturaklar' ? { tekst: 'Klar til faktura', farge: colors.success, bg: colors.successSoft, prikk: false } :
     null
   return (
     <Pressable
@@ -110,11 +114,15 @@ function OrderRow({ order, first, last }: { order: Order; first: boolean; last: 
     >
       <View style={{ flex: 1, marginRight: spacing.md }}>
         <Text style={[t.headline, { color: colors.label }]} numberOfLines={1}>{order.title}</Text>
-        <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 3 }]} numberOfLines={1}>
-          {[order.customerName, order.address].filter(Boolean).join(' · ') || 'Ingen kunde'}
-        </Text>
+        {(() => {
+          const meta = [order.customerName, order.address].filter(Boolean).join(' · ')
+          return meta ? (
+            <Text style={[t.footnote, { color: colors.secondaryLabel, marginTop: 3 }]} numberOfLines={1}>{meta}</Text>
+          ) : null
+        })()}
         {avvik && (
-          <View style={{ alignSelf: 'flex-start', marginTop: spacing.sm - 2, paddingHorizontal: spacing.sm + 1, height: 22, borderRadius: radius.pill, backgroundColor: avvik.bg, justifyContent: 'center' }}>
+          <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm - 2, paddingHorizontal: avvik.prikk ? 0 : spacing.sm + 1, height: 22, borderRadius: radius.pill, backgroundColor: avvik.bg, justifyContent: 'center' }}>
+            {avvik.prikk && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.label }} />}
             <Text style={[t.caption, { color: avvik.farge, fontWeight: '600' }]}>{avvik.tekst}</Text>
           </View>
         )}
@@ -138,33 +146,31 @@ export default function OrdreScreen() {
 
   const topp = (
     <>
+      {/* Én rad: tittel, visningsbryter (stille), avatar og den ENE sorte
+          handlingen. Bryteren lå før på sin egen linje som en svart sirkel —
+          to fylte knapper og en tom linje mellom dem. */}
       <View style={{
         flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
         paddingHorizontal: spacing.screen, marginBottom: spacing.lg,
       }}>
         <Text style={[t.display, { color: colors.label }]}>Ordre</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
-          <MegAvatar />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs }}>
+          <Pressable haptic="light" pressScale={0.94} onPress={() => setKalender(k => !k)}
+            accessibilityLabel={kalender ? 'Vis liste' : 'Vis kalender'}
+            style={{ width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' }}>
+            {kalender
+              ? <List size={20} color={colors.secondaryLabel} strokeWidth={2} />
+              : <CalendarDays size={20} color={colors.secondaryLabel} strokeWidth={2} />}
+          </Pressable>
+          <MegAvatar size={44} />
           <Pressable
             haptic="medium" pressScale={0.92}
             onPress={() => router.push('/(app)/ordre/ny')}
-            style={{ width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.label, alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.label, alignItems: 'center', justifyContent: 'center' }}
           >
             <Plus size={sizes.icon} color="#FFFFFF" strokeWidth={2.4} />
           </Pressable>
         </View>
-      </View>
-
-      {/* Visning. Ingen filter: bunkene ER filteret, i fast rekkefølge.
-          Tilbud-lenken er tatt bort inntil videre (13.09); ruta finnes. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.screen, marginBottom: spacing.lg, gap: spacing.sm }}>
-        <Pressable haptic="light" pressScale={0.94} onPress={() => setKalender(k => !k)}
-          accessibilityLabel={kalender ? 'Vis liste' : 'Vis kalender'}
-          style={{ width: 38, height: 38, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: kalender ? colors.label : colors.fill }}>
-          {kalender
-            ? <List size={18} color="#FFFFFF" strokeWidth={2.1} />
-            : <CalendarDays size={18} color={colors.label} strokeWidth={2.1} />}
-        </Pressable>
       </View>
     </>
   )
@@ -173,7 +179,7 @@ export default function OrdreScreen() {
     return (
       <PapirScreen>
         <ScrollView
-          contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
+          contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: TAB_BAR_HOYDE + tabBarBunn(insets.bottom) + spacing.xxl }}
           showsVerticalScrollIndicator={false}
         >
           {topp}
@@ -191,7 +197,7 @@ export default function OrdreScreen() {
       <FlatList
         data={rader}
         keyExtractor={r => r.key}
-        contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: sizes.tabBar + insets.bottom + spacing.xxl }}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: TAB_BAR_HOYDE + tabBarBunn(insets.bottom) + spacing.xxl }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={topp}
         renderItem={({ item }) => item.type === 'hode' ? (

@@ -11,6 +11,17 @@ private let xatlasProgressTrampoline: @convention(c) (Int32, Int32) -> Int32 = {
 private final class XatlasCancelFlag: @unchecked Sendable {
     var cancelled = false
 }
+private final class XatlasFaseTid: @unchecked Sendable {
+    var sek = [Double](repeating: 0, count: 4)
+    private var fase = -1
+    private var siden = CFAbsoluteTimeGetCurrent()
+    func merk(_ ny: Int) {
+        guard ny != fase else { return }
+        let nå = CFAbsoluteTimeGetCurrent()
+        if fase >= 0 && fase < 4 { sek[fase] += nå - siden }
+        fase = ny; siden = nå
+    }
+}
 private final class XatlasJobBox: @unchecked Sendable {
     var result: XatlasResult?
 }
@@ -27,6 +38,7 @@ func xatlasUnwrapUVs(
     indices: [UInt32],
     triAnchor: [UInt32] = [],    // per-tri anchor-id → chunket unwrap (én xatlas-mesh per anchor)
     resolution: UInt32 = 2048,
+    texelsPerUnit: Float = 0,    // > 0: fast skala, og uvs × atlasSize blir ekte piksler på begge akser
     timeout: TimeInterval = 600  // KUN mot total-wedge (ingen callbacks). Treg-men-jobber er OK:
                                  // kvaliteten kommer fra at xatlas fullfører — box-fallback er nødløsning.
 ) -> ARMeshGlbExporter.UVUnwrapResult? {
@@ -37,11 +49,16 @@ func xatlasUnwrapUVs(
 
     let flag = XatlasCancelFlag()
     let userHandler = xatlasProgressHandler
+    // Tid per xatlas-fase (0 AddMesh, 1 ComputeCharts, 2 PackCharts, 3 BuildOutput) — for å vite
+    // HVA av unwrappen som koster før noe optimaliseres. Skrives bare av xatlas-tråden.
+    let faser = XatlasFaseTid()
     xatlasProgressHandler = { category, percent in
+        faser.merk(category)
         if flag.cancelled { return false }
         return userHandler?(category, percent) ?? true
     }
     xatlas_set_progress(xatlasProgressTrampoline)
+    xatlas_set_texels_per_unit(texelsPerUnit)
 
     let sem = DispatchSemaphore(value: 0)
     let job = XatlasJobBox()
@@ -95,10 +112,20 @@ func xatlasUnwrapUVs(
     let outUV = Array(UnsafeBufferPointer(start: up, count: vc * 2))
     let outIdx = Array(UnsafeBufferPointer(start: ip, count: ic))
     let atlasW = Int(result.atlasWidth)
+    var outUVfix = outUV
+    if texelsPerUnit > 0, result.atlasHeight > 0, Int(result.atlasHeight) != atlasW {
+        // Wrapperen deler v på atlasHØYDEN. Med fast skala skal uvs × atlasSize være piksler på
+        // begge akser, så v skaleres til breddens målestokk.
+        let k = Float(result.atlasHeight) / Float(atlasW)
+        for i in stride(from: 1, to: outUVfix.count, by: 2) { outUVfix[i] *= k }
+    }
     xatlas_free(&result)
 
+    faser.merk(-1)
     MeshLog.log("xatlas unwrap FERDIG — outVerts=\(vc) outTris=\(ic / 3) atlas=\(atlasW) ms=\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))")
+    MeshLog.log(String(format: "xatlas faser — charts %.1f s, pakking %.1f s, resten %.1f s",
+                       faser.sek[1], faser.sek[2], faser.sek[0] + faser.sek[3]))
     return ARMeshGlbExporter.UVUnwrapResult(
-        positions: outPos, normals: outNorm, uvs: outUV, indices: outIdx, chartCount: 0, atlasSize: atlasW
+        positions: outPos, normals: outNorm, uvs: outUVfix, indices: outIdx, chartCount: 0, atlasSize: atlasW
     )
 }

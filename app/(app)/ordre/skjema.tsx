@@ -22,7 +22,7 @@ import type { OrderMaterial } from '../../../lib/db/models/order-material'
 import { getTemplate } from '../../../lib/forms/templates'
 import { resolveTemplate } from '../../../lib/forms/resolve'
 import { FormValues, FormPrefill, type FormSection, type FormTemplate } from '../../../lib/forms/types'
-import { visibleSections, pruneHidden, foreslatteTemaer, temaVerdier } from '../../../lib/forms/visibility'
+import { visibleSections, visibleFields, pruneHidden, foreslatteTemaer, temaVerdier } from '../../../lib/forms/visibility'
 import { findUnfilledRequired } from '../../../lib/forms/gap-check'
 import { formatDateTime } from '../../../lib/format'
 import { colors, spacing, radius, sizes, paperType as t } from '../../../lib/theme'
@@ -77,9 +77,14 @@ export default function SkjemaScreen() {
         .query(Q.where('order_id', orderId), Q.where('template_id', template.id))
         .fetch()
       if (!mounted) return
-      if (doc) {
-        docRef.current = doc
-        setValues(doc.data ? JSON.parse(doc.data) : {})
+      // Lagt til fra ordren men ikke åpnet ennå (data null): behold raden, men
+      // gå veien et nytt skjema går — forhåndsutfylling og temavalg.
+      if (doc) docRef.current = doc
+      if (doc?.data) {
+        // Eldre utkast kan ha svar på punkt som senere ble betinget og skjult.
+        // De skal ikke overleve inn i PDF/arkiv, så de ryddes ved lesing òg —
+        // ikke bare når man endrer et svar.
+        setValues(pruneHidden(template, doc.data ? JSON.parse(doc.data) : {}))
         setAiOrigin(doc.aiOriginMap)
         setStatus(doc.status)
         setCompletedAt(doc.completedAt)
@@ -244,6 +249,18 @@ export default function SkjemaScreen() {
     [template, values],
   )
 
+  // Framdrift teller BARE det som vises akkurat nå. Et skjult punkt er ikke
+  // ubesvart — det er ikke stilt.
+  const framdrift = useMemo(() => {
+    if (!template) return { besvart: 0, totalt: 0 }
+    const felt = visibleFields(template, values).filter(f => f.type !== 'info')
+    const besvart = felt.filter(f => {
+      const v = values[f.key]
+      return !(v === undefined || v === '' || (Array.isArray(v) && v.length === 0))
+    }).length
+    return { besvart, totalt: felt.length }
+  }, [template, values])
+
   async function fullfor() {
     // Porten. `findUnfilledRequired` fantes, var selvtestet og ble brukt av
     // AI-en — men IKKE av knappen som avgjør om dokumentet er ferdig. Uten den
@@ -308,6 +325,11 @@ export default function SkjemaScreen() {
           </View>
           <Text style={[t.title1, { marginTop: spacing.lg }]}>{template.name}</Text>
           <Text style={[t.footnote, { marginTop: spacing.xs }]}>{template.source}</Text>
+          {ready && framdrift.totalt > 0 && (
+            <Text style={[t.footnote, { marginTop: spacing.xs, color: colors.paperSecondary, fontVariant: ['tabular-nums'] }]}>
+              {`${framdrift.besvart} av ${framdrift.totalt} besvart`}
+            </Text>
+          )}
         </View>
 
         {processingAi && (

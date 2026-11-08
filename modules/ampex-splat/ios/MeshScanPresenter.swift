@@ -121,6 +121,10 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     private lazy var ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private var framesDir: URL?
     private var aeLockTime: Double = .infinity // settes når AE/AWB-låsen slår inn
+    // RELÅS (2026-11-04, §149): lysmåling de første sekundene ETTER låsen. Se lysvakt(_:).
+    private var lysPrøver: [(median: Float, utbrent: Float)] = []
+    private var lysvaktFerdig = false
+    private var lysvaktTikk = 0
     // M0a (2026-10-26, docs/PROMPT_OPUS_SKANN_DELKART.md): flytter ARKit sine egne ARAnchor-er
     // når sporingen rettes? Ett anker hvert 30. s ved normal sporing, hver flytting logges.
     // Ren måling — delkartene i M1 skal forankres slik om svaret er ja. Fjernes i M1.
@@ -184,6 +188,8 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         let gulv: Int64 = 3 << 30
         var brukt: Int64 = 0
         func skrevet(_ n: Int) { lås.lock(); brukt += Int64(n); lås.unlock() }
+        /// Uten disksjekk — for veiledningen, som spør hvert tikk.
+        var erFullNå: Bool { lås.lock(); defer { lås.unlock() }; return full }
         /// Billig å kalle hver ramme: disken spørres høyst hvert 2. sekund.
         func erFull(nå t: Double, dir: URL?) -> Bool {
             lås.lock(); defer { lås.unlock() }
@@ -222,6 +228,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     // på minimum visningstid (unngår flimring mellom nesten-like tilstander).
     private enum Guide: Int {
         case none = 0, good, turnLeft, turnRight, turnAround, floor, ceiling, tooFar, strafe, slowDown, lap
+        /// Full disk: ingen nye bilder → stripene kan aldri males bort. Øverst, for ellers
+        /// står montøren og maler i det uendelige (Henning 08.11, iPhone 15 Pro, < 3 GB ledig).
+        case lagringFull
     }
     /// Sist lukkede delkart (id, tid), satt av fusjonen. Neste dekningspass vurderer det.
     private var lukketDelkart: (id: Int, t: CFAbsoluteTime)?
@@ -498,15 +507,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                     // mistror (preLock vektes 0,6 i vinnervalget) — og doneCells vokser monotont,
                     // så uten dette kan de aldri fikses ved å gå tilbake. Nullstilling her er
                     // nesten gratis: låsen slår inn 1,5 s ut i skannet, så settet er lite.
-                    if let n = self?.doneCells.count, n > 0 {
-                        self?.doneCells.removeAll(keepingCapacity: true)
-                        self?.cellCache.tilstand.removeAll(keepingCapacity: true)
-                        self?.cellCache.laast.removeAll(keepingCapacity: true)
-                        self?.cellCache.sterke.removeAll(keepingCapacity: true)
-                        self?.cellCache.alpha.removeAll(keepingCapacity: true)
-                        self?.cellCache.dekketW.removeAll(keepingCapacity: true)
-                        self?.cellCache.anker.removeAll(keepingCapacity: true)
-                        self?.lastSnaps.removeAll(keepingCapacity: true)
+                    if let n = self?.åpneCellerIgjen(), n > 0 {
                         MeshLog.log("AE/AWB låst — \(n) pre-lås-celler åpnet igjen")
                     } else {
                         MeshLog.log("AE/AWB låst etter innmåling")
@@ -850,6 +851,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
     // MARK: - Camera colour sampling
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         updateSpeedHint(frame)       // updates lastLinSpeed/lastAngSpeed first
+        lysvakt(frame)
         // Dekningsfeltet: annenhver ramme, kun ved normal sporing. Vekten er rammens
         // kvalitet (0 når den er sløret — samme dom som keyframe-porten), så feltet
         // og baken snakker om de samme bildene.
@@ -1012,6 +1014,90 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         if let s = d.string(forKey: "meshscan.eksponeringstak"), let v = Float(s) { return v }
         if let n = d.object(forKey: "meshscan.eksponeringstak") as? Double { return Float(n) }
         return 8
+    }
+
+    /// Åpner celler som ble FERDIG med en annen eksponering enn den som gjelder nå, så de
+    /// kan tas på nytt. Returnerer hvor mange. Kalles ved låsen og ved relåsen.
+    @discardableResult
+    private func åpneCellerIgjen() -> Int {
+        let n = doneCells.count
+        guard n > 0 else { return 0 }
+        doneCells.removeAll(keepingCapacity: true)
+        cellCache.tilstand.removeAll(keepingCapacity: true)
+        cellCache.laast.removeAll(keepingCapacity: true)
+        cellCache.sterke.removeAll(keepingCapacity: true)
+        cellCache.alpha.removeAll(keepingCapacity: true)
+        cellCache.dekketW.removeAll(keepingCapacity: true)
+        cellCache.anker.removeAll(keepingCapacity: true)
+        lastSnaps.removeAll(keepingCapacity: true)
+        return n
+    }
+
+    // LYSVAKT (2026-11-04, §149). Låsen fryser det AE-en så i ETT øyeblikk, 1,5 s inn. Første
+    // eksterne tester (sol i vinduet) fikk et skann der alt var utbrent; baken kan dempe
+    // helheten (§148), men ikke hente tilbake hvite piksler. Så: de første 2,5 s ETTER låsen,
+    // mens brukeren begynner å gå rundt, måles Y-planet hver 5. ramme. Er medianen utenfor
+    // 70–175 eller mer enn 4 % utbrent, flyttes låsen ÉN gang — ned via ISO først (lukkertiden
+    // holdes kort, §eksponeringstak), opp via ISO. Cellene som ble ferdig før åpnes igjen og
+    // tidligere bilder merkes pre-lås, som ved selve låsen. meshscan.lysvakt = off slår av.
+    private func lysvakt(_ frame: ARFrame) {
+        guard !lysvaktFerdig, aeLockTime.isFinite else { return }
+        let siden = frame.timestamp - aeLockTime
+        guard siden > 0.3 else { return }                       // la låsen sette seg
+        if UserDefaults.standard.string(forKey: "meshscan.lysvakt") == "off" { lysvaktFerdig = true; return }
+        lysvaktTikk &+= 1
+        if siden < 2.8 {
+            guard lysvaktTikk % 5 == 0 else { return }
+            let pb = frame.capturedImage
+            CVPixelBufferLockBaseAddress(pb, .readOnly)
+            defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
+            guard let base = CVPixelBufferGetBaseAddressOfPlane(pb, 0) else { return }
+            let w = CVPixelBufferGetWidthOfPlane(pb, 0), h = CVPixelBufferGetHeightOfPlane(pb, 0)
+            let rad = CVPixelBufferGetBytesPerRowOfPlane(pb, 0)
+            let y = base.assumingMemoryBound(to: UInt8.self)
+            var hist = [Int](repeating: 0, count: 256)
+            var n = 0
+            var yy = h / 64
+            while yy < h { var xx = w / 96; while xx < w { hist[Int(y[yy * rad + xx])] += 1; n += 1; xx += w / 48 }; yy += h / 32 }
+            guard n > 0 else { return }
+            var acc = 0, med = 0
+            for v in 0..<256 { acc += hist[v]; if acc * 2 >= n { med = v; break } }
+            let ut = Float(hist[250...].reduce(0, +)) / Float(n)
+            lysPrøver.append((Float(med), ut))
+            return
+        }
+        lysvaktFerdig = true
+        guard lysPrøver.count >= 4 else { return }
+        let medianer = lysPrøver.map(\.median).sorted(), utbrent = lysPrøver.map(\.utbrent).sorted()
+        let med = medianer[medianer.count / 2], ut = utbrent[utbrent.count / 2]
+        // Ønsket lineær endring av lysmengden.
+        var f: Float = 1
+        if med > 175 { f = pow(140 / med, 2.2) }
+        else if ut > 0.04 { f = 0.7 }                            // høylys brenner selv om helheten er grei
+        else if med < 70 && ut < 0.005 { f = pow(110 / max(med, 20), 2.2) }
+        f = min(max(f, 0.25), 2.8)
+        guard abs(f - 1) > 0.15 else {
+            MeshLog.log(String(format: "lysvakt — median %.0f, utbrent %.1f %%: låsen står", med, ut * 100))
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let dev = self.captureDevice, (try? dev.lockForConfiguration()) != nil else { return }
+            defer { dev.unlockForConfiguration() }
+            let fmt = dev.activeFormat
+            let iso0 = dev.iso, dur0 = Float(CMTimeGetSeconds(dev.exposureDuration))
+            let iso = min(max(iso0 * f, fmt.minISO), fmt.maxISO)
+            let rest = f / (iso / max(iso0, 1))                      // det ISO ikke rakk
+            let minD = Float(CMTimeGetSeconds(fmt.minExposureDuration)), maxD = Float(CMTimeGetSeconds(fmt.maxExposureDuration))
+            // Lengre lukker bare om ISO er i taket og bildet er for mørkt; aldri over 1/30 s.
+            let dur = min(max(dur0 * rest, minD), min(maxD, max(dur0, 1.0 / 30)))
+            guard dev.isExposureModeSupported(.custom) else { return }
+            dev.setExposureModeCustom(duration: CMTimeMakeWithSeconds(Double(dur), preferredTimescale: 1_000_000),
+                                      iso: iso, completionHandler: nil)
+            self.aeLockTime = CACurrentMediaTime()
+            let n = self.åpneCellerIgjen()
+            MeshLog.log(String(format: "lysvakt — median %.0f, utbrent %.1f %% → lysmengde ×%.2f (%.1f ms ISO %.0f → %.1f ms ISO %.0f), %d celler åpnet igjen",
+                               med, ut * 100, f, dur0 * 1000, iso0, dur * 1000, iso, n))
+        }
     }
 
     /// Kortere lukkertid, samme lysmengde. Returnerer nil når det ikke er noe å hente
@@ -2311,7 +2397,9 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                                   ceilFrac: Float, floorFrac: Float, depthCenter: Float?) {
         var target: Guide = .good
         var text = ""
-        if wasTooFast {
+        if lagring.erFullNå {
+            target = .lagringFull; text = "Telefonen er nesten full. Frigjør minst 3 GB, ellers tas ingen bilder"
+        } else if wasTooFast {
             target = .slowDown; text = "Beveg deg saktere"
         } else if case .trapp? = lukkeHint?.hint {
             target = .lap; text = "Trapp: gå opp og ned en gang til før du går videre"
@@ -2504,7 +2592,7 @@ final class MeshScanPresenter: NSObject, ARSCNViewDelegate, ARSessionDelegate {
                 // Glyfen går en runde: «gå opp og ned en gang til»
                 phone.layer.add(loop("transform.translation.y", -10, 10, 1.6), forKey: "a")
                 phone.layer.add(loop("transform.translation.x", -24, 24, 0.8), forKey: "b")
-            case .good, .none:
+            case .good, .none, .lagringFull:
                 break
             }
         }

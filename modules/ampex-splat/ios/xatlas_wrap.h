@@ -27,6 +27,10 @@ typedef struct {
 typedef int (*XatlasProgressFn)(int category, int percent);
 void xatlas_set_progress(XatlasProgressFn fn);
 
+// Fast texelsPerUnit for NESTE unwrap (0 = xatlas estimerer fra resolution). Med en fast verdi
+// vokser atlaset til alt får plass i ett, og `resolution` ignoreres. Nullstilles etter bruk.
+void xatlas_set_texels_per_unit(float tpu);
+
 // Unwrap a triangle mesh into a UV atlas. `normals` may be NULL.
 // positions: 3*inVertexCount floats, indices: inIndexCount uint32.
 // triChunk: per-triangel chunk-id (lengde inIndexCount/3, f.eks. ARKit-anchor-indeks) eller NULL.

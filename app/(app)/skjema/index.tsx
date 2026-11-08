@@ -12,6 +12,8 @@ import { FormTemplate } from '../../../lib/db/models/form-template'
 import { FormRevision } from '../../../lib/db/models/form-revision'
 import { FormComment } from '../../../lib/db/models/form-comment'
 import { colors, spacing, radius, sizes, shadows, type as t } from '../../../lib/theme'
+import { useUserRole } from '../../../lib/auth-user'
+import { kan } from '../../../lib/kontor-tilgang'
 
 function useTemplates() {
   const [rows, setRows] = useState<FormTemplate[]>([])
@@ -63,6 +65,10 @@ export default function SkjemaIndex() {
   const templates = useTemplates()
   const itemCounts = useItemCounts()
   const openCounts = useOpenCounts()
+  const rolle = useUserRole()
+  // Alle som har `skjema.les` ser malene; bare de med `skjema.skriv` får
+  // opprette og importere. RLS isolerer firmaene — dette styrer flaten.
+  const kanSkrive = kan(rolle, 'skjema.skriv')
 
   // Grupper på kategori (rekkefølge etter første forekomst)
   const cats: string[] = []
@@ -80,48 +86,60 @@ export default function SkjemaIndex() {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ paddingHorizontal: spacing.screen }}>
-          <Pressable onPress={() => router.back()} pressScale={0.92}
-            style={{ width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+          <Pressable onPress={() => router.back()} haptic="light" pressScale={0.92}
+            style={{ width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
             <ChevronLeft size={sizes.icon} color={colors.label} strokeWidth={2.2} />
           </Pressable>
-          <Text style={[t.display, { marginTop: spacing.lg }]}>Skjema</Text>
+          <Text style={[t.display, { marginTop: spacing.md }]}>Skjema</Text>
+          <Text style={[t.footnote, { marginTop: spacing.xs }]}>Sjekklistene firmaet fyller ut på jobb</Text>
 
-          {/* Import står SIDE OM SIDE med «nytt», ikke gjemt i en meny. De aller
-              fleste firma har skjemaene sine fra før — å be dem taste dem inn
-              på nytt er å be dem la være å ta i bruk systemet. */}
-          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl }}>
-            <Pressable
-              haptic="medium"
-              onPress={() => router.push('/(app)/skjema/importer')}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-                height: sizes.ctaHeight - 6, borderRadius: radius.xl, backgroundColor: colors.cta,
-              }}
-            >
-              <FileUp size={sizes.icon} color={colors.ctaLabel} strokeWidth={2.2} />
-              <Text style={[t.headline, { color: colors.ctaLabel }]}>Importer</Text>
-            </Pressable>
-            <Pressable
-              haptic="medium"
-              onPress={() => router.push('/(app)/skjema/ny')}
-              style={{
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-                height: sizes.ctaHeight - 6, paddingHorizontal: spacing.lg, borderRadius: radius.xl,
-                backgroundColor: colors.bg,
-              }}
-            >
-              <Plus size={sizes.icon} color={colors.label} strokeWidth={2.2} />
-              <Text style={[t.headline, { color: colors.label }]}>Nytt</Text>
-            </Pressable>
-          </View>
+          {/* «Nytt skjema» er den ene fylte handlingen. Import er en stille
+              andrelinje: de fleste firma har skjemaene sine fra før, men den
+              som lager et nytt skal ikke måtte velge mellom to likestilte. */}
+          {kanSkrive && (
+            <View style={{ gap: spacing.sm, marginTop: spacing.xl }}>
+              <Pressable
+                haptic="medium"
+                onPress={() => router.push('/(app)/skjema/ny')}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+                  height: sizes.ctaHeight, borderRadius: radius.xl, backgroundColor: colors.cta,
+                }}
+              >
+                <Plus size={sizes.icon} color={colors.ctaLabel} strokeWidth={2.2} />
+                <Text style={[t.headline, { color: colors.ctaLabel }]}>Nytt skjema</Text>
+              </Pressable>
+              <Pressable
+                haptic="light"
+                onPress={() => router.push('/(app)/skjema/importer')}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+                  minHeight: 44, borderRadius: radius.lg,
+                }}
+              >
+                <FileUp size={17} color={colors.secondaryLabel} strokeWidth={2.2} />
+                <Text style={[t.subhead, { color: colors.secondaryLabel, fontWeight: '600' }]}>Importer PDF eller bilde</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         {templates.length === 0 ? (
-          <View style={{ alignItems: 'center', paddingTop: spacing.xxl * 1.5, paddingHorizontal: spacing.xl }}>
-            <View style={{ width: 64, height: 64, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
-              <FileCheck2 size={30} color={colors.secondaryLabel} strokeWidth={1.6} />
+          <View style={{ paddingTop: spacing.xxl, paddingHorizontal: spacing.screen }}>
+            <View style={{
+              backgroundColor: colors.bg, borderRadius: radius.lg,
+              paddingHorizontal: spacing.lg, paddingVertical: spacing.lg,
+              alignItems: 'center',
+            }}>
+              <View style={{ width: 56, height: 56, borderRadius: radius.pill, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
+                <FileCheck2 size={26} color={colors.secondaryLabel} strokeWidth={1.6} />
+              </View>
+              <Text style={[t.headline, { marginTop: spacing.md }]}>Ingen skjema ennå</Text>
+              <Text style={[t.footnote, { textAlign: 'center', marginTop: spacing.xs, lineHeight: 20 }]}>
+                Et skjema er en sjekkliste du fyller ut på jobben — for eksempel
+                «Sluttkontroll bolig» med spørsmål om tavle, jordfeilvern og stikkontakter.
+              </Text>
             </View>
-            <Text style={[t.headline, { marginTop: spacing.lg }]}>Ingen skjema</Text>
           </View>
         ) : (
           cats.map((cat, ci) => (
@@ -138,20 +156,17 @@ export default function SkjemaIndex() {
                       key={tpl.id}
                       onPress={() => router.push({ pathname: '/(app)/skjema/[id]', params: { id: tpl.id } })}
                       style={[
-                        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 3 },
+                        { flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
                         i < arr.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.separator },
                       ]}
                     >
-                      <View style={{ width: sizes.iconChip - 6, height: sizes.iconChip - 6, borderRadius: radius.md, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md }}>
-                        <FileCheck2 size={sizes.icon} color={colors.iconMuted} strokeWidth={sizes.lucideStroke} />
-                      </View>
                       <View style={{ flex: 1, marginRight: spacing.sm }}>
                         <Text style={t.bodyMedium} numberOfLines={1}>{tpl.title}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 3 }}>
                           <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: radius.sm, backgroundColor: colors.fill }}>
                             <Text style={[t.caption, { color: colors.secondaryLabel, fontVariant: ['tabular-nums'] }]}>v{tpl.currentVersion}</Text>
                           </View>
-                          <Text style={t.footnote}>{fields} felt</Text>
+                          <Text style={t.footnote}>{fields === 1 ? '1 spørsmål' : `${fields} spørsmål`}</Text>
                           {open > 0 && (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                               <MessageCircle size={12} color={colors.iconMuted} strokeWidth={2.4} />
